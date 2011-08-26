@@ -9,3 +9,4 @@ const (
 type CustomerRequest struct {
     action int
 }
+

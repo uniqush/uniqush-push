@@ -20,5 +20,9 @@ GOFILES=\
 	notification.go\
 	pusher.go\
 	subscriber.go\
+	serviceprovider.go\
+	servicetype.go\
+	ostype.go\
+	c2dmpusher.go\
 
 include $(GOROOT)/src/Make.pkg
