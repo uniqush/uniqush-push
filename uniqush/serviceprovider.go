@@ -1,13 +1,13 @@
 package uniqush
 
 const (
-    SRVP_SENDER_ID = iota
-    SRVP_AUTH_TOKEN
+    sender_id = iota
+    auth_token
 )
 
 type ServiceProvider struct {
     ServiceType
-    Data map[int]string
+    data map[int]string
 }
 
 type C2DMServiceProvider interface {
@@ -19,10 +19,14 @@ type C2DMServiceProvider interface {
 
 func (sp *ServiceProvider) SenderID() string {
     if sp.ServiceID() == SRVTYPE_C2DM {
-        if id, ok := sp.Data[SRVP_SENDER_ID]; ok {
-            return id
-        }
-        return ""
+        return sp.data[sender_id]
+    }
+    return ""
+}
+
+func (sp *ServiceProvider) AuthToken() string {
+    if sp.ServiceID() == SRVTYPE_C2DM {
+        return sp.data[auth_token]
     }
     return ""
 }

@@ -5,7 +5,7 @@ import (
 )
 
 type Pusher interface {
-    Push(*Notification, *Subscriber) (string, os.Error)
+    Push(*ServiceProvider, *Notification, *Subscriber) (string, os.Error)
 }
 
 type PushErrorIncompatibleOS struct {

@@ -42,13 +42,39 @@ func (n *Notification) toC2DMFormat() map[string]string {
     return ret
 }
 
-func (p *C2DMPusher) Push(n *Notification, s *Subscriber) (string, os.Error) {
+func (p *C2DMPusher) Push(sp *ServiceProvider, n *Notification, s *Subscriber) (string, os.Error) {
     ret_id := ""
     if !p.IsCompatible(&s.OSType) {
         return "", &PushErrorIncompatibleOS{p.ServiceType, s.OSType}
     }
-    data := n.toC2DMFormat()
-    ret_id = data["msg"]
+    msg := n.toC2DMFormat()
+    data := url.Values {}
+
+    data.Set("registration_id", s.RegistrationID())
+    /* TODO add collapse key
+    data.Set("collapse_key", "100")
+    */
+
+    req, err := http.NewRequest("POST", theurl, strings.NewReader(data.Encode()))
+    if err != nil {
+        return "", err
+    }
+    req.Header.Set("Authorization", "GoogleLogin auth=" + sp.AuthToken())
+    req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	r, e20 := http.DefaultClient.Do(req)
+    if e20 != nil {
+        return "", e20
+    }
+    if r.StatusCode != 200 {
+        return "", "TODO some error type"
+    }
+    contents, e30 := ioutil.ReadAll(r.Body)
+    if e30 != nil {
+        return "", e30
+    }
+    /* TODO extract the id */
+    ret_id = contents
+
     return ret_id, nil
 }
 
