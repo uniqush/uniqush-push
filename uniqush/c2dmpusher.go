@@ -2,6 +2,10 @@ package uniqush
 
 import (
     "os"
+    "http"
+    "strings"
+    "io/ioutil"
+    "url"
 )
 
 /* FIXME
@@ -43,7 +47,6 @@ func (n *Notification) toC2DMFormat() map[string]string {
 }
 
 func (p *C2DMPusher) Push(sp *ServiceProvider, n *Notification, s *Subscriber) (string, os.Error) {
-    ret_id := ""
     if !p.IsCompatible(&s.OSType) {
         return "", &PushErrorIncompatibleOS{p.ServiceType, s.OSType}
     }
@@ -55,7 +58,11 @@ func (p *C2DMPusher) Push(sp *ServiceProvider, n *Notification, s *Subscriber) (
     data.Set("collapse_key", "100")
     */
 
-    req, err := http.NewRequest("POST", theurl, strings.NewReader(data.Encode()))
+    for k, v := range msg {
+        data.Set("data." + k, v)
+    }
+
+    req, err := http.NewRequest("POST", service_url, strings.NewReader(data.Encode()))
     if err != nil {
         return "", err
     }
@@ -66,15 +73,15 @@ func (p *C2DMPusher) Push(sp *ServiceProvider, n *Notification, s *Subscriber) (
         return "", e20
     }
     if r.StatusCode != 200 {
-        return "", "TODO some error type"
+        return "", os.NewError("")
     }
     contents, e30 := ioutil.ReadAll(r.Body)
     if e30 != nil {
         return "", e30
     }
-    /* TODO extract the id */
-    ret_id = contents
-
-    return ret_id, nil
+    msgid := string(contents)
+    msgid = strings.Replace(msgid, "\r", "", -1)
+    msgid = strings.Replace(msgid, "\n", "", -1)
+    return msgid, nil
 }
 

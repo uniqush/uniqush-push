@@ -28,6 +28,21 @@ func (s *Subscriber) Groups() []string {
     return s.groups
 }
 
+func (s *Subscriber) DeviceToken() string {
+    if s.OSID() == OSTYPE_IOS {
+        return s.data[token]
+    }
+    return ""
+}
+
+func (s *Subscriber) AppleAccount() string {
+    if s.OSID() == OSTYPE_ANDROID {
+        return s.data[account_name]
+    }
+    return ""
+}
+
+
 func (s *Subscriber) GoogleAccount() string {
     if s.OSID() == OSTYPE_ANDROID {
         return s.data[account_name]
