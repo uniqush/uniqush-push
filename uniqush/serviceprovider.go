@@ -7,6 +7,7 @@ const (
 
 type ServiceProvider struct {
     ServiceType
+    Name string
     data map[int]string
 }
 

@@ -27,10 +27,13 @@ func (r remoteServerError) String() string {
 
 type QuotaExceededError struct {
     remoteServerError
+    ServiceProvider
 }
 
-func NewQuotaExceededError() QuotaExceededError {
-    return QuotaExceededError{remoteServerError{"Service Quota Exceeded"}}
+func NewQuotaExceededError(sp ServiceProvider) QuotaExceededError {
+    return QuotaExceededError{
+        remoteServerError{"Service Quota Exceeded" + sp.Name},
+        sp}
 }
 
 type DeviceQuotaExceededError struct {
@@ -43,33 +46,55 @@ func NewDeviceQuotaExceededError() DeviceQuotaExceededError {
 
 type UnregisteredError struct {
     remoteServerError
+    Service ServiceProvider
+    Subscriber Subscriber
 }
 
-func NewUnregisteredError() UnregisteredError {
-    return UnregisteredError{remoteServerError{"Device Unsubcribed"}}
+func NewUnregisteredError(sp ServiceProvider, s Subscriber) UnregisteredError {
+    return UnregisteredError{
+        remoteServerError{"Device Unsubcribed: " + s.Name + " unsubscribed the service " + sp.Name},
+        sp, s}
 }
 
-type MessageTooBigError struct {
+type NotificationTooBigError struct {
     remoteServerError
+    Service ServiceProvider
+    Subscriber Subscriber
+    Notification Notification
 }
 
-func NewMessageTooBigError() MessageTooBigError {
-    return MessageTooBigError{remoteServerError{"Message Too Big"}}
+func NewNotificationTooBigError(sp ServiceProvider, s Subscriber, n Notification) NotificationTooBigError{
+    return NotificationTooBigError{remoteServerError{"Notification Too Big"}, sp, s, n}
 }
 
 type InvalidSubscriberError struct {
     remoteServerError
+    Service ServiceProvider
+    Subscriber Subscriber
 }
 
-func NewInvalidSubscriberError() InvalidSubscriberError {
-    return InvalidSubscriberError{remoteServerError{"Invalid Subscriber"}}
+func NewInvalidSubscriberError(sp ServiceProvider, s Subscriber) InvalidSubscriberError {
+    return InvalidSubscriberError{
+        remoteServerError{"Invalid Subscriber - " +
+            s.Name + " is not a valid subscriber for service " + sp.Name},
+            sp, s}
 }
 
 type InvalidServiceProviderError struct {
     remoteServerError
+    ServiceProvider
 }
 
-func NewInvalidServiceProviderError() InvalidServiceProviderError {
-    return InvalidServiceProviderError{remoteServerError{"Inalid Service Provider"}}
+func NewInvalidServiceProviderError(s ServiceProvider) InvalidServiceProviderError {
+    return InvalidServiceProviderError{remoteServerError{"Inalid Service Provider: " + s.Name}, s}
+}
+
+type RetryError struct {
+    remoteServerError
+    RetryAfter int
+}
+
+func NewRetryError(RetryAfter int) RetryError {
+    return RetryError{remoteServerError{"Retry"}, RetryAfter}
 }
 

@@ -40,7 +40,7 @@ func NewC2DMPusher() *C2DMPusher {
 }
 
 func (n *Notification) toC2DMFormat() map[string]string {
-    /* TODO do we need other field? */
+    /* TODO We need to add other fields */
     ret := make(map[string]string, len(n.data) + 5)
     ret["msg"] = n.msg
     return ret
@@ -72,8 +72,13 @@ func (p *C2DMPusher) Push(sp *ServiceProvider, n *Notification, s *Subscriber) (
     if e20 != nil {
         return "", e20
     }
-    if r.StatusCode != 200 {
-        return "", os.NewError("")
+    switch (r.StatusCode) {
+    case 503:
+        /* TODO extract the retry after field */
+        after := -1
+        return "", NewRetryError(after)
+    case 401:
+        return "", NewInvalidServiceProviderError(*sp)
     }
     contents, e30 := ioutil.ReadAll(r.Body)
     if e30 != nil {
@@ -82,6 +87,19 @@ func (p *C2DMPusher) Push(sp *ServiceProvider, n *Notification, s *Subscriber) (
     msgid := string(contents)
     msgid = strings.Replace(msgid, "\r", "", -1)
     msgid = strings.Replace(msgid, "\n", "", -1)
-    return msgid, nil
+    if msgid[:3] == "id=" {
+        return msgid[3:], nil
+    }
+    switch (msgid[6:]) {
+    case "QuotaExceeded":
+        return "", NewQuotaExceededError(*sp)
+    case "InvalidRegistration":
+        return "", NewInvalidSubscriberError(*sp, *s)
+    case "NotRegistered":
+        return "", NewUnregisteredError(*sp, *s)
+    case "MessageTooBig":
+        return "", NewNotificationTooBigError(*sp, *s, *n)
+    }
+    return "", os.NewError("Unknown Error: " + msgid[6:])
 }
 
