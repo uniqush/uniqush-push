@@ -46,17 +46,16 @@ func (n *Notification) toC2DMFormat() map[string]string {
     return ret
 }
 
-func (p *C2DMPusher) Push(sp *ServiceProvider, n *Notification, s *Subscriber) (string, os.Error) {
+func (p *C2DMPusher) Push(sp *ServiceProvider, s *Subscriber, n *Notification) (string, os.Error) {
     if !p.IsCompatible(&s.OSType) {
         return "", &PushErrorIncompatibleOS{p.ServiceType, s.OSType}
     }
     msg := n.toC2DMFormat()
-    data := url.Values {}
+    data := url.Values{}
 
     data.Set("registration_id", s.RegistrationID())
-    /* TODO add collapse key
-    data.Set("collapse_key", "100")
-    */
+    /* TODO better collapse key */
+    data.Set("collapse_key", msg["msg"])
 
     for k, v := range msg {
         data.Set("data." + k, v)

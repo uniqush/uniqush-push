@@ -19,6 +19,16 @@ type ServiceType struct {
     id int
 }
 
+var (
+    SERVICE_C2DM ServiceType
+    SERVICE_APNS ServiceType
+)
+
+func init() {
+    SERVICE_C2DM = ServiceType{SRVTYPE_C2DM}
+    SERVICE_APNS = ServiceType{SRVTYPE_APNS}
+}
+
 func (s *ServiceType) ServiceName() string {
     switch (s.id) {
     case SRVTYPE_C2DM:

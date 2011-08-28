@@ -16,6 +16,13 @@ type C2DMServiceProvider interface {
     AuthToken() string
 }
 
+func NewC2DMServiceProvider(name, senderid, auth string) *ServiceProvider{
+    s := &ServiceProvider{SERVICE_C2DM, name, make(map[int]string, 2)}
+    s.data[sender_id] = senderid
+    s.data[auth_token] = auth
+    return s
+}
+
 /* TODO Other service providers */
 
 func (sp *ServiceProvider) SenderID() string {

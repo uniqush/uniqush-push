@@ -24,6 +24,17 @@ type IOSSubscriber interface {
     Groups() []string
 }
 
+func NewAndroidSubscriber(name, account, regid string) *Subscriber{
+    s := new(Subscriber)
+    s.data = make(map[int]string, 2)
+    s.groups = make([]string, 10)
+    s.Name = name
+    s.OSType = OS_ANDROID
+    s.data[token] = regid
+    s.data[account_name] = account
+    return s
+}
+
 func (s *Subscriber) Groups() []string {
     return s.groups
 }

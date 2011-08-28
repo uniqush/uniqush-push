@@ -5,7 +5,7 @@ import (
 )
 
 type Pusher interface {
-    Push(*ServiceProvider, *Notification, *Subscriber) (string, os.Error)
+    Push(*ServiceProvider, *Subscriber, *Notification) (string, os.Error)
 }
 
 type PushErrorIncompatibleOS struct {
@@ -82,7 +82,7 @@ func NewInvalidSubscriberError(sp ServiceProvider, s Subscriber) InvalidSubscrib
 
 type InvalidServiceProviderError struct {
     remoteServerError
-    ServiceProvider
+    Service ServiceProvider
 }
 
 func NewInvalidServiceProviderError(s ServiceProvider) InvalidServiceProviderError {

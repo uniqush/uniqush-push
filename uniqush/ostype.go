@@ -13,6 +13,16 @@ type OSType struct {
     id int
 }
 
+var (
+    OS_ANDROID OSType
+    OS_IOS OSType
+)
+
+func init() {
+    OS_ANDROID = OSType{OSTYPE_ANDROID}
+    OS_IOS = OSType{OSTYPE_IOS}
+}
+
 func (o *OSType) OSName() string {
     switch (o.id) {
     case OSTYPE_ANDROID:
