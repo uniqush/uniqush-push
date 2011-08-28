@@ -1,13 +1,10 @@
 package uniqush
 
-const (
-    sender_id = iota
-    auth_token
-)
-
 type ServiceProvider struct {
     ServiceType
     Name string
+    sender_id string
+    auth_token string
     data map[int]string
 }
 
@@ -17,9 +14,7 @@ type C2DMServiceProvider interface {
 }
 
 func NewC2DMServiceProvider(name, senderid, auth string) *ServiceProvider{
-    s := &ServiceProvider{SERVICE_C2DM, name, make(map[int]string, 2)}
-    s.data[sender_id] = senderid
-    s.data[auth_token] = auth
+    s := &ServiceProvider{SERVICE_C2DM, name, senderid, auth, make(map[int]string, 2)}
     return s
 }
 
@@ -27,14 +22,14 @@ func NewC2DMServiceProvider(name, senderid, auth string) *ServiceProvider{
 
 func (sp *ServiceProvider) SenderID() string {
     if sp.ServiceID() == SRVTYPE_C2DM {
-        return sp.data[sender_id]
+        return sp.sender_id
     }
     return ""
 }
 
 func (sp *ServiceProvider) AuthToken() string {
     if sp.ServiceID() == SRVTYPE_C2DM {
-        return sp.data[auth_token]
+        return sp.auth_token
     }
     return ""
 }

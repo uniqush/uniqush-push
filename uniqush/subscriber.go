@@ -1,13 +1,10 @@
 package uniqush
 
-const (
-    token = iota
-    account_name
-)
-
 type Subscriber struct {
     OSType
     Name string
+    token string
+    account string
     data map[int]string
     groups []string
 }
@@ -30,8 +27,8 @@ func NewAndroidSubscriber(name, account, regid string) *Subscriber{
     s.groups = make([]string, 10)
     s.Name = name
     s.OSType = OS_ANDROID
-    s.data[token] = regid
-    s.data[account_name] = account
+    s.token = regid
+    s.account = account
     return s
 }
 
@@ -41,14 +38,14 @@ func (s *Subscriber) Groups() []string {
 
 func (s *Subscriber) DeviceToken() string {
     if s.OSID() == OSTYPE_IOS {
-        return s.data[token]
+        return s.token
     }
     return ""
 }
 
 func (s *Subscriber) AppleAccount() string {
     if s.OSID() == OSTYPE_ANDROID {
-        return s.data[account_name]
+        return s.account
     }
     return ""
 }
@@ -56,14 +53,14 @@ func (s *Subscriber) AppleAccount() string {
 
 func (s *Subscriber) GoogleAccount() string {
     if s.OSID() == OSTYPE_ANDROID {
-        return s.data[account_name]
+        return s.account
     }
     return ""
 }
 
 func (s *Subscriber) RegistrationID() string {
     if s.OSID() == OSTYPE_ANDROID {
-        return s.data[token]
+        return s.token
     }
     return ""
 }
