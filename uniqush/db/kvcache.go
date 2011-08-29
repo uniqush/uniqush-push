@@ -38,7 +38,8 @@ type KeyValueCacheStrategy interface {
 
 // This is the interface to represent a key-value storage
 type KeyValueStorage interface {
-    Add(key string, v interface{}) os.Error
+    // return value: old value and error
+    Set(key string, v interface{}) (oldv interface{}, err os.Error)
     Remove(key string) (interface{}, os.Error)
     Get(key string) (interface{}, os.Error)
     Len() (int, os.Error)
@@ -77,6 +78,13 @@ func NewInMemoryKeyValueStorage(size int) *InMemoryKeyValueStorage {
 func (s *InMemoryKeyValueStorage) Remove(key string) os.Error {
     s.data[key] = nil, false
     return nil
+}
+
+func (s *InMemoryKeyValueStorage) Set(key string,
+                                      v interface{}) (oldv interface{}, err os.Error) {
+    oldv, err = s.Get(key)
+    s.data[key] = v, true
+    return
 }
 
 func (s *InMemoryKeyValueStorage) Get(key string) (v interface{}, err os.Error) {
@@ -176,9 +184,10 @@ func (c *KeyValueCache) Show(key string, v interface{}) os.Error {
     if should_add := c.strategy.ShouldAdd(key); should_add {
 
         c.rwlock.Lock()
-        c.strategy.Added(key)
-        err := c.storage.Add(key, v)
-        c.dirty_list = append(c.dirty_list, kvdata{key, v})
+        oldv, err := c.storage.Set(key, v)
+        if oldv == nil {
+            c.strategy.Added(key)
+        }
         c.rwlock.Unlock()
 
         if err != nil {
@@ -194,6 +203,37 @@ func (c *KeyValueCache) Show(key string, v interface{}) os.Error {
     return nil
 }
 
+func (c *KeyValueCache) Modify(key string, v interface{}) os.Error {
+    c.rwlock.Lock()
+    defer c.rwlock.Unlock()
+
+    // First, this data is dirty
+    c.dirty_list = append(c.dirty_list, kvdata{key, v})
+
+    oldv, err := c.storage.Get(key)
+    if err != nil {
+        v = nil
+        c.rwlock.RUnlock()
+        return err
+    }
+
+    if oldv == nil {
+        // This data is not in cache. So a cache-miss occur
+        // We need to know if we should add this value into cache
+        c.strategy.Miss(key)
+        if should_add := c.strategy.ShouldAdd(key); should_add {
+            _, err := c.storage.Set(key, v)
+            c.strategy.Added(key)
+            return err
+        }
+        return nil
+    }
+    // Cache hit. We need to update to the latest value
+    c.strategy.Hit(key)
+    _, err = c.storage.Set(key, v)
+    return nil
+}
+
 func (c *KeyValueCache) Get(key string) (v interface{}, err os.Error) {
     c.rwlock.RLock()
     v, err = c.storage.Get(key)
@@ -203,13 +243,13 @@ func (c *KeyValueCache) Get(key string) (v interface{}, err os.Error) {
         return
     }
 
-    // Cache miss
     if v == nil {
+        // Cache miss
         c.strategy.Miss(key)
+    } else {
+        // Cache hit
+        c.strategy.Hit(key)
     }
-
-    // Cache hit
-    c.strategy.Hit(key)
     c.rwlock.RUnlock()
 
     err = c.remove()
