@@ -13,6 +13,18 @@ type kvdata struct {
     value interface{}
 }
 
+// This should be some database-related struct
+// to flush dirty data into database
+// The implementation could put the real removal and insertion action
+// in either the Flush() or Add()/Remove() functions.
+// The Cache will always call Flush() after a bunch of Add()/Remove()
+type KeyValueFlusher interface {
+    Add(key string, value interface{}) os.Error
+    Remove(key string, value interface{}) os.Error
+    Flush() os.Error
+}
+
+
 // A key-value cache is like a lazy person:
 // You want him to remember something (for example, building his vocabulary)
 // You provide the data in key-value forms (word - meaning)

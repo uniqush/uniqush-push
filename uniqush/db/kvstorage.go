@@ -1,23 +1,16 @@
 package db
 
+import (
+    "os"
+)
+
 // This is the interface to represent a key-value storage
 type KeyValueStorage interface {
     // return value: old value and error
     Set(key string, v interface{}) (oldv interface{}, err os.Error)
-    Remove(key string, v interface{}) (interface{}, os.Error)
+    Remove(key string) (interface{}, os.Error)
     Get(key string) (interface{}, os.Error)
     Len() (int, os.Error)
-}
-
-// This should be some database-related struct
-// to flush dirty data into database
-// The implementation could put the real removal and insertion action
-// in either the Flush() or Add()/Remove() functions.
-// The Cache will always call Flush() after a bunch of Add()/Remove()
-type KeyValueFlusher interface {
-    Add(key string, value interface{}) os.Error
-    Remove(key string) os.Error
-    Flush() os.Error
 }
 
 /**** In Memory Storage ****/
