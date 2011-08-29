@@ -191,6 +191,7 @@ func (c *KeyValueCache) Modify(key string, v interface{}) os.Error {
 
     // First, this data is dirty
     c.dirty_list = append(c.dirty_list, kvdata{key, v})
+    c.strategy.Dirty(key)
 
     oldv, err := c.storage.Get(key)
     if err != nil {
@@ -253,6 +254,7 @@ func (c *KeyValueCache) Remove(key string) (err os.Error) {
     c.strategy.Removed(key)
 
     c.rm_list = append(c.rm_list, kvdata{key, v})
+    c.strategy.Dirty(key)
     c.rwlock.Unlock()
 
     err = c.remove()

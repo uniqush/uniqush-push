@@ -2,6 +2,7 @@ package db
 
 import (
     "time"
+    "container/list"
 )
 
 // This interface defines bahaviors of a cache
@@ -28,6 +29,10 @@ type KeyValueCacheStrategy interface {
     // Nothing fancy
     ShouldFlush() bool
 
+    // Called when things get dirty
+    Dirty(key string)
+
+    // All dirty things has become clear
     Flushed()
 }
 
@@ -42,6 +47,10 @@ func (s *PeriodFlushStrategy) ShouldFlush() bool {
         return true
     }
     return false
+}
+
+func (s *PeriodFlushStrategy) Dirty(key string) {
+    return
 }
 
 func (s *PeriodFlushStrategy) Flushed() {
@@ -89,12 +98,37 @@ func NewAlwaysInCachePeriodFlush(period int64) KeyValueCacheStrategy {
     return ret
 }
 
+type timedkey struct {
+    last_access_time int64
+    key string
+}
+
 type LRUStrategy struct {
-    q []string
+    q *list.List
+    items map[string]*list.Element
     max int
 }
 
+func NewLRUStrategy(max int) *LRUStrategy {
+    ret := new(LRUStrategy)
+    if max <= 0 {
+        ret.max = 1024
+    } else {
+        ret.max = max
+    }
+    ret.items = make(map[string]*list.Element, ret.max)
+    ret.q = list.New()
+    return ret
+}
+
 func (s *LRUStrategy) Hit(key string) {
+    if d, has := s.items[key]; has {
+        s.q.MoveToFront(d)
+    } else {
+        t := timedkey{time.Nanoseconds(), key}
+        e := s.q.PushFront(t)
+        s.items[key] = e, true
+    }
     return
 }
 
@@ -103,8 +137,51 @@ func (s *LRUStrategy) Miss(key string) {
 }
 
 func (s *LRUStrategy) Added(key string) {
-    s.q = append(s.q, key)
+    s.Hit(key)
 }
 
 func (s *LRUStrategy) Removed(key string) {
+    e, has := s.items[key]
+    if has {
+        s.q.Remove(e)
+        s.items[key] = nil, false
+    }
 }
+
+func (s *LRUStrategy) ShouldAdd(key string) bool {
+    return true
+}
+
+func (s *LRUStrategy) GetObsoleted() []string {
+    if s.q.Len() <= s.max {
+        return nil
+    }
+    nr_removed := s.q.Len() - s.max
+    e := s.q.Back()
+    ret := make([]string, 0, nr_removed)
+
+    for i := 0; i < nr_removed; i++ {
+        d := e.Value.(timedkey)
+        ret = append(ret, d.key)
+        e = e.Prev()
+    }
+
+    return ret
+}
+
+type lruPeriodFlushStrategy struct {
+    *LRUStrategy
+    PeriodFlushStrategy
+}
+
+func NewLRUPeriodFlushStrategy(max int, period int64) KeyValueCacheStrategy {
+    lru := NewLRUStrategy(max)
+    s := new(lruPeriodFlushStrategy)
+    s.LRUStrategy = lru
+    s.period = period
+
+    var ret KeyValueCacheStrategy
+    ret = s
+    return ret
+}
+
