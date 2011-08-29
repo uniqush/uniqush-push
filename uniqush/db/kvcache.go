@@ -9,12 +9,6 @@ import (
     "time"
 )
 
-// This should be some database-related struct
-// to flush dirty data into database
-type KeyValueFlusher interface {
-    Flush(key string, value *interface{}) os.Error
-}
-
 // This interface defines bahaviors of a cache
 // Like: if we should store this data; if we need to remove some data
 type KeyValueCacheStrategy interface {
@@ -44,16 +38,27 @@ type KeyValueCacheStrategy interface {
 
 // This is the interface to represent a key-value storage
 type KeyValueStorage interface {
-    Add(key string, v *interface{}) os.Error
-    Remove(key string) os.Error
-    Get(key string) (*interface{}, os.Error)
+    Add(key string, v interface{}) os.Error
+    Remove(key string) (interface{}, os.Error)
+    Get(key string) (interface{}, os.Error)
     Len() (int, os.Error)
+}
+
+// This should be some database-related struct
+// to flush dirty data into database
+// The implementation could put the real removal and insertion action
+// in either the Flush() or Add()/Remove() functions.
+// The Cache will always call Flush() after a bunch of Add()/Remove()
+type KeyValueFlusher interface {
+    Add(key string, value interface{}) os.Error
+    Remove(key string) os.Error
+    Flush() os.Error
 }
 
 /**** In Memory Storage ****/
 
 type InMemoryKeyValueStorage struct {
-    data map[string]*interface{}
+    data map[string]interface{}
 }
 
 const (
@@ -65,7 +70,7 @@ func NewInMemoryKeyValueStorage(size int) *InMemoryKeyValueStorage {
     if size <= 0 {
         size = default_cache_size
     }
-    s.data = make(map[string]*interface{}, size)
+    s.data = make(map[string]interface{}, size)
     return s
 }
 
@@ -74,7 +79,7 @@ func (s *InMemoryKeyValueStorage) Remove(key string) os.Error {
     return nil
 }
 
-func (s *InMemoryKeyValueStorage) Get(key string) (v *interface{}, err os.Error) {
+func (s *InMemoryKeyValueStorage) Get(key string) (v interface{}, err os.Error) {
     var has bool
     v, has = s.data[key]
     if !has {
@@ -91,7 +96,7 @@ func (s *InMemoryKeyValueStorage) Len() (l int, err os.Error) {
 
 type kvdata struct {
     key string
-    value *interface{}
+    value interface{}
 }
 
 type KeyValueCache struct {
@@ -99,6 +104,7 @@ type KeyValueCache struct {
     strategy KeyValueCacheStrategy
     flusher KeyValueFlusher
     dirty_list []kvdata
+    rm_list []string
     rwlock sync.RWMutex
 }
 
@@ -113,6 +119,7 @@ func NewKeyValueCache(storage KeyValueStorage,
     c.storage = storage
     c.strategy = strategy
     c.dirty_list = make([]kvdata, 0, default_dirty_list_size)
+    c.rm_list = make([]string, 0, 10)
     c.flusher = flusher
     return c
 }
@@ -124,7 +131,7 @@ func (c *KeyValueCache) remove() os.Error {
     rmlist := c.strategy.GetObsoleted()
     var err os.Error
     for _, k := range rmlist {
-        err = c.storage.Remove(k)
+        _, err = c.storage.Remove(k)
         c.strategy.Removed(k)
         if err != nil {
             return err
@@ -139,11 +146,23 @@ func (c *KeyValueCache) flush() os.Error {
 
     if need_flush := c.strategy.ShouldFlush(); need_flush {
         for _, d := range c.dirty_list {
-            err := c.flusher.Flush(d.key, d.value)
+            err := c.flusher.Add(d.key, d.value)
             if err != nil {
                 return err
             }
         }
+
+        c.dirty_list = make([]kvdata, 0, len(c.dirty_list))
+
+        for _, d := range c.rm_list {
+            err := c.flusher.Remove(d)
+            if err != nil {
+                return err
+            }
+        }
+
+        c.rm_list = make([]string, 0, len(c.rm_list))
+        c.flusher.Flush()
         c.strategy.Flushed()
     }
     return nil
@@ -152,7 +171,7 @@ func (c *KeyValueCache) flush() os.Error {
 // The caller could Show a key value pair to a cache,
 // and let the cache decide if it want to add this pair into the cache.
 // A cache make this decision based on its strategy
-func (c *KeyValueCache) Show(key string, v *interface{}) os.Error {
+func (c *KeyValueCache) Show(key string, v interface{}) os.Error {
     var err os.Error
     if should_add := c.strategy.ShouldAdd(key); should_add {
 
@@ -175,7 +194,7 @@ func (c *KeyValueCache) Show(key string, v *interface{}) os.Error {
     return nil
 }
 
-func (c *KeyValueCache) Get(key string) (v *interface{}, err os.Error) {
+func (c *KeyValueCache) Get(key string) (v interface{}, err os.Error) {
     c.rwlock.RLock()
     v, err = c.storage.Get(key)
     if err != nil {
@@ -192,6 +211,26 @@ func (c *KeyValueCache) Get(key string) (v *interface{}, err os.Error) {
     // Cache hit
     c.strategy.Hit(key)
     c.rwlock.RUnlock()
+
+    err = c.remove()
+    err = c.flush()
+    return
+}
+
+// Remove records the key need to be removed. And perform the
+// actual removal in next flush
+// Why not return the value? because the item may not in the cache.
+func (c *KeyValueCache) Remove(key string) (err os.Error) {
+    c.rwlock.Lock()
+
+    _, err = c.storage.Remove(key)
+    if err != nil {
+        return err
+    }
+    c.strategy.Removed(key)
+
+    c.rm_list = append(c.rm_list, key)
+    c.rwlock.Unlock()
 
     err = c.remove()
     err = c.flush()
