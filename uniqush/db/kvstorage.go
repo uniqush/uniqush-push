@@ -10,6 +10,7 @@ type KeyValueStorage interface {
     Set(key string, v interface{}) (oldv interface{}, err os.Error)
     Remove(key string) (interface{}, os.Error)
     Get(key string) (interface{}, os.Error)
+    Keys() ([]string, os.Error)
     Len() (int, os.Error)
 }
 
@@ -23,18 +24,22 @@ const (
     default_cache_size int = 100
 )
 
-func NewInMemoryKeyValueStorage(size int) *InMemoryKeyValueStorage {
+func NewInMemoryKeyValueStorage(init_size int) KeyValueStorage {
     s := new(InMemoryKeyValueStorage)
-    if size <= 0 {
-        size = default_cache_size
+    if init_size <= 0 {
+        init_size = default_cache_size
     }
-    s.data = make(map[string]interface{}, size)
+    s.data = make(map[string]interface{}, init_size)
     return s
 }
 
-func (s *InMemoryKeyValueStorage) Remove(key string) os.Error {
+func (s *InMemoryKeyValueStorage) Remove(key string) (interface{}, os.Error) {
+    v, has := s.data[key]
+    if !has {
+        return nil, nil
+    }
     s.data[key] = nil, false
-    return nil
+    return v, nil
 }
 
 func (s *InMemoryKeyValueStorage) Set(key string,
@@ -57,4 +62,14 @@ func (s *InMemoryKeyValueStorage) Len() (l int, err os.Error) {
     return len(s.data), nil
 }
 
+func (s *InMemoryKeyValueStorage) Keys() (keys []string, err os.Error) {
+    keys = make([]string, 0, len(s.data))
+
+    for k, _ := range s.data {
+        keys = append(keys, k)
+    }
+    err = nil
+
+    return
+}
 

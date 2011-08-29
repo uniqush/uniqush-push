@@ -19,7 +19,7 @@ type kvdata struct {
 // in either the Flush() or Add()/Remove() functions.
 // The Cache will always call Flush() after a bunch of Add()/Remove()
 type KeyValueFlusher interface {
-    Add(key string, value interface{}) os.Error
+    Set(key string, value interface{}) os.Error
     Remove(key string, value interface{}) os.Error
     Flush() os.Error
 }
@@ -136,7 +136,7 @@ func (c *KeyValueCache) flush() os.Error {
 
     if need_flush := c.strategy.ShouldFlush(); need_flush {
         for _, d := range c.dirty_list {
-            err := c.flusher.Add(d.key, d.value)
+            err := c.flusher.Set(d.key, d.value)
             if err != nil {
                 return err
             }
@@ -259,6 +259,11 @@ func (c *KeyValueCache) Remove(key string) (err os.Error) {
 
     err = c.remove()
     err = c.flush()
+    return
+}
+
+func (c *KeyValueCache) Keys() (keys []string, err os.Error) {
+    keys, err = c.storage.Keys()
     return
 }
 
