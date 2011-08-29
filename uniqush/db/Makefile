@@ -17,6 +17,8 @@ include $(GOROOT)/src/Make.inc
 TARG=uniqush/db
 GOFILES=\
 	kvcache.go\
+	kvcachestrategy.go\
+	kvstorage.go\
 
 include $(GOROOT)/src/Make.pkg
 
