@@ -158,6 +158,10 @@ func (c *KeyValueCache) flush() os.Error {
     return nil
 }
 
+func (c *KeyValueCache) Flush() os.Error {
+    return c.flush()
+}
+
 // The caller could Show a key value pair to a cache,
 // and let the cache decide if it want to add this pair into the cache.
 // A cache make this decision based on its strategy
