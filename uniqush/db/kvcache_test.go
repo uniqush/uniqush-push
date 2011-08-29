@@ -29,6 +29,7 @@ func TestLRUCache(t *testing.T) {
     flusher := &FakeFlusher{}
 
     cache := NewKeyValueCache(storage, strategy, flusher)
+    fmt.Print("Start LRU cache test ...\t")
 
     for i := 0; i < 10; i++ {
         str := fmt.Sprint(i)
@@ -39,6 +40,18 @@ func TestLRUCache(t *testing.T) {
     if !same(convert2string([]int{7,9,8}), keys) {
         t.Errorf("should be [7 8 9], but %v", keys)
     }
-    fmt.Print(len(keys), ": ", keys)
+
+    if v, _ := cache.Get("1"); v != nil {
+        t.Errorf("%v should not be in cache", v)
+    }
+
+    cache.Get("7")
+    cache.Show("1", "1")
+
+    if v, _ := cache.Get("8"); v != nil {
+        keys, _ := cache.Keys()
+        t.Errorf("%v should not be in cache; cache content: %v", v, keys)
+    }
+    fmt.Print("OK\n")
 }
 

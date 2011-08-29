@@ -161,10 +161,12 @@ func (c *KeyValueCache) flush() os.Error {
 // The caller could Show a key value pair to a cache,
 // and let the cache decide if it want to add this pair into the cache.
 // A cache make this decision based on its strategy
+// Note: if the key is already in the cache, Show() will not increase
+// the cache hit rate; If the key is not in the cache, it will call
+// Added() to strategy
 func (c *KeyValueCache) Show(key string, v interface{}) os.Error {
     var err os.Error
     if should_add := c.strategy.ShouldAdd(key); should_add {
-
         c.rwlock.Lock()
         oldv, err := c.storage.Set(key, v)
         if oldv == nil {

@@ -31,6 +31,7 @@ func TestLRUStrategy(t *testing.T) {
     allkeys := make([]string, 0, 10)
     var ob []string
 
+    fmt.Print("Start LRU Strategy test ....\t")
     for i := 0; i < 10; i++ {
         str := fmt.Sprint(i)
         allkeys = append(allkeys, str)
@@ -60,5 +61,6 @@ func TestLRUStrategy(t *testing.T) {
     if !same(convert2string(shouldbe), ob) {
         t.Errorf("case 2 - should be %v, but %v\n", shouldbe, ob)
     }
+    fmt.Print("OK\n")
 }
 

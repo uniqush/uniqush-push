@@ -3,6 +3,7 @@ package db
 import (
     "time"
     "container/list"
+    //"fmt"
 )
 
 // This interface defines bahaviors of a cache
@@ -122,6 +123,7 @@ func NewLRUStrategy(max int) *LRUStrategy {
 }
 
 func (s *LRUStrategy) Hit(key string) {
+    //fmt.Print("Hit ", key, "\n")
     if d, has := s.items[key]; has {
         s.q.MoveToFront(d)
     } else {
@@ -141,6 +143,7 @@ func (s *LRUStrategy) Added(key string) {
 }
 
 func (s *LRUStrategy) Removed(key string) {
+    //fmt.Print("Removed ", key, "\n")
     e, has := s.items[key]
     if has {
         s.q.Remove(e)
@@ -165,6 +168,8 @@ func (s *LRUStrategy) GetObsoleted() []string {
         ret = append(ret, d.key)
         e = e.Prev()
     }
+
+    //fmt.Print("You should remove ", ret, "\n")
 
     return ret
 }
