@@ -39,7 +39,8 @@ type KeyValueFlusher interface {
 //
 // Then you ask him about the word by calling Get(). You may or may not get
 // an answer. This person will never look up the word in dictionary. He only
-// tells you the word he remembered.
+// tells you the word he remembered. In general, most strategies will try to
+// remember words you frequently asked (using Get() *not* Show()).
 //
 // If a word's meaning changed, which means the value changed, you call 
 // Modify() to tell the person this change and ask him to update his 
