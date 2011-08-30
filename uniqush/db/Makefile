@@ -19,6 +19,7 @@ GOFILES=\
 	kvcache.go\
 	kvcachestrategy.go\
 	kvstorage.go\
+	config.go\
 
 include $(GOROOT)/src/Make.pkg
 
