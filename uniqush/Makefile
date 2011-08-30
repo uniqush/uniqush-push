@@ -19,8 +19,8 @@ TARG=uniqush
 GOFILES=\
 	notification.go\
 	pusher.go\
-	subscriber.go\
-	serviceprovider.go\
+	deliverypoint.go\
+	pushserviceprovider.go\
 	servicetype.go\
 	ostype.go\
 	c2dmpusher.go\

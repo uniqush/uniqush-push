@@ -46,7 +46,7 @@ func (n *Notification) toC2DMFormat() map[string]string {
     return ret
 }
 
-func (p *C2DMPusher) Push(sp *ServiceProvider, s *Subscriber, n *Notification) (string, os.Error) {
+func (p *C2DMPusher) Push(sp *PushServiceProvider, s *DeliveryPoint, n *Notification) (string, os.Error) {
     if !p.IsCompatible(&s.OSType) {
         return "", &PushErrorIncompatibleOS{p.ServiceType, s.OSType}
     }
@@ -77,7 +77,7 @@ func (p *C2DMPusher) Push(sp *ServiceProvider, s *Subscriber, n *Notification) (
         after := -1
         return "", NewRetryError(after)
     case 401:
-        return "", NewInvalidServiceProviderError(*sp)
+        return "", NewInvalidPushServiceProviderError(*sp)
     }
     contents, e30 := ioutil.ReadAll(r.Body)
     if e30 != nil {
@@ -93,7 +93,7 @@ func (p *C2DMPusher) Push(sp *ServiceProvider, s *Subscriber, n *Notification) (
     case "QuotaExceeded":
         return "", NewQuotaExceededError(*sp)
     case "InvalidRegistration":
-        return "", NewInvalidSubscriberError(*sp, *s)
+        return "", NewInvalidDeliveryPointError(*sp, *s)
     case "NotRegistered":
         return "", NewUnregisteredError(*sp, *s)
     case "MessageTooBig":

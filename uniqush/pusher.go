@@ -5,7 +5,7 @@ import (
 )
 
 type Pusher interface {
-    Push(*ServiceProvider, *Subscriber, *Notification) (string, os.Error)
+    Push(*PushServiceProvider, *DeliveryPoint, *Notification) (string, os.Error)
 }
 
 type PushErrorIncompatibleOS struct {
@@ -27,10 +27,10 @@ func (r remoteServerError) String() string {
 
 type QuotaExceededError struct {
     remoteServerError
-    ServiceProvider
+    PushServiceProvider
 }
 
-func NewQuotaExceededError(sp ServiceProvider) QuotaExceededError {
+func NewQuotaExceededError(sp PushServiceProvider) QuotaExceededError {
     return QuotaExceededError{
         remoteServerError{"Service Quota Exceeded" + sp.Name},
         sp}
@@ -46,11 +46,11 @@ func NewDeviceQuotaExceededError() DeviceQuotaExceededError {
 
 type UnregisteredError struct {
     remoteServerError
-    Service ServiceProvider
-    Subscriber Subscriber
+    PushServiceProvider
+    DeliveryPoint
 }
 
-func NewUnregisteredError(sp ServiceProvider, s Subscriber) UnregisteredError {
+func NewUnregisteredError(sp PushServiceProvider, s DeliveryPoint) UnregisteredError {
     return UnregisteredError{
         remoteServerError{"Device Unsubcribed: " + s.Name + " unsubscribed the service " + sp.Name},
         sp, s}
@@ -58,35 +58,35 @@ func NewUnregisteredError(sp ServiceProvider, s Subscriber) UnregisteredError {
 
 type NotificationTooBigError struct {
     remoteServerError
-    Service ServiceProvider
-    Subscriber Subscriber
-    Notification Notification
+    PushServiceProvider
+    DeliveryPoint
+    Notification
 }
 
-func NewNotificationTooBigError(sp ServiceProvider, s Subscriber, n Notification) NotificationTooBigError{
+func NewNotificationTooBigError(sp PushServiceProvider, s DeliveryPoint, n Notification) NotificationTooBigError{
     return NotificationTooBigError{remoteServerError{"Notification Too Big"}, sp, s, n}
 }
 
-type InvalidSubscriberError struct {
+type InvalidDeliveryPointError struct {
     remoteServerError
-    Service ServiceProvider
-    Subscriber Subscriber
+    PushServiceProvider
+    DeliveryPoint
 }
 
-func NewInvalidSubscriberError(sp ServiceProvider, s Subscriber) InvalidSubscriberError {
-    return InvalidSubscriberError{
-        remoteServerError{"Invalid Subscriber - " +
+func NewInvalidDeliveryPointError(sp PushServiceProvider, s DeliveryPoint) InvalidDeliveryPointError {
+    return InvalidDeliveryPointError{
+        remoteServerError{"Invalid DeliveryPoint - " +
             s.Name + " is not a valid subscriber for service " + sp.Name},
             sp, s}
 }
 
-type InvalidServiceProviderError struct {
+type InvalidPushServiceProviderError struct {
     remoteServerError
-    Service ServiceProvider
+    PushServiceProvider
 }
 
-func NewInvalidServiceProviderError(s ServiceProvider) InvalidServiceProviderError {
-    return InvalidServiceProviderError{remoteServerError{"Inalid Service Provider: " + s.Name}, s}
+func NewInvalidPushServiceProviderError(s PushServiceProvider) InvalidPushServiceProviderError {
+    return InvalidPushServiceProviderError{remoteServerError{"Inalid Service Provider: " + s.Name}, s}
 }
 
 type RetryError struct {

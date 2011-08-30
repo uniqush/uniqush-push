@@ -1,6 +1,6 @@
 package uniqush
 
-type Subscriber struct {
+type DeliveryPoint struct {
     OSType
     Name string
     token string
@@ -9,20 +9,20 @@ type Subscriber struct {
     groups []string
 }
 
-type AndroidSubscriber interface {
+type AndroidDeliveryPoint interface {
     GoogleAccount() string
     RegistrationID() string
     Groups() []string
 }
 
-type IOSSubscriber interface {
+type IOSDeliveryPoint interface {
     AppleAccount() string
     DeviceToken() string
     Groups() []string
 }
 
-func NewAndroidSubscriber(name, account, regid string) *Subscriber{
-    s := new(Subscriber)
+func NewAndroidDeliveryPoint(name, account, regid string) *DeliveryPoint{
+    s := new(DeliveryPoint)
     s.data = make(map[int]string, 2)
     s.groups = make([]string, 10)
     s.Name = name
@@ -32,18 +32,18 @@ func NewAndroidSubscriber(name, account, regid string) *Subscriber{
     return s
 }
 
-func (s *Subscriber) Groups() []string {
+func (s *DeliveryPoint) Groups() []string {
     return s.groups
 }
 
-func (s *Subscriber) DeviceToken() string {
+func (s *DeliveryPoint) DeviceToken() string {
     if s.OSID() == OSTYPE_IOS {
         return s.token
     }
     return ""
 }
 
-func (s *Subscriber) AppleAccount() string {
+func (s *DeliveryPoint) AppleAccount() string {
     if s.OSID() == OSTYPE_ANDROID {
         return s.account
     }
@@ -51,14 +51,14 @@ func (s *Subscriber) AppleAccount() string {
 }
 
 
-func (s *Subscriber) GoogleAccount() string {
+func (s *DeliveryPoint) GoogleAccount() string {
     if s.OSID() == OSTYPE_ANDROID {
         return s.account
     }
     return ""
 }
 
-func (s *Subscriber) RegistrationID() string {
+func (s *DeliveryPoint) RegistrationID() string {
     if s.OSID() == OSTYPE_ANDROID {
         return s.token
     }
