@@ -6,19 +6,16 @@ type DeliveryPoint struct {
     token string
     account string
     data map[int]string
-    groups []string
 }
 
 type AndroidDeliveryPoint interface {
     GoogleAccount() string
     RegistrationID() string
-    Groups() []string
 }
 
 type IOSDeliveryPoint interface {
     AppleAccount() string
     DeviceToken() string
-    Groups() []string
 }
 
 func NewAndroidDeliveryPoint(name, account, regid string) *DeliveryPoint{
@@ -30,10 +27,6 @@ func NewAndroidDeliveryPoint(name, account, regid string) *DeliveryPoint{
     s.token = regid
     s.account = account
     return s
-}
-
-func (s *DeliveryPoint) Groups() []string {
-    return s.groups
 }
 
 func (s *DeliveryPoint) DeviceToken() string {

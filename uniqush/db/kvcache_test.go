@@ -4,6 +4,7 @@ import (
     "testing"
     "fmt"
     "os"
+    "rand"
 )
 
 type FakeFlusher struct {
@@ -55,3 +56,18 @@ func TestLRUCache(t *testing.T) {
     fmt.Print("OK\n")
 }
 
+func BenchmarkKeyValueCache(b *testing.B) {
+    strategy := NewLRUPeriodFlushStrategy(200, 100)
+    storage := NewInMemoryKeyValueStorage(200)
+    flusher := &FakeFlusher{}
+
+    cache := NewKeyValueCache(storage, strategy, flusher)
+    for i:= 0; i < 100000; i++ {
+        key_int := rand.Int() % 1000
+        key := fmt.Sprintf("%d", key_int)
+        v, _ := cache.Get(key)
+        if v == nil {
+            cache.Show(key, key)
+        }
+    }
+}

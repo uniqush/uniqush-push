@@ -24,6 +24,15 @@ type KeyValueFlusher interface {
     Flush() os.Error
 }
 
+type KeyValueCacheIf interface {
+    Show(key string, value interface{}) os.Error
+    Get(key string) (interface{}, os.Error)
+    Modify(key string, value interface{}) os.Error
+    Flush() os.Error
+    Keys() ([]string, os.Error)
+    Remove(key string) os.Error
+}
+
 
 // A key-value cache is like a lazy person:
 // You want him to remember something (for example, building his vocabulary)
@@ -105,7 +114,7 @@ const (
 
 func NewKeyValueCache(storage KeyValueStorage,
                       strategy KeyValueCacheStrategy,
-                      flusher KeyValueFlusher) *KeyValueCache {
+                      flusher KeyValueFlusher) KeyValueCacheIf {
     c := new(KeyValueCache)
     c.storage = storage
     c.strategy = strategy
