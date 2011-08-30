@@ -20,6 +20,7 @@ GOFILES=\
 	kvcachestrategy.go\
 	kvstorage.go\
 	config.go\
+	uniqush.db\
 
 include $(GOROOT)/src/Make.pkg
 
