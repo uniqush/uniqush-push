@@ -25,7 +25,7 @@ func (f *FakeFlusher) Flush() os.Error {
 }
 
 func TestLRUCache(t *testing.T) {
-    strategy := NewLRUPeriodFlushStrategy(3, 100)
+    strategy := NewLRUPeriodFlushStrategy(3, 100, 0)
     storage := NewInMemoryKeyValueStorage(10)
     flusher := &FakeFlusher{}
 
@@ -57,7 +57,7 @@ func TestLRUCache(t *testing.T) {
 }
 
 func BenchmarkKeyValueCache(b *testing.B) {
-    strategy := NewLRUPeriodFlushStrategy(200, 100)
+    strategy := NewLRUPeriodFlushStrategy(200, 100, 0)
     storage := NewInMemoryKeyValueStorage(200)
     flusher := &FakeFlusher{}
 

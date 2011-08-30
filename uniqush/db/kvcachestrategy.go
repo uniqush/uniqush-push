@@ -40,17 +40,21 @@ type KeyValueCacheStrategy interface {
 type PeriodFlushStrategy struct {
     last_flush_time int64
     period int64
+    min_dirty int
+    nr_dirty int
 }
 
 func (s *PeriodFlushStrategy) ShouldFlush() bool {
     current_time := time.Seconds()
-    if current_time - s.last_flush_time >= s.period {
+    if current_time - s.last_flush_time >= s.period && s.nr_dirty >= s.min_dirty {
         return true
     }
     return false
 }
 
 func (s *PeriodFlushStrategy) Dirty(key string) {
+    // FIXME Yes, it is not the true number of dirty items
+    s.nr_dirty++
     return
 }
 
@@ -90,10 +94,11 @@ type AlwaysInCachePeriodFlushStrategy struct {
     PeriodFlushStrategy
 }
 
-func NewAlwaysInCachePeriodFlush(period int64) KeyValueCacheStrategy {
+func NewAlwaysInCachePeriodFlushStrategy(period int64, min_dirty int) KeyValueCacheStrategy {
     s := new(AlwaysInCachePeriodFlushStrategy)
     s.last_flush_time = time.Seconds()
     s.period = period
+    s.min_dirty = min_dirty
     var ret KeyValueCacheStrategy
     ret = s
     return ret
@@ -179,11 +184,12 @@ type lruPeriodFlushStrategy struct {
     PeriodFlushStrategy
 }
 
-func NewLRUPeriodFlushStrategy(max int, period int64) KeyValueCacheStrategy {
+func NewLRUPeriodFlushStrategy(max int, period int64, min_dirty int) KeyValueCacheStrategy {
     lru := NewLRUStrategy(max)
     s := new(lruPeriodFlushStrategy)
     s.LRUStrategy = lru
     s.period = period
+    s.min_dirty = min_dirty
 
     var ret KeyValueCacheStrategy
     ret = s

@@ -5,7 +5,7 @@ import (
     "http"
     "strings"
     "io/ioutil"
-    "url"
+//    "url"
 )
 
 /* FIXME
@@ -51,7 +51,7 @@ func (p *C2DMPusher) Push(sp *PushServiceProvider, s *DeliveryPoint, n *Notifica
         return "", &PushErrorIncompatibleOS{p.ServiceType, s.OSType}
     }
     msg := n.toC2DMFormat()
-    data := url.Values{}
+    data := http.Values{}
 
     data.Set("registration_id", s.RegistrationID())
     /* TODO better collapse key */
