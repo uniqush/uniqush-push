@@ -13,7 +13,7 @@ type C2DMServiceProvider interface {
 }
 
 func NewC2DMServiceProvider(name, senderid, auth string) *PushServiceProvider{
-    s := &PushServiceProvider{SERVICE_C2DM, name, senderid, auth, make(map[int]string, 2)}
+    s := &PushServiceProvider{SERVICE_C2DM, name, senderid, auth}
     return s
 }
 
