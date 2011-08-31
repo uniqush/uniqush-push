@@ -16,6 +16,8 @@ type UniqushRedisDB struct {
 const (
     DELIVERY_POINT_PREFIX string = "delivery.point:"
     PUSH_SERVICE_PROVIDER_PREFIX string = "push.service.provider:"
+    SERVICE_SUBSCRIBER_TO_DELIVERY_POINTS_PREFIX string = "sudmap:"
+    SERVICE_DELIVERY_POINT_TO_PUSH_SERVICE_RPVIDER_PREFIX string = "sdpspmap:"
 )
 
 func NewUniqushRedisDB(c *DatabaseConfig) *UniqushRedisDB {
@@ -137,3 +139,48 @@ func (r *UniqushRedisDB) RemovePushServiceProvider(psp *uniqush.PushServiceProvi
     return err
 }
 
+func (r *UniqushRedisDB) GetDeliveryPointsNameByServiceSubscriber (srv, usr string) ([]string, os.Error) {
+    m, err := r.client.Smembers(SERVICE_SUBSCRIBER_TO_DELIVERY_POINTS_PREFIX + srv + ":" + usr)
+    if err != nil {
+        return nil, err
+    }
+    if m == nil {
+        return nil, nil
+    }
+    ret := make([]string, len(m))
+    for i, bm := range m {
+        ret[i] = string(bm)
+    }
+
+    return ret, nil
+}
+
+func (r *UniqushRedisDB) GetPushServiceProviderNameByServiceDeliveryPoint (srv, dp string) (string, os.Error) {
+    b, err := r.client.Get(SERVICE_DELIVERY_POINT_TO_PUSH_SERVICE_RPVIDER_PREFIX + srv + ":"  + dp)
+    if err != nil {
+        return "", err
+    }
+    if b == nil {
+        return "", nil
+    }
+    return string(b), nil
+}
+
+func (r *UniqushRedisDB) AddDeliveryPointToServiceSubscriber (srv, sub, dp string) os.Error {
+    _, err := r.client.Sadd(SERVICE_SUBSCRIBER_TO_DELIVERY_POINTS_PREFIX + srv + ":" + sub, []byte(dp))
+    return err
+}
+
+func (r *UniqushRedisDB) RemoveDeliveryPointFromServiceSubscriber (srv, sub, dp string) os.Error {
+    _, err := r.client.Srem(SERVICE_SUBSCRIBER_TO_DELIVERY_POINTS_PREFIX + srv + ":" + sub, []byte(dp))
+    return err
+}
+
+func (r *UniqushRedisDB) SetPushServiceProviderOfServiceDeliveryPoint (srv, dp, psp string) os.Error {
+    return r.client.Set(SERVICE_DELIVERY_POINT_TO_PUSH_SERVICE_RPVIDER_PREFIX + srv + ":" + dp, []byte(psp))
+}
+
+func (r *UniqushRedisDB) RemovePushServiceProviderOfServiceDeliveryPoint (srv, dp, psp string) os.Error {
+    _, err := r.client.Del(SERVICE_DELIVERY_POINT_TO_PUSH_SERVICE_RPVIDER_PREFIX + srv + ":" + dp)
+    return err
+}

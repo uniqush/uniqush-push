@@ -15,7 +15,7 @@ type UniqushDatabaseWriter interface {
 type UniqushDatabaseReader interface {
     GetDeliveryPoint(name string) (*uniqush.DeliveryPoint, os.Error)
     GetPushServiceProvider(name string) (*uniqush.PushServiceProvider, os.Error)
-    /* TODO Subscriber, Service, etc. */
+//    GetDeliveryPointsNameByServiceSubscriber (srv, usr string) ([]string, os.Error)
 }
 
 type UniqushDatabase interface {
