@@ -155,7 +155,13 @@ func (c *KeyValueCache) flush() os.Error {
         c.dirty_list = make([]kvdata, 0, len(c.dirty_list))
 
         for _, d := range c.rm_list {
-            err := c.flusher.Remove(d.key, d.value)
+            _, err := c.storage.Remove(d.key)
+            if err != nil {
+                return err
+            }
+            c.strategy.Removed(d.key)
+
+            err = c.flusher.Remove(d.key, d.value)
             if err != nil {
                 return err
             }
@@ -260,13 +266,6 @@ func (c *KeyValueCache) Get(key string) (v interface{}, err os.Error) {
 // actual removal in next flush
 func (c *KeyValueCache) Remove(key string, value interface{}) (err os.Error) {
     c.rwlock.Lock()
-
-    _, err = c.storage.Remove(key)
-    if err != nil {
-        return err
-    }
-    c.strategy.Removed(key)
-
     c.rm_list = append(c.rm_list, kvdata{key, value})
     c.strategy.Dirty(key)
     c.rwlock.Unlock()
