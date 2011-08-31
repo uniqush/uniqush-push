@@ -5,7 +5,6 @@ type PushServiceProvider struct {
     Name string
     sender_id string
     auth_token string
-    data map[int]string
 }
 
 type C2DMServiceProvider interface {

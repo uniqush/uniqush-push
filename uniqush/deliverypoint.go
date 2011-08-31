@@ -5,7 +5,6 @@ type DeliveryPoint struct {
     Name string
     token string
     account string
-    data map[int]string
 }
 
 type AndroidDeliveryPoint interface {
@@ -20,7 +19,6 @@ type IOSDeliveryPoint interface {
 
 func NewAndroidDeliveryPoint(name, account, regid string) *DeliveryPoint{
     s := new(DeliveryPoint)
-    s.data = make(map[int]string, 2)
     s.Name = name
     s.OSType = OS_ANDROID
     s.token = regid
