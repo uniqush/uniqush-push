@@ -21,6 +21,7 @@ GOFILES=\
 	kvstorage.go\
 	config.go\
 	uniqushdb.go\
+	uniqushredisdb.go\
 
 include $(GOROOT)/src/Make.pkg
 

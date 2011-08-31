@@ -57,4 +57,15 @@ func (s *DeliveryPoint) RegistrationID() string {
     return ""
 }
 
+func (s *DeliveryPoint) Debug() string {
+    ret := "OS: "
+    ret += s.OSName()
+    ret += "\n"
+
+    ret += "Name: " + s.Name + "\n"
+    ret += "Account: " + s.account+ "\n"
+    ret += "Token: " + s.token+ "\n"
+    return ret
+}
+
 

@@ -27,7 +27,7 @@ func same(a, b []string) bool {
 }
 
 func TestLRUStrategy(t *testing.T) {
-    s := NewLRUPeriodFlushStrategy(3, 100)
+    s := NewLRUPeriodFlushStrategy(3, 100, 0)
     allkeys := make([]string, 0, 10)
     var ob []string
 
