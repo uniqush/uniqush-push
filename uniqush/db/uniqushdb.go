@@ -207,8 +207,8 @@ func (cdb *CachedUniqushDatabase) SetPushServiceProvider(psp *uniqush.PushServic
     return cdb.psp_cache.Modify(psp.Name, psp)
 }
 func (cdb *CachedUniqushDatabase) RemoveDeliveryPoint(dp *uniqush.DeliveryPoint) os.Error {
-    return cdb.dp_cache.Remove(dp.Name)
+    return cdb.dp_cache.Remove(dp.Name, dp)
 }
 func (cdb *CachedUniqushDatabase) RemovePushServiceProvider(psp *uniqush.PushServiceProvider) os.Error {
-    return cdb.psp_cache.Remove(psp.Name)
+    return cdb.psp_cache.Remove(psp.Name, psp)
 }

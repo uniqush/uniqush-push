@@ -30,7 +30,7 @@ type KeyValueCacheIf interface {
     Modify(key string, value interface{}) os.Error
     Flush() os.Error
     Keys() ([]string, os.Error)
-    Remove(key string) os.Error
+    Remove(key string, value interface{}) os.Error
 }
 
 
@@ -258,18 +258,16 @@ func (c *KeyValueCache) Get(key string) (v interface{}, err os.Error) {
 
 // Remove records the key need to be removed. And perform the
 // actual removal in next flush
-// Why not return the value? because the item may not in the cache.
-func (c *KeyValueCache) Remove(key string) (err os.Error) {
+func (c *KeyValueCache) Remove(key string, value interface{}) (err os.Error) {
     c.rwlock.Lock()
 
-    var v interface{}
-    v, err = c.storage.Remove(key)
+    _, err = c.storage.Remove(key)
     if err != nil {
         return err
     }
     c.strategy.Removed(key)
 
-    c.rm_list = append(c.rm_list, kvdata{key, v})
+    c.rm_list = append(c.rm_list, kvdata{key, value})
     c.strategy.Dirty(key)
     c.rwlock.Unlock()
 
