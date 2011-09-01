@@ -15,15 +15,12 @@ type PushServiceProviderDeliveryPointPair struct {
 // You may always want to use a front desk to get data from db
 type DatabaseFrontDeskIf interface {
 
+    // The push service provider may by anonymous whose Name is empty string
     RemovePushServiceProviderFromService(service string, push_service_provider *uniqush.PushServiceProvider) os.Error
+
     // The push service provider may by anonymous whose Name is empty string
     // For anonymous push service provider, it will be added to database
     // and its Name will be set
-    // Yes. We should also add RemovePushServiceProviderFromService.
-    // But our code causes an internal compiler error.
-    // And I cannot reduce my program to reproduce the bug.
-    // The the remove method should be in the TODO list.
-    // But it will be implemented (actually, uncommented) when go compiler support it.
     AddPushServiceProviderToService (service string,
                                      push_service_provider *uniqush.PushServiceProvider) os.Error
 
