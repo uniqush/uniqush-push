@@ -7,23 +7,6 @@ import (
     "rand"
 )
 
-type FakeFlusher struct {
-}
-
-func (f *FakeFlusher) Set(key string, v interface{}) os.Error {
-    fmt.Print("Flush: ", key)
-    return nil
-}
-
-func (f *FakeFlusher) Remove(key string, v interface{}) os.Error {
-    fmt.Print("Remove: ", key)
-    return nil
-}
-
-func (f *FakeFlusher) Flush() os.Error {
-    return nil
-}
-
 func TestLRUCache(t *testing.T) {
     strategy := NewLRUPeriodFlushStrategy(3, 100, 0)
     storage := NewInMemoryKeyValueStorage(10)

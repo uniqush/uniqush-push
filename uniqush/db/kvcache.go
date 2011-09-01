@@ -24,6 +24,24 @@ type KeyValueFlusher interface {
     Flush() os.Error
 }
 
+type FakeFlusher struct {
+}
+
+func (f *FakeFlusher) Set(key string, v interface{}) os.Error {
+//    fmt.Print("Flush: ", key)
+    return nil
+}
+
+func (f *FakeFlusher) Remove(key string, v interface{}) os.Error {
+//    fmt.Print("Remove: ", key)
+    return nil
+}
+
+func (f *FakeFlusher) Flush() os.Error {
+    return nil
+}
+
+
 type KeyValueCacheIf interface {
     Show(key string, value interface{}) os.Error
     Get(key string) (interface{}, os.Error)
