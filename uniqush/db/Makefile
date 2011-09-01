@@ -22,6 +22,7 @@ GOFILES=\
 	config.go\
 	uniqushdb.go\
 	uniqushredisdb.go\
+	dbfrontdesk.go\
 
 include $(GOROOT)/src/Make.pkg
 

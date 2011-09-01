@@ -27,6 +27,8 @@ import (
 // if the user did a wrong operation. For example, add a non-exist 
 // delivery point to Service-Subscriber pair.
 //
+
+// Danger: writing wrong data may leads to inconsistent
 type UniqushDatabaseWriter interface {
     SetDeliveryPoint(dp *uniqush.DeliveryPoint) os.Error
     SetPushServiceProvider(psp *uniqush.PushServiceProvider) os.Error
@@ -42,6 +44,7 @@ type UniqushDatabaseWriter interface {
     RemovePushServiceProviderFromService (srv, psp string) os.Error
 }
 
+// These methods should be fast!
 type UniqushDatabaseReader interface {
     GetDeliveryPoint(name string) (*uniqush.DeliveryPoint, os.Error)
     GetPushServiceProvider(name string) (*uniqush.PushServiceProvider, os.Error)

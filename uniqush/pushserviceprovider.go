@@ -33,3 +33,7 @@ func (sp *PushServiceProvider) AuthToken() string {
     return ""
 }
 
+func (sp *PushServiceProvider) UniqStr() string {
+    return sp.ServiceName() + ":" + sp.sender_id + "#" + sp.auth_token
+}
+

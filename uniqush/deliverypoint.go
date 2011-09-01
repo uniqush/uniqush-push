@@ -66,4 +66,7 @@ func (s *DeliveryPoint) Debug() string {
     return ret
 }
 
+func (s *DeliveryPoint) UniqStr() string {
+    return s.OSName() + ":" + s.account + "#" + s.token
+}
 
