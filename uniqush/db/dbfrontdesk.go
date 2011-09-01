@@ -15,10 +15,7 @@ type PushServiceProviderDeliveryPointPair struct {
 // You may always want to use a front desk to get data from db
 type DatabaseFrontDeskIf interface {
 
-    /*
     RemovePushServiceProviderFromService(service string, push_service_provider *uniqush.PushServiceProvider) os.Error
-    */
-
     // The push service provider may by anonymous whose Name is empty string
     // For anonymous push service provider, it will be added to database
     // and its Name will be set
@@ -60,11 +57,10 @@ func genPushServiceProviderName(srv string, psp *uniqush.PushServiceProvider) {
     psp.Name = fmt.Sprintf("%x", hash.Sum())
 }
 
-type DataBaseFrontDesk struct {
+type DatabaseFrontDesk struct {
     db UniqushDatabase
 }
 
-/* What's the heck... This method causes internal compiler error!
 func (f *DatabaseFrontDesk)RemovePushServiceProviderFromService (service string, push_service_provider *uniqush.PushServiceProvider) os.Error {
     if len(push_service_provider.Name) == 0 {
         genPushServiceProviderName(service, push_service_provider)
@@ -73,9 +69,9 @@ func (f *DatabaseFrontDesk)RemovePushServiceProviderFromService (service string,
     db := f.db
     return db.RemovePushServiceProviderFromService(service, name)
 }
-*/
 
-func (f *DataBaseFrontDesk) AddPushServiceProviderToService (service string,
+
+func (f *DatabaseFrontDesk) AddPushServiceProviderToService (service string,
                                      push_service_provider *uniqush.PushServiceProvider) os.Error {
     if push_service_provider == nil {
         return nil
@@ -90,7 +86,7 @@ func (f *DataBaseFrontDesk) AddPushServiceProviderToService (service string,
     return f.db.AddPushServiceProviderToService(service, push_service_provider.Name)
 }
 
-func (f *DataBaseFrontDesk) AddDeliveryPointToService (service string,
+func (f *DatabaseFrontDesk) AddDeliveryPointToService (service string,
                                                        subscriber string,
                                                        delivery_point *uniqush.DeliveryPoint,
                                                        prefered_service int) (*uniqush.PushServiceProvider, os.Error) {
@@ -158,14 +154,14 @@ func (f *DataBaseFrontDesk) AddDeliveryPointToService (service string,
     return found, nil
 }
 
-func (f *DataBaseFrontDesk) RemoveDeliveryPointFromService (service string,
+func (f *DatabaseFrontDesk) RemoveDeliveryPointFromService (service string,
                                                             subscriber string,
                                                             delivery_point *uniqush.DeliveryPoint) os.Error {
     err := f.db.RemoveDeliveryPointFromServiceSubscriber(service, subscriber, delivery_point.Name)
     return err
 }
 
-func (f *DataBaseFrontDesk) GetPushServiceProviderDeliveryPointPairs (service string,
+func (f *DatabaseFrontDesk) GetPushServiceProviderDeliveryPointPairs (service string,
                                               subscriber string) ([]PushServiceProviderDeliveryPointPair, os.Error) {
     dpnames, err := f.db.GetDeliveryPointsNameByServiceSubscriber(service, subscriber)
     if err != nil {
