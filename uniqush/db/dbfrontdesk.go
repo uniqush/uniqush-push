@@ -49,7 +49,7 @@ func genDeliveryPointName(sub string, dp *uniqush.DeliveryPoint) {
 
 func genPushServiceProviderName(srv string, psp *uniqush.PushServiceProvider) {
     hash := sha1.New()
-    key := "delivery.point:" + srv + ":" + psp.UniqStr()
+    key := "push.service.provider:" + srv + ":" + psp.UniqStr()
     hash.Write([]byte(key))
     psp.Name = fmt.Sprintf("%x", hash.Sum())
 }
@@ -117,11 +117,11 @@ func (f *DatabaseFrontDesk) AddDeliveryPointToService (service string,
             continue
         }
         if first_fit == nil && psp.IsCompatible(&delivery_point.OSType) {
-            first_fit = psp
             if prefered_service < 0 {
                 found = psp
                 break
             }
+            first_fit = psp
         }
         if prefered_service > 0 {
             if psp.ServiceID() == prefered_service {
