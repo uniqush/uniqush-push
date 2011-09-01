@@ -64,7 +64,7 @@ type DataBaseFrontDesk struct {
     db UniqushDatabase
 }
 
-/*
+/* What's the heck... This method causes internal compiler error!
 func (f *DatabaseFrontDesk)RemovePushServiceProviderFromService (service string, push_service_provider *uniqush.PushServiceProvider) os.Error {
     if len(push_service_provider.Name) == 0 {
         genPushServiceProviderName(service, push_service_provider)
