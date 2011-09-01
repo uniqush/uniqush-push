@@ -230,3 +230,7 @@ func (r *UniqushRedisDB) AddPushServiceProviderToService (srv, psp string) os.Er
     _, err := r.client.Sadd(SERVICE_TO_PUSH_SERVICE_PROVIDERS_PREFIX + srv, []byte(psp))
     return err
 }
+
+func (r *UniqushRedisDB) FlushCache() os.Error {
+    return r.client.Save()
+}

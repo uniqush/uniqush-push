@@ -193,7 +193,35 @@ func (c *KeyValueCache) flush() os.Error {
 }
 
 func (c *KeyValueCache) Flush() os.Error {
-    return c.flush()
+    c.rwlock.Lock()
+    defer c.rwlock.Unlock()
+
+    for _, d := range c.dirty_list {
+        err := c.flusher.Set(d.key, d.value)
+        if err != nil {
+            return err
+        }
+    }
+
+    c.dirty_list = make([]kvdata, 0, len(c.dirty_list))
+
+    for _, d := range c.rm_list {
+        _, err := c.storage.Remove(d.key)
+        if err != nil {
+            return err
+        }
+        c.strategy.Removed(d.key)
+
+        err = c.flusher.Remove(d.key, d.value)
+        if err != nil {
+            return err
+        }
+    }
+
+    c.rm_list = make([]kvdata, 0, len(c.rm_list))
+    c.flusher.Flush()
+    c.strategy.Flushed()
+    return nil
 }
 
 // The caller could Show a key value pair to a cache,

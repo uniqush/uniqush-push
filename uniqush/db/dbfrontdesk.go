@@ -72,6 +72,10 @@ func NewDatabaseFrontDesk(conf *DatabaseConfig) DatabaseFrontDeskIf{
 }
 
 func NewDatabaseFrontDeskWithoutCache(conf *DatabaseConfig) DatabaseFrontDeskIf{
+    if conf == nil {
+        return nil
+    }
+    f := new(DatabaseFrontDesk)
     f.db = NewUniqushRedisDB(conf)
     if f.db == nil {
         return nil

@@ -42,6 +42,8 @@ type UniqushDatabaseWriter interface {
 
     AddPushServiceProviderToService (srv, psp string) os.Error
     RemovePushServiceProviderFromService (srv, psp string) os.Error
+
+    FlushCache() os.Error
 }
 
 // These methods should be fast!
@@ -203,6 +205,26 @@ type CachedUniqushDatabase struct {
 
     dbreader UniqushDatabaseReader
     dbwriter UniqushDatabaseWriter
+}
+
+func (c *CachedUniqushDatabase) FlushCache() os.Error {
+    err := c.psp_cache.Flush()
+    if err != nil {
+        return err
+    }
+    err = c.dp_cache.Flush()
+    if err != nil {
+        return err
+    }
+    err = c.srvsub_to_dps.Flush()
+    if err != nil {
+        return err
+    }
+    err = c.srvdp_to_psp.Flush()
+    if err != nil {
+        return err
+    }
+    return nil
 }
 
 func NewCachedUniqushDatabase(dbreader UniqushDatabaseReader,
