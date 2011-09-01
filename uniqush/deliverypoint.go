@@ -1,5 +1,10 @@
 package uniqush
 
+import (
+    "fmt"
+    "strings"
+)
+
 type DeliveryPoint struct {
     OSType
     Name string
@@ -70,3 +75,24 @@ func (s *DeliveryPoint) UniqStr() string {
     return s.OSName() + ":" + s.account + "#" + s.token
 }
 
+func (dp *DeliveryPoint) Marshal() []byte {
+    str := fmt.Sprintf("%d.%s:%s", dp.OSID(), dp.account, dp.token)
+    return []byte(str)
+}
+
+func (dp *DeliveryPoint) Unmarshal(name string, value []byte) *DeliveryPoint {
+    v := string(value)
+    var substr string
+    var ostype int
+    fmt.Sscanf(v, "%d.%s", &ostype, &substr)
+    dp.OSType.id = ostype
+
+    fields := strings.Split(substr, ":")
+    if len(fields) < 2 {
+        return nil
+    }
+    dp.Name = name
+    dp.account = fields[0]
+    dp.token = fields[1]
+    return dp
+}

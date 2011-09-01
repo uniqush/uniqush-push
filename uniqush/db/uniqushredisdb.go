@@ -54,6 +54,9 @@ func NewUniqushRedisDB(c *DatabaseConfig) *UniqushRedisDB {
 }
 
 func keyValueToDeliveryPoint(name string, value []byte) *uniqush.DeliveryPoint {
+    dp := new(uniqush.DeliveryPoint)
+    return dp.Unmarshal(name, value)
+    /*
     v := string(value)
     var substr string
     var ostype int
@@ -67,9 +70,13 @@ func keyValueToDeliveryPoint(name string, value []byte) *uniqush.DeliveryPoint {
         return uniqush.NewAndroidDeliveryPoint(name, fields[0], fields[1])
     }
     return nil
+    */
 }
 
 func keyValueToPushServiceProvider(name string, value []byte) *uniqush.PushServiceProvider {
+    psp := new(uniqush.PushServiceProvider)
+    return psp.Unmarshal(name, value)
+    /*
     v := string(value)
     var substr string
     var srvtype int
@@ -83,24 +90,31 @@ func keyValueToPushServiceProvider(name string, value []byte) *uniqush.PushServi
         return uniqush.NewC2DMServiceProvider(name, fields[0], fields[1])
     }
     return nil
+    */
 }
 
 func deliveryPointToValue(dp *uniqush.DeliveryPoint) []byte {
+    return dp.Marshal()
+    /*
     switch (dp.OSID()) {
     case uniqush.OSTYPE_ANDROID:
         str := fmt.Sprintf("%d.%s:%s", dp.OSID(), dp.GoogleAccount(), dp.RegistrationID())
         return []byte(str)
     }
     return nil
+    */
 }
 
 func pushServiceProviderToValue(psp *uniqush.PushServiceProvider) []byte {
+    /*
     switch (psp.ServiceID()) {
     case uniqush.SRVTYPE_C2DM:
         str := fmt.Sprintf("%d.%s:%s", psp.ServiceID(), psp.SenderID(), psp.AuthToken())
         return []byte(str)
     }
     return nil
+    */
+    return psp.Marshal()
 }
 
 func (r *UniqushRedisDB) GetDeliveryPoint(name string) (*uniqush.DeliveryPoint, os.Error) {
