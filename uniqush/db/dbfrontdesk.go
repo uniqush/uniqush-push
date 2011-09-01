@@ -38,6 +38,7 @@ type DatabaseFrontDeskIf interface {
     GetPushServiceProviderDeliveryPointPairs (service string,
                                               subscriber string)([]PushServiceProviderDeliveryPointPair, os.Error)
 
+    FlushCache() os.Error
 }
 
 func genDeliveryPointName(sub string, dp *uniqush.DeliveryPoint) {
@@ -81,6 +82,10 @@ func NewDatabaseFrontDeskWithoutCache(conf *DatabaseConfig) DatabaseFrontDeskIf{
         return nil
     }
     return f
+}
+
+func (f *DatabaseFrontDesk)FlushCache() os.Error {
+    return f.db.FlushCache()
 }
 
 func (f *DatabaseFrontDesk)RemovePushServiceProviderFromService (service string, push_service_provider *uniqush.PushServiceProvider) os.Error {

@@ -224,7 +224,7 @@ func (c *CachedUniqushDatabase) FlushCache() os.Error {
     if err != nil {
         return err
     }
-    return nil
+    return c.dbwriter.FlushCache()
 }
 
 func NewCachedUniqushDatabase(dbreader UniqushDatabaseReader,
