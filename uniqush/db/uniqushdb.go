@@ -5,6 +5,28 @@ import (
     "os"
 )
 
+// In general, an uniqush database stores the relationships between
+// Service, Subscriber, Push Service Provider and Delivery Point
+//
+// In an uniqush database, there are one or more Services.
+//
+// Each Service has a set of Subscriber.
+//
+// Each Service has a set of Push Service Provider.
+//
+// Each Service-Subscriber pair, has a set of Delivery Points. When
+// uniqush want to push some message to some Subscriber under certain
+// Service, it will deliver the message to all Delivery Points under
+// the associated Service-Subscriber pair
+//
+// Each Service-Delivery-Points pair, has one Push Service Provider.
+// When we need to deliver some message to a certain delivery point,
+// we will use its associated Push Service Provider to send.
+//
+// For performance consideration, the database may become inconsistent
+// if the user did a wrong operation. For example, add a non-exist 
+// delivery point to Service-Subscriber pair.
+//
 type UniqushDatabaseWriter interface {
     SetDeliveryPoint(dp *uniqush.DeliveryPoint) os.Error
     SetPushServiceProvider(psp *uniqush.PushServiceProvider) os.Error
@@ -15,6 +37,9 @@ type UniqushDatabaseWriter interface {
     RemoveDeliveryPointFromServiceSubscriber (srv, sub, dp string) os.Error
     SetPushServiceProviderOfServiceDeliveryPoint (srv, dp, psp string) os.Error
     RemovePushServiceProviderOfServiceDeliveryPoint(srv, dp, psp string) os.Error
+
+    AddPushServiceProviderToService (srv, psp string) os.Error
+    RemovePushServiceProviderFromService (srv, psp string) os.Error
 }
 
 type UniqushDatabaseReader interface {
@@ -23,6 +48,8 @@ type UniqushDatabaseReader interface {
 
     GetDeliveryPointsNameByServiceSubscriber (srv, sub string) ([]string, os.Error)
     GetPushServiceProviderNameByServiceDeliveryPoint (srv, dp string) (string, os.Error)
+
+    GetPushServiceProvidersByService (srv string) ([]string, os.Error)
 }
 
 type UniqushDatabase interface {
@@ -169,6 +196,8 @@ type CachedUniqushDatabase struct {
     srvsub_to_dps KeyValueCacheIf
     srvdp_to_psp KeyValueCacheIf
 
+    srv_to_psps KeyValueStorage
+
     dbreader UniqushDatabaseReader
     dbwriter UniqushDatabaseWriter
 }
@@ -189,7 +218,7 @@ func NewCachedUniqushDatabase(dbreader UniqushDatabaseReader,
 
     // Push Service Providers are always in cache
     alwaysin := NewAlwaysInCachePeriodFlushStrategy(flush_period, min_dirty)
-    storage = NewInMemoryKeyValueStorage(max + 10)
+    storage = NewInMemoryKeyValueStorage(-1)
     cdb.psp_cache = NewKeyValueCache(storage, alwaysin, getPushServiceProviderFlusher(dbwriter))
 
     // Service-Subscriber to Delivery Points map uses an LRU cache
@@ -202,6 +231,9 @@ func NewCachedUniqushDatabase(dbreader UniqushDatabaseReader,
     lru = NewLRUPeriodFlushStrategy(max, flush_period, min_dirty)
     storage = NewInMemoryKeyValueStorage(max + 10)
     cdb.srvdp_to_psp = NewKeyValueCache(storage, lru, getSrvdpToPspFlusher(dbwriter))
+
+    // Service to Push Service Provider map always in memory
+    cdb.srv_to_psps = NewInMemoryKeyValueStorage(-1)
 
     return cdb
 }
@@ -352,3 +384,53 @@ func (cdb *CachedUniqushDatabase) RemovePushServiceProviderOfServiceDeliveryPoin
     d := &srvdppsp{srv, dp, psp}
     return cdb.srvdp_to_psp.Remove(srv + ":" + dp , d)
 }
+
+func (cdb *CachedUniqushDatabase) GetPushServiceProvidersByService(srv string) ([]string, os.Error) {
+    i, err := cdb.srv_to_psps.Get(srv)
+    if err != nil {
+        return nil, err
+    }
+    if i == nil {
+        psp, e := cdb.dbreader.GetPushServiceProvidersByService(srv)
+        cdb.srv_to_psps.Set(srv, psp)
+        return psp, e
+    }
+    psp := i.([]string)
+    return psp, nil
+}
+
+// NOTICE: this is a SLOW operation. Because it will be unlikely to execute
+func (cdb *CachedUniqushDatabase) AddPushServiceProviderToService(srv, psp string) os.Error {
+    err := cdb.dbwriter.AddPushServiceProviderToService(srv, psp)
+    if err != nil {
+        return err
+    }
+    allpsp, e := cdb.dbreader.GetPushServiceProvidersByService(srv)
+    if e != nil {
+        return err
+    }
+    _, e = cdb.srv_to_psps.Set(srv, allpsp)
+    if e != nil {
+        return err
+    }
+    return nil
+}
+
+// NOTICE: this is a SLOW operation. Because it will be unlikely to execute
+func (cdb *CachedUniqushDatabase) RemovePushServiceProviderFromService(srv, psp string) os.Error {
+    err := cdb.dbwriter.RemovePushServiceProviderFromService(srv, psp)
+    if err != nil {
+        return err
+    }
+    allpsp, e := cdb.dbreader.GetPushServiceProvidersByService(srv)
+    if e != nil {
+        return err
+    }
+    if allpsp == nil {
+        _, e = cdb.srv_to_psps.Remove(srv)
+        return e
+    }
+    _, e = cdb.srv_to_psps.Set(srv, allpsp)
+    return e
+}
+

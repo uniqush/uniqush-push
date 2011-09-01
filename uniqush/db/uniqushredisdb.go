@@ -18,6 +18,7 @@ const (
     PUSH_SERVICE_PROVIDER_PREFIX string = "push.service.provider:"
     SERVICE_SUBSCRIBER_TO_DELIVERY_POINTS_PREFIX string = "sudmap:"
     SERVICE_DELIVERY_POINT_TO_PUSH_SERVICE_RPVIDER_PREFIX string = "sdpspmap:"
+    SERVICE_TO_PUSH_SERVICE_PROVIDERS_PREFIX string = "pspsmap:"
 )
 
 func NewUniqushRedisDB(c *DatabaseConfig) *UniqushRedisDB {
@@ -182,5 +183,31 @@ func (r *UniqushRedisDB) SetPushServiceProviderOfServiceDeliveryPoint (srv, dp, 
 
 func (r *UniqushRedisDB) RemovePushServiceProviderOfServiceDeliveryPoint (srv, dp, psp string) os.Error {
     _, err := r.client.Del(SERVICE_DELIVERY_POINT_TO_PUSH_SERVICE_RPVIDER_PREFIX + srv + ":" + dp)
+    return err
+}
+
+func (r *UniqushRedisDB) GetPushServiceProvidersByService (srv string) ([]string, os.Error) {
+    m, err := r.client.Smembers(SERVICE_TO_PUSH_SERVICE_PROVIDERS_PREFIX + srv)
+    if err != nil {
+        return nil, err
+    }
+    if m == nil {
+        return nil, nil
+    }
+    ret := make([]string, len(m))
+    for i, bm := range m {
+        ret[i] = string(bm)
+    }
+
+    return ret, nil
+}
+
+func (r *UniqushRedisDB) RemovePushServiceProviderFromService (srv, psp string) os.Error {
+    _, err := r.client.Srem(SERVICE_TO_PUSH_SERVICE_PROVIDERS_PREFIX + srv, []byte(psp))
+    return err
+}
+
+func (r *UniqushRedisDB) AddPushServiceProviderToService (srv, psp string) os.Error {
+    _, err := r.client.Sadd(SERVICE_TO_PUSH_SERVICE_PROVIDERS_PREFIX + srv, []byte(psp))
     return err
 }
