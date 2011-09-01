@@ -23,6 +23,9 @@ const (
 )
 
 func NewUniqushRedisDB(c *DatabaseConfig) *UniqushRedisDB {
+    if c == nil {
+        return nil
+    }
     if strings.ToLower(c.Engine) != "redis" {
         return nil
     }

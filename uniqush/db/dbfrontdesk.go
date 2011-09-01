@@ -58,6 +58,27 @@ type DatabaseFrontDesk struct {
     db UniqushDatabase
 }
 
+func NewDatabaseFrontDesk(conf *DatabaseConfig) DatabaseFrontDeskIf{
+    udb := NewUniqushRedisDB(conf)
+    if udb == nil {
+        return nil
+    }
+    f := new(DatabaseFrontDesk)
+    f.db = NewCachedUniqushDatabase(udb, udb, conf)
+    if f.db == nil {
+        return nil
+    }
+    return f
+}
+
+func NewDatabaseFrontDeskWithoutCache(conf *DatabaseConfig) DatabaseFrontDeskIf{
+    f.db = NewUniqushRedisDB(conf)
+    if f.db == nil {
+        return nil
+    }
+    return f
+}
+
 func (f *DatabaseFrontDesk)RemovePushServiceProviderFromService (service string, push_service_provider *uniqush.PushServiceProvider) os.Error {
     if len(push_service_provider.Name) == 0 {
         genPushServiceProviderName(service, push_service_provider)
