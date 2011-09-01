@@ -207,13 +207,27 @@ type CachedUniqushDatabase struct {
 
 func NewCachedUniqushDatabase(dbreader UniqushDatabaseReader,
                               dbwriter UniqushDatabaseWriter,
-                              max int,
-                              flush_period int64,
-                              min_dirty int) UniqushDatabase {
+                              dbconfig *DatabaseConfig) UniqushDatabase {
     cdb := new(CachedUniqushDatabase)
     cdb.dbreader = dbreader
     cdb.dbwriter = dbwriter
 
+    var max int
+    var flush_period int64
+    var min_dirty int
+
+    if dbconfig == nil {
+        max = 100
+        flush_period = 600
+        min_dirty = 10
+    } else {
+        max = dbconfig.CacheSize
+        if max <= 0 {
+            max = 100
+        }
+        flush_period = dbconfig.EverySec
+        min_dirty = dbconfig.LeastDirty
+    }
     // Delivery Points stored in an LRU cache
     lru := NewLRUPeriodFlushStrategy(max, flush_period, min_dirty)
     storage := NewInMemoryKeyValueStorage(max + 10)

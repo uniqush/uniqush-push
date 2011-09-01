@@ -15,6 +15,13 @@ type DatabaseConfig struct {
     Password string
     Host string
     Port int
+    CacheSize int
+
+    /* dump the dirty data to db every EverySec seconds,
+     * if there are more than LeastDirty dirty items
+     */
+    EverySec int64
+    LeastDirty int
 }
 
 const (
