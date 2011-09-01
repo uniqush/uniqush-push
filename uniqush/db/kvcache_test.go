@@ -3,7 +3,6 @@ package db
 import (
     "testing"
     "fmt"
-    "os"
     "rand"
 )
 
