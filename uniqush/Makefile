@@ -28,5 +28,6 @@ GOFILES=\
 	frontend.go\
 	webfrontend.go\
 	backend.go\
+	eventwriter.go\
 
 include $(GOROOT)/src/Make.pkg

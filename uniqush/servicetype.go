@@ -1,5 +1,9 @@
 package uniqush
 
+import (
+    "strings"
+)
+
 const (
     SRVTYPE_UNKNOW = iota
     /* For android */
@@ -27,6 +31,20 @@ var (
 func init() {
     SERVICE_C2DM = ServiceType{SRVTYPE_C2DM}
     SERVICE_APNS = ServiceType{SRVTYPE_APNS}
+}
+
+func ServiceNameToID(name string) int {
+    switch(strings.ToLower(name)) {
+    case "c2dm":
+        return SRVTYPE_C2DM
+    case "apns":
+        return SRVTYPE_APNS
+    case "mpns":
+        return SRVTYPE_MPNS
+    case "bbps":
+        return SRVTYPE_BBPS
+    }
+    return SRVTYPE_UNKNOW
 }
 
 func (s *ServiceType) ServiceName() string {
