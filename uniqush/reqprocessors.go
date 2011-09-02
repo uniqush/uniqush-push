@@ -58,6 +58,15 @@ type AddPushServiceProviderProcessor struct {
     databaseSetter
 }
 
+func NewAddPushServiceProviderProcessor(logger *log.Logger, writer *EventWriter, dbfront DatabaseFrontDeskIf) RequestProcessor{
+    ret := new(AddPushServiceProviderProcessor)
+    ret.SetLogger(logger)
+    ret.SetEventWriter(writer)
+    ret.SetDatabase(dbfront)
+
+    return ret
+}
+
 func (p *AddPushServiceProviderProcessor) Process(req *Request) {
     err := p.dbfront.AddPushServiceProviderToService(req.Service, req.PushServiceProvider)
     if err != nil {
