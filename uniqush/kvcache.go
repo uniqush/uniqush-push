@@ -1,4 +1,4 @@
-package db
+package uniqush
 
 // This file defined interfaces for key-value caches
 // and some simple implementations

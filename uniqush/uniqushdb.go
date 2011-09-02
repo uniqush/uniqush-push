@@ -1,7 +1,6 @@
-package db
+package uniqush
 
 import (
-    "uniqush"
     "os"
 )
 
@@ -30,10 +29,10 @@ import (
 
 // Danger: writing wrong data may leads to inconsistent
 type UniqushDatabaseWriter interface {
-    SetDeliveryPoint(dp *uniqush.DeliveryPoint) os.Error
-    SetPushServiceProvider(psp *uniqush.PushServiceProvider) os.Error
-    RemoveDeliveryPoint(dp *uniqush.DeliveryPoint) os.Error
-    RemovePushServiceProvider(psp *uniqush.PushServiceProvider) os.Error
+    SetDeliveryPoint(dp *DeliveryPoint) os.Error
+    SetPushServiceProvider(psp *PushServiceProvider) os.Error
+    RemoveDeliveryPoint(dp *DeliveryPoint) os.Error
+    RemovePushServiceProvider(psp *PushServiceProvider) os.Error
 
     AddDeliveryPointToServiceSubscriber(srv, sub, dp string) os.Error
     RemoveDeliveryPointFromServiceSubscriber (srv, sub, dp string) os.Error
@@ -48,8 +47,8 @@ type UniqushDatabaseWriter interface {
 
 // These methods should be fast!
 type UniqushDatabaseReader interface {
-    GetDeliveryPoint(name string) (*uniqush.DeliveryPoint, os.Error)
-    GetPushServiceProvider(name string) (*uniqush.PushServiceProvider, os.Error)
+    GetDeliveryPoint(name string) (*DeliveryPoint, os.Error)
+    GetPushServiceProvider(name string) (*PushServiceProvider, os.Error)
 
     GetDeliveryPointsNameByServiceSubscriber (srv, sub string) ([]string, os.Error)
     GetPushServiceProviderNameByServiceDeliveryPoint (srv, dp string) (string, os.Error)
@@ -114,11 +113,11 @@ func NewDeliveryPointFlusher(dbwriter UniqushDatabaseWriter) KeyValueFlusher {
 }
 
 func (f *DeliveryPointFlusher) Set(key string, value interface{}) os.Error {
-    return f.dbwriter.SetDeliveryPoint(value.(*uniqush.DeliveryPoint))
+    return f.dbwriter.SetDeliveryPoint(value.(*DeliveryPoint))
 }
 
 func (f *DeliveryPointFlusher) Remove(key string, value interface{}) os.Error {
-    return f.dbwriter.RemoveDeliveryPoint(value.(*uniqush.DeliveryPoint))
+    return f.dbwriter.RemoveDeliveryPoint(value.(*DeliveryPoint))
 }
 
 func (f *DeliveryPointFlusher) Flush() os.Error {
@@ -136,11 +135,11 @@ func NewPushServiceProviderFlusher(dbwriter UniqushDatabaseWriter) KeyValueFlush
 }
 
 func (f *PushServiceProviderFlusher) Set(key string, value interface{}) os.Error {
-    return f.dbwriter.SetPushServiceProvider(value.(*uniqush.PushServiceProvider))
+    return f.dbwriter.SetPushServiceProvider(value.(*PushServiceProvider))
 }
 
 func (f *PushServiceProviderFlusher) Remove(key string, value interface{}) os.Error {
-    return f.dbwriter.RemovePushServiceProvider(value.(*uniqush.PushServiceProvider))
+    return f.dbwriter.RemovePushServiceProvider(value.(*PushServiceProvider))
 }
 
 func (f *PushServiceProviderFlusher) Flush() os.Error {
@@ -277,7 +276,7 @@ func NewCachedUniqushDatabase(dbreader UniqushDatabaseReader,
     return cdb
 }
 
-func (cdb *CachedUniqushDatabase) GetDeliveryPoint(name string) (dp *uniqush.DeliveryPoint, err os.Error) {
+func (cdb *CachedUniqushDatabase) GetDeliveryPoint(name string) (dp *DeliveryPoint, err os.Error) {
     dpif, e := cdb.dp_cache.Get(name)
     if e != nil {
         dp = nil
@@ -297,12 +296,12 @@ func (cdb *CachedUniqushDatabase) GetDeliveryPoint(name string) (dp *uniqush.Del
         }
         cdb.dp_cache.Show(name, dpif)
     }
-    dp = dpif.(*uniqush.DeliveryPoint)
+    dp = dpif.(*DeliveryPoint)
 
     return
 }
 
-func (cdb *CachedUniqushDatabase) GetPushServiceProvider(name string) (psp *uniqush.PushServiceProvider, err os.Error) {
+func (cdb *CachedUniqushDatabase) GetPushServiceProvider(name string) (psp *PushServiceProvider, err os.Error) {
     pspif, e := cdb.psp_cache.Get(name)
     if e != nil {
         psp = nil
@@ -322,7 +321,7 @@ func (cdb *CachedUniqushDatabase) GetPushServiceProvider(name string) (psp *uniq
         }
         cdb.psp_cache.Show(name, pspif)
     }
-    psp = pspif.(*uniqush.PushServiceProvider)
+    psp = pspif.(*PushServiceProvider)
 
     return
 }
@@ -403,20 +402,20 @@ func (cdb *CachedUniqushDatabase) RemoveDeliveryPointFromServiceSubscriber (srv,
     return cdb.dbwriter.RemoveDeliveryPointFromServiceSubscriber(srv, sub, dp)
 }
 
-func (cdb *CachedUniqushDatabase) SetDeliveryPoint(dp *uniqush.DeliveryPoint) os.Error {
+func (cdb *CachedUniqushDatabase) SetDeliveryPoint(dp *DeliveryPoint) os.Error {
     return cdb.dp_cache.Modify(dp.Name, dp)
 }
-func (cdb *CachedUniqushDatabase) SetPushServiceProvider(psp *uniqush.PushServiceProvider) os.Error {
+func (cdb *CachedUniqushDatabase) SetPushServiceProvider(psp *PushServiceProvider) os.Error {
     return cdb.psp_cache.Modify(psp.Name, psp)
 }
 func (cdb *CachedUniqushDatabase) SetPushServiceProviderOfServiceDeliveryPoint (srv, dp, psp string) os.Error {
     d := &srvdppsp{srv, dp, psp}
     return cdb.srvdp_to_psp.Modify(srv + ":" + dp, d)
 }
-func (cdb *CachedUniqushDatabase) RemoveDeliveryPoint(dp *uniqush.DeliveryPoint) os.Error {
+func (cdb *CachedUniqushDatabase) RemoveDeliveryPoint(dp *DeliveryPoint) os.Error {
     return cdb.dp_cache.Remove(dp.Name, dp)
 }
-func (cdb *CachedUniqushDatabase) RemovePushServiceProvider(psp *uniqush.PushServiceProvider) os.Error {
+func (cdb *CachedUniqushDatabase) RemovePushServiceProvider(psp *PushServiceProvider) os.Error {
     return cdb.psp_cache.Remove(psp.Name, psp)
 }
 func (cdb *CachedUniqushDatabase) RemovePushServiceProviderOfServiceDeliveryPoint(srv, dp, psp string) os.Error {

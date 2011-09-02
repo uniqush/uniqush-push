@@ -97,9 +97,9 @@ func (f *WebFrontEnd) addPushServiceProvider(form http.Values, id string) {
         return
     }
 
+    f.writer.NewRequestReceived(a)
     f.ch <- a
     f.logger.Printf("[AddPushServiceRequest] Requestid=%s Service=%s", id, pspname)
-    f.writer.NewRequestReceived(a)
 }
 
 const (
@@ -112,6 +112,7 @@ func addPushServiceProvider(w http.ResponseWriter, r *http.Request) {
     r.FormValue("servicename")
     form := r.Form
     fmt.Fprintf(w, "id=%s\r\n", id)
+
     go webfrontend.addPushServiceProvider(form, id)
 }
 

@@ -4,12 +4,6 @@ import (
     "log"
 )
 
-type RequestProcessor interface {
-    SetLogger(logger *log.Logger)
-    SetEventWriter(writer *EventWriter)
-    Process(req *Request)
-}
-
 type UniqushBackEndIf interface {
     SetChannel(ch chan *Request)
     SetLogger(logger *log.Logger)
@@ -65,24 +59,3 @@ func (b *UniqushBackEnd) Run() {
     }
 }
 
-type ActionPrinter struct {
-    logger *log.Logger
-}
-
-func NewActionPrinter(logger *log.Logger) RequestProcessor {
-    a := new(ActionPrinter)
-    a.logger = logger
-    return a
-}
-
-func (p *ActionPrinter) SetLogger(logger *log.Logger) {
-    p.logger = logger
-}
-
-func (p *ActionPrinter) Process(r *Request) {
-    p.logger.Printf("Action: %d, id: %s\n", r.Action, r.ID)
-}
-
-func (p *ActionPrinter) SetEventWriter(writer *EventWriter) {
-    return
-}

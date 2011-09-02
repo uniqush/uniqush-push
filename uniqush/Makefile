@@ -29,5 +29,14 @@ GOFILES=\
 	webfrontend.go\
 	backend.go\
 	eventwriter.go\
+	reqprocessors.go\
+	kvcache.go\
+	kvcachestrategy.go\
+	kvstorage.go\
+	dbconfig.go\
+	uniqushdb.go\
+	uniqushredisdb.go\
+	dbfrontdesk.go\
+
 
 include $(GOROOT)/src/Make.pkg

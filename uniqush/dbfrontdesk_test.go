@@ -1,8 +1,7 @@
-package db
+package uniqush
 
 import (
     "testing"
-    "uniqush"
     "fmt"
 )
 
@@ -13,8 +12,8 @@ const (
 
 func TestDatabaseFrontDesk(t *testing.T) {
     fmt.Print("Wrinting test subscribers ...\t\n")
-    sp := uniqush.NewC2DMServiceProvider("", "monnand@gmail.com", auth)
-    s := uniqush.NewAndroidDeliveryPoint("", "nan.deng.osu@gmail.com", registration_id)
+    sp := NewC2DMServiceProvider("", "monnand@gmail.com", auth)
+    s := NewAndroidDeliveryPoint("", "nan.deng.osu@gmail.com", registration_id)
     service := "MyTestService"
     subscriber := "Monnand"
 

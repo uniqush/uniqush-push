@@ -1,39 +1,38 @@
-package db
+package uniqush
 
 import (
-    "uniqush"
     "os"
     "crypto/sha1"
     "fmt"
 )
 
 type PushServiceProviderDeliveryPointPair struct {
-    PushServiceProvider *uniqush.PushServiceProvider
-    DeliveryPoint *uniqush.DeliveryPoint
+    PushServiceProvider *PushServiceProvider
+    DeliveryPoint *DeliveryPoint
 }
 
 // You may always want to use a front desk to get data from db
 type DatabaseFrontDeskIf interface {
 
     // The push service provider may by anonymous whose Name is empty string
-    RemovePushServiceProviderFromService(service string, push_service_provider *uniqush.PushServiceProvider) os.Error
+    RemovePushServiceProviderFromService(service string, push_service_provider *PushServiceProvider) os.Error
 
     // The push service provider may by anonymous whose Name is empty string
     // For anonymous push service provider, it will be added to database
     // and its Name will be set
     AddPushServiceProviderToService (service string,
-                                     push_service_provider *uniqush.PushServiceProvider) os.Error
+                                     push_service_provider *PushServiceProvider) os.Error
 
     // The delivery point may be anonymous whose Name is empty string
     // For anonymous delivery point, it will be added to database and its Name will be set
     // Return value: selected push service provider, error
     AddDeliveryPointToService (service string,
                             subscriber string,
-                            delivery_point *uniqush.DeliveryPoint,
-                            prefered_service int) (*uniqush.PushServiceProvider, os.Error)
+                            delivery_point *DeliveryPoint,
+                            prefered_service int) (*PushServiceProvider, os.Error)
     RemoveDeliveryPointFromService (service string,
                                     subscriber string,
-                                    delivery_point *uniqush.DeliveryPoint) os.Error
+                                    delivery_point *DeliveryPoint) os.Error
 
     GetPushServiceProviderDeliveryPointPairs (service string,
                                               subscriber string)([]PushServiceProviderDeliveryPointPair, os.Error)
@@ -41,14 +40,14 @@ type DatabaseFrontDeskIf interface {
     FlushCache() os.Error
 }
 
-func genDeliveryPointName(sub string, dp *uniqush.DeliveryPoint) {
+func genDeliveryPointName(sub string, dp *DeliveryPoint) {
     hash := sha1.New()
     key := "delivery.point:" + sub + ":" + dp.UniqStr()
     hash.Write([]byte(key))
     dp.Name = fmt.Sprintf("%x", hash.Sum())
 }
 
-func genPushServiceProviderName(srv string, psp *uniqush.PushServiceProvider) {
+func genPushServiceProviderName(srv string, psp *PushServiceProvider) {
     hash := sha1.New()
     key := "push.service.provider:" + srv + ":" + psp.UniqStr()
     hash.Write([]byte(key))
@@ -88,7 +87,7 @@ func (f *DatabaseFrontDesk)FlushCache() os.Error {
     return f.db.FlushCache()
 }
 
-func (f *DatabaseFrontDesk)RemovePushServiceProviderFromService (service string, push_service_provider *uniqush.PushServiceProvider) os.Error {
+func (f *DatabaseFrontDesk)RemovePushServiceProviderFromService (service string, push_service_provider *PushServiceProvider) os.Error {
     if len(push_service_provider.Name) == 0 {
         genPushServiceProviderName(service, push_service_provider)
     }
@@ -99,7 +98,7 @@ func (f *DatabaseFrontDesk)RemovePushServiceProviderFromService (service string,
 
 
 func (f *DatabaseFrontDesk) AddPushServiceProviderToService (service string,
-                                     push_service_provider *uniqush.PushServiceProvider) os.Error {
+                                     push_service_provider *PushServiceProvider) os.Error {
     if push_service_provider == nil {
         return nil
     }
@@ -115,8 +114,8 @@ func (f *DatabaseFrontDesk) AddPushServiceProviderToService (service string,
 
 func (f *DatabaseFrontDesk) AddDeliveryPointToService (service string,
                                                        subscriber string,
-                                                       delivery_point *uniqush.DeliveryPoint,
-                                                       prefered_service int) (*uniqush.PushServiceProvider, os.Error) {
+                                                       delivery_point *DeliveryPoint,
+                                                       prefered_service int) (*PushServiceProvider, os.Error) {
     if delivery_point == nil {
         return nil, nil
     }
@@ -127,8 +126,8 @@ func (f *DatabaseFrontDesk) AddDeliveryPointToService (service string,
     if pspnames == nil {
         return nil, nil
     }
-    var first_fit *uniqush.PushServiceProvider
-    var found *uniqush.PushServiceProvider
+    var first_fit *PushServiceProvider
+    var found *PushServiceProvider
 
     if len(delivery_point.Name) == 0 {
         genDeliveryPointName(subscriber, delivery_point)
@@ -183,7 +182,7 @@ func (f *DatabaseFrontDesk) AddDeliveryPointToService (service string,
 
 func (f *DatabaseFrontDesk) RemoveDeliveryPointFromService (service string,
                                                             subscriber string,
-                                                            delivery_point *uniqush.DeliveryPoint) os.Error {
+                                                            delivery_point *DeliveryPoint) os.Error {
     err := f.db.RemoveDeliveryPointFromServiceSubscriber(service, subscriber, delivery_point.Name)
     return err
 }

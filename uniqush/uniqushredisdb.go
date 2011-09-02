@@ -1,4 +1,4 @@
-package db
+package uniqush
 
 import (
     "redis"
@@ -6,7 +6,6 @@ import (
     "fmt"
     "strconv"
     "strings"
-    "uniqush"
 )
 
 type UniqushRedisDB struct {
@@ -53,8 +52,8 @@ func NewUniqushRedisDB(c *DatabaseConfig) *UniqushRedisDB {
     return ret
 }
 
-func keyValueToDeliveryPoint(name string, value []byte) *uniqush.DeliveryPoint {
-    dp := new(uniqush.DeliveryPoint)
+func keyValueToDeliveryPoint(name string, value []byte) *DeliveryPoint {
+    dp := new(DeliveryPoint)
     return dp.Unmarshal(name, value)
     /*
     v := string(value)
@@ -62,19 +61,19 @@ func keyValueToDeliveryPoint(name string, value []byte) *uniqush.DeliveryPoint {
     var ostype int
     fmt.Sscanf(v, "%d.%s", &ostype, &substr)
     switch (ostype) {
-    case uniqush.OSTYPE_ANDROID:
+    case OSTYPE_ANDROID:
         fields := strings.Split(substr, ":")
         if len(fields) < 2 {
             return nil
         }
-        return uniqush.NewAndroidDeliveryPoint(name, fields[0], fields[1])
+        return NewAndroidDeliveryPoint(name, fields[0], fields[1])
     }
     return nil
     */
 }
 
-func keyValueToPushServiceProvider(name string, value []byte) *uniqush.PushServiceProvider {
-    psp := new(uniqush.PushServiceProvider)
+func keyValueToPushServiceProvider(name string, value []byte) *PushServiceProvider {
+    psp := new(PushServiceProvider)
     return psp.Unmarshal(name, value)
     /*
     v := string(value)
@@ -82,22 +81,22 @@ func keyValueToPushServiceProvider(name string, value []byte) *uniqush.PushServi
     var srvtype int
     fmt.Sscanf(v, "%d.%s", &srvtype, &substr)
     switch (srvtype) {
-    case uniqush.SRVTYPE_C2DM:
+    case SRVTYPE_C2DM:
         fields := strings.Split(substr, ":")
         if len(fields) < 2 {
             return nil
         }
-        return uniqush.NewC2DMServiceProvider(name, fields[0], fields[1])
+        return NewC2DMServiceProvider(name, fields[0], fields[1])
     }
     return nil
     */
 }
 
-func deliveryPointToValue(dp *uniqush.DeliveryPoint) []byte {
+func deliveryPointToValue(dp *DeliveryPoint) []byte {
     return dp.Marshal()
     /*
     switch (dp.OSID()) {
-    case uniqush.OSTYPE_ANDROID:
+    case OSTYPE_ANDROID:
         str := fmt.Sprintf("%d.%s:%s", dp.OSID(), dp.GoogleAccount(), dp.RegistrationID())
         return []byte(str)
     }
@@ -105,10 +104,10 @@ func deliveryPointToValue(dp *uniqush.DeliveryPoint) []byte {
     */
 }
 
-func pushServiceProviderToValue(psp *uniqush.PushServiceProvider) []byte {
+func pushServiceProviderToValue(psp *PushServiceProvider) []byte {
     /*
     switch (psp.ServiceID()) {
-    case uniqush.SRVTYPE_C2DM:
+    case SRVTYPE_C2DM:
         str := fmt.Sprintf("%d.%s:%s", psp.ServiceID(), psp.SenderID(), psp.AuthToken())
         return []byte(str)
     }
@@ -117,7 +116,7 @@ func pushServiceProviderToValue(psp *uniqush.PushServiceProvider) []byte {
     return psp.Marshal()
 }
 
-func (r *UniqushRedisDB) GetDeliveryPoint(name string) (*uniqush.DeliveryPoint, os.Error) {
+func (r *UniqushRedisDB) GetDeliveryPoint(name string) (*DeliveryPoint, os.Error) {
     b, err := r.client.Get(DELIVERY_POINT_PREFIX + name)
     if err != nil {
         return nil, err
@@ -128,12 +127,12 @@ func (r *UniqushRedisDB) GetDeliveryPoint(name string) (*uniqush.DeliveryPoint, 
     return keyValueToDeliveryPoint(name, b), nil
 }
 
-func (r *UniqushRedisDB) SetDeliveryPoint(dp *uniqush.DeliveryPoint) os.Error {
+func (r *UniqushRedisDB) SetDeliveryPoint(dp *DeliveryPoint) os.Error {
     err := r.client.Set(DELIVERY_POINT_PREFIX + dp.Name, deliveryPointToValue(dp))
     return err
 }
 
-func (r *UniqushRedisDB) GetPushServiceProvider(name string) (*uniqush.PushServiceProvider, os.Error) {
+func (r *UniqushRedisDB) GetPushServiceProvider(name string) (*PushServiceProvider, os.Error) {
     b, err := r.client.Get(PUSH_SERVICE_PROVIDER_PREFIX + name)
     if err != nil {
         return nil, err
@@ -144,16 +143,16 @@ func (r *UniqushRedisDB) GetPushServiceProvider(name string) (*uniqush.PushServi
     return keyValueToPushServiceProvider(name, b), nil
 }
 
-func (r *UniqushRedisDB) SetPushServiceProvider(psp *uniqush.PushServiceProvider) os.Error {
+func (r *UniqushRedisDB) SetPushServiceProvider(psp *PushServiceProvider) os.Error {
     return r.client.Set(PUSH_SERVICE_PROVIDER_PREFIX + psp.Name, pushServiceProviderToValue(psp))
 }
 
-func (r *UniqushRedisDB) RemoveDeliveryPoint(dp *uniqush.DeliveryPoint) os.Error {
+func (r *UniqushRedisDB) RemoveDeliveryPoint(dp *DeliveryPoint) os.Error {
     _, err := r.client.Del(DELIVERY_POINT_PREFIX + dp.Name)
     return err
 }
 
-func (r *UniqushRedisDB) RemovePushServiceProvider(psp *uniqush.PushServiceProvider) os.Error {
+func (r *UniqushRedisDB) RemovePushServiceProvider(psp *PushServiceProvider) os.Error {
     _, err := r.client.Del(PUSH_SERVICE_PROVIDER_PREFIX + psp.Name)
     return err
 }
