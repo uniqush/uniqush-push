@@ -6,6 +6,7 @@ import (
 
 type RequestProcessor interface {
     SetLogger(logger *log.Logger)
+    SetEventWriter(writer *EventWriter)
     Process(req *Request)
 }
 
@@ -82,3 +83,6 @@ func (p *ActionPrinter) Process(r *Request) {
     p.logger.Printf("Action: %d, id: %s\n", r.Action, r.ID)
 }
 
+func (p *ActionPrinter) SetEventWriter(writer *EventWriter) {
+    return
+}

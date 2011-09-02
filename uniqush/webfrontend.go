@@ -56,28 +56,68 @@ func (f *WebFrontEnd) SetLogger(logger *log.Logger) {
     f.logger = logger
 }
 
-func (f *WebFrontEnd) add_push_service(r *http.Request, id string) {
-
-    f.writer.NewRequestReceived(id)
+func (f *WebFrontEnd) addPushServiceProvider(form http.Values, id string) {
     a := new(Request)
+
     a.Action = ACTION_ADD_PUSH_SERVICE_PROVIDER
     a.ID = id
+    a.Service = form.Get("servicename")
+
+    if len(a.Service) == 0 {
+        f.logger.Printf("[AddPushServiceRequestFail] Requestid=%s NoServiceSpecified", id)
+        return
+    }
+
+    pspname := form.Get("pushservicetype")
+
+    switch(ServiceNameToID(pspname)) {
+    case SRVTYPE_C2DM:
+        senderid := form.Get("senderid")
+        authtoken := form.Get("authtoken")
+
+        if len(senderid) == 0 {
+            f.logger.Printf("[AddPushServiceRequestFail] Requestid=%s NoSenderId", id)
+            return
+        }
+        if len(authtoken) == 0 {
+            f.logger.Printf("[AddPushServiceRequestFail] Requestid=%s NoAuthToken", id)
+            return
+        }
+        a.PushServiceProvider = NewC2DMServiceProvider("", senderid, authtoken)
+
+    /* TODO More services support */
+    case SRVTYPE_APNS:
+        fallthrough
+    case SRVTYPE_MPNS:
+        fallthrough
+    case SRVTYPE_BBPS:
+        fallthrough
+    default:
+        f.logger.Printf("[AddPushServiceRequestFail] Requestid=%s NotImplementedPushServie=%s", id, pspname)
+        return
+    }
 
     f.ch <- a
+    f.logger.Printf("[AddPushServiceRequest] Requestid=%s Service=%s", id, pspname)
+    f.writer.NewRequestReceived(a)
 }
 
 const (
     ADD_PUSH_SERVICE_PROVIDER_TO_SERVICE_URL = "/addpsp"
 )
 
-func add_push_service_h(w http.ResponseWriter, r *http.Request) {
+func addPushServiceProvider(w http.ResponseWriter, r *http.Request) {
     id := fmt.Sprintf("%d", time.Nanoseconds())
-    fmt.Fprintf(w, "id=%s", id)
-    go webfrontend.add_push_service(r, id)
+
+    r.FormValue("servicename")
+    form := r.Form
+    fmt.Fprintf(w, "id=%s\r\n", id)
+    go webfrontend.addPushServiceProvider(form, id)
 }
 
 func (f *WebFrontEnd) Run() {
-    http.HandleFunc(ADD_PUSH_SERVICE_PROVIDER_TO_SERVICE_URL, add_push_service_h)
+    f.logger.Printf("[Start] %s", f.addr)
+    http.HandleFunc(ADD_PUSH_SERVICE_PROVIDER_TO_SERVICE_URL, addPushServiceProvider)
     http.ListenAndServe(f.addr, nil)
 }
 

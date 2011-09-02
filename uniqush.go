@@ -10,6 +10,8 @@ func main() {
     logger := log.New(os.Stdout, "[uniqush][frontend][web] ", log.LstdFlags)
     ch := make(chan *uniqush.Request)
     f := uniqush.NewWebFrontEnd(ch, logger, "localhost:9898")
+    ew := uniqush.NewEventWriter(os.Stderr)
+    f.SetEventWriter(ew)
 
 
     logger = log.New(os.Stdout, "[uniqush][backend] ", log.LstdFlags)
@@ -22,6 +24,7 @@ func main() {
     for i := 0; i < uniqush.NR_ACTIONS; i++ {
         b.SetProcessor(i, p)
     }
+
     go f.Run()
     go b.Run()
     <-make(chan int)

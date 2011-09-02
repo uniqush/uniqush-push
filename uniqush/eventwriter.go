@@ -16,10 +16,15 @@ func NewEventWriter(writer io.Writer) *EventWriter {
 }
 
 const (
-    new_request_received string = "{\"event\":\"NewRequestReceived\", \"id\":\"%s\"}\r\n"
+    new_request_received string = "{\"event\":\"NewRequestReceived\", \"request\":\"%s\"}\r\n"
 )
 
-func (w *EventWriter) NewRequestReceived(id string) {
-    fmt.Fprintf(w.writer, new_request_received, id)
+func jsonRequest(req *Request) string{
+    ret := fmt.Sprintf("{\"id\":%s, \"action\":%s}", req.ID, req.ActionName())
+    return ret
+}
+
+func (w *EventWriter) NewRequestReceived(req *Request) {
+    fmt.Fprintf(w.writer, new_request_received, jsonRequest(req))
 }
 
