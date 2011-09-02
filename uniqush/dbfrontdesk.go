@@ -15,6 +15,8 @@ type PushServiceProviderDeliveryPointPair struct {
 type DatabaseFrontDeskIf interface {
 
     // The push service provider may by anonymous whose Name is empty string
+    // For anonymous push service provider, it will be added to database
+    // and its Name will be set
     RemovePushServiceProviderFromService(service string, push_service_provider *PushServiceProvider) os.Error
 
     // The push service provider may by anonymous whose Name is empty string
@@ -30,6 +32,10 @@ type DatabaseFrontDeskIf interface {
                             subscriber string,
                             delivery_point *DeliveryPoint,
                             prefered_service int) (*PushServiceProvider, os.Error)
+
+    // The delivery point may be anonymous whose Name is empty string
+    // For anonymous delivery point, it will be added to database and its Name will be set
+    // Return value: selected push service provider, error
     RemoveDeliveryPointFromService (service string,
                                     subscriber string,
                                     delivery_point *DeliveryPoint) os.Error
@@ -183,6 +189,9 @@ func (f *DatabaseFrontDesk) AddDeliveryPointToService (service string,
 func (f *DatabaseFrontDesk) RemoveDeliveryPointFromService (service string,
                                                             subscriber string,
                                                             delivery_point *DeliveryPoint) os.Error {
+    if delivery_point.Name == "" {
+        genDeliveryPointName(subscriber, delivery_point)
+    }
     err := f.db.RemoveDeliveryPointFromServiceSubscriber(service, subscriber, delivery_point.Name)
     return err
 }

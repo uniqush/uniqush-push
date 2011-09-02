@@ -142,12 +142,12 @@ func (f *WebFrontEnd) addDeliveryPointToService(form http.Values, id string) {
         account := form.Get("account")
         regid := form.Get("regid")
         if account == "" {
-            f.logger.Printf("[RegisterFailed] NoGoogleAccount")
+            f.logger.Printf("[SubscribeFail] NoGoogleAccount")
             f.writer.BadRequest(a, os.NewError("NoGoogleAccount"))
             return
         }
         if regid == "" {
-            f.logger.Printf("[RegisterFailed] NoRegistrationId")
+            f.logger.Printf("[SubscribeFail] NoRegistrationId")
             f.writer.BadRequest(a, os.NewError("NoRegistrationId"))
             return
         }
@@ -172,6 +172,73 @@ func (f *WebFrontEnd) addDeliveryPointToService(form http.Values, id string) {
     return
 }
 
+func (f *WebFrontEnd) removeDeliveryPointFromService(form http.Values, id string) {
+    a := new(Request)
+    a.Action = ACTION_UNSUBSCRIBE
+
+    a.ID = id
+    a.Service = form.Get("service")
+
+    if len(a.Service) == 0 {
+        f.logger.Printf("[UnsubscribeFail] Requestid=%s NoServiceName", id)
+        f.writer.BadRequest(a, os.NewError("NoServiceName"))
+        return
+    }
+    subscriber := form.Get("subscriber")
+
+    if subscriber == "" {
+        f.logger.Printf("[UnsubscribeFail] Requestid=%s NoSubscriber", id)
+        f.writer.BadRequest(a, os.NewError("NoSubscriber"))
+        return
+    }
+    a.Subscribers = make([]string, 1)
+    a.Subscribers[0] = subscriber
+
+    dpname := form.Get("deliverypoint")
+    if len(dpname) > 0 {
+        dp := new(DeliveryPoint)
+        dp.Name = dpname
+        f.ch <- a
+        f.writer.RequestReceived(a)
+        f.logger.Printf("[UnsubscribeRequest] Requestid=%s DeliveryPoint=%s", id, dpname)
+        return
+    }
+
+    dpos := form.Get("os")
+    switch (OSNameToID(dpos)) {
+    case OSTYPE_ANDROID:
+        account := form.Get("account")
+        regid := form.Get("regid")
+        if account == "" {
+            f.logger.Printf("[UnsubscribeFail] NoGoogleAccount")
+            f.writer.BadRequest(a, os.NewError("NoGoogleAccount"))
+            return
+        }
+        if regid == "" {
+            f.logger.Printf("[UnsubscribeFail] NoRegistrationId")
+            f.writer.BadRequest(a, os.NewError("NoRegistrationId"))
+            return
+        }
+        dp := NewAndroidDeliveryPoint("", account, regid)
+        a.DeliveryPoint = dp
+        f.ch <- a
+        f.writer.RequestReceived(a)
+        f.logger.Printf("[UnsubscribeRequest] Requestid=%s Account=%s", id, account)
+        return
+    /* TODO More OSes */
+    case OSTYPE_IOS:
+        fallthrough
+    case OSTYPE_WP:
+        fallthrough
+    case OSTYPE_BLKBERRY:
+        fallthrough
+    default:
+        f.logger.Printf("[SubscribeFail] Requestid=%s UnsupportOS=%s", id, dpos)
+        f.writer.BadRequest(a, os.NewError("UnsupportOS:" + dpos))
+        return
+    }
+    return
+}
 func addPushServiceProvider(w http.ResponseWriter, r *http.Request) {
     id := fmt.Sprintf("%d", time.Nanoseconds())
 
@@ -192,6 +259,16 @@ func addDeliveryPointToService(w http.ResponseWriter, r *http.Request) {
     go webfrontend.addDeliveryPointToService(form, id)
 }
 
+func removeDeliveryPointFromService(w http.ResponseWriter, r *http.Request) {
+    id := fmt.Sprintf("%d", time.Nanoseconds())
+
+    r.FormValue("service")
+    form := r.Form
+    fmt.Fprintf(w, "id=%s\r\n", id)
+
+    go webfrontend.removeDeliveryPointFromService(form, id)
+}
+
 const (
     ADD_PUSH_SERVICE_PROVIDER_TO_SERVICE_URL = "/addpsp"
     ADD_DELIVERY_POINT_TO_SERVICE = "/subscribe"
@@ -202,6 +279,7 @@ func (f *WebFrontEnd) Run() {
     f.logger.Printf("[Start] %s", f.addr)
     http.HandleFunc(ADD_PUSH_SERVICE_PROVIDER_TO_SERVICE_URL, addPushServiceProvider)
     http.HandleFunc(ADD_DELIVERY_POINT_TO_SERVICE, addDeliveryPointToService)
+    http.HandleFunc(REMOVE_DELIVERY_POINT_FROM_SERVICE, removeDeliveryPointFromService)
     http.ListenAndServe(f.addr, nil)
 }
 
