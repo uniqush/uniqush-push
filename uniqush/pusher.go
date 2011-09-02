@@ -17,84 +17,84 @@ func (p PushErrorIncompatibleOS) String() string {
     return p.s.String() + " does not compatible with " + p.o.String()
 }
 
-type RemoteServerError struct {
+type remoteServerError struct {
     msg string
 }
 
-func (r RemoteServerError) String() string {
+func (r remoteServerError) String() string {
     return r.msg
 }
 
 type QuotaExceededError struct {
-    RemoteServerError
+    remoteServerError
     PushServiceProvider
 }
 
 func NewQuotaExceededError(sp PushServiceProvider) QuotaExceededError {
     return QuotaExceededError{
-        RemoteServerError{"Service Quota Exceeded" + sp.Name},
+        remoteServerError{"Service Quota Exceeded" + sp.Name},
         sp}
 }
 
 type DeviceQuotaExceededError struct {
-    RemoteServerError
+    remoteServerError
 }
 
 func NewDeviceQuotaExceededError() DeviceQuotaExceededError {
-    return DeviceQuotaExceededError{RemoteServerError{"Device Quota Exceeded"}}
+    return DeviceQuotaExceededError{remoteServerError{"Device Quota Exceeded"}}
 }
 
 type UnregisteredError struct {
-    RemoteServerError
+    remoteServerError
     PushServiceProvider
     DeliveryPoint
 }
 
 func NewUnregisteredError(sp PushServiceProvider, s DeliveryPoint) UnregisteredError {
     return UnregisteredError{
-        RemoteServerError{"Device Unsubcribed: " + s.Name + " unsubscribed the service " + sp.Name},
+        remoteServerError{"Device Unsubcribed: " + s.Name + " unsubscribed the service " + sp.Name},
         sp, s}
 }
 
 type NotificationTooBigError struct {
-    RemoteServerError
+    remoteServerError
     PushServiceProvider
     DeliveryPoint
     Notification
 }
 
 func NewNotificationTooBigError(sp PushServiceProvider, s DeliveryPoint, n Notification) NotificationTooBigError{
-    return NotificationTooBigError{RemoteServerError{"Notification Too Big"}, sp, s, n}
+    return NotificationTooBigError{remoteServerError{"Notification Too Big"}, sp, s, n}
 }
 
 type InvalidDeliveryPointError struct {
-    RemoteServerError
+    remoteServerError
     PushServiceProvider
     DeliveryPoint
 }
 
 func NewInvalidDeliveryPointError(sp PushServiceProvider, s DeliveryPoint) InvalidDeliveryPointError {
     return InvalidDeliveryPointError{
-        RemoteServerError{"Invalid DeliveryPoint - " +
+        remoteServerError{"Invalid DeliveryPoint - " +
             s.Name + " is not a valid subscriber for service " + sp.Name},
             sp, s}
 }
 
 type InvalidPushServiceProviderError struct {
-    RemoteServerError
+    remoteServerError
     PushServiceProvider
 }
 
 func NewInvalidPushServiceProviderError(s PushServiceProvider) InvalidPushServiceProviderError {
-    return InvalidPushServiceProviderError{RemoteServerError{"Inalid Service Provider: " + s.Name}, s}
+    return InvalidPushServiceProviderError{remoteServerError{"Inalid Service Provider: " + s.Name}, s}
 }
 
 type RetryError struct {
-    RemoteServerError
+    remoteServerError
     RetryAfter int
 }
 
 func NewRetryError(RetryAfter int) RetryError {
-    return RetryError{RemoteServerError{"Retry"}, RetryAfter}
+    return RetryError{remoteServerError{"Retry"}, RetryAfter}
 }
 
