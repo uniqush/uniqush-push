@@ -1,5 +1,9 @@
 package uniqush
 
+import (
+    "strings"
+)
+
 const (
     OSTYPE_UNKOWN = iota
     OSTYPE_ANDROID
@@ -35,6 +39,20 @@ func (o *OSType) OSName() string {
         return "BlackBerry"
     }
     return "Unknown"
+}
+
+func OSNameToID(os string) int {
+    switch (strings.ToLower(os)) {
+    case "android":
+        return OSTYPE_ANDROID
+    case "ios":
+        return OSTYPE_IOS
+    case "windowsphone":
+        return OSTYPE_WP
+    case "blackberry":
+        return OSTYPE_BLKBERRY
+    }
+    return OSTYPE_UNKOWN
 }
 
 func (o *OSType) OSID() int {

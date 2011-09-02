@@ -70,8 +70,10 @@ func NewAddPushServiceProviderProcessor(logger *log.Logger, writer *EventWriter,
 func (p *AddPushServiceProviderProcessor) Process(req *Request) {
     err := p.dbfront.AddPushServiceProviderToService(req.Service, req.PushServiceProvider)
     if err != nil {
+        p.writer.AddPushServiceFail(req, err)
         p.logger.Printf("[AddPushServiceRequestFail] DatabaseError %v", err)
     }
+    p.writer.AddPushServiceSuccess(req)
     p.logger.Printf("[AddPushServiceRequest] Success PushServiceProviderID=%s", req.PushServiceProvider.Name)
 }
 

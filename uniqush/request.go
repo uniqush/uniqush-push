@@ -14,6 +14,7 @@ type Request struct {
     Action int
     Service string
     Subscribers []string
+    PreferedService int
 
     PushServiceProvider *PushServiceProvider
     DeliveryPoint *DeliveryPoint
