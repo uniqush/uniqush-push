@@ -1,20 +1,21 @@
 package uniqush
 
 type Notification struct {
-    msg string
+    Message string
 
-    is_loc bool
-    delay bool
-    badge int
-    img string
-    data map[string]string
+    IsLoc bool
+    Delay bool
+    Badge int
+    Image string
+    Sound string
+    Data map[string]string
 }
 
 func NewNotification(message string, data map[string]string) *Notification {
-    n := &Notification{msg: message, data: data}
-    n.badge = -1
-    n.is_loc = false
-    n.delay = false
+    n := &Notification{Message: message, Data: data}
+    n.Badge = -1
+    n.IsLoc = false
+    n.Delay = false
     return n
 }
 

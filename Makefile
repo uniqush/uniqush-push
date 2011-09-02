@@ -15,18 +15,8 @@
 
 include $(GOROOT)/src/Make.inc
 
-TARG=uniqush
+TARG=uniqush-server
 GOFILES=\
-	notification.go\
-	pusher.go\
-	deliverypoint.go\
-	pushserviceprovider.go\
-	servicetype.go\
-	ostype.go\
-	c2dmpusher.go\
-	request.go\
-	frontend.go\
-	webfrontend.go\
-	backend.go\
+	uniqush.go\
 
-include $(GOROOT)/src/Make.pkg
+include $(GOROOT)/src/Make.cmd
