@@ -5,7 +5,7 @@ import (
 )
 
 const (
-    SRVTYPE_UNKNOW = iota
+    SRVTYPE_UNKNOWN = iota
     /* For android */
     SRVTYPE_C2DM
 
@@ -44,7 +44,7 @@ func ServiceNameToID(name string) int {
     case "bbps":
         return SRVTYPE_BBPS
     }
-    return SRVTYPE_UNKNOW
+    return SRVTYPE_UNKNOWN
 }
 
 func (s *ServiceType) ServiceName() string {
