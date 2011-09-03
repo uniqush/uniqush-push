@@ -2,12 +2,13 @@ package uniqush
 
 type Notification struct {
     Message string
-
-    IsLoc bool
-    Delay bool
     Badge int
     Image string
     Sound string
+
+    // Defined but not used now
+    IsLoc bool
+    Delay bool
     Data map[string]string
 }
 

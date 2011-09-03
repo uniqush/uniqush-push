@@ -77,3 +77,34 @@ func (p *AddPushServiceProviderProcessor) Process(req *Request) {
     p.logger.Printf("[AddPushServiceRequest] Success PushServiceProviderID=%s", req.PushServiceProvider.Name)
 }
 
+type SubscribeProcessor struct {
+    loggerEventWriter
+    databaseSetter
+}
+
+func NewSubscribeProcessor(logger *log.Logger, writer *EventWriter, dbfront DatabaseFrontDeskIf) RequestProcessor{
+    ret := new(SubscribeProcessor)
+    ret.SetLogger(logger)
+    ret.SetEventWriter(writer)
+    ret.SetDatabase(dbfront)
+
+    return ret
+}
+
+func (p *SubscribeProcessor) Process(req *Request) {
+    if len(req.Subscribers) == 0 {
+        return
+    }
+    psp, err := p.dbfront.AddDeliveryPointToService(req.Service,
+                                                    req.Subscribers[0],
+                                                    req.DeliveryPoint,
+                                                    req.PreferedService)
+    if err != nil {
+        p.writer.SubscribeFail(req, err)
+        p.logger.Printf("[SubscribeRequestFail] DatabaseError %v", err)
+    }
+    p.writer.SubscribeSuccess(req)
+    p.logger.Printf("[SubscribeRequest] Success DeliveryPoint=%s PushServiceProvider=%s",
+                    req.DeliveryPoint.Name, psp.Name)
+}
+

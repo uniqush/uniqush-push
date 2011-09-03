@@ -10,6 +10,8 @@ type UniqushFrontEnd interface {
 
     // writer will be used to report real-time event
     SetEventWriter(writer *EventWriter)
+
+    SetStopChannel(ch chan bool)
     Run()
 }
 

@@ -15,9 +15,9 @@ type UniqushRedisDB struct {
 const (
     DELIVERY_POINT_PREFIX string = "delivery.point:"
     PUSH_SERVICE_PROVIDER_PREFIX string = "push.service.provider:"
-    SERVICE_SUBSCRIBER_TO_DELIVERY_POINTS_PREFIX string = "sudmap:"
-    SERVICE_DELIVERY_POINT_TO_PUSH_SERVICE_RPVIDER_PREFIX string = "sdpspmap:"
-    SERVICE_TO_PUSH_SERVICE_PROVIDERS_PREFIX string = "pspsmap:"
+    SERVICE_SUBSCRIBER_TO_DELIVERY_POINTS_PREFIX string = "srv.sub-2-dp:"
+    SERVICE_DELIVERY_POINT_TO_PUSH_SERVICE_RPVIDER_PREFIX string = "srv.dp-2-psp:"
+    SERVICE_TO_PUSH_SERVICE_PROVIDERS_PREFIX string = "srv-2-psp:"
     DELIVERY_POINT_COUNTER_PREFIX string = "delivery.point.counter:"
 )
 

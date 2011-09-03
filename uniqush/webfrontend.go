@@ -6,6 +6,8 @@ import (
     "fmt"
     "time"
     "os"
+    "strings"
+    "strconv"
 )
 
 // There is ONLY ONE WebFrontEnd instance running in one program
@@ -16,6 +18,7 @@ type WebFrontEnd struct {
     logger *log.Logger
     addr string
     writer *EventWriter
+    stopch chan bool
 }
 
 var (
@@ -50,6 +53,14 @@ func (f *WebFrontEnd) SetEventWriter(writer *EventWriter) {
 
 func (f *WebFrontEnd) SetChannel(ch chan *Request) {
     f.ch = ch
+}
+
+func (f *WebFrontEnd) SetStopChannel(ch chan bool) {
+    f.stopch = ch
+}
+
+func (f *WebFrontEnd) stop() {
+    f.stopch <- true
 }
 
 func (f *WebFrontEnd) SetLogger(logger *log.Logger) {
@@ -105,6 +116,67 @@ func (f *WebFrontEnd) addPushServiceProvider(form http.Values, id, addr string) 
     f.ch <- a
     f.writer.RequestReceived(a)
     f.logger.Printf("[AddPushServiceRequest] Requestid=%s From=%s Service=%s", id, addr, pspname)
+}
+
+func (f *WebFrontEnd) removePushServiceProvider(form http.Values, id, addr string) {
+    a := new(Request)
+
+    a.Action = ACTION_REMOVE_PUSH_SERVICE_PROVIDER
+    a.ID = id
+    a.RequestSenderAddr = addr
+    a.Service = form.Get("service")
+
+    if len(a.Service) == 0 {
+        f.logger.Printf("[RemovePushServiceRequestFail] Requestid=%s From=%s NoServiceName", id, addr)
+        f.writer.BadRequest(a, os.NewError("NoServiceName"))
+        return
+    }
+
+    pspid := form.Get("pushservicename")
+    if pspid != "" {
+        a.PushServiceProvider = new(PushServiceProvider)
+        a.PushServiceProvider.Name = pspid
+        f.ch <- a
+        f.writer.RequestReceived(a)
+        f.logger.Printf("[RemovePushServiceRequest] Requestid=%s From=%s ServiceId=%s", id, addr, pspid)
+        return
+    }
+
+    pspname := form.Get("pushservicetype")
+
+    switch(ServiceNameToID(pspname)) {
+    case SRVTYPE_C2DM:
+        senderid := form.Get("senderid")
+        authtoken := form.Get("authtoken")
+
+        if len(senderid) == 0 {
+            f.logger.Printf("[RemovePushServiceRequestFail] Requestid=%s From=%s NoSenderId", id, addr)
+            f.writer.BadRequest(a, os.NewError("NoSenderId"))
+            return
+        }
+        if len(authtoken) == 0 {
+            f.logger.Printf("[RemovePushServiceRequestFail] Requestid=%s From=%s NoAuthToken", id, addr)
+            f.writer.BadRequest(a, os.NewError("NoAuthToken"))
+            return
+        }
+        a.PushServiceProvider = NewC2DMServiceProvider("", senderid, authtoken)
+
+    /* TODO More services */
+    case SRVTYPE_APNS:
+        fallthrough
+    case SRVTYPE_MPNS:
+        fallthrough
+    case SRVTYPE_BBPS:
+        fallthrough
+    default:
+        f.logger.Printf("[RemovePushServiceRequestFail] Requestid=%s From=%s UnsupportPushService=%s", id, addr, pspname)
+        f.writer.BadRequest(a, os.NewError("UnsupportPushService:" + pspname))
+        return
+    }
+
+    f.ch <- a
+    f.writer.RequestReceived(a)
+    f.logger.Printf("[RemovePushServiceRequest] Requestid=%s From=%s Service=%s", id, addr, pspname)
 }
 
 func (f *WebFrontEnd) addDeliveryPointToService(form http.Values, id, addr string) {
@@ -197,7 +269,7 @@ func (f *WebFrontEnd) removeDeliveryPointFromService(form http.Values, id, addr 
     a.Subscribers = make([]string, 1)
     a.Subscribers[0] = subscriber
 
-    dpname := form.Get("deliverypoint")
+    dpname := form.Get("deliverypointid")
     if len(dpname) > 0 {
         dp := new(DeliveryPoint)
         dp.Name = dpname
@@ -242,6 +314,58 @@ func (f *WebFrontEnd) removeDeliveryPointFromService(form http.Values, id, addr 
     }
     return
 }
+
+func (f *WebFrontEnd) pushNotification(form http.Values, id, addr string) {
+    a := new(Request)
+    a.Action = ACTION_PUSH
+    a.RequestSenderAddr = addr
+
+    a.ID = id
+    a.Service = form.Get("service")
+
+    if len(a.Service) == 0 {
+        f.logger.Printf("[PushNotificationFail] Requestid=%s From=%s NoServiceName", id, addr)
+        f.writer.BadRequest(a, os.NewError("NoServiceName"))
+        return
+    }
+    subscribers := form.Get("subscriber")
+
+    if subscribers == "" {
+        f.logger.Printf("[PushNotificationFail] Requestid=%s From=%s NoSubscriber", id, addr)
+        f.writer.BadRequest(a, os.NewError("NoSubscriber"))
+        return
+    }
+
+    a.Subscribers = strings.Split(subscribers, ",")
+
+    a.Notification = new(Notification)
+
+    a.Notification.Message = form.Get("msg")
+    if a.Notification.Message == "" {
+        f.logger.Printf("[PushNotificationFail] Requestid=%s From=%s NoMessageBody", id, addr)
+        f.writer.BadRequest(a, os.NewError("NoMessageBody"))
+        return
+    }
+    a.Notification.Badge = -1
+
+    badge := form.Get("badge")
+    if badge != "" {
+        var e os.Error
+        a.Notification.Badge, e = strconv.Atoi(badge)
+        if e != nil {
+            a.Notification.Badge = -1
+        }
+    }
+
+    a.Notification.Image = form.Get("img")
+    a.Notification.Sound = form.Get("sound")
+    f.ch <- a
+
+    // XXX Should we include the message body in the log?
+    f.logger.Printf("[PushNotificationRequest] Requestid=%s From=%s Service=%s Subscribers=%s Body=\"%s\"", id, addr, a.Service, subscribers, a.Notification.Message)
+    f.writer.RequestReceived(a)
+}
+
 func addPushServiceProvider(w http.ResponseWriter, r *http.Request) {
     id := fmt.Sprintf("%d", time.Nanoseconds())
 
@@ -250,6 +374,16 @@ func addPushServiceProvider(w http.ResponseWriter, r *http.Request) {
     fmt.Fprintf(w, "id=%s\r\n", id)
 
     go webfrontend.addPushServiceProvider(form, id, r.RemoteAddr)
+}
+
+func removePushServiceProvider(w http.ResponseWriter, r *http.Request) {
+    id := fmt.Sprintf("%d", time.Nanoseconds())
+
+    r.FormValue("service")
+    form := r.Form
+    fmt.Fprintf(w, "id=%s\r\n", id)
+
+    go webfrontend.removePushServiceProvider(form, id, r.RemoteAddr)
 }
 
 func addDeliveryPointToService(w http.ResponseWriter, r *http.Request) {
@@ -272,17 +406,37 @@ func removeDeliveryPointFromService(w http.ResponseWriter, r *http.Request) {
     go webfrontend.removeDeliveryPointFromService(form, id, r.RemoteAddr)
 }
 
+func stopProgram(w http.ResponseWriter, r *http.Request) {
+    // TODO Add some authentication method
+    webfrontend.stop()
+}
+
+func pushNotification(w http.ResponseWriter, r *http.Request) {
+    id := fmt.Sprintf("%d", time.Nanoseconds())
+
+    r.FormValue("service")
+    form := r.Form
+    fmt.Fprintf(w, "id=%s\r\n", id)
+    go webfrontend.pushNotification(form, id, r.RemoteAddr)
+}
+
 const (
     ADD_PUSH_SERVICE_PROVIDER_TO_SERVICE_URL = "/addpsp"
-    ADD_DELIVERY_POINT_TO_SERVICE = "/subscribe"
-    REMOVE_DELIVERY_POINT_FROM_SERVICE = "/unsubscribe"
+    REMOVE_PUSH_SERVICE_PROVIDER_TO_SERVICE_URL = "/rmpsp"
+    ADD_DELIVERY_POINT_TO_SERVICE_URL = "/subscribe"
+    REMOVE_DELIVERY_POINT_FROM_SERVICE_URL = "/unsubscribe"
+    PUSH_NOTIFICATION_URL = "/push"
+    STOP_PROGRAM_URL = "/stop"
 )
 
 func (f *WebFrontEnd) Run() {
     f.logger.Printf("[Start] %s", f.addr)
     http.HandleFunc(ADD_PUSH_SERVICE_PROVIDER_TO_SERVICE_URL, addPushServiceProvider)
-    http.HandleFunc(ADD_DELIVERY_POINT_TO_SERVICE, addDeliveryPointToService)
-    http.HandleFunc(REMOVE_DELIVERY_POINT_FROM_SERVICE, removeDeliveryPointFromService)
+    http.HandleFunc(REMOVE_PUSH_SERVICE_PROVIDER_TO_SERVICE_URL, removePushServiceProvider)
+    http.HandleFunc(ADD_DELIVERY_POINT_TO_SERVICE_URL, addDeliveryPointToService)
+    http.HandleFunc(REMOVE_DELIVERY_POINT_FROM_SERVICE_URL, removeDeliveryPointFromService)
+    http.HandleFunc(STOP_PROGRAM_URL, stopProgram)
+    http.HandleFunc(PUSH_NOTIFICATION_URL, pushNotification)
     http.ListenAndServe(f.addr, nil)
 }
 
