@@ -25,7 +25,7 @@ func (p *ActionPrinter) SetLogger(logger *log.Logger) {
 }
 
 func (p *ActionPrinter) Process(r *Request) {
-    p.logger.Printf("Action: %d, id: %s\n", r.Action, r.ID)
+    p.logger.Printf("Action: %d-%s, id: %s\n", r.Action, r.ActionName(), r.ID)
 }
 
 func (p *ActionPrinter) SetEventWriter(writer *EventWriter) {
@@ -106,5 +106,35 @@ func (p *SubscribeProcessor) Process(req *Request) {
     p.writer.SubscribeSuccess(req)
     p.logger.Printf("[SubscribeRequest] Success DeliveryPoint=%s PushServiceProvider=%s",
                     req.DeliveryPoint.Name, psp.Name)
+}
+
+type UnsubscribeProcessor struct {
+    loggerEventWriter
+    databaseSetter
+}
+
+func NewUnsubscribeProcessor(logger *log.Logger, writer *EventWriter, dbfront DatabaseFrontDeskIf) RequestProcessor{
+    ret := new(UnsubscribeProcessor)
+    ret.SetLogger(logger)
+    ret.SetEventWriter(writer)
+    ret.SetDatabase(dbfront)
+
+    return ret
+}
+
+func (p *UnsubscribeProcessor) Process(req *Request) {
+    if len(req.Subscribers) == 0 {
+        return
+    }
+    err := p.dbfront.RemoveDeliveryPointFromService(req.Service,
+                                                    req.Subscribers[0],
+                                                    req.DeliveryPoint)
+    if err != nil {
+        p.writer.SubscribeFail(req, err)
+        p.logger.Printf("[SubscribeRequestFail] DatabaseError %v", err)
+    }
+    p.writer.SubscribeSuccess(req)
+    p.logger.Printf("[UnsubscribeRequest] Success DeliveryPoint=%s",
+                    req.DeliveryPoint.Name)
 }
 

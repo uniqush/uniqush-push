@@ -132,7 +132,7 @@ func (f *WebFrontEnd) removePushServiceProvider(form http.Values, id, addr strin
         return
     }
 
-    pspid := form.Get("pushservicename")
+    pspid := form.Get("pushserviceid")
     if pspid != "" {
         a.PushServiceProvider = new(PushServiceProvider)
         a.PushServiceProvider.Name = pspid

@@ -37,7 +37,7 @@ type UniqushDatabaseWriter interface {
     AddDeliveryPointToServiceSubscriber(srv, sub, dp string) os.Error
     RemoveDeliveryPointFromServiceSubscriber (srv, sub, dp string) os.Error
     SetPushServiceProviderOfServiceDeliveryPoint (srv, dp, psp string) os.Error
-    RemovePushServiceProviderOfServiceDeliveryPoint(srv, dp, psp string) os.Error
+    RemovePushServiceProviderOfServiceDeliveryPoint(srv, dp string) os.Error
 
     AddPushServiceProviderToService (srv, psp string) os.Error
     RemovePushServiceProviderFromService (srv, psp string) os.Error
@@ -167,7 +167,7 @@ func (f *SrvdpToPspFlusher) Set(key string, value interface{}) os.Error {
 
 func (f *SrvdpToPspFlusher) Remove(key string, value interface{}) os.Error {
     d := value.(*srvdppsp)
-    return f.dbwriter.RemovePushServiceProviderOfServiceDeliveryPoint(d.srv, d.dp, d.psp)
+    return f.dbwriter.RemovePushServiceProviderOfServiceDeliveryPoint(d.srv, d.dp)
 }
 
 func (f *SrvdpToPspFlusher) Flush() os.Error {
@@ -418,8 +418,8 @@ func (cdb *CachedUniqushDatabase) RemoveDeliveryPoint(dp *DeliveryPoint) os.Erro
 func (cdb *CachedUniqushDatabase) RemovePushServiceProvider(psp *PushServiceProvider) os.Error {
     return cdb.psp_cache.Remove(psp.Name, psp)
 }
-func (cdb *CachedUniqushDatabase) RemovePushServiceProviderOfServiceDeliveryPoint(srv, dp, psp string) os.Error {
-    d := &srvdppsp{srv, dp, psp}
+func (cdb *CachedUniqushDatabase) RemovePushServiceProviderOfServiceDeliveryPoint(srv, dp string) os.Error {
+    d := &srvdppsp{srv, dp, ""}
     return cdb.srvdp_to_psp.Remove(srv + ":" + dp , d)
 }
 

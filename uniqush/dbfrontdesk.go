@@ -193,6 +193,10 @@ func (f *DatabaseFrontDesk) RemoveDeliveryPointFromService (service string,
         genDeliveryPointName(subscriber, delivery_point)
     }
     err := f.db.RemoveDeliveryPointFromServiceSubscriber(service, subscriber, delivery_point.Name)
+    if err != nil {
+        return err
+    }
+    err = f.db.RemovePushServiceProviderOfServiceDeliveryPoint(service, delivery_point.Name)
     return err
 }
 

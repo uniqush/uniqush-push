@@ -213,7 +213,7 @@ func (r *UniqushRedisDB) SetPushServiceProviderOfServiceDeliveryPoint (srv, dp, 
     return r.client.Set(SERVICE_DELIVERY_POINT_TO_PUSH_SERVICE_RPVIDER_PREFIX + srv + ":" + dp, []byte(psp))
 }
 
-func (r *UniqushRedisDB) RemovePushServiceProviderOfServiceDeliveryPoint (srv, dp, psp string) os.Error {
+func (r *UniqushRedisDB) RemovePushServiceProviderOfServiceDeliveryPoint (srv, dp string) os.Error {
     _, err := r.client.Del(SERVICE_DELIVERY_POINT_TO_PUSH_SERVICE_RPVIDER_PREFIX + srv + ":" + dp)
     return err
 }
