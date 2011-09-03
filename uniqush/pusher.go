@@ -11,7 +11,7 @@ type Pusher interface {
 type NullPusher struct {}
 
 func (p *NullPusher) Push(*PushServiceProvider, *DeliveryPoint, *Notification) (string, os.Error) {
-    return "", nil
+    return "Not Implemented", nil
 }
 
 type PushErrorIncompatibleOS struct {

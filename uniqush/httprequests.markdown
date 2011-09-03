@@ -14,15 +14,15 @@ Or
 
 Subscribe a Service
 ===========================
-`curl http://127.0.0.1:9898/subscribe -d service=myservice -d subscriber=monnand@gmail.com -d os=android -d account=monnand@gmail.com -d regid=fakeregid`
+`curl http://127.0.0.1:9898/subscribe -d service=myservice -d subscriber=monnand -d os=android -d account=monnand@gmail.com -d regid=fakeregid`
 
 Unsubscribe a Service
 ===========================
-`curl http://127.0.0.1:9898/unsubscribe -d service=myservice -d subscriber=monnand@gmail.com -d os=android -d account=monnand@gmail.com -d regid=fakeregid`
+`curl http://127.0.0.1:9898/unsubscribe -d service=myservice -d subscriber=monnand -d os=android -d account=monnand@gmail.com -d regid=fakeregid`
 
 Or
 
-`curl http://127.0.0.1:9898/unsubscribe -d service=myservice -d subscriber=monnand@gmail.com -d deliverypointid=deliverypointid`
+`curl http://127.0.0.1:9898/unsubscribe -d service=myservice -d subscriber=monnand -d deliverypointid=deliverypointid`
 
 Stop the Program
 ===========================
@@ -32,8 +32,12 @@ Push a Notification
 ==========================
 - URL: /push
 - Parameters:
-  + msg: Message body
+  + service: Required.
+  + subscriber: Required. Comma seperated. Could be more than one subscriber
+  + msg: Required. Message body
   + badge: Optional. Badge
   + img: Optional. Image
   + sound: Optional. Sound
+
+`curl http://127.0.0.1:9898/push -d service=myservice -d subscriber=monnand -d msg="Hello World"`
 

@@ -24,7 +24,16 @@ func NewPushProcessor(logger *log.Logger, writer *EventWriter, dbfront DatabaseF
         ret.pushers[i] = &NullPusher{}
     }
 
+    ret.pushers[SRVTYPE_C2DM] = NewC2DMPusher()
+
     return ret
+}
+
+func (p *PushProcessor) SetPusher(pushService int, pusher Pusher) {
+    if pushService < 0 || pushService >= len(p.pushers) {
+        return
+    }
+    p.pushers[pushService] = pusher
 }
 
 type successPushLog struct {
