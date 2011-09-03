@@ -37,6 +37,7 @@ GOFILES=\
 	uniqushdb.go\
 	uniqushredisdb.go\
 	dbfrontdesk.go\
+	pushprocessor.go\
 
 
 include $(GOROOT)/src/Make.pkg

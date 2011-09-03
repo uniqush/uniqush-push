@@ -8,6 +8,12 @@ type Pusher interface {
     Push(*PushServiceProvider, *DeliveryPoint, *Notification) (string, os.Error)
 }
 
+type NullPusher struct {}
+
+func (p *NullPusher) Push(*PushServiceProvider, *DeliveryPoint, *Notification) (string, os.Error) {
+    return "", nil
+}
+
 type PushErrorIncompatibleOS struct {
     s ServiceType
     o OSType
