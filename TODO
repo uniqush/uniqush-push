@@ -1,0 +1,6 @@
+Priority from high to low
+- Config file support
+- APNS (For iOS) support
+- Long-term support: C2DM's QoS sucks!
+- BlackBeery support
+
