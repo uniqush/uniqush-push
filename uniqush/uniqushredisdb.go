@@ -203,8 +203,12 @@ func (r *UniqushRedisDB) RemoveDeliveryPointFromServiceSubscriber (srv, sub, dp 
         return e
     }
     if i <= 0 {
-        _, e0 := r.client.Del(DELIVERY_POINT_PREFIX + dp)
-        return e0
+        _, e0 := r.client.Decr(DELIVERY_POINT_COUNTER_PREFIX + dp)
+        if e0 != nil {
+            return e0
+        }
+        _, e1 := r.client.Del(DELIVERY_POINT_PREFIX + dp)
+        return e1
     }
     return e
 }

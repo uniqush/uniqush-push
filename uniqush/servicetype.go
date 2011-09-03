@@ -5,9 +5,8 @@ import (
 )
 
 const (
-    SRVTYPE_UNKNOWN = iota
     /* For android */
-    SRVTYPE_C2DM
+    SRVTYPE_C2DM = iota
 
     /* For iOS */
     SRVTYPE_APNS
@@ -17,6 +16,9 @@ const (
 
     /* For BlackBerry */
     SRVTYPE_BBPS
+
+    SRVTYPE_NR_PUSH_SERVICE_TYPE
+    SRVTYPE_UNKNOWN
 )
 
 type ServiceType struct {
@@ -45,6 +47,13 @@ func ServiceNameToID(name string) int {
         return SRVTYPE_BBPS
     }
     return SRVTYPE_UNKNOWN
+}
+
+func (s *ServiceType) ValidServiceType() bool {
+    if s.id < 0 || s.id >= SRVTYPE_NR_PUSH_SERVICE_TYPE {
+        return false
+    }
+    return true
 }
 
 func (s *ServiceType) ServiceName() string {

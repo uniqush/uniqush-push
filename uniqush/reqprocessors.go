@@ -77,6 +77,30 @@ func (p *AddPushServiceProviderProcessor) Process(req *Request) {
     p.logger.Printf("[AddPushServiceRequest] Success PushServiceProviderID=%s", req.PushServiceProvider.Name)
 }
 
+type RemovePushServiceProviderProcessor struct {
+    loggerEventWriter
+    databaseSetter
+}
+
+func NewRemovePushServiceProviderProcessor(logger *log.Logger, writer *EventWriter, dbfront DatabaseFrontDeskIf) RequestProcessor{
+    ret := new(RemovePushServiceProviderProcessor)
+    ret.SetLogger(logger)
+    ret.SetEventWriter(writer)
+    ret.SetDatabase(dbfront)
+
+    return ret
+}
+
+func (p *RemovePushServiceProviderProcessor) Process(req *Request) {
+    err := p.dbfront.RemovePushServiceProviderFromService(req.Service, req.PushServiceProvider)
+    if err != nil {
+        p.writer.RemovePushServiceFail(req, err)
+        p.logger.Printf("[RemovePushServiceRequestFail] DatabaseError %v", err)
+    }
+    p.writer.RemovePushServiceSuccess(req)
+    p.logger.Printf("[RemovePushServiceRequest] Success PushServiceProviderID=%s", req.PushServiceProvider.Name)
+}
+
 type SubscribeProcessor struct {
     loggerEventWriter
     databaseSetter
@@ -123,7 +147,8 @@ func NewUnsubscribeProcessor(logger *log.Logger, writer *EventWriter, dbfront Da
 }
 
 func (p *UnsubscribeProcessor) Process(req *Request) {
-    if len(req.Subscribers) == 0 {
+    if len(req.Subscribers) == 0 || req.DeliveryPoint == nil{
+        p.logger.Printf("[SubscribeRequestFail] Nil Pointer")
         return
     }
     err := p.dbfront.RemoveDeliveryPointFromService(req.Service,

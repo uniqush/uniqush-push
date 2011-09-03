@@ -43,6 +43,10 @@ func main() {
     p = uniqush.NewAddPushServiceProviderProcessor(logger, ew, dbf)
     b.SetProcessor(uniqush.ACTION_ADD_PUSH_SERVICE_PROVIDER, p)
 
+    logger = log.New(os.Stdout, "[uniqush][backend][RemovePushServiceProviderProcessor] ", log.LstdFlags)
+    p = uniqush.NewRemovePushServiceProviderProcessor(logger, ew, dbf)
+    b.SetProcessor(uniqush.ACTION_REMOVE_PUSH_SERVICE_PROVIDER, p)
+
     logger = log.New(os.Stdout, "[uniqush][backend][Subscribe] ", log.LstdFlags)
     p = uniqush.NewSubscribeProcessor(logger, ew, dbf)
     b.SetProcessor(uniqush.ACTION_SUBSCRIBE, p)

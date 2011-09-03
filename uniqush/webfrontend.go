@@ -273,6 +273,7 @@ func (f *WebFrontEnd) removeDeliveryPointFromService(form http.Values, id, addr 
     if len(dpname) > 0 {
         dp := new(DeliveryPoint)
         dp.Name = dpname
+        a.DeliveryPoint = dp
         f.ch <- a
         f.writer.RequestReceived(a)
         f.logger.Printf("[UnsubscribeRequest] Requestid=%s From=%s DeliveryPoint=%s", id, addr, dpname)
