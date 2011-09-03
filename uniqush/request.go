@@ -13,6 +13,7 @@ type Request struct {
     ID string
     Action int
     Service string
+    RequestSenderAddr string
     Subscribers []string
     PreferedService int
 

@@ -56,15 +56,16 @@ func (f *WebFrontEnd) SetLogger(logger *log.Logger) {
     f.logger = logger
 }
 
-func (f *WebFrontEnd) addPushServiceProvider(form http.Values, id string) {
+func (f *WebFrontEnd) addPushServiceProvider(form http.Values, id, addr string) {
     a := new(Request)
 
     a.Action = ACTION_ADD_PUSH_SERVICE_PROVIDER
     a.ID = id
+    a.RequestSenderAddr = addr
     a.Service = form.Get("service")
 
     if len(a.Service) == 0 {
-        f.logger.Printf("[AddPushServiceRequestFail] Requestid=%s NoServiceName", id)
+        f.logger.Printf("[AddPushServiceRequestFail] Requestid=%s From=%s NoServiceName", id, addr)
         f.writer.BadRequest(a, os.NewError("NoServiceName"))
         return
     }
@@ -77,12 +78,12 @@ func (f *WebFrontEnd) addPushServiceProvider(form http.Values, id string) {
         authtoken := form.Get("authtoken")
 
         if len(senderid) == 0 {
-            f.logger.Printf("[AddPushServiceRequestFail] Requestid=%s NoSenderId", id)
+            f.logger.Printf("[AddPushServiceRequestFail] Requestid=%s From=%s NoSenderId", id, addr)
             f.writer.BadRequest(a, os.NewError("NoSenderId"))
             return
         }
         if len(authtoken) == 0 {
-            f.logger.Printf("[AddPushServiceRequestFail] Requestid=%s NoAuthToken", id)
+            f.logger.Printf("[AddPushServiceRequestFail] Requestid=%s From=%s NoAuthToken", id, addr)
             f.writer.BadRequest(a, os.NewError("NoAuthToken"))
             return
         }
@@ -96,32 +97,33 @@ func (f *WebFrontEnd) addPushServiceProvider(form http.Values, id string) {
     case SRVTYPE_BBPS:
         fallthrough
     default:
-        f.logger.Printf("[AddPushServiceRequestFail] Requestid=%s UnsupportPushService=%s", id, pspname)
+        f.logger.Printf("[AddPushServiceRequestFail] Requestid=%s From=%s UnsupportPushService=%s", id, addr, pspname)
         f.writer.BadRequest(a, os.NewError("UnsupportPushService:" + pspname))
         return
     }
 
     f.ch <- a
     f.writer.RequestReceived(a)
-    f.logger.Printf("[AddPushServiceRequest] Requestid=%s Service=%s", id, pspname)
+    f.logger.Printf("[AddPushServiceRequest] Requestid=%s From=%s Service=%s", id, addr, pspname)
 }
 
-func (f *WebFrontEnd) addDeliveryPointToService(form http.Values, id string) {
+func (f *WebFrontEnd) addDeliveryPointToService(form http.Values, id, addr string) {
     a := new(Request)
     a.Action = ACTION_SUBSCRIBE
 
     a.ID = id
+    a.RequestSenderAddr = addr
     a.Service = form.Get("service")
 
     if len(a.Service) == 0 {
-        f.logger.Printf("[SubscribeFail] Requestid=%s NoServiceName", id)
+        f.logger.Printf("[SubscribeFail] Requestid=%s From=%s NoServiceName", id, addr)
         f.writer.BadRequest(a, os.NewError("NoServiceName"))
         return
     }
     subscriber := form.Get("subscriber")
 
     if subscriber == "" {
-        f.logger.Printf("[SubscribeFail] Requestid=%s NoSubscriber", id)
+        f.logger.Printf("[SubscribeFail] Requestid=%s From=%s NoSubscriber", id, addr)
         f.writer.BadRequest(a, os.NewError("NoSubscriber"))
         return
     }
@@ -142,12 +144,12 @@ func (f *WebFrontEnd) addDeliveryPointToService(form http.Values, id string) {
         account := form.Get("account")
         regid := form.Get("regid")
         if account == "" {
-            f.logger.Printf("[SubscribeFail] NoGoogleAccount")
+            f.logger.Printf("[SubscribeFail] NoGoogleAccount Requestid=%s From=%s", id, addr)
             f.writer.BadRequest(a, os.NewError("NoGoogleAccount"))
             return
         }
         if regid == "" {
-            f.logger.Printf("[SubscribeFail] NoRegistrationId")
+            f.logger.Printf("[SubscribeFail] NoRegistrationId Requestid=%s From=%s", id, addr)
             f.writer.BadRequest(a, os.NewError("NoRegistrationId"))
             return
         }
@@ -155,7 +157,7 @@ func (f *WebFrontEnd) addDeliveryPointToService(form http.Values, id string) {
         a.DeliveryPoint = dp
         f.ch <- a
         f.writer.RequestReceived(a)
-        f.logger.Printf("[SubscribeRequest] Requestid=%s Account=%s", id, account)
+        f.logger.Printf("[SubscribeRequest] Requestid=%s From=%s Account=%s", id, addr, account)
         return
     /* TODO More OSes */
     case OSTYPE_IOS:
@@ -165,29 +167,30 @@ func (f *WebFrontEnd) addDeliveryPointToService(form http.Values, id string) {
     case OSTYPE_BLKBERRY:
         fallthrough
     default:
-        f.logger.Printf("[SubscribeFail] Requestid=%s UnsupportOS=%s", id, dpos)
+        f.logger.Printf("[SubscribeFail] Requestid=%s From=%s UnsupportOS=%s", id, addr, dpos)
         f.writer.BadRequest(a, os.NewError("UnsupportOS:" + dpos))
         return
     }
     return
 }
 
-func (f *WebFrontEnd) removeDeliveryPointFromService(form http.Values, id string) {
+func (f *WebFrontEnd) removeDeliveryPointFromService(form http.Values, id, addr string) {
     a := new(Request)
     a.Action = ACTION_UNSUBSCRIBE
+    a.RequestSenderAddr = addr
 
     a.ID = id
     a.Service = form.Get("service")
 
     if len(a.Service) == 0 {
-        f.logger.Printf("[UnsubscribeFail] Requestid=%s NoServiceName", id)
+        f.logger.Printf("[UnsubscribeFail] Requestid=%s From=%s NoServiceName", id, addr)
         f.writer.BadRequest(a, os.NewError("NoServiceName"))
         return
     }
     subscriber := form.Get("subscriber")
 
     if subscriber == "" {
-        f.logger.Printf("[UnsubscribeFail] Requestid=%s NoSubscriber", id)
+        f.logger.Printf("[UnsubscribeFail] Requestid=%s From=%s NoSubscriber", id, addr)
         f.writer.BadRequest(a, os.NewError("NoSubscriber"))
         return
     }
@@ -200,7 +203,7 @@ func (f *WebFrontEnd) removeDeliveryPointFromService(form http.Values, id string
         dp.Name = dpname
         f.ch <- a
         f.writer.RequestReceived(a)
-        f.logger.Printf("[UnsubscribeRequest] Requestid=%s DeliveryPoint=%s", id, dpname)
+        f.logger.Printf("[UnsubscribeRequest] Requestid=%s From=%s DeliveryPoint=%s", id, addr, dpname)
         return
     }
 
@@ -210,12 +213,12 @@ func (f *WebFrontEnd) removeDeliveryPointFromService(form http.Values, id string
         account := form.Get("account")
         regid := form.Get("regid")
         if account == "" {
-            f.logger.Printf("[UnsubscribeFail] NoGoogleAccount")
+            f.logger.Printf("[UnsubscribeFail] Reuqestid=%s From=%s NoGoogleAccount", id, addr)
             f.writer.BadRequest(a, os.NewError("NoGoogleAccount"))
             return
         }
         if regid == "" {
-            f.logger.Printf("[UnsubscribeFail] NoRegistrationId")
+            f.logger.Printf("[UnsubscribeFail] Requestid=%s From=%s NoRegistrationId", id, addr)
             f.writer.BadRequest(a, os.NewError("NoRegistrationId"))
             return
         }
@@ -223,7 +226,7 @@ func (f *WebFrontEnd) removeDeliveryPointFromService(form http.Values, id string
         a.DeliveryPoint = dp
         f.ch <- a
         f.writer.RequestReceived(a)
-        f.logger.Printf("[UnsubscribeRequest] Requestid=%s Account=%s", id, account)
+        f.logger.Printf("[UnsubscribeRequest] Requestid=%s From=%s Account=%s", id, addr, account)
         return
     /* TODO More OSes */
     case OSTYPE_IOS:
@@ -233,7 +236,7 @@ func (f *WebFrontEnd) removeDeliveryPointFromService(form http.Values, id string
     case OSTYPE_BLKBERRY:
         fallthrough
     default:
-        f.logger.Printf("[SubscribeFail] Requestid=%s UnsupportOS=%s", id, dpos)
+        f.logger.Printf("[UnsubscribeFail] Requestid=%s From=%s UnsupportOS=%s", id, addr, dpos)
         f.writer.BadRequest(a, os.NewError("UnsupportOS:" + dpos))
         return
     }
@@ -246,7 +249,7 @@ func addPushServiceProvider(w http.ResponseWriter, r *http.Request) {
     form := r.Form
     fmt.Fprintf(w, "id=%s\r\n", id)
 
-    go webfrontend.addPushServiceProvider(form, id)
+    go webfrontend.addPushServiceProvider(form, id, r.RemoteAddr)
 }
 
 func addDeliveryPointToService(w http.ResponseWriter, r *http.Request) {
@@ -256,7 +259,7 @@ func addDeliveryPointToService(w http.ResponseWriter, r *http.Request) {
     form := r.Form
     fmt.Fprintf(w, "id=%s\r\n", id)
 
-    go webfrontend.addDeliveryPointToService(form, id)
+    go webfrontend.addDeliveryPointToService(form, id, r.RemoteAddr)
 }
 
 func removeDeliveryPointFromService(w http.ResponseWriter, r *http.Request) {
@@ -266,7 +269,7 @@ func removeDeliveryPointFromService(w http.ResponseWriter, r *http.Request) {
     form := r.Form
     fmt.Fprintf(w, "id=%s\r\n", id)
 
-    go webfrontend.removeDeliveryPointFromService(form, id)
+    go webfrontend.removeDeliveryPointFromService(form, id, r.RemoteAddr)
 }
 
 const (
