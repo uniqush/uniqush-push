@@ -93,6 +93,7 @@ func (p *PushProcessor) push(req *Request, service string, subscriber string, su
                     if re.OtherError != nil {
                         err = re.OtherError
                     } else {
+                        ret[i] = &successPushLog{dp, subid, id}
                         continue
                     }
                 }
