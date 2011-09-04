@@ -84,9 +84,11 @@ func (p *PushProcessor) push(req *Request, service string, subscriber string, su
                     re := err.(*RefreshDataError)
                     if re.PushServiceProvider != nil {
                         p.dbfront.ModifyPushServiceProvider(re.PushServiceProvider)
+                        defer p.logger.Printf("[UpdatePushServiceProvider] Service=%s PushServiceProvider=%s", service, re.PushServiceProvider.Name)
                     }
                     if re.DeliveryPoint != nil {
                         p.dbfront.ModifyDeliveryPoint(re.DeliveryPoint)
+                        defer p.logger.Printf("[UpdateDeliveryPoint] DeliveryPoint=%s", re.DeliveryPoint.Name)
                     }
                     if re.OtherError != nil {
                         err = re.OtherError
