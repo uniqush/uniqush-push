@@ -49,17 +49,17 @@ type remoteServerError struct {
     msg string
 }
 
-func (r remoteServerError) String() string {
+func (r *remoteServerError) String() string {
     return r.msg
 }
 
 type QuotaExceededError struct {
     remoteServerError
-    PushServiceProvider
+    PushServiceProvider *PushServiceProvider
 }
 
-func NewQuotaExceededError(sp PushServiceProvider) QuotaExceededError {
-    return QuotaExceededError{
+func NewQuotaExceededError(sp *PushServiceProvider) *QuotaExceededError {
+    return &QuotaExceededError{
         remoteServerError{"Service Quota Exceeded" + sp.Name},
         sp}
 }
@@ -68,41 +68,41 @@ type DeviceQuotaExceededError struct {
     remoteServerError
 }
 
-func NewDeviceQuotaExceededError() DeviceQuotaExceededError {
-    return DeviceQuotaExceededError{remoteServerError{"Device Quota Exceeded"}}
+func NewDeviceQuotaExceededError() *DeviceQuotaExceededError {
+    return &DeviceQuotaExceededError{remoteServerError{"Device Quota Exceeded"}}
 }
 
 type UnregisteredError struct {
     remoteServerError
-    PushServiceProvider
-    DeliveryPoint
+    PushServiceProvider *PushServiceProvider
+    DeliveryPoint *DeliveryPoint
 }
 
-func NewUnregisteredError(sp PushServiceProvider, s DeliveryPoint) UnregisteredError {
-    return UnregisteredError{
+func NewUnregisteredError(sp *PushServiceProvider, s *DeliveryPoint) *UnregisteredError {
+    return &UnregisteredError{
         remoteServerError{"Device Unsubcribed: " + s.Name + " unsubscribed the service " + sp.Name},
         sp, s}
 }
 
 type NotificationTooBigError struct {
     remoteServerError
-    PushServiceProvider
-    DeliveryPoint
-    Notification
+    PushServiceProvider *PushServiceProvider
+    DeliveryPoint *DeliveryPoint
+    Notification *Notification
 }
 
-func NewNotificationTooBigError(sp PushServiceProvider, s DeliveryPoint, n Notification) NotificationTooBigError{
-    return NotificationTooBigError{remoteServerError{"Notification Too Big"}, sp, s, n}
+func NewNotificationTooBigError(sp *PushServiceProvider, s *DeliveryPoint, n *Notification) *NotificationTooBigError{
+    return &NotificationTooBigError{remoteServerError{"Notification Too Big"}, sp, s, n}
 }
 
 type InvalidDeliveryPointError struct {
     remoteServerError
-    PushServiceProvider
-    DeliveryPoint
+    PushServiceProvider *PushServiceProvider
+    DeliveryPoint *DeliveryPoint
 }
 
-func NewInvalidDeliveryPointError(sp PushServiceProvider, s DeliveryPoint) InvalidDeliveryPointError {
-    return InvalidDeliveryPointError{
+func NewInvalidDeliveryPointError(sp *PushServiceProvider, s *DeliveryPoint) *InvalidDeliveryPointError {
+    return &InvalidDeliveryPointError{
         remoteServerError{"Invalid DeliveryPoint - " +
             s.Name + " is not a valid subscriber for service " + sp.Name},
             sp, s}
@@ -110,11 +110,11 @@ func NewInvalidDeliveryPointError(sp PushServiceProvider, s DeliveryPoint) Inval
 
 type InvalidPushServiceProviderError struct {
     remoteServerError
-    PushServiceProvider
+    PushServiceProvider *PushServiceProvider
 }
 
-func NewInvalidPushServiceProviderError(s PushServiceProvider) InvalidPushServiceProviderError {
-    return InvalidPushServiceProviderError{remoteServerError{"Inalid Service Provider: " + s.Name}, s}
+func NewInvalidPushServiceProviderError(s *PushServiceProvider) *InvalidPushServiceProviderError {
+    return &InvalidPushServiceProviderError{remoteServerError{"Inalid Service Provider: " + s.Name}, s}
 }
 
 type RetryError struct {
@@ -122,7 +122,18 @@ type RetryError struct {
     RetryAfter int
 }
 
-func NewRetryError(RetryAfter int) RetryError {
-    return RetryError{remoteServerError{"Retry"}, RetryAfter}
+func NewRetryError(RetryAfter int) *RetryError {
+    return &RetryError{remoteServerError{"Retry"}, RetryAfter}
 }
 
+type RefreshDataError struct {
+    remoteServerError
+    PushServiceProvider *PushServiceProvider
+    DeliveryPoint *DeliveryPoint
+    OtherError os.Error
+}
+
+func NewRefreshDataError (psp *PushServiceProvider, dp *DeliveryPoint, o os.Error) *RefreshDataError {
+    return &RefreshDataError {
+        remoteServerError{"Refresh Push Service Provider"}, psp, dp, o}
+}

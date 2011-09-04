@@ -47,6 +47,8 @@ type DatabaseFrontDeskIf interface {
     AddPushServiceProviderToService (service string,
                                      push_service_provider *PushServiceProvider) os.Error
 
+    ModifyPushServiceProvider (psp *PushServiceProvider) os.Error
+
     // The delivery point may be anonymous whose Name is empty string
     // For anonymous delivery point, it will be added to database and its Name will be set
     // Return value: selected push service provider, error
@@ -61,6 +63,8 @@ type DatabaseFrontDeskIf interface {
     RemoveDeliveryPointFromService (service string,
                                     subscriber string,
                                     delivery_point *DeliveryPoint) os.Error
+
+    ModifyDeliveryPoint(dp *DeliveryPoint) os.Error
 
     GetPushServiceProviderDeliveryPointPairs (service string,
                                               subscriber string)([]PushServiceProviderDeliveryPointPair, os.Error)
@@ -263,4 +267,18 @@ func (f *DatabaseFrontDesk) GetPushServiceProviderDeliveryPointPairs (service st
     }
 
     return ret, nil
+}
+
+func (f *DatabaseFrontDesk) ModifyPushServiceProvider(psp *PushServiceProvider) os.Error {
+    if len(psp.Name) == 0 {
+        return nil
+    }
+    return f.db.SetPushServiceProvider(psp)
+}
+
+func (f *DatabaseFrontDesk) ModifyDeliveryPoint(dp *DeliveryPoint) os.Error {
+    if len(dp.Name) == 0 {
+        return nil
+    }
+    return f.db.SetDeliveryPoint(dp)
 }

@@ -22,6 +22,10 @@
 
 package uniqush
 
+import (
+    "time"
+)
+
 const (
     ACTION_PUSH = iota
     ACTION_SUBSCRIBE
@@ -38,6 +42,7 @@ type Request struct {
     RequestSenderAddr string
     Subscribers []string
     PreferedService int
+    Timestamp int64
 
     PushServiceProvider *PushServiceProvider
     DeliveryPoint *DeliveryPoint
@@ -55,6 +60,10 @@ func init() {
     actionNames[ACTION_UNSUBSCRIBE] = "Unsubcribe"
     actionNames[ACTION_ADD_PUSH_SERVICE_PROVIDER] = "AddPushServiceProvider"
     actionNames[ACTION_REMOVE_PUSH_SERVICE_PROVIDER] = "RemovePushServiceProvider"
+}
+
+func (req *Request) PunchTimestamp() {
+    req.Timestamp = time.Nanoseconds()
 }
 
 func (req *Request) ValidAction() bool {

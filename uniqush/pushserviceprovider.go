@@ -32,15 +32,17 @@ type PushServiceProvider struct {
     Name string
     sender_id string
     auth_token string
+    real_auth_token string
 }
 
 type C2DMServiceProvider interface {
     SenderID() string
     AuthToken() string
+    UpdateAuthToken(token string)
 }
 
 func NewC2DMServiceProvider(name, senderid, auth string) *PushServiceProvider{
-    s := &PushServiceProvider{SERVICE_C2DM, name, senderid, auth}
+    s := &PushServiceProvider{SERVICE_C2DM, name, senderid, auth, auth}
     return s
 }
 
@@ -55,9 +57,13 @@ func (sp *PushServiceProvider) SenderID() string {
 
 func (sp *PushServiceProvider) AuthToken() string {
     if sp.ServiceID() == SRVTYPE_C2DM {
-        return sp.auth_token
+        return sp.real_auth_token
     }
     return ""
+}
+
+func (psp *PushServiceProvider) UpdateAuthToken(token string) {
+    psp.real_auth_token = token
 }
 
 func (sp *PushServiceProvider) UniqStr() string {
@@ -65,7 +71,7 @@ func (sp *PushServiceProvider) UniqStr() string {
 }
 
 func (sp *PushServiceProvider) Marshal() []byte {
-    str := fmt.Sprintf("%d.%s:%s", sp.ServiceID(), sp.sender_id, sp.auth_token)
+    str := fmt.Sprintf("%d.%s:%s:%s", sp.ServiceID(), sp.sender_id, sp.auth_token, sp.real_auth_token)
     return []byte(str)
 }
 
@@ -83,6 +89,11 @@ func (psp *PushServiceProvider) Unmarshal(name string, value []byte) *PushServic
     psp.Name = name
     psp.sender_id = fields[0]
     psp.auth_token = fields[1]
+    if len(fields) == 3 {
+        psp.real_auth_token = fields[2]
+    } else {
+        psp.real_auth_token = fields[1]
+    }
     return psp
 }
 

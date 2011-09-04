@@ -79,6 +79,21 @@ func (p *PushProcessor) push(req *Request, service string, subscriber string, su
         if psp.ValidServiceType() {
             id, err := p.pushers[psp.ServiceID()].Push(psp, dp, req.Notification)
             if err != nil {
+                switch (err.(type)) {
+                case *RefreshDataError:
+                    re := err.(*RefreshDataError)
+                    if re.PushServiceProvider != nil {
+                        p.dbfront.ModifyPushServiceProvider(re.PushServiceProvider)
+                    }
+                    if re.DeliveryPoint != nil {
+                        p.dbfront.ModifyDeliveryPoint(re.DeliveryPoint)
+                    }
+                    if re.OtherError != nil {
+                        err = re.OtherError
+                    } else {
+                        continue
+                    }
+                }
                 // We want to be fast. So defer all IO operations
                 defer p.logger.Printf("[PushFail] Service=%s Subscriber=%s DeliveryPoint=%s \"%v\"", service, subscriber, dp.Name, err)
                 defer p.writer.PushFail(req, subscriber, dp, err)

@@ -68,7 +68,9 @@ func (n *Notification) toC2DMFormat() map[string]string {
     return ret
 }
 
-func (p *C2DMPusher) Push(sp *PushServiceProvider, s *DeliveryPoint, n *Notification) (string, os.Error) {
+func (p *C2DMPusher) Push(sp *PushServiceProvider,
+                          s *DeliveryPoint,
+                          n *Notification) (string, os.Error) {
     if !p.IsCompatible(&s.OSType) {
         return "", &PushErrorIncompatibleOS{p.ServiceType, s.OSType}
     }
@@ -93,33 +95,84 @@ func (p *C2DMPusher) Push(sp *PushServiceProvider, s *DeliveryPoint, n *Notifica
     if e20 != nil {
         return "", e20
     }
+    refreshpsp := false
+    new_auth_token := r.Header.Get("Update-Client-Auth")
+    if new_auth_token != "" && sp.AuthToken() != new_auth_token {
+        sp.UpdateAuthToken(new_auth_token)
+        refreshpsp = true
+    }
+
     switch (r.StatusCode) {
     case 503:
         /* TODO extract the retry after field */
         after := -1
-        return "", NewRetryError(after)
+        var reterr os.Error
+        reterr = NewRetryError(after)
+        if refreshpsp {
+            re := NewRefreshDataError(sp, nil, reterr)
+            reterr = re
+        }
+        return "", reterr
     case 401:
-        return "", NewInvalidPushServiceProviderError(*sp)
+        return "", NewInvalidPushServiceProviderError(sp)
     }
+
     contents, e30 := ioutil.ReadAll(r.Body)
     if e30 != nil {
+        if refreshpsp {
+            re := NewRefreshDataError(sp, nil, e30)
+            e30 = re
+        }
         return "", e30
     }
+
     msgid := string(contents)
     msgid = strings.Replace(msgid, "\r", "", -1)
     msgid = strings.Replace(msgid, "\n", "", -1)
     if msgid[:3] == "id=" {
+        if refreshpsp {
+            re := NewRefreshDataError(sp, nil, nil)
+            return msgid[3:], re
+        }
         return msgid[3:], nil
     }
     switch (msgid[6:]) {
     case "QuotaExceeded":
-        return "", NewQuotaExceededError(*sp)
+        var reterr os.Error
+        reterr = NewQuotaExceededError(sp)
+        if refreshpsp {
+            re := NewRefreshDataError(sp, nil, reterr)
+            reterr = re
+        }
+        return "", reterr
     case "InvalidRegistration":
-        return "", NewInvalidDeliveryPointError(*sp, *s)
+        var reterr os.Error
+        reterr = NewInvalidDeliveryPointError(sp, s)
+        if refreshpsp {
+            re := NewRefreshDataError(sp, nil, reterr)
+            reterr = re
+        }
+        return "", reterr
     case "NotRegistered":
-        return "", NewUnregisteredError(*sp, *s)
+        var reterr os.Error
+        reterr = NewUnregisteredError(sp, s)
+        if refreshpsp {
+            re := NewRefreshDataError(sp, nil, reterr)
+            reterr = re
+        }
+        return "", reterr
     case "MessageTooBig":
-        return "", NewNotificationTooBigError(*sp, *s, *n)
+        var reterr os.Error
+        reterr = NewNotificationTooBigError(sp, s, n)
+        if refreshpsp {
+            re := NewRefreshDataError(sp, nil, reterr)
+            reterr = re
+        }
+        return "", reterr
+    }
+    if refreshpsp {
+        re := NewRefreshDataError(sp, nil, os.NewError("Unknown Error: " + msgid[6:]))
+        return "", re
     }
     return "", os.NewError("Unknown Error: " + msgid[6:])
 }

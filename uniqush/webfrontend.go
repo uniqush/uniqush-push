@@ -91,6 +91,7 @@ func (f *WebFrontEnd) SetLogger(logger *log.Logger) {
 
 func (f *WebFrontEnd) addPushServiceProvider(form http.Values, id, addr string) {
     a := new(Request)
+    a.PunchTimestamp()
 
     a.Action = ACTION_ADD_PUSH_SERVICE_PROVIDER
     a.ID = id
@@ -142,6 +143,7 @@ func (f *WebFrontEnd) addPushServiceProvider(form http.Values, id, addr string) 
 
 func (f *WebFrontEnd) removePushServiceProvider(form http.Values, id, addr string) {
     a := new(Request)
+    a.PunchTimestamp()
 
     a.Action = ACTION_REMOVE_PUSH_SERVICE_PROVIDER
     a.ID = id
@@ -203,6 +205,7 @@ func (f *WebFrontEnd) removePushServiceProvider(form http.Values, id, addr strin
 
 func (f *WebFrontEnd) addDeliveryPointToService(form http.Values, id, addr string) {
     a := new(Request)
+    a.PunchTimestamp()
     a.Action = ACTION_SUBSCRIBE
 
     a.ID = id
@@ -270,6 +273,7 @@ func (f *WebFrontEnd) addDeliveryPointToService(form http.Values, id, addr strin
 
 func (f *WebFrontEnd) removeDeliveryPointFromService(form http.Values, id, addr string) {
     a := new(Request)
+    a.PunchTimestamp()
     a.Action = ACTION_UNSUBSCRIBE
     a.RequestSenderAddr = addr
 
@@ -340,6 +344,7 @@ func (f *WebFrontEnd) removeDeliveryPointFromService(form http.Values, id, addr 
 
 func (f *WebFrontEnd) pushNotification(form http.Values, id, addr string) {
     a := new(Request)
+    a.PunchTimestamp()
     a.Action = ACTION_PUSH
     a.RequestSenderAddr = addr
 
