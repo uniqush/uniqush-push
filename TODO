@@ -1,4 +1,5 @@
 Priority from high to low
+- Timer so that we can re-send failed notifications
 - Config file support
 - APNS (For iOS) support
 - Persistent connection support: C2DM's QoS sucks!
