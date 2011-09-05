@@ -31,6 +31,11 @@ type TimerActionProcessor interface {
     Act(time int64, data interface{})
 }
 
+type NullTimerActionProcessor struct {}
+
+func (p *NullTimerActionProcessor) Act(time int64, data interface{}) {
+}
+
 type Timer struct {
     tree *llrb.Tree
     actionProcessor TimerActionProcessor
@@ -71,6 +76,9 @@ func (t *Timer) Run() {
     for {
         select {
         case action := <-t.ch:
+            if action == nil {
+                return
+            }
             t.tree.ReplaceOrInsert(action)
             if action.execTime <= time.Nanoseconds() + 10 {
                 t.actionProcessor.Act(time.Nanoseconds(), action.data)
