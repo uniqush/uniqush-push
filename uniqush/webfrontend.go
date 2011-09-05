@@ -36,11 +36,11 @@ import (
 // It uses global variables.
 // (I know it's bad, but web.go does not support MethodHandler any more)
 type WebFrontEnd struct {
-    ch chan *Request
+    ch chan<- *Request
     logger *log.Logger
     addr string
     writer *EventWriter
-    stopch chan bool
+    stopch chan<- bool
 }
 
 var (
@@ -58,6 +58,7 @@ func NewWebFrontEnd(ch chan *Request, logger *log.Logger, addr string) UniqushFr
     f.ch = ch
     f.logger = logger
     f.writer = NewEventWriter(new(NullWriter))
+    f.stopch = nil
 
     webfrontend = f
 
@@ -73,16 +74,20 @@ func (f *WebFrontEnd) SetEventWriter(writer *EventWriter) {
     f.writer = writer
 }
 
-func (f *WebFrontEnd) SetChannel(ch chan *Request) {
+func (f *WebFrontEnd) SetChannel(ch chan<- *Request) {
     f.ch = ch
 }
 
-func (f *WebFrontEnd) SetStopChannel(ch chan bool) {
+func (f *WebFrontEnd) SetStopChannel(ch chan<- bool) {
     f.stopch = ch
 }
 
 func (f *WebFrontEnd) stop() {
-    f.stopch <- true
+    if f.stopch != nil {
+        f.stopch <- true
+    } else {
+        os.Exit(0)
+    }
 }
 
 func (f *WebFrontEnd) SetLogger(logger *log.Logger) {
@@ -465,6 +470,10 @@ func (f *WebFrontEnd) Run() {
     http.HandleFunc(REMOVE_DELIVERY_POINT_FROM_SERVICE_URL, removeDeliveryPointFromService)
     http.HandleFunc(STOP_PROGRAM_URL, stopProgram)
     http.HandleFunc(PUSH_NOTIFICATION_URL, pushNotification)
-    http.ListenAndServe(f.addr, nil)
+    err := http.ListenAndServe(f.addr, nil)
+    if err != nil {
+        f.logger.Printf("HTTPServerError \"%v\"", err)
+    }
+    f.stop()
 }
 

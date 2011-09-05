@@ -43,7 +43,6 @@ func main() {
     logger = log.New(os.Stdout, "[uniqush][backend] ", log.LstdFlags)
     b := uniqush.NewUniqushBackEnd(ch, logger)
 
-
     logger = log.New(os.Stdout, "[uniqush][actionprinter] ", log.LstdFlags)
     p := uniqush.NewActionPrinter(logger)
 
@@ -85,11 +84,7 @@ func main() {
     go f.Run()
     go b.Run()
 
-    stop := <-stopch;
-    for !stop {
-        fmt.Printf("What?!\n")
-        stop = <-stopch;
-    }
+    <-stopch;
     fmt.Printf("Flush cache!\n")
     dbf.FlushCache()
 }

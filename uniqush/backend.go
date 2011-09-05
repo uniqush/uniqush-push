@@ -27,7 +27,7 @@ import (
 )
 
 type UniqushBackEndIf interface {
-    SetChannel(ch chan *Request)
+    SetChannel(ch <-chan *Request)
     SetLogger(logger *log.Logger)
     SetProcessor(action int, proc RequestProcessor)
     Run()
@@ -35,7 +35,7 @@ type UniqushBackEndIf interface {
 
 type UniqushBackEnd struct {
     procs []RequestProcessor
-    ch chan *Request
+    ch <-chan *Request
     logger *log.Logger
 }
 
@@ -46,7 +46,7 @@ func NewUniqushBackEnd(ch chan *Request, logger *log.Logger) UniqushBackEndIf {
     return b
 }
 
-func (b *UniqushBackEnd) SetChannel(ch chan *Request) {
+func (b *UniqushBackEnd) SetChannel(ch <-chan *Request) {
     b.ch = ch
 }
 
