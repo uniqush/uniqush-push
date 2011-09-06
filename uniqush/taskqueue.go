@@ -27,88 +27,94 @@ import (
     "time"
 )
 
-type TimerActionProcessor interface {
-    Act(time int64, data interface{})
+type Task interface {
+    Run(time int64)
+    ExecTime() int64
 }
 
-type NullTimerActionProcessor struct {}
-
-func (p *NullTimerActionProcessor) Act(time int64, data interface{}) {
-}
-
-type Timer struct {
-    tree *llrb.Tree
-    actionProcessor TimerActionProcessor
-    ch <-chan *TimerAction
-    waitTime int64
-}
-
-type TimerAction struct {
+type TaskTime struct {
     execTime int64
-    data interface{}
+}
+
+func (t *TaskTime) ExecTime() int64 {
+    return t.execTime
+}
+
+type TaskQueue struct {
+    tree *llrb.Tree
+    ch <-chan *Task
+    waitTime int64
 }
 
 const (
     MAX_TIME int64 = 0x0FFFFFFFFFFFFFFF
 )
 
-func NewTimerAction(execTime int64, data interface{}) *TimerAction {
-    ret := new(TimerAction)
-    ret.execTime = execTime
-    ret.data = data
-    return ret
+func taskBefore (a, b interface{}) bool{
+    return a.(Task).ExecTime() < b.(Task).ExecTime()
 }
 
-func actionLess(a, b interface{}) bool{
-    return a.(*TimerAction).execTime < a.(*TimerAction).execTime
-}
-
-func NewTimer(p TimerActionProcessor, ch <-chan *TimerAction) *Timer {
-    ret := new(Timer)
-    ret.tree = llrb.New(actionLess)
-    ret.actionProcessor = p
+func NewTaskQueue(ch <-chan *Task) *TaskQueue {
+    ret := new(TaskQueue)
+    ret.tree = llrb.New(taskBefore)
     ret.ch = ch
     ret.waitTime = MAX_TIME
     return ret
 }
 
-func (t *Timer) Run() {
+func (t *TaskQueue) Run() {
     for {
         select {
         case action := <-t.ch:
             if action == nil {
                 return
             }
-            t.tree.ReplaceOrInsert(action)
-            if action.execTime <= time.Nanoseconds() + 10 {
-                t.actionProcessor.Act(time.Nanoseconds(), action.data)
+            task := *action
+            /*
+            fmt.Printf("I received a task. Current Time %d, it ask me to run it at %d\n",
+                        time.Nanoseconds()/1E9, task.ExecTime()/1E9)
+                        */
+            if task.ExecTime() <= time.Nanoseconds() {
+                go task.Run(time.Nanoseconds())
                 continue
             }
+            t.tree.ReplaceOrInsert(task)
             x := t.tree.Min()
             if x == nil {
                 t.waitTime = MAX_TIME
                 continue
             }
-            action = x.(*TimerAction)
-            t.waitTime = action.execTime - time.Nanoseconds()
+            task = x.(Task)
+            t.waitTime = task.ExecTime() - time.Nanoseconds()
         case <-time.After(t.waitTime):
             x := t.tree.Min()
             if x == nil {
                 t.waitTime = MAX_TIME
                 continue
             }
-            action := x.(*TimerAction)
-            for action.execTime <= time.Nanoseconds() {
-                t.actionProcessor.Act(time.Nanoseconds(), action.data)
+            task := x.(Task)
+            /*
+            fmt.Printf("Current Time %d, a task ask me to run it at %d\n",
+                        time.Nanoseconds()/1E9, task.ExecTime()/1E9)
+                        */
+            for task.ExecTime() <= time.Nanoseconds() {
+                go task.Run(time.Nanoseconds())
                 t.tree.DeleteMin()
-                x := t.tree.Min()
+                x = t.tree.Min()
                 if x == nil {
                     t.waitTime = MAX_TIME
-                    continue
+                    task = nil
+                    break
                 }
-                action = x.(*TimerAction)
+                /*
+                fmt.Printf("Current Time %d, a task ask me to run it at %d\n",
+                        time.Nanoseconds()/1E9, task.ExecTime()/1E9)
+                        */
+                task = x.(Task)
             }
-            t.waitTime = action.execTime - time.Nanoseconds()
+            if task != nil {
+                t.waitTime = task.ExecTime() - time.Nanoseconds()
+            }
         }
     }
 }

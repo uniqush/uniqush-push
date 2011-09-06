@@ -23,6 +23,7 @@ GOFILES=\
 	uniqushredisdb.go\
 	dbfrontdesk.go\
 	pushprocessor.go\
+	taskqueue.go\
 
 
 include $(GOROOT)/src/Make.pkg
