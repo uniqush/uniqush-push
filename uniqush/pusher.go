@@ -41,7 +41,7 @@ type PushErrorIncompatibleOS struct {
     o OSType
 }
 
-func (p PushErrorIncompatibleOS) String() string {
+func (p *PushErrorIncompatibleOS) String() string {
     return p.s.String() + " does not compatible with " + p.o.String()
 }
 

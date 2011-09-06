@@ -43,10 +43,13 @@ type Request struct {
     Subscribers []string
     PreferedService int
     Timestamp int64
+    nrRetries int
+    backoffTime int64
 
     PushServiceProvider *PushServiceProvider
     DeliveryPoint *DeliveryPoint
     Notification *Notification
+    PreviousTry *Request
 }
 
 var (

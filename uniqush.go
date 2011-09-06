@@ -77,7 +77,7 @@ func main() {
     b.SetProcessor(uniqush.ACTION_UNSUBSCRIBE, p)
 
     logger = log.New(os.Stdout, "[uniqush][backend][Push] ", log.LstdFlags)
-    p = uniqush.NewPushProcessor(logger, ew, dbf)
+    p = uniqush.NewPushProcessor(logger, ew, dbf, ch)
 
     b.SetProcessor(uniqush.ACTION_PUSH, p)
 
