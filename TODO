@@ -1,7 +1,6 @@
 Priority from high to low
 - Exp. Backoff re-send: need to be tested
 - APNS (For iOS) support
-- Leveled log
 - Config file support
 - Persistent connection support: C2DM's QoS sucks!
 - BlackBeery support

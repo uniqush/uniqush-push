@@ -97,11 +97,11 @@ func (l *Logger) SetLogLevel(logLevel int) {
     }
     l.logLevel = logLevel
     for i := 0; i <= logLevel; i++ {
-        l.loggers[i] = log.New(l.writer, l.prefix + logLevelToName[i], log.LstdFlags)
+        l.loggers[i] = log.New(l.writer, l.prefix + logLevelToName[i] + " ", log.LstdFlags)
     }
     nullwriter := &NullWriter{}
     for i := logLevel + 1; i < NR_LOGLEVELS; i++ {
-        l.loggers[i] = log.New(nullwriter, l.prefix + logLevelToName[i], log.LstdFlags)
+        l.loggers[i] = log.New(nullwriter, l.prefix + logLevelToName[i] + " ", log.LstdFlags)
     }
 }
 

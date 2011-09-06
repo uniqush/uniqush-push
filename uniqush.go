@@ -24,13 +24,12 @@ package main
 
 import (
     "uniqush"
-    "log"
     "os"
     "fmt"
 )
 
 func main() {
-    logger := log.New(os.Stdout, "[uniqush][frontend][web] ", log.LstdFlags)
+    logger := uniqush.NewLogger(os.Stdout, "[uniqush][frontend][web]", uniqush.LOGLEVEL_DEBUG)
     ch := make(chan *uniqush.Request)
     stopch := make(chan bool)
     f := uniqush.NewWebFrontEnd(ch, logger, "localhost:9898")
@@ -40,10 +39,10 @@ func main() {
     ew := uniqush.NewEventWriter(&uniqush.NullWriter{})
     f.SetEventWriter(ew)
 
-    logger = log.New(os.Stdout, "[uniqush][backend] ", log.LstdFlags)
+    logger = uniqush.NewLogger(os.Stdout, "[uniqush][backend]", uniqush.LOGLEVEL_DEBUG)
     b := uniqush.NewUniqushBackEnd(ch, logger)
 
-    logger = log.New(os.Stdout, "[uniqush][actionprinter] ", log.LstdFlags)
+    logger = uniqush.NewLogger(os.Stdout, "[uniqush][actionprinter]", uniqush.LOGLEVEL_DEBUG)
     p := uniqush.NewActionPrinter(logger)
 
     for i := 0; i < uniqush.NR_ACTIONS; i++ {
@@ -60,23 +59,23 @@ func main() {
 
     dbf := uniqush.NewDatabaseFrontDesk(c)
 
-    logger = log.New(os.Stdout, "[uniqush][backend][AddPushServiceProviderProcessor] ", log.LstdFlags)
+    logger = uniqush.NewLogger(os.Stdout, "[uniqush][backend][AddPushServiceProviderProcessor]", uniqush.LOGLEVEL_DEBUG)
     p = uniqush.NewAddPushServiceProviderProcessor(logger, ew, dbf)
     b.SetProcessor(uniqush.ACTION_ADD_PUSH_SERVICE_PROVIDER, p)
 
-    logger = log.New(os.Stdout, "[uniqush][backend][RemovePushServiceProviderProcessor] ", log.LstdFlags)
+    logger = uniqush.NewLogger(os.Stdout, "[uniqush][backend][RemovePushServiceProviderProcessor]", uniqush.LOGLEVEL_DEBUG)
     p = uniqush.NewRemovePushServiceProviderProcessor(logger, ew, dbf)
     b.SetProcessor(uniqush.ACTION_REMOVE_PUSH_SERVICE_PROVIDER, p)
 
-    logger = log.New(os.Stdout, "[uniqush][backend][Subscribe] ", log.LstdFlags)
+    logger = uniqush.NewLogger(os.Stdout, "[uniqush][backend][Subscribe]", uniqush.LOGLEVEL_DEBUG)
     p = uniqush.NewSubscribeProcessor(logger, ew, dbf)
     b.SetProcessor(uniqush.ACTION_SUBSCRIBE, p)
 
-    logger = log.New(os.Stdout, "[uniqush][backend][Unsubscribe] ", log.LstdFlags)
+    logger = uniqush.NewLogger(os.Stdout, "[uniqush][backend][Unsubscribe]", uniqush.LOGLEVEL_DEBUG)
     p = uniqush.NewUnsubscribeProcessor(logger, ew, dbf)
     b.SetProcessor(uniqush.ACTION_UNSUBSCRIBE, p)
 
-    logger = log.New(os.Stdout, "[uniqush][backend][Push] ", log.LstdFlags)
+    logger = uniqush.NewLogger(os.Stdout, "[uniqush][backend][Push]", uniqush.LOGLEVEL_DEBUG)
     p = uniqush.NewPushProcessor(logger, ew, dbf, ch)
 
     b.SetProcessor(uniqush.ACTION_PUSH, p)

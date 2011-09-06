@@ -22,13 +22,9 @@
 
 package uniqush
 
-import (
-    "log"
-)
-
 type UniqushBackEndIf interface {
     SetChannel(ch <-chan *Request)
-    SetLogger(logger *log.Logger)
+    SetLogger(logger *Logger)
     SetProcessor(action int, proc RequestProcessor)
     Run()
 }
@@ -36,10 +32,10 @@ type UniqushBackEndIf interface {
 type UniqushBackEnd struct {
     procs []RequestProcessor
     ch <-chan *Request
-    logger *log.Logger
+    logger *Logger
 }
 
-func NewUniqushBackEnd(ch chan *Request, logger *log.Logger) UniqushBackEndIf {
+func NewUniqushBackEnd(ch chan *Request, logger *Logger) UniqushBackEndIf {
     b := new(UniqushBackEnd)
     b.ch = ch
     b.logger = logger
@@ -50,7 +46,7 @@ func (b *UniqushBackEnd) SetChannel(ch <-chan *Request) {
     b.ch = ch
 }
 
-func (b *UniqushBackEnd) SetLogger(logger *log.Logger) {
+func (b *UniqushBackEnd) SetLogger(logger *Logger) {
     b.logger = logger
 }
 
@@ -76,7 +72,6 @@ func (b *UniqushBackEnd) Run() {
         if r.Action < 0 || r.Action >= NR_ACTIONS {
             continue
         }
-        b.logger.Printf("[BACKEND][DEBUG] Got request %s", r.ActionName())
         p := b.procs[r.Action]
         go p.Process(r)
     }

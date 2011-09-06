@@ -23,7 +23,6 @@
 package uniqush
 
 import (
-    "log"
     "time"
 )
 
@@ -92,7 +91,7 @@ func (p *PushProcessor) retryRequest(req *Request, retryAfter int, subscriber st
     p.qch <- task
 }
 
-func NewPushProcessor(logger *log.Logger, writer *EventWriter, dbfront DatabaseFrontDeskIf, backendch chan<- *Request) RequestProcessor{
+func NewPushProcessor(logger *Logger, writer *EventWriter, dbfront DatabaseFrontDeskIf, backendch chan<- *Request) RequestProcessor{
     ret := new(PushProcessor)
     ret.SetLogger(logger)
     ret.SetEventWriter(writer)
@@ -144,11 +143,11 @@ func (p *PushProcessor) pushToSingleDeliveryPoint(req *Request) []*successPushLo
                 re := err.(*RefreshDataError)
                 if re.PushServiceProvider != nil {
                     p.dbfront.ModifyPushServiceProvider(re.PushServiceProvider)
-                    defer p.logger.Printf("[UpdatePushServiceProvider] Service=%s PushServiceProvider=%s", service, re.PushServiceProvider.Name)
+                    defer p.logger.Infof("[UpdatePushServiceProvider] Service=%s PushServiceProvider=%s", service, re.PushServiceProvider.Name)
                 }
                 if re.DeliveryPoint != nil {
                     p.dbfront.ModifyDeliveryPoint(re.DeliveryPoint)
-                    defer p.logger.Printf("[UpdateDeliveryPoint] DeliveryPoint=%s", re.DeliveryPoint.Name)
+                    defer p.logger.Infof("[UpdateDeliveryPoint] DeliveryPoint=%s", re.DeliveryPoint.Name)
                 }
                 if re.OtherError != nil {
                     err = re.OtherError
@@ -161,11 +160,11 @@ func (p *PushProcessor) pushToSingleDeliveryPoint(req *Request) []*successPushLo
             case *RetryError:
                 re := err.(*RetryError)
                 p.retryRequest(req,re.RetryAfter, subscriber, psp, dp)
-                defer p.logger.Printf("[PushRetry] Service=%s Subscriber=%s DeliveryPoint=%s \"%v\"", service, subscriber, dp.Name, err)
+                defer p.logger.Warnf("[PushRetry] Service=%s Subscriber=%s DeliveryPoint=%s \"%v\"", service, subscriber, dp.Name, err)
                 return ret
             }
             // We want to be fast. So defer all IO operations
-            defer p.logger.Printf("[PushFail] Service=%s Subscriber=%s DeliveryPoint=%s \"%v\"", service, subscriber, dp.Name, err)
+            defer p.logger.Errorf("[PushFail] Service=%s Subscriber=%s DeliveryPoint=%s \"%v\"", service, subscriber, dp.Name, err)
             defer p.writer.PushFail(req, subscriber, dp, err)
             ret[i] = nil
             return ret
@@ -178,14 +177,12 @@ func (p *PushProcessor) pushToSingleDeliveryPoint(req *Request) []*successPushLo
 func (p *PushProcessor) push(req *Request, service string, subscriber string, subid int) []*successPushLog {
     pspdppairs, err := p.dbfront.GetPushServiceProviderDeliveryPointPairs(service, subscriber)
     if err != nil {
-        p.logger.Printf("[PushFail] Service=%s Subscriber=%s DatabaseError %v", service, subscriber, err)
+        p.logger.Errorf("[PushFail] Service=%s Subscriber=%s DatabaseError %v", service, subscriber, err)
         p.writer.PushFail(req, subscriber, nil, err)
     }
     if len(pspdppairs) <= 0 {
+        p.logger.Warnf("[PushFail] Service=%s Subscriber=%s NoSubscriber", service, subscriber)
         return nil
-        /* Do we need to log this ??
-        p.logger.Printf("[PushFail] Service=%s Subscriber=%s NoSubscriber", service, subscriber)
-        */
     }
     ret := make([]*successPushLog, len(pspdppairs))
 
@@ -201,11 +198,11 @@ func (p *PushProcessor) push(req *Request, service string, subscriber string, su
                     re := err.(*RefreshDataError)
                     if re.PushServiceProvider != nil {
                         p.dbfront.ModifyPushServiceProvider(re.PushServiceProvider)
-                        defer p.logger.Printf("[UpdatePushServiceProvider] Service=%s PushServiceProvider=%s", service, re.PushServiceProvider.Name)
+                        defer p.logger.Infof("[UpdatePushServiceProvider] Service=%s PushServiceProvider=%s", service, re.PushServiceProvider.Name)
                     }
                     if re.DeliveryPoint != nil {
                         p.dbfront.ModifyDeliveryPoint(re.DeliveryPoint)
-                        defer p.logger.Printf("[UpdateDeliveryPoint] DeliveryPoint=%s", re.DeliveryPoint.Name)
+                        defer p.logger.Infof("[UpdateDeliveryPoint] DeliveryPoint=%s", re.DeliveryPoint.Name)
                     }
                     if re.OtherError != nil {
                         err = re.OtherError
@@ -218,11 +215,11 @@ func (p *PushProcessor) push(req *Request, service string, subscriber string, su
                 case *RetryError:
                     re := err.(*RetryError)
                     p.retryRequest(req,re.RetryAfter, subscriber, psp, dp)
-                    defer p.logger.Printf("[PushRetry] Service=%s Subscriber=%s DeliveryPoint=%s \"%v\"", service, subscriber, dp.Name, err)
+                    defer p.logger.Warnf("[PushRetry] Service=%s Subscriber=%s DeliveryPoint=%s \"%v\"", service, subscriber, dp.Name, err)
                     continue
                 }
                 // We want to be fast. So defer all IO operations
-                defer p.logger.Printf("[PushFail] Service=%s Subscriber=%s DeliveryPoint=%s \"%v\"", service, subscriber, dp.Name, err)
+                defer p.logger.Errorf("[PushFail] Service=%s Subscriber=%s DeliveryPoint=%s \"%v\"", service, subscriber, dp.Name, err)
                 defer p.writer.PushFail(req, subscriber, dp, err)
                 ret[i] = nil
                 continue
@@ -244,7 +241,7 @@ func (p *PushProcessor) pushBulk(req *Request, service string, subscribers []str
     // Delay IO operations after real push
     for _, pushlog := range dps {
         if pushlog != nil {
-            p.logger.Printf("[PushRequest] Success Service=%s Subscriber=%s DeliveryPoint=%s id=%s",
+            p.logger.Infof("[PushRequest] Success Service=%s Subscriber=%s DeliveryPoint=%s id=%s",
                         service, subscribers[pushlog.subid], pushlog.dp.Name, pushlog.id)
             p.writer.PushSuccess(req, subscribers[pushlog.subid], pushlog.dp, pushlog.id)
 
@@ -262,12 +259,11 @@ func (p *PushProcessor) Process(req *Request) {
     finish := make(chan bool)
     pos := 0
 
-    p.logger.Printf("[DEBUG] I got push req from service %s to %s", req.Service, req.Subscribers)
     if len(req.Subscribers) == 1 && req.PushServiceProvider != nil && req.DeliveryPoint != nil {
         dps := p.pushToSingleDeliveryPoint(req)
         for _, pushlog := range dps {
             if pushlog != nil {
-                p.logger.Printf("[PushRequest] Success Service=%s Subscriber=%s DeliveryPoint=%s id=%s",
+                p.logger.Infof("[PushRequest] Success Service=%s Subscriber=%s DeliveryPoint=%s id=%s",
                             req.Service, req.Subscribers[0], pushlog.dp.Name, pushlog.id)
                 p.writer.PushSuccess(req, req.Subscribers[0], pushlog.dp, pushlog.id)
 

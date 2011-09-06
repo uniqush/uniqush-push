@@ -23,7 +23,6 @@
 package uniqush
 
 import (
-    "log"
     "http"
     "fmt"
     "time"
@@ -37,7 +36,7 @@ import (
 // (I know it's bad, but web.go does not support MethodHandler any more)
 type WebFrontEnd struct {
     ch chan<- *Request
-    logger *log.Logger
+    logger *Logger
     addr string
     writer *EventWriter
     stopch chan<- bool
@@ -53,7 +52,7 @@ func (f *NullWriter) Write(p []byte) (int, os.Error) {
     return len(p), nil
 }
 
-func NewWebFrontEnd(ch chan *Request, logger *log.Logger, addr string) UniqushFrontEnd {
+func NewWebFrontEnd(ch chan *Request, logger *Logger, addr string) UniqushFrontEnd {
     f := new(WebFrontEnd)
     f.ch = ch
     f.logger = logger
@@ -90,7 +89,7 @@ func (f *WebFrontEnd) stop() {
     }
 }
 
-func (f *WebFrontEnd) SetLogger(logger *log.Logger) {
+func (f *WebFrontEnd) SetLogger(logger *Logger) {
     f.logger = logger
 }
 
@@ -104,7 +103,7 @@ func (f *WebFrontEnd) addPushServiceProvider(form http.Values, id, addr string) 
     a.Service = form.Get("service")
 
     if len(a.Service) == 0 {
-        f.logger.Printf("[AddPushServiceRequestFail] Requestid=%s From=%s NoServiceName", id, addr)
+        f.logger.Errorf("[AddPushServiceRequestFail] Requestid=%s From=%s NoServiceName", id, addr)
         f.writer.BadRequest(a, os.NewError("NoServiceName"))
         return
     }
@@ -117,12 +116,12 @@ func (f *WebFrontEnd) addPushServiceProvider(form http.Values, id, addr string) 
         authtoken := form.Get("authtoken")
 
         if len(senderid) == 0 {
-            f.logger.Printf("[AddPushServiceRequestFail] Requestid=%s From=%s NoSenderId", id, addr)
+            f.logger.Errorf("[AddPushServiceRequestFail] Requestid=%s From=%s NoSenderId", id, addr)
             f.writer.BadRequest(a, os.NewError("NoSenderId"))
             return
         }
         if len(authtoken) == 0 {
-            f.logger.Printf("[AddPushServiceRequestFail] Requestid=%s From=%s NoAuthToken", id, addr)
+            f.logger.Errorf("[AddPushServiceRequestFail] Requestid=%s From=%s NoAuthToken", id, addr)
             f.writer.BadRequest(a, os.NewError("NoAuthToken"))
             return
         }
@@ -136,14 +135,14 @@ func (f *WebFrontEnd) addPushServiceProvider(form http.Values, id, addr string) 
     case SRVTYPE_BBPS:
         fallthrough
     default:
-        f.logger.Printf("[AddPushServiceRequestFail] Requestid=%s From=%s UnsupportPushService=%s", id, addr, pspname)
+        f.logger.Errorf("[AddPushServiceRequestFail] Requestid=%s From=%s UnsupportPushService=%s", id, addr, pspname)
         f.writer.BadRequest(a, os.NewError("UnsupportPushService:" + pspname))
         return
     }
 
     f.ch <- a
     f.writer.RequestReceived(a)
-    f.logger.Printf("[AddPushServiceRequest] Requestid=%s From=%s Service=%s", id, addr, pspname)
+    f.logger.Infof("[AddPushServiceRequest] Requestid=%s From=%s Service=%s", id, addr, pspname)
 }
 
 func (f *WebFrontEnd) removePushServiceProvider(form http.Values, id, addr string) {
@@ -156,7 +155,7 @@ func (f *WebFrontEnd) removePushServiceProvider(form http.Values, id, addr strin
     a.Service = form.Get("service")
 
     if len(a.Service) == 0 {
-        f.logger.Printf("[RemovePushServiceRequestFail] Requestid=%s From=%s NoServiceName", id, addr)
+        f.logger.Errorf("[RemovePushServiceRequestFail] Requestid=%s From=%s NoServiceName", id, addr)
         f.writer.BadRequest(a, os.NewError("NoServiceName"))
         return
     }
@@ -167,7 +166,7 @@ func (f *WebFrontEnd) removePushServiceProvider(form http.Values, id, addr strin
         a.PushServiceProvider.Name = pspid
         f.ch <- a
         f.writer.RequestReceived(a)
-        f.logger.Printf("[RemovePushServiceRequest] Requestid=%s From=%s ServiceId=%s", id, addr, pspid)
+        f.logger.Infof("[RemovePushServiceRequest] Requestid=%s From=%s ServiceId=%s", id, addr, pspid)
         return
     }
 
@@ -179,12 +178,12 @@ func (f *WebFrontEnd) removePushServiceProvider(form http.Values, id, addr strin
         authtoken := form.Get("authtoken")
 
         if len(senderid) == 0 {
-            f.logger.Printf("[RemovePushServiceRequestFail] Requestid=%s From=%s NoSenderId", id, addr)
+            f.logger.Errorf("[RemovePushServiceRequestFail] Requestid=%s From=%s NoSenderId", id, addr)
             f.writer.BadRequest(a, os.NewError("NoSenderId"))
             return
         }
         if len(authtoken) == 0 {
-            f.logger.Printf("[RemovePushServiceRequestFail] Requestid=%s From=%s NoAuthToken", id, addr)
+            f.logger.Errorf("[RemovePushServiceRequestFail] Requestid=%s From=%s NoAuthToken", id, addr)
             f.writer.BadRequest(a, os.NewError("NoAuthToken"))
             return
         }
@@ -198,14 +197,14 @@ func (f *WebFrontEnd) removePushServiceProvider(form http.Values, id, addr strin
     case SRVTYPE_BBPS:
         fallthrough
     default:
-        f.logger.Printf("[RemovePushServiceRequestFail] Requestid=%s From=%s UnsupportPushService=%s", id, addr, pspname)
+        f.logger.Errorf("[RemovePushServiceRequestFail] Requestid=%s From=%s UnsupportPushService=%s", id, addr, pspname)
         f.writer.BadRequest(a, os.NewError("UnsupportPushService:" + pspname))
         return
     }
 
     f.ch <- a
     f.writer.RequestReceived(a)
-    f.logger.Printf("[RemovePushServiceRequest] Requestid=%s From=%s Service=%s", id, addr, pspname)
+    f.logger.Infof("[RemovePushServiceRequest] Requestid=%s From=%s Service=%s", id, addr, pspname)
 }
 
 func (f *WebFrontEnd) addDeliveryPointToService(form http.Values, id, addr string) {
@@ -218,14 +217,14 @@ func (f *WebFrontEnd) addDeliveryPointToService(form http.Values, id, addr strin
     a.Service = form.Get("service")
 
     if len(a.Service) == 0 {
-        f.logger.Printf("[SubscribeFail] Requestid=%s From=%s NoServiceName", id, addr)
+        f.logger.Errorf("[SubscribeFail] Requestid=%s From=%s NoServiceName", id, addr)
         f.writer.BadRequest(a, os.NewError("NoServiceName"))
         return
     }
     subscriber := form.Get("subscriber")
 
     if subscriber == "" {
-        f.logger.Printf("[SubscribeFail] Requestid=%s From=%s NoSubscriber", id, addr)
+        f.logger.Errorf("[SubscribeFail] Requestid=%s From=%s NoSubscriber", id, addr)
         f.writer.BadRequest(a, os.NewError("NoSubscriber"))
         return
     }
@@ -246,12 +245,12 @@ func (f *WebFrontEnd) addDeliveryPointToService(form http.Values, id, addr strin
         account := form.Get("account")
         regid := form.Get("regid")
         if account == "" {
-            f.logger.Printf("[SubscribeFail] NoGoogleAccount Requestid=%s From=%s", id, addr)
+            f.logger.Errorf("[SubscribeFail] NoGoogleAccount Requestid=%s From=%s", id, addr)
             f.writer.BadRequest(a, os.NewError("NoGoogleAccount"))
             return
         }
         if regid == "" {
-            f.logger.Printf("[SubscribeFail] NoRegistrationId Requestid=%s From=%s", id, addr)
+            f.logger.Errorf("[SubscribeFail] NoRegistrationId Requestid=%s From=%s", id, addr)
             f.writer.BadRequest(a, os.NewError("NoRegistrationId"))
             return
         }
@@ -259,7 +258,7 @@ func (f *WebFrontEnd) addDeliveryPointToService(form http.Values, id, addr strin
         a.DeliveryPoint = dp
         f.ch <- a
         f.writer.RequestReceived(a)
-        f.logger.Printf("[SubscribeRequest] Requestid=%s From=%s Account=%s", id, addr, account)
+        f.logger.Infof("[SubscribeRequest] Requestid=%s From=%s Account=%s", id, addr, account)
         return
     /* TODO More OSes */
     case OSTYPE_IOS:
@@ -269,7 +268,7 @@ func (f *WebFrontEnd) addDeliveryPointToService(form http.Values, id, addr strin
     case OSTYPE_BLKBERRY:
         fallthrough
     default:
-        f.logger.Printf("[SubscribeFail] Requestid=%s From=%s UnsupportOS=%s", id, addr, dpos)
+        f.logger.Errorf("[SubscribeFail] Requestid=%s From=%s UnsupportOS=%s", id, addr, dpos)
         f.writer.BadRequest(a, os.NewError("UnsupportOS:" + dpos))
         return
     }
@@ -286,14 +285,14 @@ func (f *WebFrontEnd) removeDeliveryPointFromService(form http.Values, id, addr 
     a.Service = form.Get("service")
 
     if len(a.Service) == 0 {
-        f.logger.Printf("[UnsubscribeFail] Requestid=%s From=%s NoServiceName", id, addr)
+        f.logger.Errorf("[UnsubscribeFail] Requestid=%s From=%s NoServiceName", id, addr)
         f.writer.BadRequest(a, os.NewError("NoServiceName"))
         return
     }
     subscriber := form.Get("subscriber")
 
     if subscriber == "" {
-        f.logger.Printf("[UnsubscribeFail] Requestid=%s From=%s NoSubscriber", id, addr)
+        f.logger.Errorf("[UnsubscribeFail] Requestid=%s From=%s NoSubscriber", id, addr)
         f.writer.BadRequest(a, os.NewError("NoSubscriber"))
         return
     }
@@ -307,7 +306,7 @@ func (f *WebFrontEnd) removeDeliveryPointFromService(form http.Values, id, addr 
         a.DeliveryPoint = dp
         f.ch <- a
         f.writer.RequestReceived(a)
-        f.logger.Printf("[UnsubscribeRequest] Requestid=%s From=%s DeliveryPoint=%s", id, addr, dpname)
+        f.logger.Infof("[UnsubscribeRequest] Requestid=%s From=%s DeliveryPoint=%s", id, addr, dpname)
         return
     }
 
@@ -317,12 +316,12 @@ func (f *WebFrontEnd) removeDeliveryPointFromService(form http.Values, id, addr 
         account := form.Get("account")
         regid := form.Get("regid")
         if account == "" {
-            f.logger.Printf("[UnsubscribeFail] Reuqestid=%s From=%s NoGoogleAccount", id, addr)
+            f.logger.Errorf("[UnsubscribeFail] Reuqestid=%s From=%s NoGoogleAccount", id, addr)
             f.writer.BadRequest(a, os.NewError("NoGoogleAccount"))
             return
         }
         if regid == "" {
-            f.logger.Printf("[UnsubscribeFail] Requestid=%s From=%s NoRegistrationId", id, addr)
+            f.logger.Errorf("[UnsubscribeFail] Requestid=%s From=%s NoRegistrationId", id, addr)
             f.writer.BadRequest(a, os.NewError("NoRegistrationId"))
             return
         }
@@ -330,7 +329,7 @@ func (f *WebFrontEnd) removeDeliveryPointFromService(form http.Values, id, addr 
         a.DeliveryPoint = dp
         f.ch <- a
         f.writer.RequestReceived(a)
-        f.logger.Printf("[UnsubscribeRequest] Requestid=%s From=%s Account=%s", id, addr, account)
+        f.logger.Infof("[UnsubscribeRequest] Requestid=%s From=%s Account=%s", id, addr, account)
         return
     /* TODO More OSes */
     case OSTYPE_IOS:
@@ -340,7 +339,7 @@ func (f *WebFrontEnd) removeDeliveryPointFromService(form http.Values, id, addr 
     case OSTYPE_BLKBERRY:
         fallthrough
     default:
-        f.logger.Printf("[UnsubscribeFail] Requestid=%s From=%s UnsupportOS=%s", id, addr, dpos)
+        f.logger.Errorf("[UnsubscribeFail] Requestid=%s From=%s UnsupportOS=%s", id, addr, dpos)
         f.writer.BadRequest(a, os.NewError("UnsupportOS:" + dpos))
         return
     }
@@ -357,14 +356,14 @@ func (f *WebFrontEnd) pushNotification(form http.Values, id, addr string) {
     a.Service = form.Get("service")
 
     if len(a.Service) == 0 {
-        f.logger.Printf("[PushNotificationFail] Requestid=%s From=%s NoServiceName", id, addr)
+        f.logger.Errorf("[PushNotificationFail] Requestid=%s From=%s NoServiceName", id, addr)
         f.writer.BadRequest(a, os.NewError("NoServiceName"))
         return
     }
     subscribers := form.Get("subscriber")
 
     if subscribers == "" {
-        f.logger.Printf("[PushNotificationFail] Requestid=%s From=%s NoSubscriber", id, addr)
+        f.logger.Errorf("[PushNotificationFail] Requestid=%s From=%s NoSubscriber", id, addr)
         f.writer.BadRequest(a, os.NewError("NoSubscriber"))
         return
     }
@@ -375,7 +374,7 @@ func (f *WebFrontEnd) pushNotification(form http.Values, id, addr string) {
 
     a.Notification.Message = form.Get("msg")
     if a.Notification.Message == "" {
-        f.logger.Printf("[PushNotificationFail] Requestid=%s From=%s NoMessageBody", id, addr)
+        f.logger.Errorf("[PushNotificationFail] Requestid=%s From=%s NoMessageBody", id, addr)
         f.writer.BadRequest(a, os.NewError("NoMessageBody"))
         return
     }
@@ -395,7 +394,7 @@ func (f *WebFrontEnd) pushNotification(form http.Values, id, addr string) {
     f.ch <- a
 
     // XXX Should we include the message body in the log?
-    f.logger.Printf("[PushNotificationRequest] Requestid=%s From=%s Service=%s Subscribers=%s Body=\"%s\"", id, addr, a.Service, subscribers, a.Notification.Message)
+    f.logger.Infof("[PushNotificationRequest] Requestid=%s From=%s Service=%s Subscribers=%s Body=\"%s\"", id, addr, a.Service, subscribers, a.Notification.Message)
     f.writer.RequestReceived(a)
 }
 
@@ -463,7 +462,7 @@ const (
 )
 
 func (f *WebFrontEnd) Run() {
-    f.logger.Printf("[Start] %s", f.addr)
+    f.logger.Infof("[Start] %s", f.addr)
     http.HandleFunc(ADD_PUSH_SERVICE_PROVIDER_TO_SERVICE_URL, addPushServiceProvider)
     http.HandleFunc(REMOVE_PUSH_SERVICE_PROVIDER_TO_SERVICE_URL, removePushServiceProvider)
     http.HandleFunc(ADD_DELIVERY_POINT_TO_SERVICE_URL, addDeliveryPointToService)
@@ -472,7 +471,7 @@ func (f *WebFrontEnd) Run() {
     http.HandleFunc(PUSH_NOTIFICATION_URL, pushNotification)
     err := http.ListenAndServe(f.addr, nil)
     if err != nil {
-        f.logger.Printf("HTTPServerError \"%v\"", err)
+        f.logger.Fatalf("HTTPServerError \"%v\"", err)
     }
     f.stop()
 }
