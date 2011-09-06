@@ -24,6 +24,7 @@ GOFILES=\
 	dbfrontdesk.go\
 	pushprocessor.go\
 	taskqueue.go\
+	log.go\
 
 
 include $(GOROOT)/src/Make.pkg
