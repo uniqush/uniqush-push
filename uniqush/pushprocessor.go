@@ -62,6 +62,7 @@ func (p *PushProcessor) retryRequest(req *Request, retryAfter int, subscriber st
     newreq.Action = ACTION_PUSH
     newreq.PushServiceProvider = psp
     newreq.DeliveryPoint = dp
+    newreq.RequestSenderAddr = req.RequestSenderAddr
 
     newreq.Service = req.Service
     newreq.Subscribers = make([]string, 1)
@@ -125,6 +126,19 @@ type successPushLog struct {
     id string
 }
 
+func (p *PushProcessor) unsubscribe(req *Request, subscriber string, dp *DeliveryPoint) {
+    a := new(Request)
+    a.PunchTimestamp()
+    a.ID = req.ID
+    a.Action = ACTION_UNSUBSCRIBE
+    a.RequestSenderAddr = req.RequestSenderAddr
+    a.Service = req.Service
+    a.Subscribers = make([]string, 1)
+    a.Subscribers[0] = subscriber
+    a.DeliveryPoint = dp
+    p.backendch <- a
+}
+
 func (p *PushProcessor) pushToSingleDeliveryPoint(req *Request) []*successPushLog{
     ret := make([]*successPushLog, 1)
     ret[0] = nil
@@ -160,11 +174,13 @@ func (p *PushProcessor) pushToSingleDeliveryPoint(req *Request) []*successPushLo
             case *RetryError:
                 re := err.(*RetryError)
                 p.retryRequest(req,re.RetryAfter, subscriber, psp, dp)
-                defer p.logger.Warnf("[PushRetry] Service=%s Subscriber=%s DeliveryPoint=%s \"%v\"", service, subscriber, dp.Name, err)
+                defer p.logger.Warnf("[PushRetry] RequestId=%s Service=%s Subscriber=%s DeliveryPoint=%s \"%v\"", req.ID, service, subscriber, dp.Name, err)
                 return ret
+            case *UnregisteredError:
+                go p.unsubscribe(req, subscriber, dp)
             }
             // We want to be fast. So defer all IO operations
-            defer p.logger.Errorf("[PushFail] Service=%s Subscriber=%s DeliveryPoint=%s \"%v\"", service, subscriber, dp.Name, err)
+            defer p.logger.Errorf("[PushFail] RequestId=%s Service=%s Subscriber=%s DeliveryPoint=%s \"%v\"", req.ID, service, subscriber, dp.Name, err)
             defer p.writer.PushFail(req, subscriber, dp, err)
             ret[i] = nil
             return ret
@@ -215,11 +231,13 @@ func (p *PushProcessor) push(req *Request, service string, subscriber string, su
                 case *RetryError:
                     re := err.(*RetryError)
                     p.retryRequest(req,re.RetryAfter, subscriber, psp, dp)
-                    defer p.logger.Warnf("[PushRetry] Service=%s Subscriber=%s DeliveryPoint=%s \"%v\"", service, subscriber, dp.Name, err)
+                    defer p.logger.Warnf("[PushRetry] RequestId=%s Service=%s Subscriber=%s DeliveryPoint=%s \"%v\"", req.ID, service, subscriber, dp.Name, err)
                     continue
+                case *UnregisteredError:
+                    go p.unsubscribe(req, subscriber, dp)
                 }
                 // We want to be fast. So defer all IO operations
-                defer p.logger.Errorf("[PushFail] Service=%s Subscriber=%s DeliveryPoint=%s \"%v\"", service, subscriber, dp.Name, err)
+                defer p.logger.Errorf("[PushFail] RequestId=%s Service=%s Subscriber=%s DeliveryPoint=%s \"%v\"", req.ID, service, subscriber, dp.Name, err)
                 defer p.writer.PushFail(req, subscriber, dp, err)
                 ret[i] = nil
                 continue
