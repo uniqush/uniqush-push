@@ -76,6 +76,7 @@ func (b *UniqushBackEnd) Run() {
         if r.Action < 0 || r.Action >= NR_ACTIONS {
             continue
         }
+        b.logger.Printf("[BACKEND][DEBUG] Got request %s", r.ActionName())
         p := b.procs[r.Action]
         go p.Process(r)
     }

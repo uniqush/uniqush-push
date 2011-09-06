@@ -1,5 +1,5 @@
 Priority from high to low
-- Timer so that we can re-send failed notifications
+- Exp. Backoff re-send: need to be tested
 - APNS (For iOS) support
 - Leveled log
 - Config file support

@@ -181,6 +181,12 @@ func (p *PushProcessor) push(req *Request, service string, subscriber string, su
         p.logger.Printf("[PushFail] Service=%s Subscriber=%s DatabaseError %v", service, subscriber, err)
         p.writer.PushFail(req, subscriber, nil, err)
     }
+    if len(pspdppairs) <= 0 {
+        return nil
+        /* Do we need to log this ??
+        p.logger.Printf("[PushFail] Service=%s Subscriber=%s NoSubscriber", service, subscriber)
+        */
+    }
     ret := make([]*successPushLog, len(pspdppairs))
 
     for i, pdpair := range pspdppairs {
@@ -256,6 +262,7 @@ func (p *PushProcessor) Process(req *Request) {
     finish := make(chan bool)
     pos := 0
 
+    p.logger.Printf("[DEBUG] I got push req from service %s to %s", req.Service, req.Subscribers)
     if len(req.Subscribers) == 1 && req.PushServiceProvider != nil && req.DeliveryPoint != nil {
         dps := p.pushToSingleDeliveryPoint(req)
         for _, pushlog := range dps {
