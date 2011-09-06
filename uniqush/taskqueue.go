@@ -42,7 +42,7 @@ func (t *TaskTime) ExecTime() int64 {
 
 type TaskQueue struct {
     tree *llrb.Tree
-    ch <-chan *Task
+    ch <-chan Task
     waitTime int64
 }
 
@@ -54,7 +54,7 @@ func taskBefore (a, b interface{}) bool{
     return a.(Task).ExecTime() < b.(Task).ExecTime()
 }
 
-func NewTaskQueue(ch <-chan *Task) *TaskQueue {
+func NewTaskQueue(ch <-chan Task) *TaskQueue {
     ret := new(TaskQueue)
     ret.tree = llrb.New(taskBefore)
     ret.ch = ch
@@ -65,11 +65,10 @@ func NewTaskQueue(ch <-chan *Task) *TaskQueue {
 func (t *TaskQueue) Run() {
     for {
         select {
-        case action := <-t.ch:
-            if action == nil {
+        case task := <-t.ch:
+            if task == nil {
                 return
             }
-            task := *action
             /*
             fmt.Printf("I received a task. Current Time %d, it ask me to run it at %d\n",
                         time.Nanoseconds()/1E9, task.ExecTime()/1E9)

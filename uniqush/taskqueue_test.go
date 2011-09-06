@@ -30,7 +30,7 @@ import (
 )
 
 type ExpBackoffTask struct {
-    ch chan<- *Task
+    ch chan<- Task
     backofftime int64
     TaskTime
 }
@@ -44,23 +44,19 @@ func (t *ExpBackoffTask) Run(curtime int64) {
     t.execTime = curtime + t.backofftime
     fmt.Printf("I run @ %d, I will wait %d nanoseconds to run @ %ds %dns\n",
                curtime, t.backofftime, t.ExecTime()/1E9, t.execTime)
-    var ti Task
-    ti = t
-    t.ch <- &ti
+    t.ch <- t
 }
 
 func TestTaskQueue(t *testing.T) {
     task := new(ExpBackoffTask)
-    ch := make(chan *Task)
+    ch := make(chan Task)
     task.ch = ch
     task.backofftime = 1E9
     task.execTime = time.Nanoseconds() + 1E9
     q := NewTaskQueue(ch)
 
     go q.Run()
-    var ti Task
-    ti = task
-    ch <- &ti
+    ch <- task
 
     <-make(chan int)
 }
