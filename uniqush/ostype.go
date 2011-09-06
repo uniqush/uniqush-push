@@ -34,7 +34,7 @@ const (
     OSTYPE_BLKBERRY
 )
 
-/* TODO add version info */
+/* XXX do we need to add version info? */
 type OSType struct {
     id int
 }
