@@ -14,15 +14,15 @@ Or
 
 Subscribe a Service
 ===========================
-`curl http://127.0.0.1:9898/subscribe -d service=myservice -d subscriber=uniqush.go -d os=android -d account=uniqush.client@gmail.com -d regid=fakeregid`
+`curl http://127.0.0.1:9898/subscribe -d service=myservice -d subscriber=uniqush.client -d os=android -d account=uniqush.client@gmail.com -d regid=fakeregid`
 
 Unsubscribe a Service
 ===========================
-`curl http://127.0.0.1:9898/unsubscribe -d service=myservice -d subscriber=uniqush.go -d os=android -d account=uniqush.client@gmail.com -d regid=fakeregid`
+`curl http://127.0.0.1:9898/unsubscribe -d service=myservice -d subscriber=uniqush.client -d os=android -d account=uniqush.client@gmail.com -d regid=fakeregid`
 
 Or
 
-`curl http://127.0.0.1:9898/unsubscribe -d service=myservice -d subscriber=uniqush.go -d deliverypointid=deliverypointid`
+`curl http://127.0.0.1:9898/unsubscribe -d service=myservice -d subscriber=uniqush.client -d deliverypointid=deliverypointid`
 
 Stop the Program
 ===========================
@@ -39,5 +39,5 @@ Push a Notification
   + img: Optional. Image
   + sound: Optional. Sound
 
-`curl http://127.0.0.1:9898/push -d service=myservice -d subscriber=uniqush.go -d msg="Hello World"`
+`curl http://127.0.0.1:9898/push -d service=myservice -d subscriber=uniqush.client -d msg="Hello World"`
 
