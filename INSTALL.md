@@ -1,0 +1,4 @@
+- Install [Redis Database](http://redis.io)
+- Install [modified redis.go](https://github.com/monnand/redis.go)
+- Install [GoLLRB](https://github.com/petar/GoLLRB)
+- Install Uniqush by typing ./build.sh under uniqush directory
