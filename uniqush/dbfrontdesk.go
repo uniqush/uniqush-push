@@ -90,29 +90,28 @@ type DatabaseFrontDesk struct {
     db UniqushDatabase
 }
 
-func NewDatabaseFrontDesk(conf *DatabaseConfig) DatabaseFrontDeskIf{
-    udb := NewUniqushRedisDB(conf)
-    if udb == nil {
-        return nil
-    }
+func NewDatabaseFrontDesk(conf *DatabaseConfig) (DatabaseFrontDeskIf, os.Error) {
+    var err os.Error
     f := new(DatabaseFrontDesk)
+    udb, err := NewUniqushRedisDB(conf)
+    if udb == nil || err != nil{
+        return nil, err
+    }
     f.db = NewCachedUniqushDatabase(udb, udb, conf)
     if f.db == nil {
-        return nil
+        return nil, os.NewError("Cannot create cached database")
     }
-    return f
+    return f, nil
 }
 
-func NewDatabaseFrontDeskWithoutCache(conf *DatabaseConfig) DatabaseFrontDeskIf{
-    if conf == nil {
-        return nil
-    }
+func NewDatabaseFrontDeskWithoutCache(conf *DatabaseConfig) (DatabaseFrontDeskIf, os.Error){
+    var err os.Error
     f := new(DatabaseFrontDesk)
-    f.db = NewUniqushRedisDB(conf)
-    if f.db == nil {
-        return nil
+    f.db, err = NewUniqushRedisDB(conf)
+    if f.db == nil || err != nil{
+        return nil, err
     }
-    return f
+    return f, nil
 }
 
 func (f *DatabaseFrontDesk)FlushCache() os.Error {

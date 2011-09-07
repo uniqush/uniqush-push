@@ -25,6 +25,6 @@ GOFILES=\
 	pushprocessor.go\
 	taskqueue.go\
 	log.go\
-	config.go\
+	uniqushsys.go\
 
 include $(GOROOT)/src/Make.pkg

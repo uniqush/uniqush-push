@@ -65,7 +65,7 @@ func loadDatabaseConfig(cf *conf.ConfigFile) (*DatabaseConfig, os.Error) {
     if err != nil || c.Name == "" {
         c.Name = "0"
     }
-    c.Port, err = cf.GetInt("Database", "name")
+    c.Port, err = cf.GetInt("Database", "port")
     if err != nil || c.Port <= 0 {
         c.Port = -1
     }
@@ -106,6 +106,9 @@ var (
 )
 
 func LoadUniqushSystem(filename string) (*UniqushSystem, os.Error) {
+    if filename == "" {
+        filename = defaultConfigFilePath
+    }
     c, err := conf.ReadConfigFile(filename)
     if err != nil {
         return nil, err
@@ -145,7 +148,11 @@ func LoadUniqushSystem(filename string) (*UniqushSystem, os.Error) {
     if e0 != nil {
         return nil, e0
     }
-    dbf := NewDatabaseFrontDesk(dbconf)
+    dbf, e30 := NewDatabaseFrontDesk(dbconf)
+
+    if e30 != nil{
+        return nil, e30
+    }
     ret.Database = dbf
 
     /* Load Processors */

@@ -29,6 +29,13 @@ import (
 )
 
 func main() {
+    unisys, err := uniqush.LoadUniqushSystem("uniqush.conf")
+    if err != nil {
+        fmt.Fprintf(os.Stderr, "Fatal Error: %v\n", err)
+        os.Exit(-1)
+    }
+    unisys.Run()
+    /*
     logger := uniqush.NewLogger(os.Stdout, "[uniqush][frontend][web]", uniqush.LOGLEVEL_DEBUG)
     ch := make(chan *uniqush.Request)
     stopch := make(chan bool)
@@ -85,5 +92,6 @@ func main() {
     <-stopch;
     fmt.Printf("Flush cache!\n")
     dbf.FlushCache()
+    */
 }
 

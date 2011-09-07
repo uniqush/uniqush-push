@@ -43,12 +43,12 @@ const (
     DELIVERY_POINT_COUNTER_PREFIX string = "delivery.point.counter:"
 )
 
-func NewUniqushRedisDB(c *DatabaseConfig) *UniqushRedisDB {
+func NewUniqushRedisDB(c *DatabaseConfig) (*UniqushRedisDB, os.Error) {
     if c == nil {
-        return nil
+        return nil, os.NewError("Invalid Database Config")
     }
     if strings.ToLower(c.Engine) != "redis" {
-        return nil
+        return nil, os.NewError("Unsupported Database Engine")
     }
     var client redis.Client
     if c.Host == "" {
@@ -71,7 +71,7 @@ func NewUniqushRedisDB(c *DatabaseConfig) *UniqushRedisDB {
 
     ret := new(UniqushRedisDB)
     ret.client = &client
-    return ret
+    return ret, nil
 }
 
 func keyValueToDeliveryPoint(name string, value []byte) *DeliveryPoint {
