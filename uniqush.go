@@ -29,69 +29,12 @@ import (
 )
 
 func main() {
-    unisys, err := uniqush.LoadUniqushSystem("uniqush.conf")
+    conf := "/etc/uniqush/uniqush.conf"
+    unisys, err := uniqush.LoadUniqushSystem(conf)
     if err != nil {
         fmt.Fprintf(os.Stderr, "Fatal Error: %v\n", err)
         os.Exit(-1)
     }
     unisys.Run()
-    /*
-    logger := uniqush.NewLogger(os.Stdout, "[uniqush][frontend][web]", uniqush.LOGLEVEL_DEBUG)
-    ch := make(chan *uniqush.Request)
-    stopch := make(chan bool)
-    f := uniqush.NewWebFrontEnd(ch, logger, "localhost:9898")
-    f.SetStopChannel(stopch)
-
-    //ew := uniqush.NewEventWriter(os.Stderr)
-    ew := uniqush.NewEventWriter(&uniqush.NullWriter{})
-    f.SetEventWriter(ew)
-
-    logger = uniqush.NewLogger(os.Stdout, "[uniqush][backend]", uniqush.LOGLEVEL_DEBUG)
-    b := uniqush.NewUniqushBackEnd(ch, logger)
-
-    logger = uniqush.NewLogger(os.Stdout, "[uniqush][actionprinter]", uniqush.LOGLEVEL_DEBUG)
-    p := uniqush.NewActionPrinter(logger)
-
-    for i := 0; i < uniqush.NR_ACTIONS; i++ {
-        b.SetProcessor(i, p)
-    }
-
-    c := new(uniqush.DatabaseConfig)
-    c.Port = -1
-    c.Engine = "redis"
-    c.Name = "0"
-    c.EverySec = 600
-    c.LeastDirty = 10
-    c.CacheSize = 10
-
-    dbf := uniqush.NewDatabaseFrontDesk(c)
-
-    logger = uniqush.NewLogger(os.Stdout, "[uniqush][backend][AddPushServiceProviderProcessor]", uniqush.LOGLEVEL_DEBUG)
-    p = uniqush.NewAddPushServiceProviderProcessor(logger, ew, dbf)
-    b.SetProcessor(uniqush.ACTION_ADD_PUSH_SERVICE_PROVIDER, p)
-
-    logger = uniqush.NewLogger(os.Stdout, "[uniqush][backend][RemovePushServiceProviderProcessor]", uniqush.LOGLEVEL_DEBUG)
-    p = uniqush.NewRemovePushServiceProviderProcessor(logger, ew, dbf)
-    b.SetProcessor(uniqush.ACTION_REMOVE_PUSH_SERVICE_PROVIDER, p)
-
-    logger = uniqush.NewLogger(os.Stdout, "[uniqush][backend][Subscribe]", uniqush.LOGLEVEL_DEBUG)
-    p = uniqush.NewSubscribeProcessor(logger, ew, dbf)
-    b.SetProcessor(uniqush.ACTION_SUBSCRIBE, p)
-
-    logger = uniqush.NewLogger(os.Stdout, "[uniqush][backend][Unsubscribe]", uniqush.LOGLEVEL_DEBUG)
-    p = uniqush.NewUnsubscribeProcessor(logger, ew, dbf)
-    b.SetProcessor(uniqush.ACTION_UNSUBSCRIBE, p)
-
-    logger = uniqush.NewLogger(os.Stdout, "[uniqush][backend][Push]", uniqush.LOGLEVEL_DEBUG)
-    p = uniqush.NewPushProcessor(logger, ew, dbf, ch)
-    b.SetProcessor(uniqush.ACTION_PUSH, p)
-
-    go f.Run()
-    go b.Run()
-
-    <-stopch;
-    fmt.Printf("Flush cache!\n")
-    dbf.FlushCache()
-    */
 }
 

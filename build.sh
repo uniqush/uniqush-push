@@ -6,4 +6,3 @@ gomake install
 cd ..
 gomake clean
 gomake
-./uniqush-server

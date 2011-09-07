@@ -1,6 +1,9 @@
 - Install [Redis Database](http://redis.io)
-- Install [modified redis.go](https://github.com/monnand/redis.go)
-- Install [GoLLRB](https://github.com/petar/GoLLRB)
+- Install [modified redis.go](https://github.com/monnand/redis.go), using ordinary make file instead of goinstall
+- Install [GoLLRB](https://github.com/petar/GoLLRB), using goinstall: `goinstall github.com/petar/GoLLRB/llrb`
+- Install [goconf](http://code.google.com/p/goconf/), using goinstall: `goinstall goconf.googlecode.com/hg`
 - Build Uniqush by typing `./build.sh` under uniqush directory
+- Copy the uniqush.conf to /etc/uniqush/uniqush.conf
 - Install Uniqush by typing `make install`
 - The `uniqush-server` will be copied to your $BIN dir
+- Type `uniqush-server` to run the server
