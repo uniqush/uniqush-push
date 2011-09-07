@@ -77,7 +77,6 @@ func main() {
 
     logger = uniqush.NewLogger(os.Stdout, "[uniqush][backend][Push]", uniqush.LOGLEVEL_DEBUG)
     p = uniqush.NewPushProcessor(logger, ew, dbf, ch)
-
     b.SetProcessor(uniqush.ACTION_PUSH, p)
 
     go f.Run()
