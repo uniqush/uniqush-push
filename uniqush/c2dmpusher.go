@@ -23,11 +23,12 @@
 package uniqush
 
 import (
-    "os"
-    "http"
-    "strings"
-    "io/ioutil"
-//    "url"
+	"os"
+	"http"
+	"strings"
+	"io/ioutil"
+	"url"
+	//    "url"
 )
 
 /* FIXME
@@ -49,131 +50,130 @@ import (
  * service.
  */
 const (
-    service_url string = "http://android.apis.google.com/c2dm/send"
+	service_url string = "http://android.apis.google.com/c2dm/send"
 )
 
 type C2DMPusher struct {
-    ServiceType
+	ServiceType
 }
 
 func NewC2DMPusher() *C2DMPusher {
-    ret := &C2DMPusher{ServiceType{SRVTYPE_C2DM}}
-    return ret
+	ret := &C2DMPusher{ServiceType{SRVTYPE_C2DM}}
+	return ret
 }
 
 func (n *Notification) toC2DMFormat() map[string]string {
-    /* TODO We need to add other fields */
-    ret := make(map[string]string, len(n.Data) + 6)
-    ret["msg"] = n.Message
-    return ret
+	/* TODO We need to add other fields */
+	ret := make(map[string]string, len(n.Data)+6)
+	ret["msg"] = n.Message
+	return ret
 }
 
 func (p *C2DMPusher) Push(sp *PushServiceProvider,
-                          s *DeliveryPoint,
-                          n *Notification) (string, os.Error) {
-    if !p.IsCompatible(&s.OSType) {
-        return "", &PushErrorIncompatibleOS{p.ServiceType, s.OSType}
-    }
-    msg := n.toC2DMFormat()
-    data := http.Values{}
+s *DeliveryPoint,
+n *Notification) (string, os.Error) {
+	if !p.IsCompatible(&s.OSType) {
+		return "", &PushErrorIncompatibleOS{p.ServiceType, s.OSType}
+	}
+	msg := n.toC2DMFormat()
+	data := url.Values{}
 
-    data.Set("registration_id", s.RegistrationID())
-    /* TODO better collapse key */
-    data.Set("collapse_key", msg["msg"])
+	data.Set("registration_id", s.RegistrationID())
+	/* TODO better collapse key */
+	data.Set("collapse_key", msg["msg"])
 
-    for k, v := range msg {
-        data.Set("data." + k, v)
-    }
+	for k, v := range msg {
+		data.Set("data."+k, v)
+	}
 
-    req, err := http.NewRequest("POST", service_url, strings.NewReader(data.Encode()))
-    if err != nil {
-        return "", err
-    }
-    req.Header.Set("Authorization", "GoogleLogin auth=" + sp.AuthToken())
-    req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req, err := http.NewRequest("POST", service_url, strings.NewReader(data.Encode()))
+	if err != nil {
+		return "", err
+	}
+	req.Header.Set("Authorization", "GoogleLogin auth="+sp.AuthToken())
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	r, e20 := http.DefaultClient.Do(req)
-    if e20 != nil {
-        return "", e20
-    }
-    refreshpsp := false
-    new_auth_token := r.Header.Get("Update-Client-Auth")
-    if new_auth_token != "" && sp.AuthToken() != new_auth_token {
-        sp.UpdateAuthToken(new_auth_token)
-        refreshpsp = true
-    }
+	if e20 != nil {
+		return "", e20
+	}
+	refreshpsp := false
+	new_auth_token := r.Header.Get("Update-Client-Auth")
+	if new_auth_token != "" && sp.AuthToken() != new_auth_token {
+		sp.UpdateAuthToken(new_auth_token)
+		refreshpsp = true
+	}
 
-    switch (r.StatusCode) {
-    case 503:
-        /* TODO extract the retry after field */
-        after := -1
-        var reterr os.Error
-        reterr = NewRetryError(after)
-        if refreshpsp {
-            re := NewRefreshDataError(sp, nil, reterr)
-            reterr = re
-        }
-        return "", reterr
-    case 401:
-        return "", NewInvalidPushServiceProviderError(sp)
-    }
+	switch r.StatusCode {
+	case 503:
+		/* TODO extract the retry after field */
+		after := -1
+		var reterr os.Error
+		reterr = NewRetryError(after)
+		if refreshpsp {
+			re := NewRefreshDataError(sp, nil, reterr)
+			reterr = re
+		}
+		return "", reterr
+	case 401:
+		return "", NewInvalidPushServiceProviderError(sp)
+	}
 
-    contents, e30 := ioutil.ReadAll(r.Body)
-    if e30 != nil {
-        if refreshpsp {
-            re := NewRefreshDataError(sp, nil, e30)
-            e30 = re
-        }
-        return "", e30
-    }
+	contents, e30 := ioutil.ReadAll(r.Body)
+	if e30 != nil {
+		if refreshpsp {
+			re := NewRefreshDataError(sp, nil, e30)
+			e30 = re
+		}
+		return "", e30
+	}
 
-    msgid := string(contents)
-    msgid = strings.Replace(msgid, "\r", "", -1)
-    msgid = strings.Replace(msgid, "\n", "", -1)
-    if msgid[:3] == "id=" {
-        if refreshpsp {
-            re := NewRefreshDataError(sp, nil, nil)
-            return msgid[3:], re
-        }
-        return msgid[3:], nil
-    }
-    switch (msgid[6:]) {
-    case "QuotaExceeded":
-        var reterr os.Error
-        reterr = NewQuotaExceededError(sp)
-        if refreshpsp {
-            re := NewRefreshDataError(sp, nil, reterr)
-            reterr = re
-        }
-        return "", reterr
-    case "InvalidRegistration":
-        var reterr os.Error
-        reterr = NewInvalidDeliveryPointError(sp, s)
-        if refreshpsp {
-            re := NewRefreshDataError(sp, nil, reterr)
-            reterr = re
-        }
-        return "", reterr
-    case "NotRegistered":
-        var reterr os.Error
-        reterr = NewUnregisteredError(sp, s)
-        if refreshpsp {
-            re := NewRefreshDataError(sp, nil, reterr)
-            reterr = re
-        }
-        return "", reterr
-    case "MessageTooBig":
-        var reterr os.Error
-        reterr = NewNotificationTooBigError(sp, s, n)
-        if refreshpsp {
-            re := NewRefreshDataError(sp, nil, reterr)
-            reterr = re
-        }
-        return "", reterr
-    }
-    if refreshpsp {
-        re := NewRefreshDataError(sp, nil, os.NewError("Unknown Error: " + msgid[6:]))
-        return "", re
-    }
-    return "", os.NewError("Unknown Error: " + msgid[6:])
+	msgid := string(contents)
+	msgid = strings.Replace(msgid, "\r", "", -1)
+	msgid = strings.Replace(msgid, "\n", "", -1)
+	if msgid[:3] == "id=" {
+		if refreshpsp {
+			re := NewRefreshDataError(sp, nil, nil)
+			return msgid[3:], re
+		}
+		return msgid[3:], nil
+	}
+	switch msgid[6:] {
+	case "QuotaExceeded":
+		var reterr os.Error
+		reterr = NewQuotaExceededError(sp)
+		if refreshpsp {
+			re := NewRefreshDataError(sp, nil, reterr)
+			reterr = re
+		}
+		return "", reterr
+	case "InvalidRegistration":
+		var reterr os.Error
+		reterr = NewInvalidDeliveryPointError(sp, s)
+		if refreshpsp {
+			re := NewRefreshDataError(sp, nil, reterr)
+			reterr = re
+		}
+		return "", reterr
+	case "NotRegistered":
+		var reterr os.Error
+		reterr = NewUnregisteredError(sp, s)
+		if refreshpsp {
+			re := NewRefreshDataError(sp, nil, reterr)
+			reterr = re
+		}
+		return "", reterr
+	case "MessageTooBig":
+		var reterr os.Error
+		reterr = NewNotificationTooBigError(sp, s, n)
+		if refreshpsp {
+			re := NewRefreshDataError(sp, nil, reterr)
+			reterr = re
+		}
+		return "", reterr
+	}
+	if refreshpsp {
+		re := NewRefreshDataError(sp, nil, os.NewError("Unknown Error: "+msgid[6:]))
+		return "", re
+	}
+	return "", os.NewError("Unknown Error: " + msgid[6:])
 }
-

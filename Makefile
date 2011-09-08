@@ -5,3 +5,4 @@ GOFILES=\
 	uniqush.go\
 
 include $(GOROOT)/src/Make.cmd
+
