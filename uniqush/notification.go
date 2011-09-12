@@ -34,11 +34,40 @@ type Notification struct {
     Data map[string]string
 }
 
+func NewEmptyNotification() *Notification {
+    n := &Notification{Message: ""}
+    n.Badge = -1
+    n.IsLoc = false
+    n.Delay = false
+    n.Data = make(map[string]string, 10)
+    return n
+}
+
 func NewNotification(message string, data map[string]string) *Notification {
     n := &Notification{Message: message, Data: data}
     n.Badge = -1
     n.IsLoc = false
     n.Delay = false
+    n.Data = make(map[string]string, 10)
     return n
+}
+
+func (n *Notification) IsEmpty() bool {
+    if n.Message != "" {
+        return false
+    }
+    if n.Sound != "" {
+        return false
+    }
+    if n.Image != "" {
+        return false
+    }
+    if n.Badge >= 0 {
+        return false
+    }
+    if len(n.Data) == 0 {
+        return true
+    }
+    return false
 }
 

@@ -356,48 +356,60 @@ func (f *WebFrontEnd) pushNotification(form url.Values, id, addr string) {
 	a.RequestSenderAddr = addr
 
 	a.ID = id
-	a.Service = form.Get("service")
+	a.Notification = NewEmptyNotification()
+    var subscribers string
+
+    for k, v := range form {
+        if len(v) <= 0 {
+            continue
+        }
+        switch (k) {
+        case "service":
+            a.Service = v[0]
+        case "subscribers": fallthrough
+        case "subscriber":
+            subscribers = v[0]
+            a.Subscribers = strings.Split(v[0], ",")
+        case "message": fallthrough
+        case "msg":
+	        a.Notification.Message = v[0]
+        case "badge":
+            if v[0] != "" {
+                var e os.Error
+                a.Notification.Badge, e = strconv.Atoi(v[0])
+                if e != nil {
+                    a.Notification.Badge = -1
+                }
+            }
+        case "image": fallthrough
+        case "img":
+            a.Notification.Image = v[0]
+        case "sound":
+            a.Notification.Sound = v[0]
+        default:
+            a.Notification.Data[k] = v[0]
+        }
+    }
 
 	if len(a.Service) == 0 {
 		f.logger.Errorf("[PushNotificationFail] Requestid=%s From=%s NoServiceName", id, addr)
 		f.writer.BadRequest(a, os.NewError("NoServiceName"))
 		return
 	}
-	subscribers := form.Get("subscriber")
-
-	if subscribers == "" {
+	if len(a.Subscribers) == 0 {
 		f.logger.Errorf("[PushNotificationFail] Requestid=%s From=%s NoSubscriber", id, addr)
 		f.writer.BadRequest(a, os.NewError("NoSubscriber"))
 		return
 	}
-
-	a.Subscribers = strings.Split(subscribers, ",")
-
-	a.Notification = new(Notification)
-
-	a.Notification.Message = form.Get("msg")
-	if a.Notification.Message == "" {
-		f.logger.Errorf("[PushNotificationFail] Requestid=%s From=%s NoMessageBody", id, addr)
+	if a.Notification.IsEmpty() {
+		f.logger.Errorf("[PushNotificationFail] Requestid=%s From=%s EmptyData", id, addr)
 		f.writer.BadRequest(a, os.NewError("NoMessageBody"))
 		return
 	}
-	a.Notification.Badge = -1
-
-	badge := form.Get("badge")
-	if badge != "" {
-		var e os.Error
-		a.Notification.Badge, e = strconv.Atoi(badge)
-		if e != nil {
-			a.Notification.Badge = -1
-		}
-	}
-
-	a.Notification.Image = form.Get("img")
-	a.Notification.Sound = form.Get("sound")
 	f.ch <- a
-
 	// XXX Should we include the message body in the log?
 	f.logger.Infof("[PushNotificationRequest] Requestid=%s From=%s Service=%s Subscribers=%s Body=\"%s\"", id, addr, a.Service, subscribers, a.Notification.Message)
+    f.logger.Debugf("[PushNotificationRequest] Data=%v", a.Notification.Data)
 	f.writer.RequestReceived(a)
 }
 
