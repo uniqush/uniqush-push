@@ -65,8 +65,7 @@ func NewC2DMPusher() *C2DMPusher {
 func (n *Notification) toC2DMFormat() map[string]string {
 	/* TODO We need to add other fields */
 	ret := make(map[string]string, len(n.Data)+6)
-	ret["msg"] = n.Message
-    for k, v := n.Data {
+    for k, v := range n.Data {
         ret[k] = v
     }
 	return ret

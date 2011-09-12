@@ -370,22 +370,18 @@ func (f *WebFrontEnd) pushNotification(form url.Values, id, addr string) {
         case "subscriber":
             subscribers = v[0]
             a.Subscribers = strings.Split(v[0], ",")
-        case "message": fallthrough
-        case "msg":
-	        a.Notification.Message = v[0]
+        case "message":
+	        a.Notification.Data["msg"] = v[0]
         case "badge":
             if v[0] != "" {
                 var e os.Error
-                a.Notification.Badge, e = strconv.Atoi(v[0])
-                if e != nil {
-                    a.Notification.Badge = -1
+                _, e = strconv.Atoi(v[0])
+                if e == nil {
+                    a.Notification.Data["badge"] = v[0]
                 }
             }
-        case "image": fallthrough
-        case "img":
-            a.Notification.Image = v[0]
-        case "sound":
-            a.Notification.Sound = v[0]
+        case "image":
+            a.Notification.Data["img"] = v[0]
         default:
             a.Notification.Data[k] = v[0]
         }
@@ -408,7 +404,7 @@ func (f *WebFrontEnd) pushNotification(form url.Values, id, addr string) {
 	}
 	f.ch <- a
 	// XXX Should we include the message body in the log?
-	f.logger.Infof("[PushNotificationRequest] Requestid=%s From=%s Service=%s Subscribers=%s Body=\"%s\"", id, addr, a.Service, subscribers, a.Notification.Message)
+	f.logger.Infof("[PushNotificationRequest] Requestid=%s From=%s Service=%s Subscribers=%s Body=\"%s\"", id, addr, a.Service, subscribers, a.Notification.Data["msg"])
     f.logger.Debugf("[PushNotificationRequest] Data=%v", a.Notification.Data)
 	f.writer.RequestReceived(a)
 }
