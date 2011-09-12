@@ -67,7 +67,9 @@ func (psp *PushServiceProvider) UpdateAuthToken(token string) {
 }
 
 func (sp *PushServiceProvider) UniqStr() string {
-    return sp.ServiceName() + ":" + sp.sender_id + "#" + sp.auth_token
+    // It seems that we only need name and sender_id to identify a psp
+    // inside a service
+    return sp.ServiceName() + ":" + sp.sender_id // + "#" + sp.auth_token
 }
 
 func (sp *PushServiceProvider) Marshal() []byte {
