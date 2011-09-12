@@ -176,19 +176,21 @@ func (f *WebFrontEnd) removePushServiceProvider(form url.Values, id, addr string
 	switch ServiceNameToID(pspname) {
 	case SRVTYPE_C2DM:
 		senderid := form.Get("senderid")
-		authtoken := form.Get("authtoken")
+		//authtoken := form.Get("authtoken")
 
 		if len(senderid) == 0 {
 			f.logger.Errorf("[RemovePushServiceRequestFail] Requestid=%s From=%s NoSenderId", id, addr)
 			f.writer.BadRequest(a, os.NewError("NoSenderId"))
 			return
 		}
+        /*
 		if len(authtoken) == 0 {
 			f.logger.Errorf("[RemovePushServiceRequestFail] Requestid=%s From=%s NoAuthToken", id, addr)
 			f.writer.BadRequest(a, os.NewError("NoAuthToken"))
 			return
 		}
-		a.PushServiceProvider = NewC2DMServiceProvider("", senderid, authtoken)
+        */
+		a.PushServiceProvider = NewC2DMServiceProvider("", senderid, "")
 
 	/* TODO More services */
 	case SRVTYPE_APNS:

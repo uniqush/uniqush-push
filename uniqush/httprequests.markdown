@@ -6,7 +6,7 @@ Add Push Service Provider
 Remove Push Service Provider
 ===========================
 
-`curl http://127.0.0.1:9898/rmpsp -d service=myservice -d pushservicetype=c2dm -d senderid=uniqush.go@gmail.com -d authtoken=faketoken`
+`curl http://127.0.0.1:9898/rmpsp -d service=myservice -d pushservicetype=c2dm -d senderid=uniqush.go@gmail.com`
 
 Or
 
