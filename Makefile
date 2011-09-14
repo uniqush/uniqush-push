@@ -1,6 +1,6 @@
 include $(GOROOT)/src/Make.inc
 
-TARG=uniqush-server
+TARG=uniqushd
 GOFILES=\
 	uniqush.go\
 
