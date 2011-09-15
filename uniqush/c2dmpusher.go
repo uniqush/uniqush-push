@@ -71,6 +71,15 @@ n *Notification) (string, os.Error) {
 		return "", &PushErrorIncompatibleOS{p.ServiceType, s.OSType}
 	}
 
+    /* Debug retry */
+
+    if n.Data["msg"] == "retryme" {
+        n.Data["msg"] = "No retry!!"
+		reterr := NewRetryError(-1)
+        return "", reterr
+    }
+
+    /* End Debug */
 	msg := n.toC2DMFormat()
 	data := url.Values{}
 
