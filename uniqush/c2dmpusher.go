@@ -15,6 +15,8 @@
  *
  */
 
+package uniqush
+
 /* FIXME
  * Yes, it is http not https
  * Because:
