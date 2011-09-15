@@ -58,6 +58,7 @@ func (p *PushProcessor) retryRequest(req *Request, retryAfter int, subscriber st
     newreq.PushServiceProvider = psp
     newreq.DeliveryPoint = dp
     newreq.RequestSenderAddr = req.RequestSenderAddr
+    newreq.Notification = req.Notification
 
     newreq.Service = req.Service
     newreq.Subscribers = make([]string, 1)
@@ -105,6 +106,7 @@ func NewPushProcessor(logger *Logger, writer *EventWriter, dbfront DatabaseFront
     logger.Configf("Ready")
 
     ret.pushers[SRVTYPE_C2DM] = NewC2DMPusher()
+    go ret.q.Run()
 
     return ret
 }
@@ -169,8 +171,8 @@ func (p *PushProcessor) pushToSingleDeliveryPoint(req *Request) []*successPushLo
             switch (err.(type)) {
             case *RetryError:
                 re := err.(*RetryError)
+                p.logger.Warnf("[PushRetry] RequestId=%s Service=%s Subscriber=%s DeliveryPoint=%s \"%v\"", req.ID, service, subscriber, dp.Name, err)
                 p.retryRequest(req,re.RetryAfter, subscriber, psp, dp)
-                defer p.logger.Warnf("[PushRetry] RequestId=%s Service=%s Subscriber=%s DeliveryPoint=%s \"%v\"", req.ID, service, subscriber, dp.Name, err)
                 return ret
             case *UnregisteredError:
                 go p.unsubscribe(req, subscriber, dp)
