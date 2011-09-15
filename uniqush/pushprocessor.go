@@ -17,6 +17,7 @@
 
 package uniqush
 
+import "time"
 import taskq "github.com/monnand/gotaskqueue"
 
 type retryPushTask struct {
@@ -73,12 +74,10 @@ func (p *PushProcessor) retryRequest(req *Request, retryAfter int, subscriber st
     task.backendch = p.backendch
     task.req = newreq
 
-    ra := int64(retryAfter)
-
-    if ra > 0 {
+    if retryAfter <= 0 {
         task.After(newreq.backoffTime)
     } else {
-        task.After(ra)
+        task.SetExecTime(int64(retryAfter)* 1E9)
     }
 
     p.qch <- task
