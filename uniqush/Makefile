@@ -8,7 +8,7 @@ GOFILES=\
 	pushserviceprovider.go\
 	servicetype.go\
 	ostype.go\
-	c2dmpusher_debugretry.go\
+	c2dmpusher.go\
 	request.go\
 	frontend.go\
 	webfrontend.go\
