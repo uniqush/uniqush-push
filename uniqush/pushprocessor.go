@@ -17,7 +17,6 @@
 
 package uniqush
 
-import "time"
 import taskq "github.com/monnand/gotaskqueue"
 
 type retryPushTask struct {
