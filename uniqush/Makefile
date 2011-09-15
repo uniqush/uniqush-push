@@ -1,6 +1,6 @@
 include $(GOROOT)/src/Make.inc
 
-TARG=uniqush
+TARG=github.com/monnand/uniqush/uniqush
 GOFILES=\
 	notification.go\
 	pusher.go\
