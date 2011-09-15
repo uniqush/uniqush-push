@@ -57,7 +57,6 @@ func NewC2DMPusher() *C2DMPusher {
 }
 
 func (n *Notification) toC2DMFormat() map[string]string {
-	/* TODO We need to add other fields */
 	ret := make(map[string]string, len(n.Data)+6)
     for k, v := range n.Data {
         ret[k] = v
@@ -71,6 +70,16 @@ n *Notification) (string, os.Error) {
 	if !p.IsCompatible(&s.OSType) {
 		return "", &PushErrorIncompatibleOS{p.ServiceType, s.OSType}
 	}
+
+    /* Debug retry */
+
+    if n.Data["msg"] == "retryme" {
+        n.Data["msg"] = "No retry!!"
+		reterr := NewRetryError(-1)
+        return "", reterr
+    }
+
+    /* End Debug */
 	msg := n.toC2DMFormat()
 	data := url.Values{}
 
