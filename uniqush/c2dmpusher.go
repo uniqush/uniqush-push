@@ -17,6 +17,14 @@
 
 package uniqush
 
+import (
+    "os"
+    "url"
+    "http"
+    "strings"
+    "io/ioutil"
+)
+
 /* FIXME
  * Yes, it is http not https
  * Because:
