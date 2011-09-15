@@ -17,12 +17,10 @@
 
 package uniqush
 
-import (
-    "time"
-)
+import taskq "github.com/monnand/gotaskqueue"
 
 type retryPushTask struct {
-    TaskTime
+    taskq.TaskTime
     req *Request
     backendch chan<- *Request
 }
@@ -37,13 +35,13 @@ type PushProcessor struct {
     pushers []Pusher
     max_nr_gorountines int
     max_nr_retry int
-    q *TaskQueue
-    qch chan Task
+    q *taskq.TaskQueue
+    qch chan taskq.Task
     backendch chan<- *Request
 }
 
 const (
-    init_backoff_time = 3E9
+    init_backoff_time = 3
 )
 
 func (p *PushProcessor) retryRequest(req *Request, retryAfter int, subscriber string, psp *PushServiceProvider, dp *DeliveryPoint) {
@@ -75,14 +73,12 @@ func (p *PushProcessor) retryRequest(req *Request, retryAfter int, subscriber st
     task.backendch = p.backendch
     task.req = newreq
 
-    var ra int64
-    ra = int64(retryAfter) * 1E9
-    exect := time.Nanoseconds() + newreq.backoffTime
+    ra := int64(retryAfter)
 
-    if exect < ra {
-        task.execTime = ra
+    if ra > 0 {
+        task.After(newreq.backoffTime)
     } else {
-        task.execTime = exect
+        task.After(ra)
     }
 
     p.qch <- task
@@ -96,8 +92,8 @@ func NewPushProcessor(logger *Logger, writer *EventWriter, dbfront DatabaseFront
     ret.pushers = make([]Pusher, SRVTYPE_NR_PUSH_SERVICE_TYPE)
     ret.max_nr_gorountines = 1024
     ret.max_nr_retry = 3
-    ret.qch = make(chan Task)
-    ret.q = NewTaskQueue(ret.qch)
+    ret.qch = make(chan taskq.Task)
+    ret.q = taskq.NewTaskQueue(ret.qch)
     ret.backendch = backendch
 
     for i := 0; i < SRVTYPE_NR_PUSH_SERVICE_TYPE; i++ {

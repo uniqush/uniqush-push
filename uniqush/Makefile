@@ -23,7 +23,6 @@ GOFILES=\
 	uniqushredisdb.go\
 	dbfrontdesk.go\
 	pushprocessor.go\
-	taskqueue.go\
 	log.go\
 	uniqushsys.go\
 
