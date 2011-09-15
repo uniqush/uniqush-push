@@ -211,9 +211,9 @@ func LoadUniqushSystem(filename string) (*UniqushSystem, os.Error) {
 }
 
 func (s *UniqushSystem) Run() {
+    defer s.Database.FlushCache()
     go s.Frontend.Run()
     go s.Backend.Run()
     <-s.Stopch
-    s.Database.FlushCache()
 }
 

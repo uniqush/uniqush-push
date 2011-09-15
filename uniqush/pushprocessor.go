@@ -102,6 +102,7 @@ func NewPushProcessor(logger *Logger, writer *EventWriter, dbfront DatabaseFront
     for i := 0; i < SRVTYPE_NR_PUSH_SERVICE_TYPE; i++ {
         ret.pushers[i] = &NullPusher{}
     }
+    logger.Configf("Ready")
 
     ret.pushers[SRVTYPE_C2DM] = NewC2DMPusher()
 

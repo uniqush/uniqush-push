@@ -27,6 +27,7 @@ const (
     LOGLEVEL_ALERT
     LOGLEVEL_ERROR
     LOGLEVEL_WARN
+    LOGLEVEL_CONFIG
     LOGLEVEL_INFO
     LOGLEVEL_DEBUG
     NR_LOGLEVELS
@@ -53,6 +54,14 @@ func (l *Logger) Info(v ...interface{}) {
 
 func (l *Logger) Infof(format string, v ...interface{}) {
     l.loggers[LOGLEVEL_INFO].Printf(format, v...)
+}
+
+func (l *Logger) Config(v ...interface{}) {
+    l.loggers[LOGLEVEL_CONFIG].Print(v...)
+}
+
+func (l *Logger) Configf(format string, v ...interface{}) {
+    l.loggers[LOGLEVEL_CONFIG].Printf(format, v...)
 }
 
 func (l *Logger) Warn(v ...interface{}) {
@@ -93,6 +102,7 @@ func init() {
     logLevelToName = make(map[int]string, NR_LOGLEVELS)
     logLevelToName[LOGLEVEL_DEBUG] = "[Debug]"
     logLevelToName[LOGLEVEL_INFO] = "[Info]"
+    logLevelToName[LOGLEVEL_CONFIG] = "[Config]"
     logLevelToName[LOGLEVEL_WARN] = "[Warning]"
     logLevelToName[LOGLEVEL_ERROR] = "[Error]"
     logLevelToName[LOGLEVEL_ALERT] = "[Alert]"
