@@ -18,7 +18,7 @@
 package uniqush
 
 import (
-    "redis"
+    "github.com/monnand/redis"
     "os"
     "fmt"
     "strconv"
