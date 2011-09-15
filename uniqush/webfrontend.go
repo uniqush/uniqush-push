@@ -468,7 +468,7 @@ const (
 )
 
 func (f *WebFrontEnd) Run() {
-	f.logger.Infof("[Start] %s", f.addr)
+	f.logger.Configf("[Start] %s", f.addr)
 	http.HandleFunc(ADD_PUSH_SERVICE_PROVIDER_TO_SERVICE_URL, addPushServiceProvider)
 	http.HandleFunc(REMOVE_PUSH_SERVICE_PROVIDER_TO_SERVICE_URL, removePushServiceProvider)
 	http.HandleFunc(ADD_DELIVERY_POINT_TO_SERVICE_URL, addDeliveryPointToService)
