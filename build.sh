@@ -1,8 +1,3 @@
 #!/bin/bash
-cd uniqush
-gomake clean
-gomake
-gomake install
-cd ..
-gomake clean
-gomake
+goinstall github.com/monnand/uniqush/uniqush
+make

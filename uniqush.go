@@ -18,7 +18,7 @@
 package main
 
 import (
-    "uniqush"
+    "github.com/monnand/uniqush/uniqush"
     "os"
     "fmt"
     "flag"
