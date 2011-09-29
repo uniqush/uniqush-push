@@ -198,8 +198,8 @@ func LoadUniqushSystem(filename string) (*UniqushSystem, os.Error) {
     if e10 != nil {
         return nil, e10
     }
-    p = NewSubscribeProcessor(logger, ew, dbf)
-    ret.Backend.SetProcessor(ACTION_SUBSCRIBE, p)
+    p = NewUnsubscribeProcessor(logger, ew, dbf)
+    ret.Backend.SetProcessor(ACTION_UNSUBSCRIBE, p)
 
     logger, e10 = loadLogInfo(c, "Push", "[Push]")
     if e10 != nil {

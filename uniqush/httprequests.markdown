@@ -1,7 +1,11 @@
 Add Push Service Provider
 ===========================
 
+- C2DM:
 `curl http://127.0.0.1:9898/addpsp -d service=myservice -d pushservicetype=c2dm -d senderid=uniqush.go@gmail.com -d authtoken=faketoken`
+- APNS:
+`curl http://127.0.0.1:9898/addpsp -d service=myservice -d pushservicetype=apns -d cert=/path/to/certificate.pem -d key=/path/to/privatekey.pem`
+`curl http://127.0.0.1:9898/addpsp -d service=myservice -d pushservicetype=apns -d cert=/path/to/certificate.pem -d key=/path/to/privatekey.pem -d sandbox=true`
 
 Remove Push Service Provider
 ===========================
@@ -14,7 +18,10 @@ Or
 
 Subscribe a Service
 ===========================
+- C2DM:
 `curl http://127.0.0.1:9898/subscribe -d service=myservice -d subscriber=uniqush.client -d os=android -d account=uniqush.client@gmail.com -d regid=fakeregid`
+- APNS:
+`curl http://127.0.0.1:9898/subscribe -d service=myservice -d subscriber=uniqush.client -d os=ios -d devtoken=devtoken`
 
 Unsubscribe a Service
 ===========================

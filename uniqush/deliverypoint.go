@@ -48,6 +48,15 @@ func NewAndroidDeliveryPoint(name, account, regid string) *DeliveryPoint{
     return s
 }
 
+func NewIOSDeliveryPoint(name, devtoken string) *DeliveryPoint {
+    s := new(DeliveryPoint)
+    s.Name = name
+    s.token = devtoken
+    s.OSType = OS_IOS
+    s.account = "unused"
+    return s
+}
+
 func (s *DeliveryPoint) DeviceToken() string {
     if s.OSID() == OSTYPE_IOS {
         return s.token

@@ -100,6 +100,7 @@ func NewPushProcessor(logger *Logger, writer *EventWriter, dbfront DatabaseFront
     logger.Configf("Ready")
 
     ret.pushers[SRVTYPE_C2DM] = NewC2DMPusher()
+    ret.pushers[SRVTYPE_APNS] = NewAPNSPusher()
     go ret.q.Run()
 
     return ret

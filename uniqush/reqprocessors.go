@@ -161,7 +161,7 @@ func NewUnsubscribeProcessor(logger *Logger, writer *EventWriter, dbfront Databa
 
 func (p *UnsubscribeProcessor) Process(req *Request) {
     if len(req.Subscribers) == 0 || req.DeliveryPoint == nil{
-        p.logger.Errorf("[SubscribeRequestFail] Nil Pointer")
+        p.logger.Errorf("[UnSubscribeRequestFail] Nil Pointer")
         return
     }
     err := p.dbfront.RemoveDeliveryPointFromService(req.Service,
@@ -169,7 +169,7 @@ func (p *UnsubscribeProcessor) Process(req *Request) {
                                                     req.DeliveryPoint)
     if err != nil {
         p.writer.SubscribeFail(req, err)
-        p.logger.Errorf("[SubscribeRequestFail] DatabaseError %v", err)
+        p.logger.Errorf("[UnSubscribeRequestFail] DatabaseError %v", err)
     }
     p.writer.SubscribeSuccess(req)
     p.logger.Infof("[UnsubscribeRequest] Success DeliveryPoint=%s",

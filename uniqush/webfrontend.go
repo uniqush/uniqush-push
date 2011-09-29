@@ -123,9 +123,27 @@ func (f *WebFrontEnd) addPushServiceProvider(form url.Values, id, addr string) {
 		}
 		a.PushServiceProvider = NewC2DMServiceProvider("", senderid, authtoken)
 
-	/* TODO More services */
 	case SRVTYPE_APNS:
-		fallthrough
+        certfile := form.Get("cert")
+        keyfile := form.Get("key")
+        sandbox := form.Get("sandbox")
+        is_sandbox := false
+
+        if len(certfile) == 0 {
+            f.logger.Errorf("[AddPushServiceRequestFail] Requestid=%s From=%s NoCertificate", id, addr)
+			f.writer.BadRequest(a, os.NewError("NoCertificate"))
+            return
+        }
+        if len(keyfile) == 0 {
+            f.logger.Errorf("[AddPushServiceRequestFail] Requestid=%s From=%s NoPrivateKey", id, addr)
+			f.writer.BadRequest(a, os.NewError("NoPrivateKey"))
+            return
+        }
+        if len(sandbox) != 0 && sandbox == "true" {
+            is_sandbox = true
+        }
+        a.PushServiceProvider = NewAPNSServiceProvider("", certfile, keyfile, is_sandbox)
+	/* TODO More services */
 	case SRVTYPE_MPNS:
 		fallthrough
 	case SRVTYPE_BBPS:
@@ -187,9 +205,27 @@ func (f *WebFrontEnd) removePushServiceProvider(form url.Values, id, addr string
         */
 		a.PushServiceProvider = NewC2DMServiceProvider("", senderid, "")
 
-	/* TODO More services */
 	case SRVTYPE_APNS:
-		fallthrough
+        certfile := form.Get("cert")
+        keyfile := form.Get("key")
+        sandbox := form.Get("sandbox")
+        is_sandbox := false
+
+        if len(certfile) == 0 {
+            f.logger.Errorf("[AddPushServiceRequestFail] Requestid=%s From=%s NoCertificate", id, addr)
+			f.writer.BadRequest(a, os.NewError("NoCertificate"))
+            return
+        }
+        if len(keyfile) == 0 {
+            f.logger.Errorf("[AddPushServiceRequestFail] Requestid=%s From=%s NoPrivateKey", id, addr)
+			f.writer.BadRequest(a, os.NewError("NoPrivateKey"))
+            return
+        }
+        if len(sandbox) != 0 && sandbox == "true" {
+            is_sandbox = true
+        }
+        a.PushServiceProvider = NewAPNSServiceProvider("", certfile, keyfile, is_sandbox)
+	/* TODO More services */
 	case SRVTYPE_MPNS:
 		fallthrough
 	case SRVTYPE_BBPS:
@@ -258,9 +294,18 @@ func (f *WebFrontEnd) addDeliveryPointToService(form url.Values, id, addr string
 		f.writer.RequestReceived(a)
 		f.logger.Infof("[SubscribeRequest] Requestid=%s From=%s Account=%s", id, addr, account)
 		return
-	/* TODO More OSes */
 	case OSTYPE_IOS:
-		fallthrough
+        devtoken := form.Get("devtoken")
+        if devtoken == "" {
+			f.logger.Errorf("[SubscribeFail] NoDeviceToken Requestid=%s From=%s", id, addr)
+			f.writer.BadRequest(a, os.NewError("NoDeviceToken"))
+        }
+        dp := NewIOSDeliveryPoint("", devtoken)
+		a.DeliveryPoint = dp
+		f.ch <- a
+		f.writer.RequestReceived(a)
+		f.logger.Infof("[SubscribeRequest] Requestid=%s From=%s Devtoken=%s", id, addr, devtoken)
+	/* TODO More OSes */
 	case OSTYPE_WP:
 		fallthrough
 	case OSTYPE_BLKBERRY:
@@ -329,9 +374,18 @@ func (f *WebFrontEnd) removeDeliveryPointFromService(form url.Values, id, addr s
 		f.writer.RequestReceived(a)
 		f.logger.Infof("[UnsubscribeRequest] Requestid=%s From=%s Account=%s", id, addr, account)
 		return
-	/* TODO More OSes */
 	case OSTYPE_IOS:
-		fallthrough
+        devtoken := form.Get("devtoken")
+        if devtoken == "" {
+			f.logger.Errorf("[UnsubscribeFail] NoDeviceToken Requestid=%s From=%s", id, addr)
+			f.writer.BadRequest(a, os.NewError("NoDeviceToken"))
+        }
+        dp := NewIOSDeliveryPoint("", devtoken)
+		a.DeliveryPoint = dp
+		f.ch <- a
+		f.writer.RequestReceived(a)
+		f.logger.Infof("[UnsubscribeRequest] Requestid=%s From=%s Devtoken=%s", id, addr, devtoken)
+	/* TODO More OSes */
 	case OSTYPE_WP:
 		fallthrough
 	case OSTYPE_BLKBERRY:

@@ -41,6 +41,18 @@ func NewC2DMServiceProvider(name, senderid, auth string) *PushServiceProvider {
     return s
 }
 
+func NewAPNSServiceProvider(name, cert, key string, sandbox bool) *PushServiceProvider {
+    psp := new(PushServiceProvider)
+    psp.ServiceType = SERVICE_APNS
+    psp.auth_token = cert
+    psp.sender_id = key
+    if !sandbox {
+        psp.real_auth_token = "1"
+    } else {
+        psp.real_auth_token = "0"
+    }
+    return psp
+}
 /* TODO Other service providers */
 
 func (sp *PushServiceProvider) SenderID() string {

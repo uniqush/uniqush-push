@@ -51,7 +51,7 @@ func (s *APNSService) PrivateKey() string {
 }
 
 func (s *APNSService) Address() string {
-    if s.psp.real_auth_token == "" {
+    if s.psp.real_auth_token == "0" {
         return "gateway.sandbox.push.apple.com:2195"
     }
     return "gateway.push.apple.com:2195"
