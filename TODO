@@ -1,6 +1,5 @@
 Priority from high to low
-- Exp. Backoff re-send: need to be tested
-- APNS (For iOS) support
+- Change the code structure
 - Persistent connection support
 - BlackBeery support
 
