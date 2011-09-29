@@ -23,10 +23,14 @@ import (
 )
 
 type DeliveryPoint struct {
+    /* Begin Obsoleted */
     OSType
     Name string
     token string
     account string
+    /* End Obsoleted */
+
+    serviceTypeId int
 }
 
 type AndroidDeliveryPoint interface {

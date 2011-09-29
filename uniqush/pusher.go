@@ -132,3 +132,4 @@ func NewRefreshDataError (psp *PushServiceProvider, dp *DeliveryPoint, o os.Erro
     return &RefreshDataError {
         remoteServerError{"Refresh Push Service Provider"}, psp, dp, o}
 }
+

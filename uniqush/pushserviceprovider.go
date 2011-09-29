@@ -23,13 +23,21 @@ import (
 )
 
 type PushServiceProvider struct {
+	/* Begin Obsoleted */
     ServiceType
     Name string
     sender_id string
     auth_token string
     real_auth_token string
+    /* End Obsoleted */
+
+    serviceTypeId int
+    pushServiceType PushServiceType
+    volatileData map[string]string
+    fixedData map[string]string
 }
 
+/* Begin Obsoleted */
 type C2DMServiceProvider interface {
     SenderID() string
     AuthToken() string
@@ -37,8 +45,13 @@ type C2DMServiceProvider interface {
 }
 
 func NewC2DMServiceProvider(name, senderid, auth string) *PushServiceProvider {
-    s := &PushServiceProvider{SERVICE_C2DM, name, senderid, auth, auth}
-    return s
+//    s := &PushServiceProvider{SERVICE_C2DM, name, senderid, auth, auth, -1}
+    psp := new(PushServiceProvider)
+    psp.ServiceType = SERVICE_APNS
+    psp.sender_id = senderid
+    psp.auth_token = auth
+    psp.serviceTypeId = -1
+    return psp
 }
 
 func NewAPNSServiceProvider(name, cert, key string, sandbox bool) *PushServiceProvider {
@@ -106,3 +119,4 @@ func (psp *PushServiceProvider) Unmarshal(name string, value []byte) *PushServic
     return psp
 }
 
+/* End Obsoleted */
