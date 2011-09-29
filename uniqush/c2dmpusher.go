@@ -65,8 +65,8 @@ func (n *Notification) toC2DMFormat() map[string]string {
 }
 
 func (p *C2DMPusher) Push(sp *PushServiceProvider,
-s *DeliveryPoint,
-n *Notification) (string, os.Error) {
+                        s *DeliveryPoint,
+                        n *Notification) (string, os.Error) {
 	if !p.IsCompatible(&s.OSType) {
 		return "", &PushErrorIncompatibleOS{p.ServiceType, s.OSType}
 	}

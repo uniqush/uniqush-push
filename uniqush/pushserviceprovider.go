@@ -36,7 +36,7 @@ type C2DMServiceProvider interface {
     UpdateAuthToken(token string)
 }
 
-func NewC2DMServiceProvider(name, senderid, auth string) *PushServiceProvider{
+func NewC2DMServiceProvider(name, senderid, auth string) *PushServiceProvider {
     s := &PushServiceProvider{SERVICE_C2DM, name, senderid, auth, auth}
     return s
 }

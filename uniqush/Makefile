@@ -25,5 +25,6 @@ GOFILES=\
 	pushprocessor.go\
 	log.go\
 	uniqushsys.go\
+	apnspusher.go\
 
 include $(GOROOT)/src/Make.pkg
