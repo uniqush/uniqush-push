@@ -90,8 +90,15 @@ func keyValueToDeliveryPoint(name string, value []byte) *DeliveryPoint {
 }
 
 func keyValueToPushServiceProvider(name string, value []byte) *PushServiceProvider {
-    psp := new(PushServiceProvider)
-    return psp.Unmarshal(name, value)
+    //psp := new(PushServiceProvider)
+    //return psp.Unmarshal(name, value)
+    /* TODO use push service manager to gen */
+    psm := GetPushServiceManager()
+    psp, err := psm.BuildPushServiceProviderFromBytes(value)
+    if err != nil {
+        return nil
+    }
+    return psp
     /*
     v := string(value)
     var substr string

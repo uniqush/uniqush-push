@@ -42,7 +42,7 @@ func TestDatabaseFrontDesk(t *testing.T) {
     c.LeastDirty = 10
     c.CacheSize = 10
 
-    f := NewDatabaseFrontDesk(c)
+    f, _ := NewDatabaseFrontDesk(c)
     f.AddPushServiceProviderToService(service, sp)
     f.AddDeliveryPointToService(service, subscriber, s, -1)
 

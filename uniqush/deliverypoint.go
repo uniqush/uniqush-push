@@ -31,8 +31,12 @@ type DeliveryPoint struct {
     /* End Obsoleted */
 
     serviceTypeId int
+    pushServiceType PushServiceType
+    VolatileData map[string]string
+    FixedData map[string]string
 }
 
+/* Begin Obsoleted */
 type AndroidDeliveryPoint interface {
     GoogleAccount() string
     RegistrationID() string
@@ -126,3 +130,4 @@ func (dp *DeliveryPoint) Unmarshal(name string, value []byte) *DeliveryPoint {
     dp.token = fields[1]
     return dp
 }
+/* End Obsoleted */

@@ -65,7 +65,7 @@ func getUDB() *UniqushRedisDB {
     c.Port = -1
     c.Engine = "redis"
     c.Name = "6"
-    udb := NewUniqushRedisDB(c)
+    udb, _ := NewUniqushRedisDB(c)
     return udb
 }
 
@@ -106,7 +106,7 @@ func TestGetSetDeliveryPoint(t *testing.T) {
     c.Port = -1
     c.Engine = "redis"
     c.Name = "6"
-    udb := NewUniqushRedisDB(c)
+    udb, _ := NewUniqushRedisDB(c)
 
     udb.SetDeliveryPoint(dp)
     ndp, _ := udb.GetDeliveryPoint(dp.Name)

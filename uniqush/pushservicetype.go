@@ -23,7 +23,7 @@ import (
 
 type PushServiceType interface {
     BuildPushServiceProviderFromMap(map[string]string) (*PushServiceProvider, os.Error)
-    BuildPushServiceProviderFromString(string) (*PushServiceProvider, os.Error)
+    //BuildPushServiceProviderFromString(string) (*PushServiceProvider, os.Error)
 
     BuildDeliveryPointFromMap(map[string]string) (*DeliveryPoint, os.Error)
     BuildDeliveryPointFromString(string) (*DeliveryPoint, os.Error)

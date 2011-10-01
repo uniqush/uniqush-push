@@ -18,8 +18,8 @@
 package uniqush
 
 import (
-    "fmt"
-    "strings"
+//    "fmt"
+//    "strings"
 )
 
 type PushServiceProvider struct {
@@ -31,10 +31,19 @@ type PushServiceProvider struct {
     real_auth_token string
     /* End Obsoleted */
 
+    /*
     serviceTypeId int
     pushServiceType PushServiceType
-    volatileData map[string]string
-    fixedData map[string]string
+    VolatileData map[string]string
+    FixedData map[string]string
+    */
+    PushPeer
+}
+
+func NewEmptyPushServiceProvider() *PushServiceProvider {
+    psp := new(PushServiceProvider)
+    psp.InitPushPeer()
+    return psp
 }
 
 /* Begin Obsoleted */
@@ -92,6 +101,7 @@ func (sp *PushServiceProvider) UniqStr() string {
     return sp.ServiceName() + ":" + sp.sender_id // + "#" + sp.auth_token
 }
 
+/*
 func (sp *PushServiceProvider) Marshal() []byte {
     str := fmt.Sprintf("%d.%s:%s:%s", sp.ServiceID(), sp.sender_id, sp.auth_token, sp.real_auth_token)
     return []byte(str)
@@ -118,5 +128,6 @@ func (psp *PushServiceProvider) Unmarshal(name string, value []byte) *PushServic
     }
     return psp
 }
+*/
 
 /* End Obsoleted */

@@ -28,5 +28,6 @@ GOFILES=\
 	apnspusher.go\
 	pushservicemngr.go\
 	pushservicetype.go\
+	pushpeer.go\
 
 include $(GOROOT)/src/Make.pkg

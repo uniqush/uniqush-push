@@ -20,6 +20,7 @@ package uniqush
 import (
     "os"
     "strings"
+    "fmt"
 )
 
 type PushServiceManager struct {
@@ -27,15 +28,31 @@ type PushServiceManager struct {
     name2id map[string]int
 }
 
-func NewPushServiceManager() *PushServiceManager {
+var (
+    pushServiceManager *PushServiceManager
+)
+
+func init() {
+    pushServiceManager = newPushServiceManager()
+}
+
+
+/* This is a singleton */
+func newPushServiceManager() *PushServiceManager {
     ret := new(PushServiceManager)
     ret.serviceTypes = make([]PushServiceType, 0, 5)
     ret.name2id = make(map[string]int, 5)
     return ret
 }
 
+
+func GetPushServiceManager() *PushServiceManager {
+    return pushServiceManager
+}
+
 func (m *PushServiceManager) RegisterPushServiceType(pt PushServiceType) os.Error {
     name := pt.Name()
+    fmt.Printf("Service Type: %s\n", name)
     if id, ok := m.name2id[name]; ok {
         m.serviceTypes[id] = pt
         return nil
@@ -60,15 +77,21 @@ func (m *PushServiceManager) BuildPushServiceProviderFromMap(kv map[string]strin
     return nil, os.NewError("No Push Service Type Specified")
 }
 
-func (m *PushServiceManager) BuildPushServiceProviderFromString(s string) (psp *PushServiceProvider, err os.Error) {
+func (m *PushServiceManager) BuildPushServiceProviderFromBytes(value []byte) (psp *PushServiceProvider, err os.Error) {
+    s := string(value)
     parts := strings.SplitN(s, ":", 2)
     if len(parts) >= 2 {
         ptname := parts[0]
         if id, ok := m.name2id[ptname]; ok {
             pst := m.serviceTypes[id]
-            psp, err = pst.BuildPushServiceProviderFromString(parts[1])
+            psp = NewEmptyPushServiceProvider()
             psp.pushServiceType = pst
             psp.serviceTypeId = id
+            err = psp.Unmarshal([]byte(parts[1]))
+            if err != nil {
+                psp = nil
+                return
+            }
             return
         }
         return nil, os.NewError("Unknown Push Service Type")
@@ -79,8 +102,10 @@ func (m *PushServiceManager) BuildPushServiceProviderFromString(s string) (psp *
 func (m *PushServiceManager) BuildDeliveryPointFromMap(kv map[string]string) (dp *DeliveryPoint, err os.Error) {
     if ptname, ok := kv["pushservicetype"]; ok {
         if id, ok := m.name2id[ptname]; ok {
-            dp, err = m.serviceTypes[id].BuildDeliveryPointFromMap(kv)
+            pst := m.serviceTypes[id]
+            dp, err = pst.BuildDeliveryPointFromMap(kv)
             dp.serviceTypeId = id
+            dp.pushServiceType = pst
             return
         }
         return nil, os.NewError("Unknown Push Service Type")
@@ -93,8 +118,11 @@ func (m *PushServiceManager) BuildDeliveryPointFromString(s string) (dp *Deliver
     if len(parts) >= 2 {
         ptname := parts[0]
         if id, ok := m.name2id[ptname]; ok {
-            dp, err = m.serviceTypes[id].BuildDeliveryPointFromString(parts[1])
             dp.serviceTypeId = id
+            pst := m.serviceTypes[id]
+            dp, err = pst.BuildDeliveryPointFromString(parts[1])
+            dp.serviceTypeId = id
+            dp.pushServiceType = pst
             return
         }
         return nil, os.NewError("Unknown Push Service Type")
@@ -103,10 +131,10 @@ func (m *PushServiceManager) BuildDeliveryPointFromString(s string) (dp *Deliver
 }
 
 func (m* PushServiceManager) Push(psp *PushServiceProvider, dp *DeliveryPoint, n *Notification) (id string, err os.Error) {
-    i := psp.serviceTypeId
-    if i < 0 || i >= len(m.serviceTypes) {
-        return "", NewInvalidPushServiceProviderError(psp)
+    if psp.pushServiceType != nil {
+        id, err = psp.pushServiceType.Push(psp, dp, n)
+        return
     }
-    id, err = m.serviceTypes[i].Push(psp, dp, n)
-    return
+    return "", NewInvalidPushServiceProviderError(psp)
 }
+
