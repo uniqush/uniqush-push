@@ -74,6 +74,7 @@ func loadLogInfo(c *conf.ConfigFile, field string, prefix string) (*Logger, os.E
 func loadDatabaseConfig(cf *conf.ConfigFile) (*DatabaseConfig, os.Error) {
     var err os.Error
     c := new(DatabaseConfig)
+    c.psm = GetPushServiceManager()
     c.Engine, err = cf.GetString("Database", "engine")
     if err != nil || c.Engine == "" {
         c.Engine = "redis"

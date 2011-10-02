@@ -29,5 +29,6 @@ GOFILES=\
 	pushservicemngr.go\
 	pushservicetype.go\
 	pushpeer.go\
+	c2dm.go\
 
 include $(GOROOT)/src/Make.pkg

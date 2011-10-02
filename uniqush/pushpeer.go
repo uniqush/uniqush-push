@@ -24,10 +24,13 @@ import (
 )
 
 type PushPeer struct {
-    serviceTypeId int
     pushServiceType PushServiceType
     VolatileData map[string]string
     FixedData map[string]string
+}
+
+func (p *PushPeer) PushServiceName() string {
+    return p.pushServiceType.Name()
 }
 
 func (p *PushPeer) ToString() string {
@@ -44,7 +47,6 @@ func (p *PushPeer) ToString() string {
 }
 
 func (p *PushPeer) InitPushPeer() {
-    p.serviceTypeId = -1
     p.pushServiceType = nil
     p.VolatileData = make(map[string]string, 2)
     p.FixedData = make(map[string]string, 2)
@@ -58,7 +60,7 @@ func (p *PushPeer) Name(prefix string) string {
     return prefix + ":" + string(b)
 }
 
-func (p *PushPeer) Marshal() []byte{
+func (p *PushPeer) Marshal() []byte {
     if p.pushServiceType == nil {
         return nil
     }

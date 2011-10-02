@@ -31,12 +31,6 @@ type PushServiceProvider struct {
     real_auth_token string
     /* End Obsoleted */
 
-    /*
-    serviceTypeId int
-    pushServiceType PushServiceType
-    VolatileData map[string]string
-    FixedData map[string]string
-    */
     PushPeer
 }
 
@@ -59,7 +53,6 @@ func NewC2DMServiceProvider(name, senderid, auth string) *PushServiceProvider {
     psp.ServiceType = SERVICE_APNS
     psp.sender_id = senderid
     psp.auth_token = auth
-    psp.serviceTypeId = -1
     return psp
 }
 

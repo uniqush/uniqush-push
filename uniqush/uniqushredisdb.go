@@ -27,6 +27,7 @@ import (
 
 type UniqushRedisDB struct {
     client *redis.Client
+    psm *PushServiceManager
 }
 
 const (
@@ -66,13 +67,23 @@ func NewUniqushRedisDB(c *DatabaseConfig) (*UniqushRedisDB, os.Error) {
 
     ret := new(UniqushRedisDB)
     ret.client = &client
+    ret.psm = c.psm
+    if ret.psm == nil {
+        ret.psm = GetPushServiceManager()
+    }
     return ret, nil
 }
 
-func keyValueToDeliveryPoint(name string, value []byte) *DeliveryPoint {
+func (r *UniqushRedisDB) keyValueToDeliveryPoint(name string, value []byte) *DeliveryPoint {
+    psm := r.psm
+    dp, err := psm.BuildDeliveryPointFromBytes(value)
+    if err != nil {
+        return nil
+    }
+    return dp
+    /*
     dp := new(DeliveryPoint)
     return dp.Unmarshal(name, value)
-    /*
     v := string(value)
     var substr string
     var ostype int
@@ -89,11 +100,11 @@ func keyValueToDeliveryPoint(name string, value []byte) *DeliveryPoint {
     */
 }
 
-func keyValueToPushServiceProvider(name string, value []byte) *PushServiceProvider {
+func (r *UniqushRedisDB) keyValueToPushServiceProvider(name string, value []byte) *PushServiceProvider {
     //psp := new(PushServiceProvider)
     //return psp.Unmarshal(name, value)
     /* TODO use push service manager to gen */
-    psm := GetPushServiceManager()
+    psm := r.psm
     psp, err := psm.BuildPushServiceProviderFromBytes(value)
     if err != nil {
         return nil
@@ -148,7 +159,7 @@ func (r *UniqushRedisDB) GetDeliveryPoint(name string) (*DeliveryPoint, os.Error
     if b == nil {
         return nil, nil
     }
-    return keyValueToDeliveryPoint(name, b), nil
+    return r.keyValueToDeliveryPoint(name, b), nil
 }
 
 func (r *UniqushRedisDB) SetDeliveryPoint(dp *DeliveryPoint) os.Error {
@@ -164,7 +175,7 @@ func (r *UniqushRedisDB) GetPushServiceProvider(name string) (*PushServiceProvid
     if b == nil {
         return nil, nil
     }
-    return keyValueToPushServiceProvider(name, b), nil
+    return r.keyValueToPushServiceProvider(name, b), nil
 }
 
 func (r *UniqushRedisDB) SetPushServiceProvider(psp *PushServiceProvider) os.Error {

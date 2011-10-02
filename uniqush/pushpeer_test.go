@@ -38,25 +38,19 @@ func (t *testPushServiceType) Name() string {
 }
 
 func (t *testPushServiceType) BuildPushServiceProviderFromMap(kv map[string]string) (*PushServiceProvider, os.Error) {
-	psp := new(PushServiceProvider)
-	psp.FixedData = make(map[string]string, len(kv))
-	psp.VolatileData = make(map[string]string)
+    psp := NewEmptyPushServiceProvider()
 	for k, v := range kv {
 		psp.FixedData[k] = v
 	}
 	return psp, nil
 }
 
-func (t *testPushServiceType) BuildPushServiceProviderFromString(str string) (*PushServiceProvider, os.Error) {
-    return nil, nil
-}
-
 func (t *testPushServiceType) BuildDeliveryPointFromMap(kv map[string]string) (*DeliveryPoint, os.Error) {
-    return nil, nil
-}
-
-func (t *testPushServiceType) BuildDeliveryPointFromString(str string) (*DeliveryPoint, os.Error) {
-    return nil, nil
+    dp := NewEmptyDeliveryPoint()
+    for k, v := range kv {
+        dp.FixedData[k] = v
+    }
+    return dp, nil
 }
 
 func (t *testPushServiceType) Push(psp *PushServiceProvider, dp *DeliveryPoint, n *Notification) (string, os.Error) {
@@ -67,7 +61,6 @@ func (t *testPushServiceType) Push(psp *PushServiceProvider, dp *DeliveryPoint, 
 func TestPushPeer(t *testing.T) {
     pp := new(PushPeer)
     tpst := newTestPushServiceType()
-    pp.serviceTypeId = -1
     pp.pushServiceType = tpst
     pp.FixedData = make(map[string]string, 2)
     pp.FixedData["senderid"] = "uniqush.go@gmail.com"
@@ -93,5 +86,27 @@ func TestPushPeer(t *testing.T) {
     fmt.Printf("Push Service: %s", psp.ToString())
     value := psp.Marshal()
     fmt.Printf("PSP Marshal: %s\n", string(value))
+}
+
+func TestCompatability(t *testing.T) {
+    pspm := make(map[string]string, 2)
+    pspm["pushservicetype"] = "testService"
+    pspm["senderid"] = "uniqush.go@gmail.com"
+    pspm["authtoken"] = "fsafds"
+
+    dpm:= make(map[string]string, 2)
+    dpm["pushservicetype"] = "testService"
+    dpm["regid"] = "fdsafas"
+
+    tpst := newTestPushServiceType()
+    psm := GetPushServiceManager()
+    psm.RegisterPushServiceType(tpst)
+
+    psp, _ := psm.BuildPushServiceProviderFromMap(pspm)
+    dp, _ := psm.BuildDeliveryPointFromMap(dpm)
+
+    if psp.PushServiceName() != dp.PushServiceName() {
+        t.Errorf("Should be compatible\n")
+    }
 }
 

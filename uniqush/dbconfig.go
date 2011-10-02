@@ -18,11 +18,6 @@
 package uniqush
 
 import (
-    "os"
-    //"bufio"
-    "io/ioutil"
-    "json"
-    "fmt"
 )
 
 type DatabaseConfig struct {
@@ -39,8 +34,11 @@ type DatabaseConfig struct {
      */
     EverySec int64
     LeastDirty int
+
+    psm *PushServiceManager
 }
 
+/*
 const (
     DEFAULT_DBCONF_FILE string = "/etc/uniqush.conf"
 )
@@ -55,10 +53,6 @@ func LoadDatabaseConfig(filename string) (conf *DatabaseConfig, err os.Error) {
         conf = nil
         return
     }
-    /*
-    str := string(content)
-    fmt.Print(str, "\n")
-    */
     conf = new(DatabaseConfig)
     err = json.Unmarshal(content, conf)
     return
@@ -71,3 +65,4 @@ func (c *DatabaseConfig) String() string {
     return ret
 }
 
+*/

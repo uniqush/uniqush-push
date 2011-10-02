@@ -18,22 +18,23 @@
 package uniqush
 
 import (
-    "fmt"
-    "strings"
 )
 
 type DeliveryPoint struct {
     /* Begin Obsoleted */
     OSType
-    Name string
+    //Name string
     token string
     account string
     /* End Obsoleted */
 
-    serviceTypeId int
-    pushServiceType PushServiceType
-    VolatileData map[string]string
-    FixedData map[string]string
+    PushPeer
+}
+
+func NewEmptyDeliveryPoint() *DeliveryPoint {
+    ret := new(DeliveryPoint)
+    ret.InitPushPeer()
+    return ret
 }
 
 /* Begin Obsoleted */
@@ -109,6 +110,7 @@ func (s *DeliveryPoint) UniqStr() string {
     return s.OSName() + ":" + s.account + "#" + s.token
 }
 
+/*
 func (dp *DeliveryPoint) Marshal() []byte {
     str := fmt.Sprintf("%d.%s:%s", dp.OSID(), dp.account, dp.token)
     return []byte(str)
@@ -130,4 +132,5 @@ func (dp *DeliveryPoint) Unmarshal(name string, value []byte) *DeliveryPoint {
     dp.token = fields[1]
     return dp
 }
+*/
 /* End Obsoleted */
