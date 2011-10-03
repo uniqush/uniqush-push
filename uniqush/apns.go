@@ -18,18 +18,22 @@
 package uniqush
 
 import (
-	"crypto/tls"
-	"net"
-	"json"
-	"os"
+    "crypto/tls"
+    "net"
+    "json"
+    "os"
     "io"
-	"bytes"
-	"encoding/hex"
-	"encoding/binary"
+    "bytes"
+    "encoding/hex"
+    "encoding/binary"
     "strconv"
+    "sync/atomic"
+    "time"
+    "fmt"
 )
 
 type APNSPushService struct {
+    nextid uint32
 }
 
 func init() {
@@ -37,7 +41,8 @@ func init() {
 }
 
 func NewAPNSPushService() *APNSPushService {
-	return new(APNSPushService)
+    ret := new(APNSPushService)
+    return ret
 }
 
 func (p *APNSPushService) Name() string {
@@ -95,33 +100,6 @@ func (p *APNSPushService) BuildDeliveryPointFromMap(kv map[string]string) (*Deli
     return dp, nil
 }
 
-/*
-type APNSService struct {
-    psp *PushServiceProvider
-}
-
-func (s *APNSService) Certificate() string {
-    return s.psp.auth_token
-}
-
-func (s *APNSService) PrivateKey() string {
-    return s.psp.sender_id
-}
-
-func (s *APNSService) Address() string {
-    if s.psp.real_auth_token == "0" {
-        return "gateway.sandbox.push.apple.com:2195"
-    }
-    return "gateway.push.apple.com:2195"
-}
-
-func NewAPNSService(psp *PushServiceProvider) *APNSService {
-    ret := new(APNSService)
-    ret.psp = psp
-    return ret
-}
-*/
-
 func toAPNSPayload(n *Notification) []byte {
     payload := make(map[string]interface{})
     aps := make(map[string]interface{})
@@ -141,6 +119,10 @@ func toAPNSPayload(n *Notification) []byte {
             aps["sound"] = v
         case "img":
             alert["launch-image"] = v
+        case "id":
+            continue
+        case "expiry":
+            continue
         default:
             payload[k] = v
         }
@@ -175,23 +157,23 @@ func (p *APNSPushService) Push(sp *PushServiceProvider,
                         n *Notification) (string, os.Error) {
     cert, err := tls.LoadX509KeyPair(sp.FixedData["cert"], sp.FixedData["key"])
     if err != nil {
-		return "", NewInvalidPushServiceProviderError(sp)
+        return "", NewInvalidPushServiceProviderError(sp)
     }
     conf := &tls.Config {
-              Certificates: []tls.Certificate{cert},
-          }
+        Certificates: []tls.Certificate{cert},
+    }
     conn, err := net.Dial("tcp", sp.VolatileData["addr"])
     if err != nil {
-		return "", NewInvalidPushServiceProviderError(sp)
+        return "", NewInvalidPushServiceProviderError(sp)
     }
 
-	tlsconn := tls.Client(conn, conf)
-	err = tlsconn.Handshake()
+    tlsconn := tls.Client(conn, conf)
+    err = tlsconn.Handshake()
     if err != nil {
-		return "", NewInvalidPushServiceProviderError(sp)
+        return "", NewInvalidPushServiceProviderError(sp)
     }
     devtoken := s.FixedData["devtoken"]
-	btoken, err := hex.DecodeString(devtoken)
+    btoken, err := hex.DecodeString(devtoken)
     if err != nil {
         return "", NewInvalidDeliveryPointError(sp, s)
     }
@@ -201,27 +183,47 @@ func (p *APNSPushService) Push(sp *PushServiceProvider,
         /* FIXME new error type */
         return "", NewInvalidDeliveryPointError(sp, s)
     }
-	buffer := bytes.NewBuffer([]byte{})
-	// command
-	binary.Write(buffer, binary.BigEndian, uint8(0))
+    buffer := bytes.NewBuffer([]byte{})
+    // command
+    binary.Write(buffer, binary.BigEndian, uint8(1))
 
-	// push device token
-	binary.Write(buffer, binary.BigEndian, uint16(len(btoken)))
-	binary.Write(buffer, binary.BigEndian, btoken)
-
-	// push payload
-	binary.Write(buffer, binary.BigEndian, uint16(len(bpayload)))
-	binary.Write(buffer, binary.BigEndian, bpayload)
-	pdu := buffer.Bytes()
-
-	// write pdu
-	err = writen(tlsconn, pdu)
-    if err != nil {
-		return "", NewInvalidPushServiceProviderError(sp)
+    // transaction id
+    mid := atomic.AddUint32(&(p.nextid), 1)
+    if smid, ok := n.Data["id"]; ok {
+        imid, err := strconv.Atoui(smid)
+        if err == nil {
+            mid = uint32(imid)
+        }
     }
-	tlsconn.SetReadTimeout(5E8)
-	readb := [6]byte{}
-	nr, err := tlsconn.Read(readb[:])
+    binary.Write(buffer, binary.BigEndian, mid)
+
+    // Expiry
+    expiry := uint32(time.Seconds() + 60*60)
+
+    if sexpiry, ok := n.Data["expiry"]; ok {
+        uiexp, err := strconv.Atoui(sexpiry)
+        if err == nil {
+            expiry = uint32(uiexp)
+        }
+    }
+    binary.Write(buffer, binary.BigEndian, expiry)
+
+    // device token
+    binary.Write(buffer, binary.BigEndian, uint16(len(btoken)))
+    binary.Write(buffer, binary.BigEndian, btoken)
+
+    // payload
+    binary.Write(buffer, binary.BigEndian, uint16(len(bpayload)))
+    binary.Write(buffer, binary.BigEndian, bpayload)
+    pdu := buffer.Bytes()
+
+    err = writen(tlsconn, pdu)
+    if err != nil {
+    return "", NewInvalidPushServiceProviderError(sp)
+    }
+    tlsconn.SetReadTimeout(5E8)
+    readb := [6]byte{}
+    nr, err := tlsconn.Read(readb[:])
     /* TODO error handling */
     if nr > 0 {
         switch(readb[1]) {
@@ -231,6 +233,6 @@ func (p *APNSPushService) Push(sp *PushServiceProvider,
             return "", NewInvalidPushServiceProviderError(sp)
         }
     }
-    return "", nil
+    return fmt.Sprintf("%d", mid), nil
 }
 
