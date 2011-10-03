@@ -98,7 +98,7 @@ type UnregisteredError struct {
 
 func NewUnregisteredError(sp *PushServiceProvider, s *DeliveryPoint) *UnregisteredError {
     return &UnregisteredError{
-        remoteServerError{"Device Unsubcribed: " + s.Name + " unsubscribed the service " + sp.Name},
+        remoteServerError{"Device Unsubcribed: " + s.Name() + " unsubscribed the service " + sp.Name()},
         sp, s}
 }
 
@@ -122,7 +122,7 @@ type InvalidDeliveryPointError struct {
 func NewInvalidDeliveryPointError(sp *PushServiceProvider, s *DeliveryPoint) *InvalidDeliveryPointError {
     return &InvalidDeliveryPointError{
         remoteServerError{"Invalid DeliveryPoint - " +
-            s.Name + " is not a valid subscriber for service " + sp.Name},
+            s.Name() + " is not a valid subscriber for service " + sp.Name()},
             sp, s}
 }
 
@@ -132,7 +132,7 @@ type InvalidPushServiceProviderError struct {
 }
 
 func NewInvalidPushServiceProviderError(s *PushServiceProvider) *InvalidPushServiceProviderError {
-    return &InvalidPushServiceProviderError{remoteServerError{"Inalid Service Provider: " + s.Name}, s}
+    return &InvalidPushServiceProviderError{remoteServerError{"Inalid Service Provider: " + s.Name()}, s}
 }
 
 type RetryError struct {

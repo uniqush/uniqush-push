@@ -87,7 +87,7 @@ func (p *AddPushServiceProviderProcessor) Process(req *Request) {
         p.logger.Errorf("[AddPushServiceRequestFail] DatabaseError %v", err)
     }
     p.writer.AddPushServiceSuccess(req)
-    p.logger.Infof("[AddPushServiceRequest] Success PushServiceProviderID=%s", req.PushServiceProvider.Name)
+    p.logger.Infof("[AddPushServiceRequest] Success PushServiceProviderID=%s", req.PushServiceProvider.Name())
 }
 
 type RemovePushServiceProviderProcessor struct {
@@ -111,7 +111,7 @@ func (p *RemovePushServiceProviderProcessor) Process(req *Request) {
         p.logger.Errorf("[RemovePushServiceRequestFail] DatabaseError %v", err)
     }
     p.writer.RemovePushServiceSuccess(req)
-    p.logger.Infof("[RemovePushServiceRequest] Success PushServiceProviderID=%s", req.PushServiceProvider.Name)
+    p.logger.Infof("[RemovePushServiceRequest] Success PushServiceProviderID=%s", req.PushServiceProvider.Name())
 }
 
 type SubscribeProcessor struct {
@@ -134,15 +134,17 @@ func (p *SubscribeProcessor) Process(req *Request) {
     }
     psp, err := p.dbfront.AddDeliveryPointToService(req.Service,
                                                     req.Subscribers[0],
-                                                    req.DeliveryPoint,
-                                                    req.PreferedService)
-    if err != nil {
+                                                    req.DeliveryPoint)
+    if err != nil || psp == nil {
         p.writer.SubscribeFail(req, err)
         p.logger.Errorf("[SubscribeRequestFail] DatabaseError %v", err)
+        return
     }
     p.writer.SubscribeSuccess(req)
+    dpname := req.DeliveryPoint.Name()
+    pspname := psp.Name()
     p.logger.Infof("[SubscribeRequest] Success DeliveryPoint=%s PushServiceProvider=%s",
-                    req.DeliveryPoint.Name, psp.Name)
+                    dpname, pspname)
 }
 
 type UnsubscribeProcessor struct {
@@ -173,6 +175,6 @@ func (p *UnsubscribeProcessor) Process(req *Request) {
     }
     p.writer.SubscribeSuccess(req)
     p.logger.Infof("[UnsubscribeRequest] Success DeliveryPoint=%s",
-                    req.DeliveryPoint.Name)
+                    req.DeliveryPoint.Name())
 }
 

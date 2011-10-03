@@ -8,7 +8,6 @@ GOFILES=\
 	pushserviceprovider.go\
 	servicetype.go\
 	ostype.go\
-	c2dmpusher.go\
 	request.go\
 	frontend.go\
 	webfrontend.go\
@@ -25,7 +24,6 @@ GOFILES=\
 	pushprocessor.go\
 	log.go\
 	uniqushsys.go\
-	apnspusher.go\
 	pushservicemngr.go\
 	pushservicetype.go\
 	pushpeer.go\

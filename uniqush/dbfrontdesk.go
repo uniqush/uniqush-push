@@ -19,7 +19,6 @@ package uniqush
 
 import (
     "os"
-    "crypto/sha1"
     "fmt"
 )
 
@@ -49,8 +48,7 @@ type DatabaseFrontDeskIf interface {
     // Return value: selected push service provider, error
     AddDeliveryPointToService (service string,
                             subscriber string,
-                            delivery_point *DeliveryPoint,
-                            prefered_service int) (*PushServiceProvider, os.Error)
+                            delivery_point *DeliveryPoint) (*PushServiceProvider, os.Error)
 
     // The delivery point may be anonymous whose Name is empty string
     // For anonymous delivery point, it will be added to database and its Name will be set
@@ -65,20 +63,6 @@ type DatabaseFrontDeskIf interface {
                                               subscriber string)([]PushServiceProviderDeliveryPointPair, os.Error)
 
     FlushCache() os.Error
-}
-
-func genDeliveryPointName(sub string, dp *DeliveryPoint) {
-    hash := sha1.New()
-    key := "delivery.point:" + sub + ":" + dp.UniqStr()
-    hash.Write([]byte(key))
-    dp.Name = fmt.Sprintf("%x", hash.Sum())
-}
-
-func genPushServiceProviderName(srv string, psp *PushServiceProvider) {
-    hash := sha1.New()
-    key := "push.service.provider:" + srv + ":" + psp.UniqStr()
-    hash.Write([]byte(key))
-    psp.Name = fmt.Sprintf("%x", hash.Sum())
 }
 
 type DatabaseFrontDesk struct {
@@ -114,10 +98,10 @@ func (f *DatabaseFrontDesk)FlushCache() os.Error {
 }
 
 func (f *DatabaseFrontDesk)RemovePushServiceProviderFromService (service string, push_service_provider *PushServiceProvider) os.Error {
-    if len(push_service_provider.Name) == 0 {
-        genPushServiceProviderName(service, push_service_provider)
+    name := push_service_provider.Name()
+    if name == "" {
+        return os.NewError("InvalidPushServiceProvider")
     }
-    name := push_service_provider.Name
     db := f.db
     return db.RemovePushServiceProviderFromService(service, name)
 }
@@ -128,20 +112,20 @@ func (f *DatabaseFrontDesk) AddPushServiceProviderToService (service string,
     if push_service_provider == nil {
         return nil
     }
-    if len(push_service_provider.Name) == 0 {
-        genPushServiceProviderName(service, push_service_provider)
-        e := f.db.SetPushServiceProvider(push_service_provider)
-        if e != nil {
-            return e
-        }
+    name := push_service_provider.Name()
+    if len(name) == 0 {
+        return os.NewError("InvalidPushServiceProvider")
     }
-    return f.db.AddPushServiceProviderToService(service, push_service_provider.Name)
+    e := f.db.SetPushServiceProvider(push_service_provider)
+    if e != nil {
+        return e
+    }
+    return f.db.AddPushServiceProviderToService(service, push_service_provider.Name())
 }
 
 func (f *DatabaseFrontDesk) AddDeliveryPointToService (service string,
                                                        subscriber string,
-                                                       delivery_point *DeliveryPoint,
-                                                       prefered_service int) (*PushServiceProvider, os.Error) {
+                                                       delivery_point *DeliveryPoint) (*PushServiceProvider, os.Error) {
     if delivery_point == nil {
         return nil, nil
     }
@@ -150,17 +134,10 @@ func (f *DatabaseFrontDesk) AddDeliveryPointToService (service string,
         return nil, err
     }
     if pspnames == nil {
-        return nil, nil
+        return nil, os.NewError(fmt.Sprintf("Cannot Find Service %s", service))
     }
-    var first_fit *PushServiceProvider
-    var found *PushServiceProvider
-
-    if len(delivery_point.Name) == 0 {
-        genDeliveryPointName(subscriber, delivery_point)
-        err = f.db.SetDeliveryPoint(delivery_point)
-        if err != nil {
-            return nil, err
-        }
+    if len(delivery_point.Name()) == 0 {
+        return nil, os.NewError("InvalidDeliveryPoint")
     }
 
     for _, pspname := range pspnames {
@@ -171,52 +148,36 @@ func (f *DatabaseFrontDesk) AddDeliveryPointToService (service string,
         if psp == nil {
             continue
         }
-        if first_fit == nil && psp.IsCompatible(&delivery_point.OSType) {
-            if prefered_service < 0 {
-                found = psp
-                break
+        if psp.PushServiceName() == delivery_point.PushServiceName() {
+            err = f.db.SetDeliveryPoint(delivery_point)
+            if err != nil {
+                return nil, err
             }
-            first_fit = psp
-        }
-        if prefered_service > 0 {
-            if psp.ServiceID() == prefered_service {
-                found = psp
-                break
+            err = f.db.AddDeliveryPointToServiceSubscriber(service, subscriber, delivery_point.Name())
+            if err != nil {
+                return nil, err
             }
+            err = f.db.SetPushServiceProviderOfServiceDeliveryPoint(service, delivery_point.Name(), psp.Name())
+            if err != nil {
+                return nil, err
+            }
+            return psp, nil
         }
     }
-
-    if found == nil {
-        found = first_fit
-    }
-
-    if found == nil {
-        return nil, nil
-    }
-
-    err = f.db.AddDeliveryPointToServiceSubscriber(service, subscriber, delivery_point.Name)
-    if err != nil {
-        return nil, err
-    }
-
-    err = f.db.SetPushServiceProviderOfServiceDeliveryPoint(service, delivery_point.Name, found.Name)
-    if err != nil {
-        return nil, err
-    }
-    return found, nil
+    return nil, os.NewError(fmt.Sprintf("Cannot Find Push Service Provider with Type %s", delivery_point.PushServiceName()))
 }
 
 func (f *DatabaseFrontDesk) RemoveDeliveryPointFromService (service string,
                                                             subscriber string,
                                                             delivery_point *DeliveryPoint) os.Error {
-    if delivery_point.Name == "" {
-        genDeliveryPointName(subscriber, delivery_point)
+    if delivery_point.Name() == "" {
+        return os.NewError("InvalidDeliveryPoint")
     }
-    err := f.db.RemoveDeliveryPointFromServiceSubscriber(service, subscriber, delivery_point.Name)
+    err := f.db.RemoveDeliveryPointFromServiceSubscriber(service, subscriber, delivery_point.Name())
     if err != nil {
         return err
     }
-    err = f.db.RemovePushServiceProviderOfServiceDeliveryPoint(service, delivery_point.Name)
+    err = f.db.RemovePushServiceProviderOfServiceDeliveryPoint(service, delivery_point.Name())
     return err
 }
 
@@ -264,14 +225,14 @@ func (f *DatabaseFrontDesk) GetPushServiceProviderDeliveryPointPairs (service st
 }
 
 func (f *DatabaseFrontDesk) ModifyPushServiceProvider(psp *PushServiceProvider) os.Error {
-    if len(psp.Name) == 0 {
+    if len(psp.Name()) == 0 {
         return nil
     }
     return f.db.SetPushServiceProvider(psp)
 }
 
 func (f *DatabaseFrontDesk) ModifyDeliveryPoint(dp *DeliveryPoint) os.Error {
-    if len(dp.Name) == 0 {
+    if len(dp.Name()) == 0 {
         return nil
     }
     return f.db.SetDeliveryPoint(dp)

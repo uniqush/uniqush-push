@@ -19,13 +19,13 @@ Or
 Subscribe a Service
 ===========================
 - C2DM:
-`curl http://127.0.0.1:9898/subscribe -d service=myservice -d subscriber=uniqush.client -d os=android -d account=uniqush.client@gmail.com -d regid=fakeregid`
+`curl http://127.0.0.1:9898/subscribe -d service=myservice -d subscriber=uniqush.client -d pushservicetype=c2dm -d account=uniqush.client@gmail.com -d regid=fakeregid`
 - APNS:
-`curl http://127.0.0.1:9898/subscribe -d service=myservice -d subscriber=uniqush.client -d os=ios -d devtoken=devtoken`
+`curl http://127.0.0.1:9898/subscribe -d service=myservice -d subscriber=uniqush.client -d pushservicetype=apns -d devtoken=devtoken`
 
 Unsubscribe a Service
 ===========================
-`curl http://127.0.0.1:9898/unsubscribe -d service=myservice -d subscriber=uniqush.client -d os=android -d account=uniqush.client@gmail.com -d regid=fakeregid`
+`curl http://127.0.0.1:9898/unsubscribe -d service=myservice -d subscriber=uniqush.client -d pushservicetype=c2dm -d account=uniqush.client@gmail.com -d regid=fakeregid`
 
 Or
 

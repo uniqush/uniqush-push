@@ -5,4 +5,4 @@ make && make install
 cd ..
 make clean
 make
-./uniqushd -config=myconf
+./uniqushd

@@ -80,6 +80,11 @@ func (p *C2DMPushService) BuildPushServiceProviderFromMap(kv map[string]string) 
 func (p *C2DMPushService) BuildDeliveryPointFromMap(kv map[string]string) (*DeliveryPoint, os.Error) {
     dp := NewEmptyDeliveryPoint()
 
+    if service, ok := kv["service"]; ok {
+        dp.FixedData["service"] = service
+    } else {
+        return nil, os.NewError("NoService")
+    }
     if sub, ok := kv["subscriber"]; ok {
         dp.FixedData["subscriber"] = sub
     } else {

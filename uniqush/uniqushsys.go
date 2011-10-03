@@ -108,6 +108,7 @@ func loadDatabaseConfig(cf *conf.ConfigFile) (*DatabaseConfig, os.Error) {
     if err != nil || c.CacheSize < 0 {
         c.CacheSize = 1024
     }
+
     return c, nil
 }
 
@@ -145,7 +146,11 @@ func LoadUniqushSystem(filename string) (*UniqushSystem, os.Error) {
     if e20 != nil || addr == "" {
         addr = "localhost:9898"
     }
-    ret.Frontend = NewWebFrontEnd(ret.Bridge, logger, addr)
+
+    psm := GetPushServiceManager()
+    psm.RegisterPushServiceType(NewC2DMPushService())
+
+    ret.Frontend = NewWebFrontEnd(ret.Bridge, logger, addr, psm)
     ret.Frontend.SetStopChannel(ret.Stopch)
     ret.Frontend.SetEventWriter(ew)
 
@@ -161,11 +166,12 @@ func LoadUniqushSystem(filename string) (*UniqushSystem, os.Error) {
         ret.Backend.SetProcessor(i, p)
     }
 
-    /* Load Database */
+    // Load Database
     dbconf, e0 := loadDatabaseConfig(c)
     if e0 != nil {
         return nil, e0
     }
+    //dbf, e30 := NewDatabaseFrontDeskWithoutCache(dbconf)
     dbf, e30 := NewDatabaseFrontDesk(dbconf)
 
     if e30 != nil{
@@ -173,7 +179,7 @@ func LoadUniqushSystem(filename string) (*UniqushSystem, os.Error) {
     }
     ret.Database = dbf
 
-    /* Load Processors */
+    // Load Processors
     logger, e10 = loadLogInfo(c, "AddPushServiceProvider", "[AddPushServiceProvider]")
     if e10 != nil {
         return nil, e10
@@ -206,15 +212,15 @@ func LoadUniqushSystem(filename string) (*UniqushSystem, os.Error) {
     if e10 != nil {
         return nil, e10
     }
-    p = NewPushProcessor(logger, ew, dbf, ret.Bridge)
+    p = NewPushProcessor(logger, ew, dbf, ret.Bridge, psm)
     ret.Backend.SetProcessor(ACTION_PUSH, p)
     return ret, nil
 }
 
 func (s *UniqushSystem) Run() {
-    defer s.Database.FlushCache()
     go s.Frontend.Run()
     go s.Backend.Run()
     <-s.Stopch
+    s.Database.FlushCache()
 }
 

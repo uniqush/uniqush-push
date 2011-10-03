@@ -129,25 +129,9 @@ func (r *UniqushRedisDB) keyValueToPushServiceProvider(name string, value []byte
 
 func deliveryPointToValue(dp *DeliveryPoint) []byte {
     return dp.Marshal()
-    /*
-    switch (dp.OSID()) {
-    case OSTYPE_ANDROID:
-        str := fmt.Sprintf("%d.%s:%s", dp.OSID(), dp.GoogleAccount(), dp.RegistrationID())
-        return []byte(str)
-    }
-    return nil
-    */
 }
 
 func pushServiceProviderToValue(psp *PushServiceProvider) []byte {
-    /*
-    switch (psp.ServiceID()) {
-    case SRVTYPE_C2DM:
-        str := fmt.Sprintf("%d.%s:%s", psp.ServiceID(), psp.SenderID(), psp.AuthToken())
-        return []byte(str)
-    }
-    return nil
-    */
     return psp.Marshal()
 }
 
@@ -163,7 +147,7 @@ func (r *UniqushRedisDB) GetDeliveryPoint(name string) (*DeliveryPoint, os.Error
 }
 
 func (r *UniqushRedisDB) SetDeliveryPoint(dp *DeliveryPoint) os.Error {
-    err := r.client.Set(DELIVERY_POINT_PREFIX + dp.Name, deliveryPointToValue(dp))
+    err := r.client.Set(DELIVERY_POINT_PREFIX + dp.Name(), deliveryPointToValue(dp))
     return err
 }
 
@@ -179,16 +163,16 @@ func (r *UniqushRedisDB) GetPushServiceProvider(name string) (*PushServiceProvid
 }
 
 func (r *UniqushRedisDB) SetPushServiceProvider(psp *PushServiceProvider) os.Error {
-    return r.client.Set(PUSH_SERVICE_PROVIDER_PREFIX + psp.Name, pushServiceProviderToValue(psp))
+    return r.client.Set(PUSH_SERVICE_PROVIDER_PREFIX + psp.Name(), pushServiceProviderToValue(psp))
 }
 
 func (r *UniqushRedisDB) RemoveDeliveryPoint(dp *DeliveryPoint) os.Error {
-    _, err := r.client.Del(DELIVERY_POINT_PREFIX + dp.Name)
+    _, err := r.client.Del(DELIVERY_POINT_PREFIX + dp.Name())
     return err
 }
 
 func (r *UniqushRedisDB) RemovePushServiceProvider(psp *PushServiceProvider) os.Error {
-    _, err := r.client.Del(PUSH_SERVICE_PROVIDER_PREFIX + psp.Name)
+    _, err := r.client.Del(PUSH_SERVICE_PROVIDER_PREFIX + psp.Name())
     return err
 }
 

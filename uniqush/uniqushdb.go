@@ -420,20 +420,20 @@ func (cdb *CachedUniqushDatabase) RemoveDeliveryPointFromServiceSubscriber (srv,
 }
 
 func (cdb *CachedUniqushDatabase) SetDeliveryPoint(dp *DeliveryPoint) os.Error {
-    return cdb.dp_cache.Modify(dp.Name, dp)
+    return cdb.dp_cache.Modify(dp.Name(), dp)
 }
 func (cdb *CachedUniqushDatabase) SetPushServiceProvider(psp *PushServiceProvider) os.Error {
-    return cdb.psp_cache.Modify(psp.Name, psp)
+    return cdb.psp_cache.Modify(psp.Name(), psp)
 }
 func (cdb *CachedUniqushDatabase) SetPushServiceProviderOfServiceDeliveryPoint (srv, dp, psp string) os.Error {
     d := &srvdppsp{srv, dp, psp}
     return cdb.srvdp_to_psp.Modify(srv + ":" + dp, d)
 }
 func (cdb *CachedUniqushDatabase) RemoveDeliveryPoint(dp *DeliveryPoint) os.Error {
-    return cdb.dp_cache.Remove(dp.Name, dp)
+    return cdb.dp_cache.Remove(dp.Name(), dp)
 }
 func (cdb *CachedUniqushDatabase) RemovePushServiceProvider(psp *PushServiceProvider) os.Error {
-    return cdb.psp_cache.Remove(psp.Name, psp)
+    return cdb.psp_cache.Remove(psp.Name(), psp)
 }
 func (cdb *CachedUniqushDatabase) RemovePushServiceProviderOfServiceDeliveryPoint(srv, dp string) os.Error {
     d := &srvdppsp{srv, dp, ""}

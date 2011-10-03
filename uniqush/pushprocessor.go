@@ -32,12 +32,12 @@ func (t *retryPushTask) Run(time int64) {
 type PushProcessor struct {
     loggerEventWriter
     databaseSetter
-    pushers []Pusher
     max_nr_gorountines int
     max_nr_retry int
     q *taskq.TaskQueue
     qch chan taskq.Task
     backendch chan<- *Request
+    psm *PushServiceManager
 }
 
 const (
@@ -82,36 +82,46 @@ func (p *PushProcessor) retryRequest(req *Request, retryAfter int, subscriber st
     p.qch <- task
 }
 
-func NewPushProcessor(logger *Logger, writer *EventWriter, dbfront DatabaseFrontDeskIf, backendch chan<- *Request) RequestProcessor{
+func NewPushProcessor(logger *Logger,
+                      writer *EventWriter,
+                      dbfront DatabaseFrontDeskIf,
+                      backendch chan<- *Request,
+                      psm *PushServiceManager) RequestProcessor{
     ret := new(PushProcessor)
     ret.SetLogger(logger)
     ret.SetEventWriter(writer)
     ret.SetDatabase(dbfront)
-    ret.pushers = make([]Pusher, SRVTYPE_NR_PUSH_SERVICE_TYPE)
+    //ret.pushers = make([]Pusher, SRVTYPE_NR_PUSH_SERVICE_TYPE)
     ret.max_nr_gorountines = 1024
     ret.max_nr_retry = 3
     ret.qch = make(chan taskq.Task)
     ret.q = taskq.NewTaskQueue(ret.qch)
     ret.backendch = backendch
 
+    /*
     for i := 0; i < SRVTYPE_NR_PUSH_SERVICE_TYPE; i++ {
         ret.pushers[i] = &NullPusher{}
     }
+    */
     logger.Configf("Ready")
 
+    /*
     ret.pushers[SRVTYPE_C2DM] = NewC2DMPusher()
     ret.pushers[SRVTYPE_APNS] = NewAPNSPusher()
+    */
     go ret.q.Run()
 
     return ret
 }
 
+/*
 func (p *PushProcessor) SetPusher(pushService int, pusher Pusher) {
     if pushService < 0 || pushService >= len(p.pushers) {
         return
     }
     p.pushers[pushService] = pusher
 }
+*/
 
 type successPushLog struct {
     dp *DeliveryPoint
@@ -142,44 +152,42 @@ func (p *PushProcessor) pushToSingleDeliveryPoint(req *Request) []*successPushLo
     dp := req.DeliveryPoint
     i := 0
 
-    if psp.ValidServiceType() {
-        id, err := p.pushers[psp.ServiceID()].Push(psp, dp, req.Notification)
-        if err != nil {
-            switch (err.(type)) {
-            case *RefreshDataError:
-                re := err.(*RefreshDataError)
-                if re.PushServiceProvider != nil {
-                    p.dbfront.ModifyPushServiceProvider(re.PushServiceProvider)
-                    defer p.logger.Infof("[UpdatePushServiceProvider] Service=%s PushServiceProvider=%s", service, re.PushServiceProvider.Name)
-                }
-                if re.DeliveryPoint != nil {
-                    p.dbfront.ModifyDeliveryPoint(re.DeliveryPoint)
-                    defer p.logger.Infof("[UpdateDeliveryPoint] DeliveryPoint=%s", re.DeliveryPoint.Name)
-                }
-                if re.OtherError != nil {
-                    err = re.OtherError
-                } else {
-                    ret[i] = &successPushLog{dp, subid, id}
-                    return ret
-                }
+    id, err := p.psm.Push(psp, dp, req.Notification)
+    if err != nil {
+        switch (err.(type)) {
+        case *RefreshDataError:
+            re := err.(*RefreshDataError)
+            if re.PushServiceProvider != nil {
+                p.dbfront.ModifyPushServiceProvider(re.PushServiceProvider)
+                defer p.logger.Infof("[UpdatePushServiceProvider] Service=%s PushServiceProvider=%s", service, re.PushServiceProvider.Name())
             }
-            switch (err.(type)) {
-            case *RetryError:
-                re := err.(*RetryError)
-                p.logger.Warnf("[PushRetry] RequestId=%s Service=%s Subscriber=%s DeliveryPoint=%s \"%v\"", req.ID, service, subscriber, dp.Name, err)
-                p.retryRequest(req,re.RetryAfter, subscriber, psp, dp)
+            if re.DeliveryPoint != nil {
+                p.dbfront.ModifyDeliveryPoint(re.DeliveryPoint)
+                defer p.logger.Infof("[UpdateDeliveryPoint] DeliveryPoint=%s", re.DeliveryPoint.Name())
+            }
+            if re.OtherError != nil {
+                err = re.OtherError
+            } else {
+                ret[i] = &successPushLog{dp, subid, id}
                 return ret
-            case *UnregisteredError:
-                go p.unsubscribe(req, subscriber, dp)
             }
-            // We want to be fast. So defer all IO operations
-            defer p.logger.Errorf("[PushFail] RequestId=%s Service=%s Subscriber=%s DeliveryPoint=%s \"%v\"", req.ID, service, subscriber, dp.Name, err)
-            defer p.writer.PushFail(req, subscriber, dp, err)
-            ret[i] = nil
-            return ret
         }
-        ret[0] = &successPushLog{dp, subid, id}
+        switch (err.(type)) {
+        case *RetryError:
+            re := err.(*RetryError)
+            p.logger.Warnf("[PushRetry] RequestId=%s Service=%s Subscriber=%s DeliveryPoint=%s \"%v\"", req.ID, service, subscriber, dp.Name(), err)
+            p.retryRequest(req,re.RetryAfter, subscriber, psp, dp)
+            return ret
+        case *UnregisteredError:
+            go p.unsubscribe(req, subscriber, dp)
+        }
+        // We want to be fast. So defer all IO operations
+        defer p.logger.Errorf("[PushFail] RequestId=%s Service=%s Subscriber=%s DeliveryPoint=%s \"%v\"", req.ID, service, subscriber, dp.Name(), err)
+        defer p.writer.PushFail(req, subscriber, dp, err)
+        ret[i] = nil
+        return ret
     }
+    ret[0] = &successPushLog{dp, subid, id}
     return ret
 }
 
@@ -199,44 +207,42 @@ func (p *PushProcessor) push(req *Request, service string, subscriber string, su
         psp := pdpair.PushServiceProvider
         dp := pdpair.DeliveryPoint
 
-        if psp.ValidServiceType() {
-            id, err := p.pushers[psp.ServiceID()].Push(psp, dp, req.Notification)
-            if err != nil {
-                switch (err.(type)) {
-                case *RefreshDataError:
-                    re := err.(*RefreshDataError)
-                    if re.PushServiceProvider != nil {
-                        p.dbfront.ModifyPushServiceProvider(re.PushServiceProvider)
-                        defer p.logger.Infof("[UpdatePushServiceProvider] Service=%s PushServiceProvider=%s", service, re.PushServiceProvider.Name)
-                    }
-                    if re.DeliveryPoint != nil {
-                        p.dbfront.ModifyDeliveryPoint(re.DeliveryPoint)
-                        defer p.logger.Infof("[UpdateDeliveryPoint] DeliveryPoint=%s", re.DeliveryPoint.Name)
-                    }
-                    if re.OtherError != nil {
-                        err = re.OtherError
-                    } else {
-                        ret[i] = &successPushLog{dp, subid, id}
-                        continue
-                    }
+        id, err := p.psm.Push(psp, dp, req.Notification)
+        if err != nil {
+            switch (err.(type)) {
+            case *RefreshDataError:
+                re := err.(*RefreshDataError)
+                if re.PushServiceProvider != nil {
+                    p.dbfront.ModifyPushServiceProvider(re.PushServiceProvider)
+                    defer p.logger.Infof("[UpdatePushServiceProvider] Service=%s PushServiceProvider=%s", service, re.PushServiceProvider.Name())
                 }
-                switch (err.(type)) {
-                case *RetryError:
-                    re := err.(*RetryError)
-                    p.retryRequest(req,re.RetryAfter, subscriber, psp, dp)
-                    defer p.logger.Warnf("[PushRetry] RequestId=%s Service=%s Subscriber=%s DeliveryPoint=%s \"%v\"", req.ID, service, subscriber, dp.Name, err)
+                if re.DeliveryPoint != nil {
+                    p.dbfront.ModifyDeliveryPoint(re.DeliveryPoint)
+                    defer p.logger.Infof("[UpdateDeliveryPoint] DeliveryPoint=%s", re.DeliveryPoint.Name())
+                }
+                if re.OtherError != nil {
+                    err = re.OtherError
+                } else {
+                    ret[i] = &successPushLog{dp, subid, id}
                     continue
-                case *UnregisteredError:
-                    go p.unsubscribe(req, subscriber, dp)
                 }
-                // We want to be fast. So defer all IO operations
-                defer p.logger.Errorf("[PushFail] RequestId=%s Service=%s Subscriber=%s DeliveryPoint=%s \"%v\"", req.ID, service, subscriber, dp.Name, err)
-                defer p.writer.PushFail(req, subscriber, dp, err)
-                ret[i] = nil
-                continue
             }
-            ret[i] = &successPushLog{dp, subid, id}
+            switch (err.(type)) {
+            case *RetryError:
+                re := err.(*RetryError)
+                p.retryRequest(req,re.RetryAfter, subscriber, psp, dp)
+                defer p.logger.Warnf("[PushRetry] RequestId=%s Service=%s Subscriber=%s DeliveryPoint=%s \"%v\"", req.ID, service, subscriber, dp.Name(), err)
+                continue
+            case *UnregisteredError:
+                go p.unsubscribe(req, subscriber, dp)
+            }
+            // We want to be fast. So defer all IO operations
+            defer p.logger.Errorf("[PushFail] RequestId=%s Service=%s Subscriber=%s DeliveryPoint=%s \"%v\"", req.ID, service, subscriber, dp.Name(), err)
+            defer p.writer.PushFail(req, subscriber, dp, err)
+            ret[i] = nil
+            continue
         }
+        ret[i] = &successPushLog{dp, subid, id}
     }
 
     return ret
@@ -253,7 +259,7 @@ func (p *PushProcessor) pushBulk(req *Request, service string, subscribers []str
     for _, pushlog := range dps {
         if pushlog != nil {
             p.logger.Infof("[PushRequest] Success Service=%s Subscriber=%s DeliveryPoint=%s id=%s",
-                        service, subscribers[pushlog.subid], pushlog.dp.Name, pushlog.id)
+                        service, subscribers[pushlog.subid], pushlog.dp.Name(), pushlog.id)
             p.writer.PushSuccess(req, subscribers[pushlog.subid], pushlog.dp, pushlog.id)
 
         }
@@ -275,7 +281,7 @@ func (p *PushProcessor) Process(req *Request) {
         for _, pushlog := range dps {
             if pushlog != nil {
                 p.logger.Infof("[PushRequest] Success Service=%s Subscriber=%s DeliveryPoint=%s id=%s",
-                            req.Service, req.Subscribers[0], pushlog.dp.Name, pushlog.id)
+                            req.Service, req.Subscribers[0], pushlog.dp.Name(), pushlog.id)
                 p.writer.PushSuccess(req, req.Subscribers[0], pushlog.dp, pushlog.id)
 
             }

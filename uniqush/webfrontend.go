@@ -36,6 +36,7 @@ type WebFrontEnd struct {
 	addr   string
 	writer *EventWriter
 	stopch chan<- bool
+    psm *PushServiceManager
 }
 
 var (
@@ -48,12 +49,16 @@ func (f *NullWriter) Write(p []byte) (int, os.Error) {
 	return len(p), nil
 }
 
-func NewWebFrontEnd(ch chan *Request, logger *Logger, addr string) UniqushFrontEnd {
+func NewWebFrontEnd(ch chan *Request,
+                    logger *Logger,
+                    addr string,
+                    psm *PushServiceManager) UniqushFrontEnd {
 	f := new(WebFrontEnd)
 	f.ch = ch
 	f.logger = logger
 	f.writer = NewEventWriter(new(NullWriter))
 	f.stopch = nil
+    f.psm = psm
 
 	webfrontend = f
 
@@ -89,312 +94,135 @@ func (f *WebFrontEnd) SetLogger(logger *Logger) {
 	f.logger = logger
 }
 
-func (f *WebFrontEnd) addPushServiceProvider(form url.Values, id, addr string) {
+func (f *WebFrontEnd) addPushServiceProvider(kv map[string]string,
+                                             id, addr string) {
 	a := new(Request)
 	a.PunchTimestamp()
 
 	a.Action = ACTION_ADD_PUSH_SERVICE_PROVIDER
 	a.ID = id
 	a.RequestSenderAddr = addr
-	a.Service = form.Get("service")
-
-	if len(a.Service) == 0 {
+    var ok bool
+	if a.Service, ok = kv["service"]; !ok {
 		f.logger.Errorf("[AddPushServiceRequestFail] Requestid=%s From=%s NoServiceName", id, addr)
 		f.writer.BadRequest(a, os.NewError("NoServiceName"))
 		return
 	}
 
-	pspname := form.Get("pushservicetype")
-
-	switch ServiceNameToID(pspname) {
-	case SRVTYPE_C2DM:
-		senderid := form.Get("senderid")
-		authtoken := form.Get("authtoken")
-
-		if len(senderid) == 0 {
-			f.logger.Errorf("[AddPushServiceRequestFail] Requestid=%s From=%s NoSenderId", id, addr)
-			f.writer.BadRequest(a, os.NewError("NoSenderId"))
-			return
-		}
-		if len(authtoken) == 0 {
-			f.logger.Errorf("[AddPushServiceRequestFail] Requestid=%s From=%s NoAuthToken", id, addr)
-			f.writer.BadRequest(a, os.NewError("NoAuthToken"))
-			return
-		}
-		a.PushServiceProvider = NewC2DMServiceProvider("", senderid, authtoken)
-
-	case SRVTYPE_APNS:
-        certfile := form.Get("cert")
-        keyfile := form.Get("key")
-        sandbox := form.Get("sandbox")
-        is_sandbox := false
-
-        if len(certfile) == 0 {
-            f.logger.Errorf("[AddPushServiceRequestFail] Requestid=%s From=%s NoCertificate", id, addr)
-			f.writer.BadRequest(a, os.NewError("NoCertificate"))
-            return
-        }
-        if len(keyfile) == 0 {
-            f.logger.Errorf("[AddPushServiceRequestFail] Requestid=%s From=%s NoPrivateKey", id, addr)
-			f.writer.BadRequest(a, os.NewError("NoPrivateKey"))
-            return
-        }
-        if len(sandbox) != 0 && sandbox == "true" {
-            is_sandbox = true
-        }
-        a.PushServiceProvider = NewAPNSServiceProvider("", certfile, keyfile, is_sandbox)
-	/* TODO More services */
-	case SRVTYPE_MPNS:
-		fallthrough
-	case SRVTYPE_BBPS:
-		fallthrough
-	default:
-		f.logger.Errorf("[AddPushServiceRequestFail] Requestid=%s From=%s UnsupportPushService=%s", id, addr, pspname)
-		f.writer.BadRequest(a, os.NewError("UnsupportPushService:"+pspname))
-		return
-	}
-
+    psp, err := f.psm.BuildPushServiceProviderFromMap(kv)
+    if err != nil {
+        f.logger.Errorf("[AddPushServiceRequestFail] %v", err)
+        f.writer.BadRequest(a, err)
+        return
+    }
+    a.PushServiceProvider = psp
 	f.ch <- a
 	f.writer.RequestReceived(a)
-	f.logger.Infof("[AddPushServiceRequest] Requestid=%s From=%s Service=%s", id, addr, pspname)
+	f.logger.Infof("[AddPushServiceRequest] Requestid=%s From=%s Service=%s", id, addr, psp.Name())
 }
 
-func (f *WebFrontEnd) removePushServiceProvider(form url.Values, id, addr string) {
+func (f *WebFrontEnd) removePushServiceProvider(kv map[string]string,
+                                                id, addr string) {
 	a := new(Request)
 	a.PunchTimestamp()
 
 	a.Action = ACTION_REMOVE_PUSH_SERVICE_PROVIDER
 	a.ID = id
 	a.RequestSenderAddr = addr
-	a.Service = form.Get("service")
-
-	if len(a.Service) == 0 {
+    var ok bool
+	if a.Service, ok = kv["service"]; !ok {
 		f.logger.Errorf("[RemovePushServiceRequestFail] Requestid=%s From=%s NoServiceName", id, addr)
 		f.writer.BadRequest(a, os.NewError("NoServiceName"))
 		return
 	}
 
-	pspid := form.Get("pushserviceid")
-	if pspid != "" {
-		a.PushServiceProvider = new(PushServiceProvider)
-		a.PushServiceProvider.Name = pspid
-		f.ch <- a
-		f.writer.RequestReceived(a)
-		f.logger.Infof("[RemovePushServiceRequest] Requestid=%s From=%s ServiceId=%s", id, addr, pspid)
-		return
-	}
-
-	pspname := form.Get("pushservicetype")
-
-	switch ServiceNameToID(pspname) {
-	case SRVTYPE_C2DM:
-		senderid := form.Get("senderid")
-		//authtoken := form.Get("authtoken")
-
-		if len(senderid) == 0 {
-			f.logger.Errorf("[RemovePushServiceRequestFail] Requestid=%s From=%s NoSenderId", id, addr)
-			f.writer.BadRequest(a, os.NewError("NoSenderId"))
-			return
-		}
-        /*
-		if len(authtoken) == 0 {
-			f.logger.Errorf("[RemovePushServiceRequestFail] Requestid=%s From=%s NoAuthToken", id, addr)
-			f.writer.BadRequest(a, os.NewError("NoAuthToken"))
-			return
-		}
-        */
-		a.PushServiceProvider = NewC2DMServiceProvider("", senderid, "")
-
-	case SRVTYPE_APNS:
-        certfile := form.Get("cert")
-        keyfile := form.Get("key")
-        sandbox := form.Get("sandbox")
-        is_sandbox := false
-
-        if len(certfile) == 0 {
-            f.logger.Errorf("[AddPushServiceRequestFail] Requestid=%s From=%s NoCertificate", id, addr)
-			f.writer.BadRequest(a, os.NewError("NoCertificate"))
-            return
-        }
-        if len(keyfile) == 0 {
-            f.logger.Errorf("[AddPushServiceRequestFail] Requestid=%s From=%s NoPrivateKey", id, addr)
-			f.writer.BadRequest(a, os.NewError("NoPrivateKey"))
-            return
-        }
-        if len(sandbox) != 0 && sandbox == "true" {
-            is_sandbox = true
-        }
-        a.PushServiceProvider = NewAPNSServiceProvider("", certfile, keyfile, is_sandbox)
-	/* TODO More services */
-	case SRVTYPE_MPNS:
-		fallthrough
-	case SRVTYPE_BBPS:
-		fallthrough
-	default:
-		f.logger.Errorf("[RemovePushServiceRequestFail] Requestid=%s From=%s UnsupportPushService=%s", id, addr, pspname)
-		f.writer.BadRequest(a, os.NewError("UnsupportPushService:"+pspname))
-		return
-	}
+    psp, err := f.psm.BuildPushServiceProviderFromMap(kv)
+    if err != nil {
+        f.logger.Errorf("[AddPushServiceRequestFail] %v", err)
+        f.writer.BadRequest(a, err)
+        return
+    }
+    a.PushServiceProvider = psp
 
 	f.ch <- a
 	f.writer.RequestReceived(a)
-	f.logger.Infof("[RemovePushServiceRequest] Requestid=%s From=%s Service=%s", id, addr, pspname)
+	f.logger.Infof("[RemovePushServiceRequest] Requestid=%s From=%s Service=%s", id, addr, psp.Name())
 }
 
-func (f *WebFrontEnd) addDeliveryPointToService(form url.Values, id, addr string) {
+func (f *WebFrontEnd) addDeliveryPointToService(kv map[string]string,
+                                                id, addr string) {
 	a := new(Request)
 	a.PunchTimestamp()
 	a.Action = ACTION_SUBSCRIBE
 
 	a.ID = id
 	a.RequestSenderAddr = addr
-	a.Service = form.Get("service")
 
-	if len(a.Service) == 0 {
+    var ok bool
+	if a.Service, ok = kv["service"]; !ok {
 		f.logger.Errorf("[SubscribeFail] Requestid=%s From=%s NoServiceName", id, addr)
 		f.writer.BadRequest(a, os.NewError("NoServiceName"))
 		return
 	}
-	subscriber := form.Get("subscriber")
-
-	if subscriber == "" {
+    var subscriber string
+    if subscriber, ok = kv["subscriber"]; !ok {
 		f.logger.Errorf("[SubscribeFail] Requestid=%s From=%s NoSubscriber", id, addr)
 		f.writer.BadRequest(a, os.NewError("NoSubscriber"))
 		return
 	}
 
-	prefered_service := form.Get("preferedservice")
-	a.PreferedService = ServiceNameToID(prefered_service)
-
-	if a.PreferedService == SRVTYPE_UNKNOWN || a.PreferedService < 0 {
-		a.PreferedService = -1
-	}
-
 	a.Subscribers = make([]string, 1)
 	a.Subscribers[0] = subscriber
 
-	dpos := form.Get("os")
-	switch OSNameToID(dpos) {
-	case OSTYPE_ANDROID:
-		account := form.Get("account")
-		regid := form.Get("regid")
-		if account == "" {
-			f.logger.Errorf("[SubscribeFail] NoGoogleAccount Requestid=%s From=%s", id, addr)
-			f.writer.BadRequest(a, os.NewError("NoGoogleAccount"))
-			return
-		}
-		if regid == "" {
-			f.logger.Errorf("[SubscribeFail] NoRegistrationId Requestid=%s From=%s", id, addr)
-			f.writer.BadRequest(a, os.NewError("NoRegistrationId"))
-			return
-		}
-		dp := NewAndroidDeliveryPoint("", account, regid)
-		a.DeliveryPoint = dp
-		f.ch <- a
-		f.writer.RequestReceived(a)
-		f.logger.Infof("[SubscribeRequest] Requestid=%s From=%s Account=%s", id, addr, account)
-		return
-	case OSTYPE_IOS:
-        devtoken := form.Get("devtoken")
-        if devtoken == "" {
-			f.logger.Errorf("[SubscribeFail] NoDeviceToken Requestid=%s From=%s", id, addr)
-			f.writer.BadRequest(a, os.NewError("NoDeviceToken"))
-        }
-        dp := NewIOSDeliveryPoint("", devtoken)
-		a.DeliveryPoint = dp
-		f.ch <- a
-		f.writer.RequestReceived(a)
-		f.logger.Infof("[SubscribeRequest] Requestid=%s From=%s Devtoken=%s", id, addr, devtoken)
-	/* TODO More OSes */
-	case OSTYPE_WP:
-		fallthrough
-	case OSTYPE_BLKBERRY:
-		fallthrough
-	default:
-		f.logger.Errorf("[SubscribeFail] Requestid=%s From=%s UnsupportOS=%s", id, addr, dpos)
-		f.writer.BadRequest(a, os.NewError("UnsupportOS:"+dpos))
-		return
-	}
+    dp, err := f.psm.BuildDeliveryPointFromMap(kv)
+    if err != nil {
+        f.logger.Errorf("[SubscribeFail] %v", err)
+        f.writer.BadRequest(a, err)
+        return
+    }
+    a.DeliveryPoint = dp
+    f.ch <- a
+    f.writer.RequestReceived(a)
+    f.logger.Infof("[SubscribeRequest] Requestid=%s From=%s Name=%s", id, addr, dp.Name())
 	return
 }
 
-func (f *WebFrontEnd) removeDeliveryPointFromService(form url.Values, id, addr string) {
+func (f *WebFrontEnd) removeDeliveryPointFromService(kv map[string]string,
+                                                     id, addr string) {
 	a := new(Request)
 	a.PunchTimestamp()
 	a.Action = ACTION_UNSUBSCRIBE
 	a.RequestSenderAddr = addr
 
 	a.ID = id
-	a.Service = form.Get("service")
+	a.RequestSenderAddr = addr
 
-	if len(a.Service) == 0 {
+    var ok bool
+	if a.Service, ok = kv["service"]; !ok {
 		f.logger.Errorf("[UnsubscribeFail] Requestid=%s From=%s NoServiceName", id, addr)
 		f.writer.BadRequest(a, os.NewError("NoServiceName"))
 		return
 	}
-	subscriber := form.Get("subscriber")
-
-	if subscriber == "" {
+    var subscriber string
+    if subscriber, ok = kv["subscriber"]; !ok {
 		f.logger.Errorf("[UnsubscribeFail] Requestid=%s From=%s NoSubscriber", id, addr)
 		f.writer.BadRequest(a, os.NewError("NoSubscriber"))
 		return
 	}
+
 	a.Subscribers = make([]string, 1)
 	a.Subscribers[0] = subscriber
 
-	dpname := form.Get("deliverypointid")
-	if len(dpname) > 0 {
-		dp := new(DeliveryPoint)
-		dp.Name = dpname
-		a.DeliveryPoint = dp
-		f.ch <- a
-		f.writer.RequestReceived(a)
-		f.logger.Infof("[UnsubscribeRequest] Requestid=%s From=%s DeliveryPoint=%s", id, addr, dpname)
-		return
-	}
-
-	dpos := form.Get("os")
-	switch OSNameToID(dpos) {
-	case OSTYPE_ANDROID:
-		account := form.Get("account")
-		regid := form.Get("regid")
-		if account == "" {
-			f.logger.Errorf("[UnsubscribeFail] Reuqestid=%s From=%s NoGoogleAccount", id, addr)
-			f.writer.BadRequest(a, os.NewError("NoGoogleAccount"))
-			return
-		}
-		if regid == "" {
-			f.logger.Errorf("[UnsubscribeFail] Requestid=%s From=%s NoRegistrationId", id, addr)
-			f.writer.BadRequest(a, os.NewError("NoRegistrationId"))
-			return
-		}
-		dp := NewAndroidDeliveryPoint("", account, regid)
-		a.DeliveryPoint = dp
-		f.ch <- a
-		f.writer.RequestReceived(a)
-		f.logger.Infof("[UnsubscribeRequest] Requestid=%s From=%s Account=%s", id, addr, account)
-		return
-	case OSTYPE_IOS:
-        devtoken := form.Get("devtoken")
-        if devtoken == "" {
-			f.logger.Errorf("[UnsubscribeFail] NoDeviceToken Requestid=%s From=%s", id, addr)
-			f.writer.BadRequest(a, os.NewError("NoDeviceToken"))
-        }
-        dp := NewIOSDeliveryPoint("", devtoken)
-		a.DeliveryPoint = dp
-		f.ch <- a
-		f.writer.RequestReceived(a)
-		f.logger.Infof("[UnsubscribeRequest] Requestid=%s From=%s Devtoken=%s", id, addr, devtoken)
-	/* TODO More OSes */
-	case OSTYPE_WP:
-		fallthrough
-	case OSTYPE_BLKBERRY:
-		fallthrough
-	default:
-		f.logger.Errorf("[UnsubscribeFail] Requestid=%s From=%s UnsupportOS=%s", id, addr, dpos)
-		f.writer.BadRequest(a, os.NewError("UnsupportOS:"+dpos))
-		return
-	}
+    dp, err := f.psm.BuildDeliveryPointFromMap(kv)
+    if err != nil {
+        f.logger.Errorf("[UnsubscribeFail] %v", err)
+        f.writer.BadRequest(a, err)
+        return
+    }
+    a.DeliveryPoint = dp
+    f.ch <- a
+    f.writer.RequestReceived(a)
+    f.logger.Infof("[UnsubscribeRequest] Requestid=%s From=%s Name=%s", id, addr, dp.Name())
 	return
 }
 
@@ -458,6 +286,7 @@ func (f *WebFrontEnd) pushNotification(form url.Values, id, addr string) {
 	f.writer.RequestReceived(a)
 }
 
+/*
 func addPushServiceProvider(w http.ResponseWriter, r *http.Request) {
 	id := fmt.Sprintf("%d", time.Nanoseconds())
 
@@ -498,11 +327,6 @@ func removeDeliveryPointFromService(w http.ResponseWriter, r *http.Request) {
 	go webfrontend.removeDeliveryPointFromService(form, id, r.RemoteAddr)
 }
 
-func stopProgram(w http.ResponseWriter, r *http.Request) {
-	// TODO Add some authentication method
-	webfrontend.stop()
-}
-
 func pushNotification(w http.ResponseWriter, r *http.Request) {
 	id := fmt.Sprintf("%d", time.Nanoseconds())
 
@@ -511,6 +335,12 @@ func pushNotification(w http.ResponseWriter, r *http.Request) {
 	fmt.Fprintf(w, "id=%s\r\n", id)
 	go webfrontend.pushNotification(form, id, r.RemoteAddr)
 }
+
+func stopProgram(w http.ResponseWriter, r *http.Request) {
+	// TODO Add some authentication method
+	webfrontend.stop()
+}
+*/
 
 const (
 	ADD_PUSH_SERVICE_PROVIDER_TO_SERVICE_URL    = "/addpsp"
@@ -521,14 +351,48 @@ const (
 	STOP_PROGRAM_URL                            = "/stop"
 )
 
+func (f *WebFrontEnd) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	id := fmt.Sprintf("%d", time.Nanoseconds())
+    r.ParseForm()
+    kv := make(map[string]string, len(r.Form))
+    for k, v := range r.Form {
+        if len(v) > 0 {
+            kv[strings.ToLower(k)] = v[0]
+        }
+    }
+    switch (r.URL.Path) {
+    case STOP_PROGRAM_URL:
+        f.stop()
+    case ADD_PUSH_SERVICE_PROVIDER_TO_SERVICE_URL:
+        go f.addPushServiceProvider(kv, id, r.RemoteAddr)
+    case REMOVE_PUSH_SERVICE_PROVIDER_TO_SERVICE_URL:
+        go f.removePushServiceProvider(kv, id, r.RemoteAddr)
+    case ADD_DELIVERY_POINT_TO_SERVICE_URL:
+        go f.addDeliveryPointToService(kv, id, r.RemoteAddr)
+    case REMOVE_DELIVERY_POINT_FROM_SERVICE_URL:
+        go f.removeDeliveryPointFromService(kv, id, r.RemoteAddr)
+    case PUSH_NOTIFICATION_URL:
+        go f.pushNotification(r.Form, id, r.RemoteAddr)
+    }
+	fmt.Fprintf(w, "id=%s\r\n", id)
+}
+
 func (f *WebFrontEnd) Run() {
 	f.logger.Configf("[Start] %s", f.addr)
+    /*
 	http.HandleFunc(ADD_PUSH_SERVICE_PROVIDER_TO_SERVICE_URL, addPushServiceProvider)
 	http.HandleFunc(REMOVE_PUSH_SERVICE_PROVIDER_TO_SERVICE_URL, removePushServiceProvider)
 	http.HandleFunc(ADD_DELIVERY_POINT_TO_SERVICE_URL, addDeliveryPointToService)
 	http.HandleFunc(REMOVE_DELIVERY_POINT_FROM_SERVICE_URL, removeDeliveryPointFromService)
-	http.HandleFunc(STOP_PROGRAM_URL, stopProgram)
 	http.HandleFunc(PUSH_NOTIFICATION_URL, pushNotification)
+	http.HandleFunc(STOP_PROGRAM_URL, stopProgram)
+    */
+    http.Handle(STOP_PROGRAM_URL, f)
+    http.Handle(ADD_PUSH_SERVICE_PROVIDER_TO_SERVICE_URL, f)
+    http.Handle(ADD_DELIVERY_POINT_TO_SERVICE_URL, f)
+    http.Handle(REMOVE_DELIVERY_POINT_FROM_SERVICE_URL, f)
+    http.Handle(REMOVE_PUSH_SERVICE_PROVIDER_TO_SERVICE_URL, f)
+    http.Handle(PUSH_NOTIFICATION_URL, f)
 	err := http.ListenAndServe(f.addr, nil)
 	if err != nil {
 		f.logger.Fatalf("HTTPServerError \"%v\"", err)

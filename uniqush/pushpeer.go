@@ -21,9 +21,11 @@ import (
     "json"
     "fmt"
     "os"
+    "crypto/sha1"
 )
 
 type PushPeer struct {
+    name string
     pushServiceType PushServiceType
     VolatileData map[string]string
     FixedData map[string]string
@@ -52,12 +54,20 @@ func (p *PushPeer) InitPushPeer() {
     p.FixedData = make(map[string]string, 2)
 }
 
-func (p *PushPeer) Name(prefix string) string {
+func (p *PushPeer) Name() string {
+    if p.name != "" {
+        return p.name
+    }
+    hash := sha1.New()
     if p.FixedData == nil {
         return ""
     }
     b, _ := json.Marshal(p.FixedData)
-    return prefix + ":" + string(b)
+    hash.Write(b)
+    p.name = fmt.Sprintf("%s:%x",
+                         p.pushServiceType.Name(),
+                         hash.Sum())
+    return p.name
 }
 
 func (p *PushPeer) Marshal() []byte {
@@ -79,8 +89,6 @@ func (p *PushPeer) Unmarshal(value []byte) os.Error {
     //var f interface{}
 
     var f []map[string]string
-
-    fmt.Printf("Unmarshal input: %s\n", string(value))
 
     err := json.Unmarshal(value, &f)
     if err != nil {
