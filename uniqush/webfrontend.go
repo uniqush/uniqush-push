@@ -39,9 +39,6 @@ type WebFrontEnd struct {
     psm *PushServiceManager
 }
 
-var (
-	webfrontend *WebFrontEnd
-)
 
 type NullWriter struct{}
 
@@ -59,8 +56,6 @@ func NewWebFrontEnd(ch chan *Request,
 	f.writer = NewEventWriter(new(NullWriter))
 	f.stopch = nil
     f.psm = psm
-
-	webfrontend = f
 
 	if len(addr) == 0 {
 		// By default, we only accept localhost connection
@@ -285,62 +280,6 @@ func (f *WebFrontEnd) pushNotification(form url.Values, id, addr string) {
     f.logger.Debugf("[PushNotificationRequest] Data=%v", a.Notification.Data)
 	f.writer.RequestReceived(a)
 }
-
-/*
-func addPushServiceProvider(w http.ResponseWriter, r *http.Request) {
-	id := fmt.Sprintf("%d", time.Nanoseconds())
-
-	r.FormValue("service")
-	form := r.Form
-	fmt.Fprintf(w, "id=%s\r\n", id)
-
-	go webfrontend.addPushServiceProvider(form, id, r.RemoteAddr)
-}
-
-func removePushServiceProvider(w http.ResponseWriter, r *http.Request) {
-	id := fmt.Sprintf("%d", time.Nanoseconds())
-
-	r.FormValue("service")
-	form := r.Form
-	fmt.Fprintf(w, "id=%s\r\n", id)
-
-	go webfrontend.removePushServiceProvider(form, id, r.RemoteAddr)
-}
-
-func addDeliveryPointToService(w http.ResponseWriter, r *http.Request) {
-	id := fmt.Sprintf("%d", time.Nanoseconds())
-
-	r.FormValue("service")
-	form := r.Form
-	fmt.Fprintf(w, "id=%s\r\n", id)
-
-	go webfrontend.addDeliveryPointToService(form, id, r.RemoteAddr)
-}
-
-func removeDeliveryPointFromService(w http.ResponseWriter, r *http.Request) {
-	id := fmt.Sprintf("%d", time.Nanoseconds())
-
-	r.FormValue("service")
-	form := r.Form
-	fmt.Fprintf(w, "id=%s\r\n", id)
-
-	go webfrontend.removeDeliveryPointFromService(form, id, r.RemoteAddr)
-}
-
-func pushNotification(w http.ResponseWriter, r *http.Request) {
-	id := fmt.Sprintf("%d", time.Nanoseconds())
-
-	r.FormValue("service")
-	form := r.Form
-	fmt.Fprintf(w, "id=%s\r\n", id)
-	go webfrontend.pushNotification(form, id, r.RemoteAddr)
-}
-
-func stopProgram(w http.ResponseWriter, r *http.Request) {
-	// TODO Add some authentication method
-	webfrontend.stop()
-}
-*/
 
 const (
 	ADD_PUSH_SERVICE_PROVIDER_TO_SERVICE_URL    = "/addpsp"
