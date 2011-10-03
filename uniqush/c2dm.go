@@ -47,6 +47,11 @@ const (
 	serviceURL string = "http://android.apis.google.com/c2dm/send"
 )
 
+func init() {
+    psm := GetPushServiceManager()
+    psm.RegisterPushServiceType(NewC2DMPushService())
+}
+
 type C2DMPushService struct {
 }
 

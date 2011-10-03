@@ -148,7 +148,6 @@ func LoadUniqushSystem(filename string) (*UniqushSystem, os.Error) {
     }
 
     psm := GetPushServiceManager()
-    psm.RegisterPushServiceType(NewC2DMPushService())
 
     ret.Frontend = NewWebFrontEnd(ret.Bridge, logger, addr, psm)
     ret.Frontend.SetStopChannel(ret.Stopch)
