@@ -51,18 +51,6 @@ func NewPushIncompatibleError(psp *PushServiceProvider,
     return ret
 }
 
-/* Begin Obsoleted */
-type PushErrorIncompatibleOS struct {
-    s ServiceType
-    o OSType
-}
-
-func (p *PushErrorIncompatibleOS) String() string {
-    return p.s.String() + " does not compatible with " + p.o.String()
-}
-/* End Obsoleted */
-
-
 type remoteServerError struct {
     msg string
 }

@@ -3,11 +3,8 @@ include $(GOROOT)/src/Make.inc
 TARG=github.com/monnand/uniqush/uniqush
 GOFILES=\
 	notification.go\
-	pusher.go\
 	deliverypoint.go\
 	pushserviceprovider.go\
-	servicetype.go\
-	ostype.go\
 	request.go\
 	frontend.go\
 	webfrontend.go\
