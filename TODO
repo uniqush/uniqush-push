@@ -1,5 +1,5 @@
 Priority from high to low
-- Change the code structure
+- Connection Pool for APNS
 - Persistent connection support
 - BlackBeery support
 
