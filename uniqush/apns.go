@@ -67,13 +67,12 @@ func (p *APNSPushService) waitError(id string,
                                     psp *PushServiceProvider,
                                     dp *DeliveryPoint,
                                     n *Notification) {
-    c.SetReadTimeout(5E8)
+    c.SetReadTimeout(5E9)
     readb := [6]byte{}
     nr, err := c.Read(readb[:])
     if err != nil {
         return
     }
-    /* TODO error handling */
     if nr > 0 {
         switch(readb[1]) {
         case 2:
@@ -82,6 +81,27 @@ func (p *APNSPushService) waitError(id string,
                              NewInvalidDeliveryPointError(psp,
                                                           dp,
                                                           os.NewError("Missing device token")))
+        case 3:
+            err := NewInvalidNotification(psp, dp, n, os.NewError("Missing topic"))
+            p.pfp.OnPushFail(p, id, err)
+        case 4:
+            err := NewInvalidNotification(psp, dp, n, os.NewError("Missing payload"))
+            p.pfp.OnPushFail(p, id, err)
+        case 5:
+            err := NewInvalidNotification(psp, dp, n, os.NewError("Invalid token size"))
+            p.pfp.OnPushFail(p, id, err)
+        case 6:
+            err := NewInvalidNotification(psp, dp, n, os.NewError("Invalid topic size"))
+            p.pfp.OnPushFail(p, id, err)
+        case 7:
+            err := NewInvalidNotification(psp, dp, n, os.NewError("Invalid payload size"))
+            p.pfp.OnPushFail(p, id, err)
+        case 8:
+            err := NewInvalidDeliveryPointError(psp, dp, os.NewError("Invalid token"))
+            p.pfp.OnPushFail(p, id, err)
+        default:
+            err := os.NewError("Unknown Error")
+            p.pfp.OnPushFail(p, id, err)
         }
     }
 }
