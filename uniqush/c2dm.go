@@ -210,7 +210,7 @@ func (p *C2DMPushService) Push(psp *PushServiceProvider,
 		return "", reterr
 	case "InvalidRegistration":
 		var reterr os.Error
-		reterr = NewInvalidDeliveryPointError(psp, dp)
+		reterr = NewInvalidDeliveryPointError(psp, dp, os.NewError("InvalidRegistration"))
 		if refreshpsp {
 			re := NewRefreshDataError(psp, nil, reterr)
 			reterr = re

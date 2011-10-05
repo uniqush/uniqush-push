@@ -109,16 +109,25 @@ func NewNotificationTooBigError(sp *PushServiceProvider, s *DeliveryPoint, n *No
 }
 
 type InvalidDeliveryPointError struct {
-    remoteServerError
     PushServiceProvider *PushServiceProvider
     DeliveryPoint *DeliveryPoint
+    Error os.Error
 }
 
-func NewInvalidDeliveryPointError(sp *PushServiceProvider, s *DeliveryPoint) *InvalidDeliveryPointError {
-    return &InvalidDeliveryPointError{
-        remoteServerError{"Invalid DeliveryPoint - " +
-            s.Name() + " is not a valid subscriber for service " + sp.Name()},
-            sp, s}
+func NewInvalidDeliveryPointError(sp *PushServiceProvider, s *DeliveryPoint, err os.Error) *InvalidDeliveryPointError {
+    ret := new(InvalidDeliveryPointError)
+    ret.PushServiceProvider = sp
+    ret.DeliveryPoint = s
+    ret.Error = err
+    return ret
+}
+
+func (e *InvalidDeliveryPointError) String() string {
+    ret := fmt.Sprintf("Invalid Delivery Point: %s, under service %s; %v",
+                       e.DeliveryPoint.Name(),
+                       e.PushServiceProvider.Name(),
+                       e.Error)
+    return ret
 }
 
 type InvalidPushServiceProviderError struct {

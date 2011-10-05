@@ -77,9 +77,11 @@ func (p *APNSPushService) waitError(id string,
     if nr > 0 {
         switch(readb[1]) {
         case 2:
-            p.pfp.OnPushFail(p, id, NewInvalidDeliveryPointError(psp, dp))
-        default:
-            p.pfp.OnPushFail(p, id, NewInvalidDeliveryPointError(psp, dp))
+            p.pfp.OnPushFail(p,
+                             id,
+                             NewInvalidDeliveryPointError(psp,
+                                                          dp,
+                                                          os.NewError("Missing device token")))
         }
     }
 }
@@ -225,7 +227,7 @@ func (p *APNSPushService) Push(sp *PushServiceProvider,
     devtoken := s.FixedData["devtoken"]
     btoken, err := hex.DecodeString(devtoken)
     if err != nil {
-        return "", NewInvalidDeliveryPointError(sp, s)
+        return "", NewInvalidDeliveryPointError(sp, s, err)
     }
 
     bpayload, err := toAPNSPayload(n)
