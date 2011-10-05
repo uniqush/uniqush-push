@@ -19,7 +19,6 @@ package uniqush
 
 import (
     "crypto/tls"
-    "net"
     "json"
     "os"
     "io"
@@ -165,12 +164,11 @@ func (p *APNSPushService) Push(sp *PushServiceProvider,
     conf := &tls.Config {
         Certificates: []tls.Certificate{cert},
     }
-    conn, err := net.Dial("tcp", sp.VolatileData["addr"])
+    tlsconn, err := tls.Dial("tcp", sp.VolatileData["addr"], conf)
     if err != nil {
         return "", NewInvalidPushServiceProviderError(sp)
     }
 
-    tlsconn := tls.Client(conn, conf)
     defer tlsconn.Close()
     err = tlsconn.Handshake()
     if err != nil {
