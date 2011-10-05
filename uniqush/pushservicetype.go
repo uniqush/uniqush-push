@@ -19,13 +19,19 @@ package uniqush
 
 import (
     "os"
+    "fmt"
 )
+
+type PushFailureProcessor interface {
+    OnPushFail(pst PushServiceType, id string, err os.Error)
+}
 
 type PushServiceType interface {
     BuildPushServiceProviderFromMap(map[string]string) (*PushServiceProvider, os.Error)
     BuildDeliveryPointFromMap(map[string]string) (*DeliveryPoint, os.Error)
     Name() string
     Push(*PushServiceProvider, *DeliveryPoint, *Notification) (string, os.Error)
+    SetAsyncFailureProcessor(pfp PushFailureProcessor)
 }
 
 type PushIncompatibleError struct {
@@ -142,5 +148,22 @@ type RefreshDataError struct {
 func NewRefreshDataError (psp *PushServiceProvider, dp *DeliveryPoint, o os.Error) *RefreshDataError {
     return &RefreshDataError {
         remoteServerError{"Refresh Push Service Provider"}, psp, dp, o}
+}
+
+type InvalidNotification struct {
+    PushServiceProvider *PushServiceProvider
+    DeliveryPoint *DeliveryPoint
+    Notification *Notification
+}
+
+func NewInvalidNotification (psp *PushServiceProvider,
+                             dp *DeliveryPoint,
+                             n *Notification) *InvalidNotification {
+    return &InvalidNotification{psp, dp, n}
+}
+
+func (e *InvalidNotification) String() string {
+    return fmt.Sprintf("Invalid Notification: %v; PushServiceProvider: %s",
+                       e.Notification.Data, e.PushServiceProvider.Name())
 }
 

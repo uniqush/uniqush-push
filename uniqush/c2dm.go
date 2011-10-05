@@ -60,6 +60,9 @@ func NewC2DMPushService() *C2DMPushService {
     return ret
 }
 
+func (p *C2DMPushService) SetAsyncFailureProcessor(pf PushFailureProcessor) {
+}
+
 func (p *C2DMPushService) BuildPushServiceProviderFromMap(kv map[string]string) (*PushServiceProvider, os.Error) {
     psp := NewEmptyPushServiceProvider()
     if service, ok := kv["service"]; ok {

@@ -22,8 +22,14 @@ import (
     "strings"
 )
 
+type nullPushFailureProcessor struct {}
+
+func (f *nullPushFailureProcessor) OnPushFail(pst PushServiceType, id string, err os.Error) {
+}
+
 type PushServiceManager struct {
     serviceTypes map[string]PushServiceType
+    pfp PushFailureProcessor
 }
 
 var (
@@ -39,6 +45,7 @@ func init() {
 func newPushServiceManager() *PushServiceManager {
     ret := new(PushServiceManager)
     ret.serviceTypes = make(map[string]PushServiceType, 5)
+    ret.pfp = &nullPushFailureProcessor{}
     return ret
 }
 
@@ -47,9 +54,16 @@ func GetPushServiceManager() *PushServiceManager {
     return pushServiceManager
 }
 
+func (m *PushServiceManager) SetAsyncFailureProcessor(pfp PushFailureProcessor) {
+    if pfp != nil {
+        m.pfp = pfp
+    }
+}
+
 func (m *PushServiceManager) RegisterPushServiceType(pt PushServiceType) os.Error {
     name := pt.Name()
     m.serviceTypes[name] = pt
+    pt.SetAsyncFailureProcessor(m.pfp)
     return nil
 }
 

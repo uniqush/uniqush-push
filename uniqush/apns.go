@@ -49,6 +49,9 @@ func (p *APNSPushService) Name() string {
     return "apns"
 }
 
+func (p *APNSPushService) SetAsyncFailureProcessor(pfp PushFailureProcessor) {
+}
+
 func (p *APNSPushService) BuildPushServiceProviderFromMap(kv map[string]string) (*PushServiceProvider, os.Error) {
     psp := NewEmptyPushServiceProvider()
     if service, ok := kv["service"]; ok {
@@ -168,6 +171,7 @@ func (p *APNSPushService) Push(sp *PushServiceProvider,
     }
 
     tlsconn := tls.Client(conn, conf)
+    defer tlsconn.Close()
     err = tlsconn.Handshake()
     if err != nil {
         return "", NewInvalidPushServiceProviderError(sp)
@@ -180,8 +184,7 @@ func (p *APNSPushService) Push(sp *PushServiceProvider,
 
     bpayload := toAPNSPayload(n)
     if bpayload == nil {
-        /* FIXME new error type */
-        return "", NewInvalidDeliveryPointError(sp, s)
+        return "", NewInvalidNotification(sp, s, n)
     }
     buffer := bytes.NewBuffer([]byte{})
     // command
@@ -219,7 +222,7 @@ func (p *APNSPushService) Push(sp *PushServiceProvider,
 
     err = writen(tlsconn, pdu)
     if err != nil {
-    return "", NewInvalidPushServiceProviderError(sp)
+        return "", NewInvalidPushServiceProviderError(sp)
     }
     tlsconn.SetReadTimeout(5E8)
     readb := [6]byte{}
