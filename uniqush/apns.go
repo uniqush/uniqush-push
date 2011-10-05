@@ -29,10 +29,13 @@ import (
     "sync/atomic"
     "time"
     "fmt"
+    "net"
 )
 
 type APNSPushService struct {
     nextid uint32
+    conns map[string]net.Conn
+    pfp PushFailureProcessor
 }
 
 func init() {
@@ -41,6 +44,7 @@ func init() {
 
 func NewAPNSPushService() *APNSPushService {
     ret := new(APNSPushService)
+    ret.conns = make(map[string]net.Conn, 5)
     return ret
 }
 
@@ -49,6 +53,35 @@ func (p *APNSPushService) Name() string {
 }
 
 func (p *APNSPushService) SetAsyncFailureProcessor(pfp PushFailureProcessor) {
+    p.pfp = pfp
+}
+
+func (p *APNSPushService) Finalize() {
+    for _, c := range p.conns {
+        c.Close()
+    }
+}
+
+func (p *APNSPushService) waitError(id string,
+                                    c net.Conn,
+                                    psp *PushServiceProvider,
+                                    dp *DeliveryPoint,
+                                    n *Notification) {
+    c.SetReadTimeout(5E8)
+    readb := [6]byte{}
+    nr, err := c.Read(readb[:])
+    if err != nil {
+        return
+    }
+    /* TODO error handling */
+    if nr > 0 {
+        switch(readb[1]) {
+        case 2:
+            p.pfp.OnPushFail(p, id, NewInvalidDeliveryPointError(psp, dp))
+        default:
+            p.pfp.OnPushFail(p, id, NewInvalidDeliveryPointError(psp, dp))
+        }
+    }
 }
 
 func (p *APNSPushService) BuildPushServiceProviderFromMap(kv map[string]string) (*PushServiceProvider, os.Error) {
@@ -102,7 +135,7 @@ func (p *APNSPushService) BuildDeliveryPointFromMap(kv map[string]string) (*Deli
     return dp, nil
 }
 
-func toAPNSPayload(n *Notification) []byte {
+func toAPNSPayload(n *Notification) ([]byte, os.Error) {
     payload := make(map[string]interface{})
     aps := make(map[string]interface{})
     alert := make(map[string]interface{})
@@ -133,9 +166,9 @@ func toAPNSPayload(n *Notification) []byte {
     payload["aps"] = aps
     j, err := json.Marshal(payload)
     if err != nil {
-        return nil
+        return nil, err
     }
-    return j
+    return j, nil
 }
 
 func writen (w io.Writer, buf []byte) os.Error {
@@ -154,35 +187,50 @@ func writen (w io.Writer, buf []byte) os.Error {
     return nil
 }
 
-func (p *APNSPushService) Push(sp *PushServiceProvider,
-                        s *DeliveryPoint,
-                        n *Notification) (string, os.Error) {
-    cert, err := tls.LoadX509KeyPair(sp.FixedData["cert"], sp.FixedData["key"])
+func (p *APNSPushService) getConn(psp *PushServiceProvider) (net.Conn, os.Error) {
+    name := psp.Name()
+    if conn, ok := p.conns[name]; ok {
+        return conn, nil
+    }
+    return p.reconnect(psp)
+}
+
+func (p *APNSPushService) reconnect(psp *PushServiceProvider) (net.Conn, os.Error) {
+    name := psp.Name()
+    if conn, ok := p.conns[name]; ok {
+        conn.Close()
+    }
+    cert, err := tls.LoadX509KeyPair(psp.FixedData["cert"], psp.FixedData["key"])
     if err != nil {
-        return "", NewInvalidPushServiceProviderError(sp)
+        return nil, NewInvalidPushServiceProviderError(psp, err)
     }
     conf := &tls.Config {
         Certificates: []tls.Certificate{cert},
     }
-    tlsconn, err := tls.Dial("tcp", sp.VolatileData["addr"], conf)
+    tlsconn, err := tls.Dial("tcp", psp.VolatileData["addr"], conf)
     if err != nil {
-        return "", NewInvalidPushServiceProviderError(sp)
+        return nil, NewInvalidPushServiceProviderError(psp, err)
     }
-
-    defer tlsconn.Close()
     err = tlsconn.Handshake()
     if err != nil {
-        return "", NewInvalidPushServiceProviderError(sp)
+        return nil, NewInvalidPushServiceProviderError(psp, err)
     }
+    p.conns[name] = tlsconn
+    return tlsconn, nil
+}
+
+func (p *APNSPushService) Push(sp *PushServiceProvider,
+                        s *DeliveryPoint,
+                        n *Notification) (string, os.Error) {
     devtoken := s.FixedData["devtoken"]
     btoken, err := hex.DecodeString(devtoken)
     if err != nil {
         return "", NewInvalidDeliveryPointError(sp, s)
     }
 
-    bpayload := toAPNSPayload(n)
-    if bpayload == nil {
-        return "", NewInvalidNotification(sp, s, n)
+    bpayload, err := toAPNSPayload(n)
+    if err != nil {
+        return "", NewInvalidNotification(sp, s, n, err)
     }
     buffer := bytes.NewBuffer([]byte{})
     // command
@@ -218,22 +266,29 @@ func (p *APNSPushService) Push(sp *PushServiceProvider,
     binary.Write(buffer, binary.BigEndian, bpayload)
     pdu := buffer.Bytes()
 
-    err = writen(tlsconn, pdu)
+    tlsconn, err := p.getConn(sp)
     if err != nil {
-        return "", NewInvalidPushServiceProviderError(sp)
+        return "", err
     }
-    tlsconn.SetReadTimeout(5E8)
-    readb := [6]byte{}
-    nr, err := tlsconn.Read(readb[:])
-    /* TODO error handling */
-    if nr > 0 {
-        switch(readb[1]) {
-        case 2:
-            return "", NewInvalidDeliveryPointError(sp, s)
-        default:
-            return "", NewInvalidPushServiceProviderError(sp)
+
+    for i := 0; i < 2; i++ {
+        err = writen(tlsconn, pdu)
+        if err != nil {
+            tlsconn, err = p.reconnect(sp)
+            if err != nil {
+                return "", err
+            }
+        } else {
+            break
         }
     }
-    return fmt.Sprintf("%d", mid), nil
+
+    if err != nil {
+        return "", err
+    }
+
+    id := fmt.Sprintf("apns:%s-%d", sp.Name(), mid)
+    go p.waitError(id, tlsconn, sp, s, n)
+    return id, nil
 }
 

@@ -32,6 +32,7 @@ type PushServiceType interface {
     Name() string
     Push(*PushServiceProvider, *DeliveryPoint, *Notification) (string, os.Error)
     SetAsyncFailureProcessor(pfp PushFailureProcessor)
+    Finalize()
 }
 
 type PushIncompatibleError struct {
@@ -123,10 +124,14 @@ func NewInvalidDeliveryPointError(sp *PushServiceProvider, s *DeliveryPoint) *In
 type InvalidPushServiceProviderError struct {
     remoteServerError
     PushServiceProvider *PushServiceProvider
+    Error os.Error
 }
 
-func NewInvalidPushServiceProviderError(s *PushServiceProvider) *InvalidPushServiceProviderError {
-    return &InvalidPushServiceProviderError{remoteServerError{"Inalid Service Provider: " + s.Name()}, s}
+func NewInvalidPushServiceProviderError(s *PushServiceProvider, err os.Error) *InvalidPushServiceProviderError {
+    return &InvalidPushServiceProviderError{
+        remoteServerError{
+            "Inalid Service Provider: " +
+            s.Name() + "; " + err.String()}, s, err}
 }
 
 type RetryError struct {
@@ -154,16 +159,18 @@ type InvalidNotification struct {
     PushServiceProvider *PushServiceProvider
     DeliveryPoint *DeliveryPoint
     Notification *Notification
+    Error os.Error
 }
 
 func NewInvalidNotification (psp *PushServiceProvider,
                              dp *DeliveryPoint,
-                             n *Notification) *InvalidNotification {
-    return &InvalidNotification{psp, dp, n}
+                             n *Notification,
+                             err os.Error) *InvalidNotification {
+    return &InvalidNotification{psp, dp, n, err}
 }
 
 func (e *InvalidNotification) String() string {
-    return fmt.Sprintf("Invalid Notification: %v; PushServiceProvider: %s",
-                       e.Notification.Data, e.PushServiceProvider.Name())
+    return fmt.Sprintf("Invalid Notification: %v; PushServiceProvider: %s; %v",
+                       e.Notification.Data, e.PushServiceProvider.Name(), e.Error)
 }
 

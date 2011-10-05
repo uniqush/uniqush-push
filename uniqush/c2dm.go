@@ -63,6 +63,8 @@ func NewC2DMPushService() *C2DMPushService {
 func (p *C2DMPushService) SetAsyncFailureProcessor(pf PushFailureProcessor) {
 }
 
+func (p *C2DMPushService) Finalize() { }
+
 func (p *C2DMPushService) BuildPushServiceProviderFromMap(kv map[string]string) (*PushServiceProvider, os.Error) {
     psp := NewEmptyPushServiceProvider()
     if service, ok := kv["service"]; ok {
@@ -175,7 +177,7 @@ func (p *C2DMPushService) Push(psp *PushServiceProvider,
 		}
 		return "", reterr
 	case 401:
-		return "", NewInvalidPushServiceProviderError(psp)
+		return "", NewInvalidPushServiceProviderError(psp, os.NewError("Invalid Auth Token"))
 	}
 
 	contents, e30 := ioutil.ReadAll(r.Body)

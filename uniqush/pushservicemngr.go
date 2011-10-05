@@ -143,11 +143,17 @@ func (m *PushServiceManager) BuildDeliveryPointFromBytes(value []byte) (dp *Deli
     return nil, os.NewError("No Push Service Type Specified")
 }
 
-func (m* PushServiceManager) Push(psp *PushServiceProvider, dp *DeliveryPoint, n *Notification) (id string, err os.Error) {
+func (m *PushServiceManager) Push(psp *PushServiceProvider, dp *DeliveryPoint, n *Notification) (id string, err os.Error) {
     if psp.pushServiceType != nil {
         id, err = psp.pushServiceType.Push(psp, dp, n)
         return
     }
-    return "", NewInvalidPushServiceProviderError(psp)
+    return "", NewInvalidPushServiceProviderError(psp, os.NewError("Unknown Service Type"))
+}
+
+func (m *PushServiceManager) Finalize() {
+    for _, t := range m.serviceTypes {
+        t.Finalize()
+    }
 }
 

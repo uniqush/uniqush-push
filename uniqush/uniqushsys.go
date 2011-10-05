@@ -118,6 +118,7 @@ type UniqushSystem struct {
     Stopch chan bool
     Bridge chan *Request
     Database DatabaseFrontDeskIf
+    psm *PushServiceManager
 }
 
 var (
@@ -148,6 +149,7 @@ func LoadUniqushSystem(filename string) (*UniqushSystem, os.Error) {
     }
 
     psm := GetPushServiceManager()
+    ret.psm = psm
 
     ret.Frontend = NewWebFrontEnd(ret.Bridge, logger, addr, psm)
     ret.Frontend.SetStopChannel(ret.Stopch)
@@ -217,9 +219,10 @@ func LoadUniqushSystem(filename string) (*UniqushSystem, os.Error) {
 }
 
 func (s *UniqushSystem) Run() {
+    defer s.Database.FlushCache()
+    defer s.psm.Finalize()
     go s.Frontend.Run()
     go s.Backend.Run()
     <-s.Stopch
-    s.Database.FlushCache()
 }
 
