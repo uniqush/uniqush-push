@@ -60,7 +60,7 @@ func NewC2DMPushService() *C2DMPushService {
     return ret
 }
 
-func (p *C2DMPushService) SetAsyncFailureProcessor(pf PushFailureProcessor) {
+func (p *C2DMPushService) SetAsyncFailureHandler(pf PushFailureHandler) {
 }
 
 func (p *C2DMPushService) Finalize() { }

@@ -22,7 +22,7 @@ import (
     "fmt"
 )
 
-type PushFailureProcessor interface {
+type PushFailureHandler interface {
     OnPushFail(pst PushServiceType, id string, err os.Error)
 }
 
@@ -31,7 +31,7 @@ type PushServiceType interface {
     BuildDeliveryPointFromMap(map[string]string) (*DeliveryPoint, os.Error)
     Name() string
     Push(*PushServiceProvider, *DeliveryPoint, *Notification) (string, os.Error)
-    SetAsyncFailureProcessor(pfp PushFailureProcessor)
+    SetAsyncFailureHandler(pfp PushFailureHandler)
     Finalize()
 }
 

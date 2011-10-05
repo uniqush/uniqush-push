@@ -35,7 +35,7 @@ import (
 type APNSPushService struct {
     nextid uint32
     conns map[string]net.Conn
-    pfp PushFailureProcessor
+    pfp PushFailureHandler
 }
 
 func init() {
@@ -52,7 +52,7 @@ func (p *APNSPushService) Name() string {
     return "apns"
 }
 
-func (p *APNSPushService) SetAsyncFailureProcessor(pfp PushFailureProcessor) {
+func (p *APNSPushService) SetAsyncFailureHandler(pfp PushFailureHandler) {
     p.pfp = pfp
 }
 
