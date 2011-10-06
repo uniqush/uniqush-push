@@ -37,7 +37,7 @@ var (
 )
 
 func init() {
-    pushServiceManager = newPushServiceManager()
+//    pushServiceManager = newPushServiceManager()
 }
 
 
@@ -51,6 +51,9 @@ func newPushServiceManager() *PushServiceManager {
 
 
 func GetPushServiceManager() *PushServiceManager {
+    if pushServiceManager == nil {
+        pushServiceManager = newPushServiceManager()
+    }
     return pushServiceManager
 }
 
