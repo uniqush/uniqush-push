@@ -104,12 +104,6 @@ func NewPushProcessor(logger *Logger,
     return ret
 }
 
-type successPushLog struct {
-    dp *DeliveryPoint
-    subid int
-    id string
-}
-
 func (p *PushProcessor) unsubscribe(req *Request, subscriber string, dp *DeliveryPoint) {
     a := new(Request)
     a.PunchTimestamp()
