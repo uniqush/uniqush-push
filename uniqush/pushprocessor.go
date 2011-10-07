@@ -129,6 +129,7 @@ func (p *PushProcessor) pushToDeliveryPoint(req *Request,
                 re := err.(*RefreshDataError)
                 err = p.refreshData(req, psp.PushServiceName(), re)
                 if err == nil {
+                    go p.pushSucc(req, subscriber, psp, dp, id)
                     return
                 }
             }
@@ -206,7 +207,7 @@ func (p *PushProcessor) pushSucc(req *Request,
                             psp *PushServiceProvider,
                             dp *DeliveryPoint,
                             id string) {
-    p.logger.Warnf("[%s][PushSuccess] RequestId=%s Service=%s Subscriber=%s PushServiceProvider=%s DeliveryPoint=%s MsgId=%s",
+    p.logger.Infof("[%s][PushSuccess] RequestId=%s Service=%s Subscriber=%s PushServiceProvider=%s DeliveryPoint=%s MsgId=%s",
                    psp.PushServiceName(), req.ID, req.Service, subscriber,
                    psp.Name(), dp.Name(), id)
 }
@@ -223,8 +224,6 @@ func (p *PushProcessor) pushBulk(req *Request, service string, subscribers []str
 func (p *PushProcessor) Process(req *Request) {
     nr_subs_per_goroutine := len(req.Subscribers) / p.max_nr_gorountines
     nr_subs_last_goroutine := len(req.Subscribers) % p.max_nr_gorountines
-    nr_goroutines := 0
-    finish := make(chan bool)
     pos := 0
 
     if len(req.Subscribers) == 1 && req.PushServiceProvider != nil && req.DeliveryPoint != nil {
@@ -233,15 +232,10 @@ func (p *PushProcessor) Process(req *Request) {
     }
 
     for pos = 0; pos < len(req.Subscribers) - nr_subs_last_goroutine; pos += nr_subs_per_goroutine {
-        go p.pushBulk(req, req.Service, req.Subscribers[pos:pos + nr_subs_per_goroutine], finish)
-        nr_goroutines += 1
+        go p.pushBulk(req, req.Service, req.Subscribers[pos:pos + nr_subs_per_goroutine], nil)
     }
     if pos < len(req.Subscribers) {
-        p.pushBulk(req, req.Service, req.Subscribers[pos:], nil)
-    }
-
-    for i := 0; i < nr_goroutines; i++ {
-        <-finish
+        go p.pushBulk(req, req.Service, req.Subscribers[pos:], nil)
     }
 }
 
