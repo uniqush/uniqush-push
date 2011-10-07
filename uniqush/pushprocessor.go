@@ -46,7 +46,11 @@ const (
     init_backoff_time = 3
 )
 
-func (p *PushProcessor) retryRequest(req *Request, retryAfter int, subscriber string, psp *PushServiceProvider, dp *DeliveryPoint) {
+func (p *PushProcessor) retryRequest(req *Request,
+                                     retryAfter int,
+                                     subscriber string,
+                                     psp *PushServiceProvider,
+                                     dp *DeliveryPoint) {
     if req.nrRetries >= p.max_nr_retry {
         return
     }
@@ -104,7 +108,9 @@ func NewPushProcessor(logger *Logger,
     return ret
 }
 
-func (p *PushProcessor) unsubscribe(req *Request, subscriber string, dp *DeliveryPoint) {
+func (p *PushProcessor) unsubscribe(req *Request,
+                                    subscriber string,
+                                    dp *DeliveryPoint) {
     a := new(Request)
     a.PunchTimestamp()
     a.ID = req.ID
@@ -118,7 +124,6 @@ func (p *PushProcessor) unsubscribe(req *Request, subscriber string, dp *Deliver
 }
 
 func (p *PushProcessor) pushToDeliveryPoint(req *Request,
-                                            service string,
                                             subscriber string,
                                             psp *PushServiceProvider,
                                             dp *DeliveryPoint) {
@@ -146,21 +151,21 @@ func (p *PushProcessor) pushToDeliveryPoint(req *Request,
 
 }
 
-func (p *PushProcessor) push(req *Request, service string, subscriber string) {
-    pspdppairs, err := p.dbfront.GetPushServiceProviderDeliveryPointPairs(service, subscriber)
+func (p *PushProcessor) push(req *Request, subscriber string) {
+    pspdppairs, err := p.dbfront.GetPushServiceProviderDeliveryPointPairs(req.Service, subscriber)
     if err != nil {
-        p.logger.Errorf("[PushFail] Service=%s Subscriber=%s DatabaseError %v", service, subscriber, err)
+        p.logger.Errorf("[PushFail] Service=%s Subscriber=%s DatabaseError %v", req.Service, subscriber, err)
         p.writer.PushFail(req, subscriber, nil, nil, err)
     }
     if len(pspdppairs) <= 0 {
-        p.logger.Warnf("[PushFail] Service=%s Subscriber=%s NoSubscriber", service, subscriber)
+        p.logger.Warnf("[PushFail] Service=%s Subscriber=%s NoSubscriber", req.Service, subscriber)
         return
     }
 
     for _, pdpair := range pspdppairs {
         psp := pdpair.PushServiceProvider
         dp := pdpair.DeliveryPoint
-        p.pushToDeliveryPoint(req, service, subscriber, psp, dp)
+        p.pushToDeliveryPoint(req, subscriber, psp, dp)
     }
 }
 
@@ -212,9 +217,11 @@ func (p *PushProcessor) pushSucc(req *Request,
                    psp.Name(), dp.Name(), id)
 }
 
-func (p *PushProcessor) pushBulk(req *Request, service string, subscribers []string, finish chan bool) {
+func (p *PushProcessor) pushBulk(req *Request,
+                                 subscribers []string,
+                                 finish chan bool) {
     for _, sub := range subscribers {
-        p.push(req, service, sub)
+        p.push(req, sub)
     }
     if finish != nil {
         finish <- true
@@ -222,20 +229,33 @@ func (p *PushProcessor) pushBulk(req *Request, service string, subscribers []str
 }
 
 func (p *PushProcessor) Process(req *Request) {
+    if len(req.Subscribers) == 1 &&
+        req.PushServiceProvider != nil &&
+        req.DeliveryPoint != nil {
+        p.pushToDeliveryPoint(req,
+                              req.Subscribers[0],
+                              req.PushServiceProvider,
+                              req.DeliveryPoint)
+        return
+    }
+
+    // In most cases, we will use one goroutine per subscriber
+    if len(req.Subscribers) <= p.max_nr_gorountines {
+        for _, sub := range req.Subscribers {
+            go p.push(req, sub)
+        }
+        return
+    }
+
     nr_subs_per_goroutine := len(req.Subscribers) / p.max_nr_gorountines
     nr_subs_last_goroutine := len(req.Subscribers) % p.max_nr_gorountines
     pos := 0
 
-    if len(req.Subscribers) == 1 && req.PushServiceProvider != nil && req.DeliveryPoint != nil {
-        p.pushToDeliveryPoint(req, req.Service, req.Subscribers[0], req.PushServiceProvider, req.DeliveryPoint)
-        return
-    }
-
     for pos = 0; pos < len(req.Subscribers) - nr_subs_last_goroutine; pos += nr_subs_per_goroutine {
-        go p.pushBulk(req, req.Service, req.Subscribers[pos:pos + nr_subs_per_goroutine], nil)
+        go p.pushBulk(req, req.Subscribers[pos:pos + nr_subs_per_goroutine], nil)
     }
     if pos < len(req.Subscribers) {
-        go p.pushBulk(req, req.Service, req.Subscribers[pos:], nil)
+        go p.pushBulk(req, req.Subscribers[pos:], nil)
     }
 }
 
