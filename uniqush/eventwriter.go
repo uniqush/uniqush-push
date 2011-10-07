@@ -73,9 +73,17 @@ func (w *EventWriter) RemovePushServiceSuccess(req *Request) {
 func (w *EventWriter) RemovePushServiceFail(req *Request, err os.Error) {
 }
 
-func (w *EventWriter) PushSuccess(req *Request, subscriber string, dp *DeliveryPoint, id string) {
+func (w *EventWriter) PushSuccess(req *Request,
+                                  subscriber string,
+                                  psp *PushServiceProvider,
+                                  dp *DeliveryPoint,
+                                  id string) {
 }
 
-func (w *EventWriter) PushFail(req *Request, subscriber string, dp *DeliveryPoint, err os.Error) {
+func (w *EventWriter) PushFail(req *Request,
+                               subscriber string,
+                               psp *PushServiceProvider,
+                               dp *DeliveryPoint,
+                               err os.Error) {
 }
 
