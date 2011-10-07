@@ -112,7 +112,11 @@ func init() {
 func NewLogger(writer io.Writer, prefix string, logLevel int) *Logger{
     ret := new(Logger)
     ret.loggers = make([]*log.Logger, NR_LOGLEVELS)
-    ret.writer = writer
+    if writer == nil {
+        ret.writer = &NullWriter{}
+    } else {
+        ret.writer = writer
+    }
     ret.prefix = prefix
     ret.SetLogLevel(logLevel)
     return ret

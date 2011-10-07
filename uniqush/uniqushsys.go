@@ -22,10 +22,10 @@ import (
     "os"
     "io"
     "strings"
+    "fmt"
 )
 
 func (s *UniqushSystem) loadLogInfo(c *conf.ConfigFile, field string, prefix string) (*Logger, os.Error) {
-    var filename string
     var loglevel string
     var logswitch bool
     var err os.Error
@@ -34,23 +34,9 @@ func (s *UniqushSystem) loadLogInfo(c *conf.ConfigFile, field string, prefix str
     logswitch, err = c.GetBool(field, "log")
     if err != nil { logswitch = true }
 
-    filename, err = c.GetString(field, "logfile")
-    if err != nil {
+    writer = s.logfile
+    if writer == nil {
         writer = os.Stderr
-    } else {
-        if filename == "" || filename == "STDERR" {
-            writer = os.Stderr
-        } else if writer, ok := s.files[filename]; ok {
-        } else {
-            writer, err = os.OpenFile(filename,
-                                      os.O_WRONLY |
-                                      os.O_APPEND |
-                                      os.O_CREATE, 0)
-            if err != nil {
-                writer = os.Stderr
-            }
-            s.files[filename] = writer
-        }
     }
 
     loglevel, err = c.GetString(field, "loglevel")
@@ -124,7 +110,7 @@ type UniqushSystem struct {
     Bridge chan *Request
     Database DatabaseFrontDeskIf
     psm *PushServiceManager
-    files map[string]io.WriteCloser
+    logfile io.WriteCloser
 }
 
 var (
@@ -132,9 +118,7 @@ var (
 )
 
 func (s *UniqushSystem) Finalize() {
-    for _, f := range s.files {
-        f.Close()
-    }
+    s.logfile.Close()
     s.Database.FlushCache()
     s.psm.Finalize()
 }
@@ -151,7 +135,20 @@ func LoadUniqushSystem(filename string) (*UniqushSystem, os.Error) {
     ret := new(UniqushSystem)
     ret.Stopch = make(chan bool)
     ret.Bridge = make(chan *Request)
+    ret.logfile = os.Stderr
     ew := NewEventWriter(&NullWriter{})
+
+    logfilename, err := c.GetString("default", "logfile")
+    fmt.Printf("logfile: %s\n", logfilename)
+    if err == nil && logfilename != "" {
+        ret.logfile, err =os.OpenFile(logfilename,
+                                        os.O_WRONLY |
+                                        os.O_APPEND |
+                                        os.O_CREATE, 0600)
+        if err != nil {
+            ret.logfile = os.Stderr
+        }
+    }
 
     logger, e10 := ret.loadLogInfo(c, "WebFrontend", "[WebFrontend]")
     if e10 != nil {
@@ -195,7 +192,7 @@ func LoadUniqushSystem(filename string) (*UniqushSystem, os.Error) {
     ret.Database = dbf
 
     // Load Processors
-    logger, e10 = ret.loadLogInfo(c, "AddPushServiceProvider", "[AddPushServiceProvider]")
+    logger, e10 = ret.loadLogInfo(c,"AddPushServiceProvider", "[AddPushServiceProvider]")
     if e10 != nil {
         return nil, e10
     }
