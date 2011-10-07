@@ -22,7 +22,6 @@ import (
     "os"
     "io"
     "strings"
-    "fmt"
 )
 
 func (s *UniqushSystem) loadLogInfo(c *conf.ConfigFile, field string, prefix string) (*Logger, os.Error) {
@@ -139,7 +138,6 @@ func LoadUniqushSystem(filename string) (*UniqushSystem, os.Error) {
     ew := NewEventWriter(&NullWriter{})
 
     logfilename, err := c.GetString("default", "logfile")
-    fmt.Printf("logfile: %s\n", logfilename)
     if err == nil && logfilename != "" {
         ret.logfile, err =os.OpenFile(logfilename,
                                         os.O_WRONLY |
