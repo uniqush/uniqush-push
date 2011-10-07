@@ -24,7 +24,7 @@ import (
     "strings"
 )
 
-func loadLogInfo(c *conf.ConfigFile, field string, prefix string) (*Logger, os.Error) {
+func (s *UniqushSystem) loadLogInfo(c *conf.ConfigFile, field string, prefix string) (*Logger, os.Error) {
     var filename string
     var loglevel string
     var logswitch bool
@@ -40,11 +40,16 @@ func loadLogInfo(c *conf.ConfigFile, field string, prefix string) (*Logger, os.E
     } else {
         if filename == "" || filename == "STDERR" {
             writer = os.Stderr
+        } else if writer, ok := s.files[filename]; ok {
         } else {
-            writer, err = os.Create(filename)
+            writer, err = os.OpenFile(filename,
+                                      os.O_WRONLY |
+                                      os.O_APPEND |
+                                      os.O_CREATE, 0)
             if err != nil {
                 writer = os.Stderr
             }
+            s.files[filename] = writer
         }
     }
 
@@ -119,11 +124,20 @@ type UniqushSystem struct {
     Bridge chan *Request
     Database DatabaseFrontDeskIf
     psm *PushServiceManager
+    files map[string]io.WriteCloser
 }
 
 var (
     defaultConfigFilePath string = "/etc/uniqush/uniqush.conf"
 )
+
+func (s *UniqushSystem) Finalize() {
+    for _, f := range s.files {
+        f.Close()
+    }
+    s.Database.FlushCache()
+    s.psm.Finalize()
+}
 
 func LoadUniqushSystem(filename string) (*UniqushSystem, os.Error) {
     if filename == "" {
@@ -139,7 +153,7 @@ func LoadUniqushSystem(filename string) (*UniqushSystem, os.Error) {
     ret.Bridge = make(chan *Request)
     ew := NewEventWriter(&NullWriter{})
 
-    logger, e10 := loadLogInfo(c, "WebFrontend", "[WebFrontend]")
+    logger, e10 := ret.loadLogInfo(c, "WebFrontend", "[WebFrontend]")
     if e10 != nil {
         return nil, e10
     }
@@ -155,7 +169,7 @@ func LoadUniqushSystem(filename string) (*UniqushSystem, os.Error) {
     ret.Frontend.SetStopChannel(ret.Stopch)
     ret.Frontend.SetEventWriter(ew)
 
-    logger, e10 = loadLogInfo(c, "Backend", "[Backend]")
+    logger, e10 = ret.loadLogInfo(c, "Backend", "[Backend]")
     if e10 != nil {
         return nil, e10
     }
@@ -181,35 +195,35 @@ func LoadUniqushSystem(filename string) (*UniqushSystem, os.Error) {
     ret.Database = dbf
 
     // Load Processors
-    logger, e10 = loadLogInfo(c, "AddPushServiceProvider", "[AddPushServiceProvider]")
+    logger, e10 = ret.loadLogInfo(c, "AddPushServiceProvider", "[AddPushServiceProvider]")
     if e10 != nil {
         return nil, e10
     }
     p = NewAddPushServiceProviderProcessor(logger, ew, dbf)
     ret.Backend.SetProcessor(ACTION_ADD_PUSH_SERVICE_PROVIDER, p)
 
-    logger, e10 = loadLogInfo(c, "RemovePushServiceProvider", "[RemovePushServiceProvider]")
+    logger, e10 = ret.loadLogInfo(c, "RemovePushServiceProvider", "[RemovePushServiceProvider]")
     if e10 != nil {
         return nil, e10
     }
     p = NewRemovePushServiceProviderProcessor(logger, ew, dbf)
     ret.Backend.SetProcessor(ACTION_REMOVE_PUSH_SERVICE_PROVIDER, p)
 
-    logger, e10 = loadLogInfo(c, "Subscribe", "[Subscribe]")
+    logger, e10 = ret.loadLogInfo(c, "Subscribe", "[Subscribe]")
     if e10 != nil {
         return nil, e10
     }
     p = NewSubscribeProcessor(logger, ew, dbf)
     ret.Backend.SetProcessor(ACTION_SUBSCRIBE, p)
 
-    logger, e10 = loadLogInfo(c, "Unsubscribe", "[Unsubscribe]")
+    logger, e10 = ret.loadLogInfo(c, "Unsubscribe", "[Unsubscribe]")
     if e10 != nil {
         return nil, e10
     }
     p = NewUnsubscribeProcessor(logger, ew, dbf)
     ret.Backend.SetProcessor(ACTION_UNSUBSCRIBE, p)
 
-    logger, e10 = loadLogInfo(c, "Push", "[Push]")
+    logger, e10 = ret.loadLogInfo(c, "Push", "[Push]")
     if e10 != nil {
         return nil, e10
     }
@@ -219,8 +233,7 @@ func LoadUniqushSystem(filename string) (*UniqushSystem, os.Error) {
 }
 
 func (s *UniqushSystem) Run() {
-    defer s.Database.FlushCache()
-    defer s.psm.Finalize()
+    defer s.Finalize()
     go s.Frontend.Run()
     go s.Backend.Run()
     <-s.Stopch
