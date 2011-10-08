@@ -11,25 +11,67 @@ function compile_and_install
 
 function install
 {
+    echo "Installing Uniqush..."
     goinstall github.com/monnand/uniqush/uniqush
     compile_and_install
 }
 
 function uninstall
 {
+    echo "Uninstalling..."
     rm -rf ${GOROOT}/src/pkg/github.com/monnand/uniqush
     rm -rf ${GOROOT}/pkg/${GOOS}_${GOARCH}/github.com/monnand/uniqush
 }
 
 function update
 {
+    echo "Updating Uniqush..."
     goinstall -u -v github.com/monnand/uniqush/uniqush
     compile_and_install
 }
 
 function usage
 {
-    echo "uniqushinstall.sh [install|uninstall|update]"
+    echo "uniqushinstall.sh [install|uninstall|update|config]"
+}
+
+function copyconfig
+{
+    echo "Generating Configuration File to /etc/uniqush/uniqush.conf..."
+    mkdir -p /etc/uniqush
+    echo """logfile=/var/log/uniqush
+[WebFrontend]
+log=on
+loglevel=standard
+address=localhost:9898
+
+[AddPushServiceProvider]
+log=on
+loglevel=standard
+
+[RemovePushServiceProvider]
+log=on
+loglevel=standard
+
+[Subscribe]
+log=on
+loglevel=standard
+
+[Unsubscribe]
+log=on
+loglevel=standard
+
+[Push]
+log=on
+loglevel=standard
+
+[Database]
+engine=redis
+port=0
+name=0
+everysec=600
+leastdirty=10
+cachesize=1024""" >> /etc/uniqush/uniqush.conf
 }
 
 function ifinstalled
@@ -46,25 +88,23 @@ if test 0 -eq $#
 then
     if ifinstalled
     then
-        echo "Updating Uniqush..."
         update
     else
-        echo "Installing Uniqush..."
         install
     fi
 else
     case $1 in
         "install")
-            echo "Installing Uniqush..."
             install
             ;;
         "uninstall")
-            echo "Uninstalling..."
             uninstall
             ;;
         "update")
-            echo "Updating Uniqush..."
             update
+            ;;
+        "config")
+            copyconfig
             ;;
         "help")
             usage
