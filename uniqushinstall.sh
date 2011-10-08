@@ -71,7 +71,7 @@ port=0
 name=0
 everysec=600
 leastdirty=10
-cachesize=1024""" >> /etc/uniqush/uniqush.conf
+cachesize=1024""" > /etc/uniqush/uniqush.conf
 }
 
 function ifinstalled
