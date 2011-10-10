@@ -127,27 +127,27 @@ func (p *PushProcessor) pushToDeliveryPoint(req *Request,
                                             subscriber string,
                                             psp *PushServiceProvider,
                                             dp *DeliveryPoint) {
-        id, err := p.psm.Push(psp, dp, req.Notification)
-        if err != nil {
-            switch (err.(type)) {
-            case *RefreshDataError:
-                re := err.(*RefreshDataError)
-                err = p.refreshData(req, psp.PushServiceName(), re)
-                if err == nil {
-                    go p.pushSucc(req, subscriber, psp, dp, id)
-                    return
-                }
+    id, err := p.psm.Push(psp, dp, req.Notification)
+    if err != nil {
+        switch (err.(type)) {
+        case *RefreshDataError:
+            re := err.(*RefreshDataError)
+            err = p.refreshData(req, psp.PushServiceName(), re)
+            if err == nil {
+                go p.pushSucc(req, subscriber, psp, dp, id)
+                return
             }
-            switch (err.(type)) {
-            case *RetryError:
-                re := err.(*RetryError)
-                go p.pushRetry(req, subscriber, psp, dp, re)
-            case *UnregisteredError:
-                go p.unsubscribe(req, subscriber, dp)
-            }
-            go p.pushFail(req, subscriber, psp, dp, err)
         }
-        go p.pushSucc(req, subscriber, psp, dp, id)
+        switch (err.(type)) {
+        case *RetryError:
+            re := err.(*RetryError)
+            go p.pushRetry(req, subscriber, psp, dp, re)
+        case *UnregisteredError:
+            go p.unsubscribe(req, subscriber, dp)
+        }
+        go p.pushFail(req, subscriber, psp, dp, err)
+    }
+    go p.pushSucc(req, subscriber, psp, dp, id)
 
 }
 

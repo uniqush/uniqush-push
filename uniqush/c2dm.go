@@ -65,54 +65,53 @@ func (p *C2DMPushService) SetAsyncFailureHandler(pf PushFailureHandler) {
 
 func (p *C2DMPushService) Finalize() { }
 
-func (p *C2DMPushService) BuildPushServiceProviderFromMap(kv map[string]string) (*PushServiceProvider, os.Error) {
-    psp := NewEmptyPushServiceProvider()
+func (p *C2DMPushService) BuildPushServiceProviderFromMap(kv map[string]string,
+                                                          psp *PushServiceProvider) os.Error {
     if service, ok := kv["service"]; ok {
         psp.FixedData["service"] = service
     } else {
-        return nil, os.NewError("NoService")
+        return os.NewError("NoService")
     }
     if senderid, ok := kv["senderid"]; ok {
         psp.FixedData["senderid"] = senderid
     } else {
-        return nil, os.NewError("NoSenderId")
+        return os.NewError("NoSenderId")
     }
 
     if authtoken, ok := kv["authtoken"]; ok {
         psp.VolatileData["authtoken"] = authtoken
     } else {
-        return nil, os.NewError("NoAuthToken")
+        return os.NewError("NoAuthToken")
     }
 
-    return psp, nil
+    return nil
 }
 
-func (p *C2DMPushService) BuildDeliveryPointFromMap(kv map[string]string) (*DeliveryPoint, os.Error) {
-    dp := NewEmptyDeliveryPoint()
-
+func (p *C2DMPushService) BuildDeliveryPointFromMap(kv map[string]string,
+                                                    dp *DeliveryPoint) os.Error {
     if service, ok := kv["service"]; ok {
         dp.FixedData["service"] = service
     } else {
-        return nil, os.NewError("NoService")
+        return os.NewError("NoService")
     }
     if sub, ok := kv["subscriber"]; ok {
         dp.FixedData["subscriber"] = sub
     } else {
-        return nil, os.NewError("NoSubscriber")
+        return os.NewError("NoSubscriber")
     }
     if account, ok := kv["account"]; ok {
         dp.FixedData["account"] = account
     } else {
-        return nil, os.NewError("NoGoogleAccount")
+        return os.NewError("NoGoogleAccount")
     }
 
     if regid, ok := kv["regid"]; ok {
         dp.FixedData["regid"] = regid
     } else {
-        return nil, os.NewError("NoRegId")
+        return os.NewError("NoRegId")
     }
 
-    return dp, nil
+    return nil
 }
 
 func (p *C2DMPushService) Name() string {

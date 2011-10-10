@@ -27,8 +27,9 @@ type PushFailureHandler interface {
 }
 
 type PushServiceType interface {
-    BuildPushServiceProviderFromMap(map[string]string) (*PushServiceProvider, os.Error)
-    BuildDeliveryPointFromMap(map[string]string) (*DeliveryPoint, os.Error)
+    // Passing a pointer to PushServiceProvider allows us to use a memory pool to store a set of empty *PushServiceProvider
+    BuildPushServiceProviderFromMap(map[string]string, *PushServiceProvider) os.Error
+    BuildDeliveryPointFromMap(map[string]string, *DeliveryPoint) os.Error
     Name() string
     Push(*PushServiceProvider, *DeliveryPoint, *Notification) (string, os.Error)
     SetAsyncFailureHandler(pfp PushFailureHandler)

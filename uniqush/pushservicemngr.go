@@ -73,12 +73,10 @@ func (m *PushServiceManager) RegisterPushServiceType(pt PushServiceType) os.Erro
 func (m *PushServiceManager) BuildPushServiceProviderFromMap(kv map[string]string) (psp *PushServiceProvider, err os.Error) {
     if ptname, ok := kv["pushservicetype"]; ok {
         if pst, ok := m.serviceTypes[ptname]; ok {
-            psp, err = pst.BuildPushServiceProviderFromMap(kv)
+            psp := NewEmptyPushServiceProvider()
+            err = pst.BuildPushServiceProviderFromMap(kv, psp)
             if err != nil {
                 return nil, err
-            }
-            if psp == nil {
-                return nil, os.NewError("Cannot Build Push Service Provider")
             }
             psp.pushServiceType = pst
             return
@@ -111,12 +109,10 @@ func (m *PushServiceManager) BuildPushServiceProviderFromBytes(value []byte) (ps
 func (m *PushServiceManager) BuildDeliveryPointFromMap(kv map[string]string) (dp *DeliveryPoint, err os.Error) {
     if ptname, ok := kv["pushservicetype"]; ok {
         if pst, ok := m.serviceTypes[ptname]; ok {
-            dp, err = pst.BuildDeliveryPointFromMap(kv)
+            dp := NewEmptyDeliveryPoint()
+            err = pst.BuildDeliveryPointFromMap(kv, dp)
             if err != nil {
                 return nil, err
-            }
-            if dp == nil {
-                return nil, os.NewError("Cannot Build Delivery Point")
             }
             dp.pushServiceType = pst
             return

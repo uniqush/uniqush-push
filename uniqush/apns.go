@@ -106,55 +106,52 @@ func (p *APNSPushService) waitError(id string,
     }
 }
 
-func (p *APNSPushService) BuildPushServiceProviderFromMap(kv map[string]string) (*PushServiceProvider, os.Error) {
-    psp := NewEmptyPushServiceProvider()
+func (p *APNSPushService) BuildPushServiceProviderFromMap(kv map[string]string, psp *PushServiceProvider) os.Error {
     if service, ok := kv["service"]; ok {
         psp.FixedData["service"] = service
     } else {
-        return nil, os.NewError("NoService")
+        return os.NewError("NoService")
     }
 
     if cert, ok := kv["cert"]; ok {
         psp.FixedData["cert"] = cert
     } else {
-        return nil, os.NewError("NoCertificate")
+        return os.NewError("NoCertificate")
     }
 
     if key, ok := kv["key"]; ok {
         psp.FixedData["key"] = key
     } else {
-        return nil, os.NewError("NoPrivateKey")
+        return os.NewError("NoPrivateKey")
     }
 
     if sandbox, ok := kv["sandbox"]; ok {
         if sandbox == "true" {
             psp.VolatileData["addr"] = "gateway.sandbox.push.apple.com:2195"
-            return psp, nil
+            return nil
         }
     }
     psp.VolatileData["addr"] = "gateway.push.apple.com:2195"
-    return psp, nil
+    return nil
 }
 
-func (p *APNSPushService) BuildDeliveryPointFromMap(kv map[string]string) (*DeliveryPoint, os.Error) {
-    dp := NewEmptyDeliveryPoint()
-
+func (p *APNSPushService) BuildDeliveryPointFromMap(kv map[string]string, dp*DeliveryPoint) os.Error {
     if service, ok := kv["service"]; ok {
         dp.FixedData["service"] = service
     } else {
-        return nil, os.NewError("NoService")
+        return os.NewError("NoService")
     }
     if sub, ok := kv["subscriber"]; ok {
         dp.FixedData["subscriber"] = sub
     } else {
-        return nil, os.NewError("NoSubscriber")
+        return os.NewError("NoSubscriber")
     }
     if devtoken, ok := kv["devtoken"]; ok {
         dp.FixedData["devtoken"] = devtoken
     } else {
-        return nil, os.NewError("NoDevToken")
+        return os.NewError("NoDevToken")
     }
-    return dp, nil
+    return nil
 }
 
 func toAPNSPayload(n *Notification) ([]byte, os.Error) {

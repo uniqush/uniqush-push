@@ -24,6 +24,7 @@ GOFILES=\
 	pushservicemngr.go\
 	pushservicetype.go\
 	pushpeer.go\
+	objmempool.go\
 	c2dm.go\
 	apns.go\
 
