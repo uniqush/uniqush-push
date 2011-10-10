@@ -188,8 +188,11 @@ func (p *PushProcessor) refreshData(req *Request,
 func recycle(psp *PushServiceProvider,
              dp *DeliveryPoint,
              n *Notification) {
+    // TODO recycle only when they are not in cache!
+    /*
     psp.recycle()
     dp.recycle()
+    */
 }
 
 func (p *PushProcessor) pushFail(req *Request,

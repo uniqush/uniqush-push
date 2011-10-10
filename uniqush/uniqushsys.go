@@ -177,8 +177,8 @@ func LoadUniqushSystem(filename string) (*UniqushSystem, os.Error) {
     if e0 != nil {
         return nil, e0
     }
-    dbf, e30 := NewDatabaseFrontDeskWithoutCache(dbconf)
-    //dbf, e30 := NewDatabaseFrontDesk(dbconf)
+    //dbf, e30 := NewDatabaseFrontDeskWithoutCache(dbconf)
+    dbf, e30 := NewDatabaseFrontDesk(dbconf)
 
     if e30 != nil{
         return nil, e30
