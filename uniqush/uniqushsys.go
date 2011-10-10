@@ -171,20 +171,12 @@ func LoadUniqushSystem(filename string) (*UniqushSystem, os.Error) {
     ret.Backend = NewUniqushBackEnd(ret.Bridge, logger)
 
     var p RequestProcessor
-    /*
-    logger = NewLogger(os.Stdout, "[ActionPrinter]", LOGLEVEL_DEBUG)
-    p := NewActionPrinter(logger)
-    for i := 0; i < NR_ACTIONS; i++ {
-        ret.Backend.SetProcessor(i, p)
-    }
-    */
 
     // Load Database
     dbconf, e0 := loadDatabaseConfig(c)
     if e0 != nil {
         return nil, e0
     }
-    logger.Infof("%v", dbconf)
     dbf, e30 := NewDatabaseFrontDeskWithoutCache(dbconf)
     //dbf, e30 := NewDatabaseFrontDesk(dbconf)
 
