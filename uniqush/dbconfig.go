@@ -18,6 +18,7 @@
 package uniqush
 
 import (
+    "fmt"
 )
 
 type DatabaseConfig struct {
@@ -57,6 +58,7 @@ func LoadDatabaseConfig(filename string) (conf *DatabaseConfig, err os.Error) {
     err = json.Unmarshal(content, conf)
     return
 }
+*/
 
 func (c *DatabaseConfig) String() string {
     ret := fmt.Sprintf("engine: %v;\nname: %v;\nuser: %v;\npassowrd: %v;\nhost: %v\nport: %d\n",
@@ -65,4 +67,3 @@ func (c *DatabaseConfig) String() string {
     return ret
 }
 
-*/

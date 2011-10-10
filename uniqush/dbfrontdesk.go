@@ -193,20 +193,20 @@ func (f *DatabaseFrontDesk) GetPushServiceProviderDeliveryPointPairs (service st
     ret := make([]PushServiceProviderDeliveryPointPair, 0, len(dpnames))
 
     for _, d := range dpnames {
+        dp, e0 := f.db.GetDeliveryPoint(d)
+        if e0 != nil {
+            return nil, e0
+        }
+        if dp == nil {
+            continue
+        }
+
         pspname , e := f.db.GetPushServiceProviderNameByServiceDeliveryPoint(service, d)
         if e != nil {
             return nil, e
         }
 
         if len(pspname) == 0 {
-            continue
-        }
-
-        dp, e0 := f.db.GetDeliveryPoint(d)
-        if e0 != nil {
-            return nil, e0
-        }
-        if dp == nil {
             continue
         }
 

@@ -185,6 +185,13 @@ func (p *PushProcessor) refreshData(req *Request,
     return re.OtherError
 }
 
+func recycle(psp *PushServiceProvider,
+             dp *DeliveryPoint,
+             n *Notification) {
+    psp.recycle()
+    dp.recycle()
+}
+
 func (p *PushProcessor) pushFail(req *Request,
                             subscriber string,
                             psp *PushServiceProvider,
@@ -194,6 +201,7 @@ func (p *PushProcessor) pushFail(req *Request,
                    psp.PushServiceName(), req.ID, req.Service, subscriber,
                    psp.Name(), dp.Name(), err)
     p.writer.PushFail(req, subscriber, psp, dp, err)
+    recycle(psp, dp, req.Notification)
 }
 
 func (p *PushProcessor) pushRetry(req *Request,
@@ -215,6 +223,7 @@ func (p *PushProcessor) pushSucc(req *Request,
     p.logger.Infof("[%s][PushSuccess] RequestId=%s Service=%s Subscriber=%s PushServiceProvider=%s DeliveryPoint=%s MsgId=%s",
                    psp.PushServiceName(), req.ID, req.Service, subscriber,
                    psp.Name(), dp.Name(), id)
+    recycle(psp, dp, req.Notification)
 }
 
 func (p *PushProcessor) pushBulk(req *Request,

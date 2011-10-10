@@ -25,7 +25,7 @@ type ObjectMemoryPool struct {
 
 func NewObjectMemoryPool(n int, f func()interface{}) *ObjectMemoryPool {
     pool := new(ObjectMemoryPool)
-    if n < 0 {
+    if n <= 1 {
         pool.maxnr = 0x0FFFFFFF
         pool.objs = make([]interface{}, 0, 1024)
     } else {

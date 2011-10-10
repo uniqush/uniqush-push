@@ -35,7 +35,7 @@ func (p *PushPeer) PushServiceName() string {
     return p.pushServiceType.Name()
 }
 
-func (p *PushPeer) ToString() string {
+func (p *PushPeer) String() string {
     ret := "push service type: "
     ret += p.pushServiceType.Name()
     ret += "\nFixed Data:\n"
@@ -43,7 +43,6 @@ func (p *PushPeer) ToString() string {
     for k, v := range(p.FixedData) {
         ret += k + ": " + v + "\n"
     }
-
     ret += "\n"
     return ret
 }
@@ -92,7 +91,7 @@ func (p *PushPeer) Unmarshal(value []byte) os.Error {
 
     err := json.Unmarshal(value, &f)
     if err != nil {
-        fmt.Printf("Error Unmarshal: %v\n", err)
+        //fmt.Printf("Error Unmarshal: %v\n", err)
         return err
     }
 
@@ -102,52 +101,6 @@ func (p *PushPeer) Unmarshal(value []byte) os.Error {
 
     p.FixedData = f[0]
     p.VolatileData = f[1]
-
-    /*
-    var s []interface{}
-    var m map[string]interface{}
-
-    switch f.(type) {
-    case []interface{}:
-        s = f.([]interface{})
-        if len(s) < 2 {
-            return os.NewError("Invalid Push Peer")
-        }
-
-        switch s[0].(type) {
-        case map[string]interface{}:
-            m = s[0].(map[string]interface{})
-            for k, v := range m {
-                switch v.(type) {
-                case string:
-                    str := v.(string)
-                    p.FixedData[k] = str
-                default:
-                    return os.NewError("Invalid Push Peer")
-                }
-            }
-        default:
-            return os.NewError("Invalid Push Peer")
-        }
-
-        switch s[1].(type) {
-        case map[string]interface{}:
-            m = s[0].(map[string]interface{})
-            for k, v := range m {
-                switch v.(type) {
-                case string:
-                    str := v.(string)
-                    p.VolatileData[k] = str
-                default:
-                    return os.NewError("Invalid Push Peer")
-                }
-            }
-        default:
-            return os.NewError("Invalid Push Peer")
-        }
-
-    }
-    */
 
     return nil
 }

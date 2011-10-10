@@ -81,50 +81,15 @@ func (r *UniqushRedisDB) keyValueToDeliveryPoint(name string, value []byte) *Del
         return nil
     }
     return dp
-    /*
-    dp := new(DeliveryPoint)
-    return dp.Unmarshal(name, value)
-    v := string(value)
-    var substr string
-    var ostype int
-    fmt.Sscanf(v, "%d.%s", &ostype, &substr)
-    switch (ostype) {
-    case OSTYPE_ANDROID:
-        fields := strings.Split(substr, ":")
-        if len(fields) < 2 {
-            return nil
-        }
-        return NewAndroidDeliveryPoint(name, fields[0], fields[1])
-    }
-    return nil
-    */
 }
 
 func (r *UniqushRedisDB) keyValueToPushServiceProvider(name string, value []byte) *PushServiceProvider {
-    //psp := new(PushServiceProvider)
-    //return psp.Unmarshal(name, value)
-    /* TODO use push service manager to gen */
     psm := r.psm
     psp, err := psm.BuildPushServiceProviderFromBytes(value)
     if err != nil {
         return nil
     }
     return psp
-    /*
-    v := string(value)
-    var substr string
-    var srvtype int
-    fmt.Sscanf(v, "%d.%s", &srvtype, &substr)
-    switch (srvtype) {
-    case SRVTYPE_C2DM:
-        fields := strings.Split(substr, ":")
-        if len(fields) < 2 {
-            return nil
-        }
-        return NewC2DMServiceProvider(name, fields[0], fields[1])
-    }
-    return nil
-    */
 }
 
 func deliveryPointToValue(dp *DeliveryPoint) []byte {
