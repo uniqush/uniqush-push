@@ -193,6 +193,7 @@ func recycle(psp *PushServiceProvider,
     psp.recycle()
     dp.recycle()
     */
+    n.Recycle()
 }
 
 func (p *PushProcessor) pushFail(req *Request,

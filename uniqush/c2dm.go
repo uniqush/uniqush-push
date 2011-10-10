@@ -23,6 +23,7 @@ import (
     "http"
     "strings"
     "io/ioutil"
+    "fmt"
 )
 
 /* FIXME
@@ -192,11 +193,12 @@ func (p *C2DMPushService) Push(psp *PushServiceProvider,
 	msgid = strings.Replace(msgid, "\r", "", -1)
 	msgid = strings.Replace(msgid, "\n", "", -1)
 	if msgid[:3] == "id=" {
+        retid := fmt.Sprintf("c2dm:%s-%s", psp.Name(), msgid[3:])
 		if refreshpsp {
 			re := NewRefreshDataError(psp, nil, nil)
-			return msgid[3:], re
+			return retid, re
 		}
-		return msgid[3:], nil
+        return retid, nil
 	}
 	switch msgid[6:] {
 	case "QuotaExceeded":

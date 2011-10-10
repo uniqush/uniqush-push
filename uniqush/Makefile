@@ -7,6 +7,7 @@ GOFILES=\
 	pushserviceprovider.go\
 	request.go\
 	frontend.go\
+	strmappool.go\
 	webfrontend.go\
 	backend.go\
 	eventwriter.go\

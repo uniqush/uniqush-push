@@ -24,7 +24,6 @@ import (
 	"os"
 	"strings"
 	"strconv"
-	"url"
 )
 
 // There is ONLY ONE WebFrontEnd instance running in one program
@@ -37,6 +36,8 @@ type WebFrontEnd struct {
 	writer *EventWriter
 	stopch chan<- bool
     psm *PushServiceManager
+    strMapPools map[string]*stringMapPool
+    notifPools map[string]*notificationPool
 }
 
 
@@ -56,6 +57,15 @@ func NewWebFrontEnd(ch chan *Request,
 	f.writer = NewEventWriter(new(NullWriter))
 	f.stopch = nil
     f.psm = psm
+    f.strMapPools = make(map[string]*stringMapPool, 5)
+
+	f.strMapPools[ADD_PUSH_SERVICE_PROVIDER_TO_SERVICE_URL]    = newStringMapPool(16, 3)
+	f.strMapPools[REMOVE_PUSH_SERVICE_PROVIDER_TO_SERVICE_URL] = newStringMapPool(16, 3)
+	f.strMapPools[ADD_DELIVERY_POINT_TO_SERVICE_URL]           = newStringMapPool(16, 3)
+	f.strMapPools[REMOVE_DELIVERY_POINT_FROM_SERVICE_URL]      = newStringMapPool(16, 3)
+	f.strMapPools[PUSH_NOTIFICATION_URL]                       = newStringMapPool(16, 3)
+
+    f.notifPools = make(map[string]*notificationPool, 16)
 
 	if len(addr) == 0 {
 		// By default, we only accept localhost connection
@@ -114,6 +124,7 @@ func (f *WebFrontEnd) addPushServiceProvider(kv map[string]string,
 	f.ch <- a
 	f.writer.RequestReceived(a)
 	f.logger.Infof("[AddPushServiceRequest] Requestid=%s From=%s Service=%s", id, addr, psp.Name())
+    f.strMapPools[ADD_PUSH_SERVICE_PROVIDER_TO_SERVICE_URL].recycle(kv)
 }
 
 func (f *WebFrontEnd) removePushServiceProvider(kv map[string]string,
@@ -142,6 +153,7 @@ func (f *WebFrontEnd) removePushServiceProvider(kv map[string]string,
 	f.ch <- a
 	f.writer.RequestReceived(a)
 	f.logger.Infof("[RemovePushServiceRequest] Requestid=%s From=%s Service=%s", id, addr, psp.Name())
+    f.strMapPools[REMOVE_PUSH_SERVICE_PROVIDER_TO_SERVICE_URL].recycle(kv)
 }
 
 func (f *WebFrontEnd) addDeliveryPointToService(kv map[string]string,
@@ -179,6 +191,7 @@ func (f *WebFrontEnd) addDeliveryPointToService(kv map[string]string,
     f.ch <- a
     f.writer.RequestReceived(a)
     f.logger.Infof("[SubscribeRequest] Requestid=%s From=%s Name=%s", id, addr, dp.Name())
+    f.strMapPools[ADD_DELIVERY_POINT_TO_SERVICE_URL].recycle(kv)
 	return
 }
 
@@ -218,52 +231,72 @@ func (f *WebFrontEnd) removeDeliveryPointFromService(kv map[string]string,
     f.ch <- a
     f.writer.RequestReceived(a)
     f.logger.Infof("[UnsubscribeRequest] Requestid=%s From=%s Name=%s", id, addr, dp.Name())
+    f.strMapPools[REMOVE_DELIVERY_POINT_FROM_SERVICE_URL].recycle(kv)
 	return
 }
 
-func (f *WebFrontEnd) pushNotification(form url.Values, id, addr string) {
+func (f *WebFrontEnd) pushNotification(kv map[string]string, id, addr string) {
 	a := new(Request)
 	a.PunchTimestamp()
 	a.Action = ACTION_PUSH
 	a.RequestSenderAddr = addr
 
 	a.ID = id
-	a.Notification = NewEmptyNotification()
-    var subscribers string
 
-    for k, v := range form {
+    var ok bool
+    if a.Service, ok = kv["service"]; !ok {
+		f.logger.Errorf("[PushNotificationFail] Requestid=%s From=%s NoServiceName", id, addr)
+		f.writer.BadRequest(a, os.NewError("NoServiceName"))
+		return
+    }
+
+    var notifpool *notificationPool
+    var subscribers string
+    nr_fields := 0
+
+    if notifpool, ok = f.notifPools[a.Service]; !ok {
+        notifpool = newNotificationPool(16, 1)
+        f.notifPools[a.Service] = notifpool
+    }
+
+	a.Notification = notifpool.get(len(kv) - 2)
+
+    for k, v := range kv {
         if len(v) <= 0 {
             continue
         }
         switch (k) {
         case "service":
-            a.Service = v[0]
+            continue
         case "subscribers": fallthrough
         case "subscriber":
-            subscribers = v[0]
-            a.Subscribers = strings.Split(v[0], ",")
-        case "message":
-	        a.Notification.Data["msg"] = v[0]
+            subscribers = v
+            a.Subscribers = strings.Split(v, ",")
         case "badge":
-            if v[0] != "" {
+            if v != "" {
                 var e os.Error
-                _, e = strconv.Atoi(v[0])
+                _, e = strconv.Atoi(v)
                 if e == nil {
-                    a.Notification.Data["badge"] = v[0]
+                    a.Notification.Data["badge"] = v
+                } else {
+                    a.Notification.Data["badge"] = "0"
                 }
+                nr_fields++
             }
-        case "image":
-            a.Notification.Data["img"] = v[0]
         default:
-            a.Notification.Data[k] = v[0]
+            a.Notification.Data[k] = v
+            nr_fields++
         }
     }
 
-	if len(a.Service) == 0 {
-		f.logger.Errorf("[PushNotificationFail] Requestid=%s From=%s NoServiceName", id, addr)
-		f.writer.BadRequest(a, os.NewError("NoServiceName"))
-		return
-	}
+    if len(a.Notification.Data) > nr_fields {
+        for k, _ := range a.Notification.Data {
+            if _, ok = kv[k]; !ok {
+                a.Notification.Data[k] = "", false
+            }
+        }
+    }
+
 	if len(a.Subscribers) == 0 {
 		f.logger.Errorf("[PushNotificationFail] Requestid=%s From=%s NoSubscriber", id, addr)
 		f.writer.BadRequest(a, os.NewError("NoSubscriber"))
@@ -279,6 +312,7 @@ func (f *WebFrontEnd) pushNotification(form url.Values, id, addr string) {
 	f.logger.Infof("[PushNotificationRequest] Requestid=%s From=%s Service=%s Subscribers=%s Body=\"%s\"", id, addr, a.Service, subscribers, a.Notification.Data["msg"])
     f.logger.Debugf("[PushNotificationRequest] Data=%v", a.Notification.Data)
 	f.writer.RequestReceived(a)
+    f.strMapPools[PUSH_NOTIFICATION_URL].recycle(kv)
 }
 
 const (
@@ -293,12 +327,30 @@ const (
 func (f *WebFrontEnd) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	id := fmt.Sprintf("%d", time.Nanoseconds())
     r.ParseForm()
-    kv := make(map[string]string, len(r.Form))
+    //kv := make(map[string]string, len(r.Form))
+    var kv map[string]string
+    if pool, ok := f.strMapPools[r.URL.Path]; ok {
+        kv = pool.get(len(r.Form))
+    } else {
+        /* It can be nothing but stop */
+        fmt.Fprintf(w, "id=%s\r\n", id)
+        f.stop()
+        return
+    }
     for k, v := range r.Form {
         if len(v) > 0 {
-            kv[strings.ToLower(k)] = v[0]
+            kv[k] = v[0]
         }
     }
+
+    if len(kv) > len(r.Form) {
+        for k, _ := range kv {
+            if _, ok := r.Form[k]; !ok {
+                kv[k] = "", false
+            }
+        }
+    }
+
     switch (r.URL.Path) {
     case STOP_PROGRAM_URL:
         f.stop()
@@ -311,21 +363,13 @@ func (f *WebFrontEnd) ServeHTTP(w http.ResponseWriter, r *http.Request) {
     case REMOVE_DELIVERY_POINT_FROM_SERVICE_URL:
         go f.removeDeliveryPointFromService(kv, id, r.RemoteAddr)
     case PUSH_NOTIFICATION_URL:
-        go f.pushNotification(r.Form, id, r.RemoteAddr)
+        go f.pushNotification(kv, id, r.RemoteAddr)
     }
 	fmt.Fprintf(w, "id=%s\r\n", id)
 }
 
 func (f *WebFrontEnd) Run() {
 	f.logger.Configf("[Start] %s", f.addr)
-    /*
-	http.HandleFunc(ADD_PUSH_SERVICE_PROVIDER_TO_SERVICE_URL, addPushServiceProvider)
-	http.HandleFunc(REMOVE_PUSH_SERVICE_PROVIDER_TO_SERVICE_URL, removePushServiceProvider)
-	http.HandleFunc(ADD_DELIVERY_POINT_TO_SERVICE_URL, addDeliveryPointToService)
-	http.HandleFunc(REMOVE_DELIVERY_POINT_FROM_SERVICE_URL, removeDeliveryPointFromService)
-	http.HandleFunc(PUSH_NOTIFICATION_URL, pushNotification)
-	http.HandleFunc(STOP_PROGRAM_URL, stopProgram)
-    */
     http.Handle(STOP_PROGRAM_URL, f)
     http.Handle(ADD_PUSH_SERVICE_PROVIDER_TO_SERVICE_URL, f)
     http.Handle(ADD_DELIVERY_POINT_TO_SERVICE_URL, f)
