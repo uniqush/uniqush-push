@@ -20,6 +20,7 @@ package uniqush
 import (
     "os"
     "fmt"
+    "sync"
 )
 
 type PushServiceProviderDeliveryPointPair struct {
@@ -67,13 +68,15 @@ type DatabaseFrontDeskIf interface {
 
 type DatabaseFrontDesk struct {
     db UniqushDatabase
+    /* TODO Fine grained locks */
+    dblock sync.RWMutex
 }
 
 func NewDatabaseFrontDesk(conf *DatabaseConfig) (DatabaseFrontDeskIf, os.Error) {
     var err os.Error
     f := new(DatabaseFrontDesk)
     udb, err := NewUniqushRedisDB(conf)
-    if udb == nil || err != nil{
+    if udb == nil || err != nil {
         return nil, err
     }
     f.db = NewCachedUniqushDatabase(udb, udb, conf)
@@ -94,6 +97,8 @@ func NewDatabaseFrontDeskWithoutCache(conf *DatabaseConfig) (DatabaseFrontDeskIf
 }
 
 func (f *DatabaseFrontDesk)FlushCache() os.Error {
+    f.dblock.Lock()
+    defer f.dblock.Unlock()
     return f.db.FlushCache()
 }
 
@@ -103,6 +108,8 @@ func (f *DatabaseFrontDesk)RemovePushServiceProviderFromService (service string,
         return os.NewError("InvalidPushServiceProvider")
     }
     db := f.db
+    f.dblock.Lock()
+    defer f.dblock.Unlock()
     return db.RemovePushServiceProviderFromService(service, name)
 }
 
@@ -116,6 +123,8 @@ func (f *DatabaseFrontDesk) AddPushServiceProviderToService (service string,
     if len(name) == 0 {
         return os.NewError("InvalidPushServiceProvider")
     }
+    f.dblock.Lock()
+    defer f.dblock.Unlock()
     e := f.db.SetPushServiceProvider(push_service_provider)
     if e != nil {
         return e
@@ -129,6 +138,8 @@ func (f *DatabaseFrontDesk) AddDeliveryPointToService (service string,
     if delivery_point == nil {
         return nil, nil
     }
+    f.dblock.Lock()
+    defer f.dblock.Unlock()
     pspnames, err := f.db.GetPushServiceProvidersByService(service)
     if err != nil {
         return nil, err
@@ -173,6 +184,8 @@ func (f *DatabaseFrontDesk) RemoveDeliveryPointFromService (service string,
     if delivery_point.Name() == "" {
         return os.NewError("InvalidDeliveryPoint")
     }
+    f.dblock.Lock()
+    defer f.dblock.Unlock()
     err := f.db.RemoveDeliveryPointFromServiceSubscriber(service, subscriber, delivery_point.Name())
     if err != nil {
         return err
@@ -191,6 +204,8 @@ func (f *DatabaseFrontDesk) GetPushServiceProviderDeliveryPointPairs (service st
         return nil, nil
     }
     ret := make([]PushServiceProviderDeliveryPointPair, 0, len(dpnames))
+    f.dblock.RLock()
+    defer f.dblock.RUnlock()
 
     for _, d := range dpnames {
         dp, e0 := f.db.GetDeliveryPoint(d)
@@ -228,6 +243,8 @@ func (f *DatabaseFrontDesk) ModifyPushServiceProvider(psp *PushServiceProvider) 
     if len(psp.Name()) == 0 {
         return nil
     }
+    f.dblock.Lock()
+    defer f.dblock.Unlock()
     return f.db.SetPushServiceProvider(psp)
 }
 
@@ -235,5 +252,7 @@ func (f *DatabaseFrontDesk) ModifyDeliveryPoint(dp *DeliveryPoint) os.Error {
     if len(dp.Name()) == 0 {
         return nil
     }
+    f.dblock.Lock()
+    defer f.dblock.Unlock()
     return f.db.SetDeliveryPoint(dp)
 }
