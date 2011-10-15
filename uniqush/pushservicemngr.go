@@ -91,7 +91,7 @@ func (m *PushServiceManager) BuildPushServiceProviderFromMap(kv map[string]strin
     if ptname, ok := kv["pushservicetype"]; ok {
         if pair, ok := m.serviceTypes[ptname]; ok {
             pspif := pair.pspPool.Get()
-            psp := pspif.(*PushServiceProvider)
+            psp = pspif.(*PushServiceProvider)
             pst := pair.pst
             err = pst.BuildPushServiceProviderFromMap(kv, psp)
             psp.objPool = pair.pspPool
