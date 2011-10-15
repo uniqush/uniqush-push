@@ -196,6 +196,8 @@ func (f *DatabaseFrontDesk) RemoveDeliveryPointFromService (service string,
 
 func (f *DatabaseFrontDesk) GetPushServiceProviderDeliveryPointPairs (service string,
                                               subscriber string) ([]PushServiceProviderDeliveryPointPair, os.Error) {
+    f.dblock.RLock()
+    defer f.dblock.RUnlock()
     dpnames, err := f.db.GetDeliveryPointsNameByServiceSubscriber(service, subscriber)
     if err != nil {
         return nil, err
@@ -204,8 +206,6 @@ func (f *DatabaseFrontDesk) GetPushServiceProviderDeliveryPointPairs (service st
         return nil, nil
     }
     ret := make([]PushServiceProviderDeliveryPointPair, 0, len(dpnames))
-    f.dblock.RLock()
-    defer f.dblock.RUnlock()
 
     for _, d := range dpnames {
         dp, e0 := f.db.GetDeliveryPoint(d)
