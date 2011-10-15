@@ -139,7 +139,7 @@ func (m *PushServiceManager) BuildDeliveryPointFromMap(kv map[string]string) (dp
     if ptname, ok := kv["pushservicetype"]; ok {
         if pair, ok := m.serviceTypes[ptname]; ok {
             dpif := pair.dpPool.Get()
-            dp := dpif.(*DeliveryPoint)
+            dp = dpif.(*DeliveryPoint)
             dp.objPool = pair.dpPool
             pst := pair.pst
             err = pst.BuildDeliveryPointFromMap(kv, dp)

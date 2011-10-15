@@ -166,6 +166,8 @@ func (f *WebFrontEnd) addDeliveryPointToService(kv map[string]string,
 	a.RequestSenderAddr = addr
 
     var ok bool
+    var dp *DeliveryPoint
+    var err os.Error
 	if a.Service, ok = kv["service"]; !ok {
 		f.logger.Errorf("[SubscribeFail] Requestid=%s From=%s NoServiceName", id, addr)
 		f.writer.BadRequest(a, os.NewError("NoServiceName"))
@@ -181,7 +183,7 @@ func (f *WebFrontEnd) addDeliveryPointToService(kv map[string]string,
 	a.Subscribers = make([]string, 1)
 	a.Subscribers[0] = subscriber
 
-    dp, err := f.psm.BuildDeliveryPointFromMap(kv)
+    dp, err = f.psm.BuildDeliveryPointFromMap(kv)
     if err != nil {
         f.logger.Errorf("[SubscribeFail] %v", err)
         f.writer.BadRequest(a, err)
@@ -206,6 +208,8 @@ func (f *WebFrontEnd) removeDeliveryPointFromService(kv map[string]string,
 	a.RequestSenderAddr = addr
 
     var ok bool
+    var dp *DeliveryPoint
+    var err os.Error
 	if a.Service, ok = kv["service"]; !ok {
 		f.logger.Errorf("[UnsubscribeFail] Requestid=%s From=%s NoServiceName", id, addr)
 		f.writer.BadRequest(a, os.NewError("NoServiceName"))
@@ -221,7 +225,7 @@ func (f *WebFrontEnd) removeDeliveryPointFromService(kv map[string]string,
 	a.Subscribers = make([]string, 1)
 	a.Subscribers[0] = subscriber
 
-    dp, err := f.psm.BuildDeliveryPointFromMap(kv)
+    dp, err = f.psm.BuildDeliveryPointFromMap(kv)
     if err != nil {
         f.logger.Errorf("[UnsubscribeFail] %v", err)
         f.writer.BadRequest(a, err)
