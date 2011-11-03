@@ -26,7 +26,7 @@ function uninstall
 function update
 {
     echo "Updating Uniqush..."
-    goinstall -u -v github.com/monnand/uniqush/uniqush
+    goinstall -u -v -clean -nuke github.com/monnand/uniqush/uniqush
     compile_and_install
 }
 
