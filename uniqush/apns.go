@@ -259,7 +259,7 @@ func (p *APNSPushService) Push(sp *PushServiceProvider,
 	// transaction id
 	mid := atomic.AddUint32(&(p.nextid), 1)
 	if smid, ok := n.Data["id"]; ok {
-		imid, err := strconv.Atoui(smid)
+		imid, err := strconv.ParseUint(smid, 10, 0)
 		if err == nil {
 			mid = uint32(imid)
 		}
@@ -270,7 +270,7 @@ func (p *APNSPushService) Push(sp *PushServiceProvider,
 	expiry := uint32(time.Now().Second() + 60*60)
 
 	if sexpiry, ok := n.Data["expiry"]; ok {
-		uiexp, err := strconv.Atoui(sexpiry)
+		uiexp, err := strconv.ParseUint(sexpiry, 10, 0)
 		if err == nil {
 			expiry = uint32(uiexp)
 		}
