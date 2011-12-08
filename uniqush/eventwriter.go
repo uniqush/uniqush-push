@@ -18,72 +18,70 @@
 package uniqush
 
 import (
-    "io"
-    "fmt"
-    "os"
+	"fmt"
+	"io"
 )
 
 type EventWriter struct {
-    writer io.Writer
+	writer io.Writer
 }
 
 func NewEventWriter(writer io.Writer) *EventWriter {
-    w := new(EventWriter)
-    w.writer = writer
-    return w
+	w := new(EventWriter)
+	w.writer = writer
+	return w
 }
 
 const (
-    new_request_received string = "{\"event\":\"RequestReceived\", \"request\":\"%s\"}\r\n"
+	new_request_received string = "{\"event\":\"RequestReceived\", \"request\":\"%s\"}\r\n"
 )
 
-func jsonRequest(req *Request) string{
-    ret := fmt.Sprintf("{\"id\":%s, \"action\":%s}", req.ID, req.ActionName())
-    return ret
+func jsonRequest(req *Request) string {
+	ret := fmt.Sprintf("{\"id\":%s, \"action\":%s}", req.ID, req.ActionName())
+	return ret
 }
 
 func (w *EventWriter) RequestReceived(req *Request) {
-    fmt.Fprintf(w.writer, new_request_received, jsonRequest(req))
+	fmt.Fprintf(w.writer, new_request_received, jsonRequest(req))
 }
 
-func (w *EventWriter) BadRequest(req *Request, err os.Error) {
+func (w *EventWriter) BadRequest(req *Request, err error) {
 }
 
 func (w *EventWriter) SubscribeSuccess(req *Request) {
 }
 
-func (w *EventWriter) SubscribeFail(req *Request, err os.Error) {
+func (w *EventWriter) SubscribeFail(req *Request, err error) {
 }
 
 func (w *EventWriter) UnsubscribeSucess(req *Request) {
 }
 
-func (w *EventWriter) UnsubscribeFail(req *Request, err os.Error) {
+func (w *EventWriter) UnsubscribeFail(req *Request, err error) {
 }
 
 func (w *EventWriter) AddPushServiceSuccess(req *Request) {
 }
 
-func (w *EventWriter) AddPushServiceFail(req *Request, err os.Error) {
+func (w *EventWriter) AddPushServiceFail(req *Request, err error) {
 }
 
 func (w *EventWriter) RemovePushServiceSuccess(req *Request) {
 }
 
-func (w *EventWriter) RemovePushServiceFail(req *Request, err os.Error) {
+func (w *EventWriter) RemovePushServiceFail(req *Request, err error) {
 }
 
 func (w *EventWriter) PushSuccess(req *Request,
-                                  subscriber string,
-                                  psp *PushServiceProvider,
-                                  dp *DeliveryPoint,
-                                  id string) {
+	subscriber string,
+	psp *PushServiceProvider,
+	dp *DeliveryPoint,
+	id string) {
 }
 
 func (w *EventWriter) PushFail(req *Request,
-                               subscriber string,
-                               psp *PushServiceProvider,
-                               dp *DeliveryPoint,
-                               err os.Error) {
+	subscriber string,
+	psp *PushServiceProvider,
+	dp *DeliveryPoint,
+	err error) {
 }
-

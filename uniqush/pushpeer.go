@@ -18,90 +18,91 @@
 package uniqush
 
 import (
-    "json"
-    "fmt"
-    "os"
-    "crypto/sha1"
+	"crypto/sha1"
+	"errors"
+	"fmt"
+
+	"encoding/json"
 )
 
 type PushPeer struct {
-    name string
-    pushServiceType PushServiceType
-    VolatileData map[string]string
-    FixedData map[string]string
+	name            string
+	pushServiceType PushServiceType
+	VolatileData    map[string]string
+	FixedData       map[string]string
 }
 
 func (p *PushPeer) PushServiceName() string {
-    return p.pushServiceType.Name()
+	return p.pushServiceType.Name()
 }
 
 func (p *PushPeer) String() string {
-    ret := "push service type: "
-    ret += p.pushServiceType.Name()
-    ret += "\nFixed Data:\n"
+	ret := "push service type: "
+	ret += p.pushServiceType.Name()
+	ret += "\nFixed Data:\n"
 
-    for k, v := range(p.FixedData) {
-        ret += k + ": " + v + "\n"
-    }
-    ret += "\n"
-    return ret
+	for k, v := range p.FixedData {
+		ret += k + ": " + v + "\n"
+	}
+	ret += "\n"
+	return ret
 }
 
 func (p *PushPeer) InitPushPeer() {
-    p.pushServiceType = nil
-    p.VolatileData = make(map[string]string, 2)
-    p.FixedData = make(map[string]string, 2)
+	p.pushServiceType = nil
+	p.VolatileData = make(map[string]string, 2)
+	p.FixedData = make(map[string]string, 2)
 }
 
 func (p *PushPeer) Name() string {
-    if p.name != "" {
-        return p.name
-    }
-    hash := sha1.New()
-    if p.FixedData == nil {
-        return ""
-    }
-    b, _ := json.Marshal(p.FixedData)
-    hash.Write(b)
-    p.name = fmt.Sprintf("%s:%x",
-                         p.pushServiceType.Name(),
-                         hash.Sum())
-    return p.name
+	if p.name != "" {
+		return p.name
+	}
+	hash := sha1.New()
+	if p.FixedData == nil {
+		return ""
+	}
+	b, _ := json.Marshal(p.FixedData)
+	hash.Write(b)
+    h := make([]byte, 0, 64)
+	p.name = fmt.Sprintf("%s:%x",
+		p.pushServiceType.Name(),
+		hash.Sum(h))
+	return p.name
 }
 
 func (p *PushPeer) Marshal() []byte {
-    if p.pushServiceType == nil {
-        return nil
-    }
-    s := make([]map[string]string, 2)
-    s[0] = p.FixedData
-    s[1] = p.VolatileData
-    b, err := json.Marshal(s)
-    if err != nil {
-        return nil
-    }
-    str := p.pushServiceType.Name() + ":" + string(b)
-    return []byte(str)
+	if p.pushServiceType == nil {
+		return nil
+	}
+	s := make([]map[string]string, 2)
+	s[0] = p.FixedData
+	s[1] = p.VolatileData
+	b, err := json.Marshal(s)
+	if err != nil {
+		return nil
+	}
+	str := p.pushServiceType.Name() + ":" + string(b)
+	return []byte(str)
 }
 
-func (p *PushPeer) Unmarshal(value []byte) os.Error {
-    //var f interface{}
+func (p *PushPeer) Unmarshal(value []byte) error {
+	//var f interface{}
 
-    var f []map[string]string
+	var f []map[string]string
 
-    err := json.Unmarshal(value, &f)
-    if err != nil {
-        //fmt.Printf("Error Unmarshal: %v\n", err)
-        return err
-    }
+	err := json.Unmarshal(value, &f)
+	if err != nil {
+		//fmt.Printf("Error Unmarshal: %v\n", err)
+		return err
+	}
 
-    if len(f) < 2 {
-        return os.NewError("Invalid Push Peer")
-    }
+	if len(f) < 2 {
+		return errors.New("Invalid Push Peer")
+	}
 
-    p.FixedData = f[0]
-    p.VolatileData = f[1]
+	p.FixedData = f[0]
+	p.VolatileData = f[1]
 
-    return nil
+	return nil
 }
-

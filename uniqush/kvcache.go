@@ -20,14 +20,11 @@ package uniqush
 // This file defined interfaces for key-value caches
 // and some simple implementations
 
-import (
-    "os"
-    "sync"
-)
+import "sync"
 
 type kvdata struct {
-    key string
-    value interface{}
+	key   string
+	value interface{}
 }
 
 // This should be some database-related struct
@@ -36,38 +33,37 @@ type kvdata struct {
 // in either the Flush() or Add()/Remove() functions.
 // The Cache will always call Flush() after a bunch of Add()/Remove()
 type KeyValueFlusher interface {
-    Set(key string, value interface{}) os.Error
-    Remove(key string, value interface{}) os.Error
-    Flush() os.Error
+	Set(key string, value interface{}) error
+	Remove(key string, value interface{}) error
+	Flush() error
 }
 
 type FakeFlusher struct {
+
 }
 
-func (f *FakeFlusher) Set(key string, v interface{}) os.Error {
-//    fmt.Print("Flush: ", key)
-    return nil
+func (f *FakeFlusher) Set(key string, v interface{}) error {
+	//    fmt.Print("Flush: ", key)
+	return nil
 }
 
-func (f *FakeFlusher) Remove(key string, v interface{}) os.Error {
-//    fmt.Print("Remove: ", key)
-    return nil
+func (f *FakeFlusher) Remove(key string, v interface{}) error {
+	//    fmt.Print("Remove: ", key)
+	return nil
 }
 
-func (f *FakeFlusher) Flush() os.Error {
-    return nil
+func (f *FakeFlusher) Flush() error {
+	return nil
 }
-
 
 type KeyValueCacheIf interface {
-    Show(key string, value interface{}) os.Error
-    Get(key string) (interface{}, os.Error)
-    Modify(key string, value interface{}) os.Error
-    Flush() os.Error
-    Keys() ([]string, os.Error)
-    Remove(key string, value interface{}) os.Error
+	Show(key string, value interface{}) error
+	Get(key string) (interface{}, error)
+	Modify(key string, value interface{}) error
+	Flush() error
+	Keys() ([]string, error)
+	Remove(key string, value interface{}) error
 }
-
 
 // A key-value cache is like a lazy person:
 // You want him to remember something (for example, building his vocabulary)
@@ -135,110 +131,110 @@ type KeyValueCacheIf interface {
 // flush them without even taking a look at the key.
 //
 type KeyValueCache struct {
-    storage KeyValueStorage
-    strategy KeyValueCacheStrategy
-    flusher KeyValueFlusher
-    dirty_list []kvdata
-    rm_list []kvdata
-    rwlock sync.RWMutex
+	storage    KeyValueStorage
+	strategy   KeyValueCacheStrategy
+	flusher    KeyValueFlusher
+	dirty_list []kvdata
+	rm_list    []kvdata
+	rwlock     sync.RWMutex
 }
 
 const (
-    default_dirty_list_size = 50
+	default_dirty_list_size = 50
 )
 
 func NewKeyValueCache(storage KeyValueStorage,
-                      strategy KeyValueCacheStrategy,
-                      flusher KeyValueFlusher) KeyValueCacheIf {
-    c := new(KeyValueCache)
-    c.storage = storage
-    c.strategy = strategy
-    c.dirty_list = make([]kvdata, 0, default_dirty_list_size)
-    c.rm_list = make([]kvdata, 0, 10)
-    c.flusher = flusher
-    return c
+	strategy KeyValueCacheStrategy,
+	flusher KeyValueFlusher) KeyValueCacheIf {
+	c := new(KeyValueCache)
+	c.storage = storage
+	c.strategy = strategy
+	c.dirty_list = make([]kvdata, 0, default_dirty_list_size)
+	c.rm_list = make([]kvdata, 0, 10)
+	c.flusher = flusher
+	return c
 }
 
-func (c *KeyValueCache) remove() os.Error {
-    c.rwlock.Lock()
-    defer c.rwlock.Unlock()
+func (c *KeyValueCache) remove() error {
+	c.rwlock.Lock()
+	defer c.rwlock.Unlock()
 
-    rmlist := c.strategy.GetObsoleted()
-    var err os.Error
-    for _, k := range rmlist {
-        _, err = c.storage.Remove(k)
-        c.strategy.Removed(k)
-        if err != nil {
-            return err
-        }
-    }
-    return nil
+	rmlist := c.strategy.GetObsoleted()
+	var err error
+	for _, k := range rmlist {
+		_, err = c.storage.Remove(k)
+		c.strategy.Removed(k)
+		if err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
-func (c *KeyValueCache) flush() os.Error {
-    c.rwlock.Lock()
-    defer c.rwlock.Unlock()
+func (c *KeyValueCache) flush() error {
+	c.rwlock.Lock()
+	defer c.rwlock.Unlock()
 
-    if need_flush := c.strategy.ShouldFlush(); need_flush {
-        for _, d := range c.dirty_list {
-            err := c.flusher.Set(d.key, d.value)
-            if err != nil {
-                return err
-            }
-        }
+	if need_flush := c.strategy.ShouldFlush(); need_flush {
+		for _, d := range c.dirty_list {
+			err := c.flusher.Set(d.key, d.value)
+			if err != nil {
+				return err
+			}
+		}
 
-        c.dirty_list = make([]kvdata, 0, len(c.dirty_list))
+		c.dirty_list = make([]kvdata, 0, len(c.dirty_list))
 
-        for _, d := range c.rm_list {
-            _, err := c.storage.Remove(d.key)
-            if err != nil {
-                return err
-            }
-            c.strategy.Removed(d.key)
+		for _, d := range c.rm_list {
+			_, err := c.storage.Remove(d.key)
+			if err != nil {
+				return err
+			}
+			c.strategy.Removed(d.key)
 
-            err = c.flusher.Remove(d.key, d.value)
-            if err != nil {
-                return err
-            }
-        }
+			err = c.flusher.Remove(d.key, d.value)
+			if err != nil {
+				return err
+			}
+		}
 
-        c.rm_list = make([]kvdata, 0, len(c.rm_list))
-        c.flusher.Flush()
-        c.strategy.Flushed()
-    }
-    return nil
+		c.rm_list = make([]kvdata, 0, len(c.rm_list))
+		c.flusher.Flush()
+		c.strategy.Flushed()
+	}
+	return nil
 }
 
-func (c *KeyValueCache) Flush() os.Error {
-    c.rwlock.Lock()
-    defer c.rwlock.Unlock()
+func (c *KeyValueCache) Flush() error {
+	c.rwlock.Lock()
+	defer c.rwlock.Unlock()
 
-    for _, d := range c.dirty_list {
-        err := c.flusher.Set(d.key, d.value)
-        if err != nil {
-            return err
-        }
-    }
+	for _, d := range c.dirty_list {
+		err := c.flusher.Set(d.key, d.value)
+		if err != nil {
+			return err
+		}
+	}
 
-    c.dirty_list = make([]kvdata, 0, len(c.dirty_list))
+	c.dirty_list = make([]kvdata, 0, len(c.dirty_list))
 
-    for _, d := range c.rm_list {
-        _, err := c.storage.Remove(d.key)
-        if err != nil {
-            return err
-        }
-        c.strategy.Removed(d.key)
+	for _, d := range c.rm_list {
+		_, err := c.storage.Remove(d.key)
+		if err != nil {
+			return err
+		}
+		c.strategy.Removed(d.key)
 
-        err = c.flusher.Remove(d.key, d.value)
-        if err != nil {
-            return err
-        }
-    }
+		err = c.flusher.Remove(d.key, d.value)
+		if err != nil {
+			return err
+		}
+	}
 
-    c.rm_list = make([]kvdata, 0, len(c.rm_list))
-    c.flusher.Flush()
-    c.strategy.Flushed()
-    return nil
+	c.rm_list = make([]kvdata, 0, len(c.rm_list))
+	c.flusher.Flush()
+	c.strategy.Flushed()
+	return nil
 }
 
 // The caller could Show a key value pair to a cache,
@@ -247,99 +243,98 @@ func (c *KeyValueCache) Flush() os.Error {
 // Note: if the key is already in the cache, Show() will not increase
 // the cache hit rate; If the key is not in the cache, it will call
 // Added() to strategy
-func (c *KeyValueCache) Show(key string, v interface{}) os.Error {
-    var err os.Error
-    if should_add := c.strategy.ShouldAdd(key); should_add {
-        c.rwlock.Lock()
-        oldv, err := c.storage.Set(key, v)
-        if oldv == nil {
-            c.strategy.Added(key)
-        }
-        c.rwlock.Unlock()
+func (c *KeyValueCache) Show(key string, v interface{}) error {
+	var err error
+	if should_add := c.strategy.ShouldAdd(key); should_add {
+		c.rwlock.Lock()
+		oldv, err := c.storage.Set(key, v)
+		if oldv == nil {
+			c.strategy.Added(key)
+		}
+		c.rwlock.Unlock()
 
-        if err != nil {
-            return err
-        }
+		if err != nil {
+			return err
+		}
 
-    }
-    err = c.remove()
-    err = c.flush()
-    if err != nil {
-        return err
-    }
-    return nil
+	}
+	err = c.remove()
+	err = c.flush()
+	if err != nil {
+		return err
+	}
+	return nil
 }
 
-func (c *KeyValueCache) Modify(key string, v interface{}) os.Error {
-    c.rwlock.Lock()
-    defer c.rwlock.Unlock()
+func (c *KeyValueCache) Modify(key string, v interface{}) error {
+	c.rwlock.Lock()
+	defer c.rwlock.Unlock()
 
-    // First, this data is dirty
-    c.dirty_list = append(c.dirty_list, kvdata{key, v})
-    c.strategy.Dirty(key)
+	// First, this data is dirty
+	c.dirty_list = append(c.dirty_list, kvdata{key, v})
+	c.strategy.Dirty(key)
 
-    oldv, err := c.storage.Get(key)
-    if err != nil {
-        v = nil
-        c.rwlock.RUnlock()
-        return err
-    }
+	oldv, err := c.storage.Get(key)
+	if err != nil {
+		v = nil
+		c.rwlock.RUnlock()
+		return err
+	}
 
-    if oldv == nil {
-        // This data is not in cache. So a cache-miss occur
-        // We need to know if we should add this value into cache
-        c.strategy.Miss(key)
-        if should_add := c.strategy.ShouldAdd(key); should_add {
-            _, err := c.storage.Set(key, v)
-            c.strategy.Added(key)
-            return err
-        }
-        return nil
-    }
-    // Cache hit. We need to update to the latest value
-    c.strategy.Hit(key)
-    _, err = c.storage.Set(key, v)
-    return nil
+	if oldv == nil {
+		// This data is not in cache. So a cache-miss occur
+		// We need to know if we should add this value into cache
+		c.strategy.Miss(key)
+		if should_add := c.strategy.ShouldAdd(key); should_add {
+			_, err := c.storage.Set(key, v)
+			c.strategy.Added(key)
+			return err
+		}
+		return nil
+	}
+	// Cache hit. We need to update to the latest value
+	c.strategy.Hit(key)
+	_, err = c.storage.Set(key, v)
+	return nil
 }
 
-func (c *KeyValueCache) Get(key string) (v interface{}, err os.Error) {
-    c.rwlock.RLock()
-    v, err = c.storage.Get(key)
-    if err != nil {
-        v = nil
-        c.rwlock.RUnlock()
-        return
-    }
+func (c *KeyValueCache) Get(key string) (v interface{}, err error) {
+	c.rwlock.RLock()
+	v, err = c.storage.Get(key)
+	if err != nil {
+		v = nil
+		c.rwlock.RUnlock()
+		return
+	}
 
-    if v == nil {
-        // Cache miss
-        c.strategy.Miss(key)
-    } else {
-        // Cache hit
-        c.strategy.Hit(key)
-    }
-    c.rwlock.RUnlock()
+	if v == nil {
+		// Cache miss
+		c.strategy.Miss(key)
+	} else {
+		// Cache hit
+		c.strategy.Hit(key)
+	}
+	c.rwlock.RUnlock()
 
-    err = c.remove()
-    err = c.flush()
-    return
+	err = c.remove()
+	err = c.flush()
+	return
 }
 
 // Remove records the key need to be removed. And perform the
 // actual removal in next flush
-func (c *KeyValueCache) Remove(key string, value interface{}) (err os.Error) {
-    c.rwlock.Lock()
-    c.rm_list = append(c.rm_list, kvdata{key, value})
-    c.strategy.Dirty(key)
-    c.rwlock.Unlock()
+func (c *KeyValueCache) Remove(key string, value interface{}) (err error) {
+	c.rwlock.Lock()
+	c.rm_list = append(c.rm_list, kvdata{key, value})
+	c.strategy.Dirty(key)
+	c.rwlock.Unlock()
 
-    err = c.remove()
-    err = c.flush()
-    return
+	err = c.remove()
+	err = c.flush()
+	return
 }
 
-func (c *KeyValueCache) Keys() (keys []string, err os.Error) {
-    keys, err = c.storage.Keys()
-    return
+func (c *KeyValueCache) Keys() (keys []string, err error) {
+	keys, err = c.storage.Keys()
+	return
 }
-

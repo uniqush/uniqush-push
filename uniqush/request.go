@@ -61,7 +61,7 @@ func init() {
 }
 
 func (req *Request) PunchTimestamp() {
-    req.Timestamp = time.Nanoseconds()
+    req.Timestamp = int64(time.Now().Nanosecond())
 }
 
 func (req *Request) ValidAction() bool {

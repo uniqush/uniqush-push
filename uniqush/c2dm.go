@@ -18,12 +18,13 @@
 package uniqush
 
 import (
-    "os"
-    "url"
-    "http"
-    "strings"
-    "io/ioutil"
-    "fmt"
+	"errors"
+
+	"fmt"
+	"io/ioutil"
+	"net/http"
+	"net/url"
+	"strings"
 )
 
 /* FIXME
@@ -49,100 +50,101 @@ const (
 )
 
 func init() {
-    psm := GetPushServiceManager()
-    psm.RegisterPushServiceType(NewC2DMPushService())
+	psm := GetPushServiceManager()
+	psm.RegisterPushServiceType(NewC2DMPushService())
 }
 
 type C2DMPushService struct {
+
 }
 
 func NewC2DMPushService() *C2DMPushService {
-    ret := new(C2DMPushService)
-    return ret
+	ret := new(C2DMPushService)
+	return ret
 }
 
 func (p *C2DMPushService) SetAsyncFailureHandler(pf PushFailureHandler) {
 }
 
-func (p *C2DMPushService) Finalize() { }
+func (p *C2DMPushService) Finalize() {}
 
 func (p *C2DMPushService) BuildPushServiceProviderFromMap(kv map[string]string,
-                                                          psp *PushServiceProvider) os.Error {
-    if service, ok := kv["service"]; ok {
-        psp.FixedData["service"] = service
-    } else {
-        return os.NewError("NoService")
-    }
-    if senderid, ok := kv["senderid"]; ok {
-        psp.FixedData["senderid"] = senderid
-    } else {
-        return os.NewError("NoSenderId")
-    }
+	psp *PushServiceProvider) error {
+	if service, ok := kv["service"]; ok {
+		psp.FixedData["service"] = service
+	} else {
+		return errors.New("NoService")
+	}
+	if senderid, ok := kv["senderid"]; ok {
+		psp.FixedData["senderid"] = senderid
+	} else {
+		return errors.New("NoSenderId")
+	}
 
-    if authtoken, ok := kv["authtoken"]; ok {
-        psp.VolatileData["authtoken"] = authtoken
-    } else {
-        return os.NewError("NoAuthToken")
-    }
+	if authtoken, ok := kv["authtoken"]; ok {
+		psp.VolatileData["authtoken"] = authtoken
+	} else {
+		return errors.New("NoAuthToken")
+	}
 
-    return nil
+	return nil
 }
 
 func (p *C2DMPushService) BuildDeliveryPointFromMap(kv map[string]string,
-                                                    dp *DeliveryPoint) os.Error {
-    if service, ok := kv["service"]; ok {
-        dp.FixedData["service"] = service
-    } else {
-        return os.NewError("NoService")
-    }
-    if sub, ok := kv["subscriber"]; ok {
-        dp.FixedData["subscriber"] = sub
-    } else {
-        return os.NewError("NoSubscriber")
-    }
-    if account, ok := kv["account"]; ok {
-        dp.FixedData["account"] = account
-    } else {
-        return os.NewError("NoGoogleAccount")
-    }
+	dp *DeliveryPoint) error {
+	if service, ok := kv["service"]; ok {
+		dp.FixedData["service"] = service
+	} else {
+		return errors.New("NoService")
+	}
+	if sub, ok := kv["subscriber"]; ok {
+		dp.FixedData["subscriber"] = sub
+	} else {
+		return errors.New("NoSubscriber")
+	}
+	if account, ok := kv["account"]; ok {
+		dp.FixedData["account"] = account
+	} else {
+		return errors.New("NoGoogleAccount")
+	}
 
-    if regid, ok := kv["regid"]; ok {
-        dp.FixedData["regid"] = regid
-    } else {
-        return os.NewError("NoRegId")
-    }
+	if regid, ok := kv["regid"]; ok {
+		dp.FixedData["regid"] = regid
+	} else {
+		return errors.New("NoRegId")
+	}
 
-    return nil
+	return nil
 }
 
 func (p *C2DMPushService) Name() string {
-    return "c2dm"
+	return "c2dm"
 }
 
 func (p *C2DMPushService) Push(psp *PushServiceProvider,
-                        dp *DeliveryPoint,
-                        n *Notification) (string, os.Error) {
-    if psp.PushServiceName() != dp.PushServiceName() ||
-        psp.PushServiceName() != p.Name() {
-            return "", NewPushIncompatibleError(psp, dp, p)
-    }
+	dp *DeliveryPoint,
+	n *Notification) (string, error) {
+	if psp.PushServiceName() != dp.PushServiceName() ||
+		psp.PushServiceName() != p.Name() {
+		return "", NewPushIncompatibleError(psp, dp, p)
+	}
 
 	msg := n.Data
 	data := url.Values{}
 	data.Set("registration_id", dp.FixedData["regid"])
-    if mid, ok := msg["id"]; ok {
-        data.Set("collapse_key", mid)
-    } else {
-        data.Set("collapse_key", msg["msg"])
-    }
+	if mid, ok := msg["id"]; ok {
+		data.Set("collapse_key", mid)
+	} else {
+		data.Set("collapse_key", msg["msg"])
+	}
 
 	for k, v := range msg {
-        switch (k) {
-        case "id":
-            continue
-        default:
-            data.Set("data."+k, v)
-        }
+		switch k {
+		case "id":
+			continue
+		default:
+			data.Set("data."+k, v)
+		}
 	}
 
 	req, err := http.NewRequest("POST", serviceURL, strings.NewReader(data.Encode()))
@@ -150,7 +152,7 @@ func (p *C2DMPushService) Push(psp *PushServiceProvider,
 		return "", err
 	}
 
-    authtoken := psp.VolatileData["authtoken"]
+	authtoken := psp.VolatileData["authtoken"]
 
 	req.Header.Set("Authorization", "GoogleLogin auth="+authtoken)
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
@@ -160,8 +162,8 @@ func (p *C2DMPushService) Push(psp *PushServiceProvider,
 	}
 	refreshpsp := false
 	new_auth_token := r.Header.Get("Update-Client-Auth")
-	if new_auth_token != "" &&  authtoken != new_auth_token {
-        psp.VolatileData["authtoken"] = new_auth_token
+	if new_auth_token != "" && authtoken != new_auth_token {
+		psp.VolatileData["authtoken"] = new_auth_token
 		refreshpsp = true
 	}
 
@@ -169,7 +171,7 @@ func (p *C2DMPushService) Push(psp *PushServiceProvider,
 	case 503:
 		/* TODO extract the retry after field */
 		after := -1
-		var reterr os.Error
+		var reterr error
 		reterr = NewRetryError(after)
 		if refreshpsp {
 			re := NewRefreshDataError(psp, nil, reterr)
@@ -177,7 +179,7 @@ func (p *C2DMPushService) Push(psp *PushServiceProvider,
 		}
 		return "", reterr
 	case 401:
-		return "", NewInvalidPushServiceProviderError(psp, os.NewError("Invalid Auth Token"))
+		return "", NewInvalidPushServiceProviderError(psp, errors.New("Invalid Auth Token"))
 	}
 
 	contents, e30 := ioutil.ReadAll(r.Body)
@@ -193,16 +195,16 @@ func (p *C2DMPushService) Push(psp *PushServiceProvider,
 	msgid = strings.Replace(msgid, "\r", "", -1)
 	msgid = strings.Replace(msgid, "\n", "", -1)
 	if msgid[:3] == "id=" {
-        retid := fmt.Sprintf("c2dm:%s-%s", psp.Name(), msgid[3:])
+		retid := fmt.Sprintf("c2dm:%s-%s", psp.Name(), msgid[3:])
 		if refreshpsp {
 			re := NewRefreshDataError(psp, nil, nil)
 			return retid, re
 		}
-        return retid, nil
+		return retid, nil
 	}
 	switch msgid[6:] {
 	case "QuotaExceeded":
-		var reterr os.Error
+		var reterr error
 		reterr = NewQuotaExceededError(psp)
 		if refreshpsp {
 			re := NewRefreshDataError(psp, nil, reterr)
@@ -210,15 +212,15 @@ func (p *C2DMPushService) Push(psp *PushServiceProvider,
 		}
 		return "", reterr
 	case "InvalidRegistration":
-		var reterr os.Error
-		reterr = NewInvalidDeliveryPointError(psp, dp, os.NewError("InvalidRegistration"))
+		var reterr error
+		reterr = NewInvalidDeliveryPointError(psp, dp, errors.New("InvalidRegistration"))
 		if refreshpsp {
 			re := NewRefreshDataError(psp, nil, reterr)
 			reterr = re
 		}
 		return "", reterr
 	case "NotRegistered":
-		var reterr os.Error
+		var reterr error
 		reterr = NewUnregisteredError(psp, dp)
 		if refreshpsp {
 			re := NewRefreshDataError(psp, nil, reterr)
@@ -226,7 +228,7 @@ func (p *C2DMPushService) Push(psp *PushServiceProvider,
 		}
 		return "", reterr
 	case "MessageTooBig":
-		var reterr os.Error
+		var reterr error
 		reterr = NewNotificationTooBigError(psp, dp, n)
 		if refreshpsp {
 			re := NewRefreshDataError(psp, nil, reterr)
@@ -235,9 +237,8 @@ func (p *C2DMPushService) Push(psp *PushServiceProvider,
 		return "", reterr
 	}
 	if refreshpsp {
-		re := NewRefreshDataError(psp, nil, os.NewError("Unknown Error: "+msgid[6:]))
+		re := NewRefreshDataError(psp, nil, errors.New("Unknown Error: "+msgid[6:]))
 		return "", re
 	}
-	return "", os.NewError("Unknown Error: " + msgid[6:])
+	return "", errors.New("Unknown Error: " + msgid[6:])
 }
-
