@@ -18,7 +18,8 @@
 package uniqush
 
 import (
-	"goconf.googlecode.com/hg"
+	//"goconf.googlecode.com/hg"
+	"monnand-goconf.googlecode.com/hg"
 	"io"
 	"os"
 	"strings"
