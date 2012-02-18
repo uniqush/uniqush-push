@@ -18,91 +18,90 @@
 package uniqush
 
 type Notification struct {
-    /* We don't want too complicated
-    Message string
-    Badge int
-    Image string
-    Sound string
+	/* We don't want too complicated
+	   Message string
+	   Badge int
+	   Image string
+	   Sound string
 
-    // Defined but not used now
-    IsLoc bool
-    Delay bool
-    */
-    Data map[string]string
-    pool *notificationPool
+	   // Defined but not used now
+	   IsLoc bool
+	   Delay bool
+	*/
+	Data map[string]string
+	pool *notificationPool
 }
 
 type notificationPool struct {
-    pools []*ObjectMemoryPool
-    maxNrPools int
-    minMapLen int
+	pools      []*ObjectMemoryPool
+	maxNrPools int
+	minMapLen  int
 }
 
 func newNotificationPool(n, l int) *notificationPool {
-    ret := new(notificationPool)
-    if n <= 0 {
-        n = 16
-    }
-    if l <= 0 {
-        l = 2
-    }
-    ret.maxNrPools = n
-    ret.minMapLen = l
-    ret.pools = make([]*ObjectMemoryPool, ret.maxNrPools)
+	ret := new(notificationPool)
+	if n <= 0 {
+		n = 16
+	}
+	if l <= 0 {
+		l = 2
+	}
+	ret.maxNrPools = n
+	ret.minMapLen = l
+	ret.pools = make([]*ObjectMemoryPool, ret.maxNrPools)
 
-    for i := 0; i < n; i++ {
-        ret.pools[i] = NewObjectMemoryPool(1024, newEmptyNotif)
-    }
+	for i := 0; i < n; i++ {
+		ret.pools[i] = NewObjectMemoryPool(1024, newEmptyNotif)
+	}
 
-    return ret
+	return ret
 }
 
 func (p *notificationPool) get(n int) *Notification {
-    if n <= 0 {
-        return NewEmptyNotification()
-    }
-    if n < p.minMapLen ||
-        n >= p.minMapLen + p.maxNrPools {
-        return NewEmptyNotification()
-    }
-    mapif := p.pools[n - p.minMapLen].Get()
-    ret := mapif.(*Notification)
-    ret.pool = p
-    return ret
+	if n <= 0 {
+		return NewEmptyNotification()
+	}
+	if n < p.minMapLen ||
+		n >= p.minMapLen+p.maxNrPools {
+		return NewEmptyNotification()
+	}
+	mapif := p.pools[n-p.minMapLen].Get()
+	ret := mapif.(*Notification)
+	ret.pool = p
+	return ret
 }
 
 func (p *notificationPool) recycle(m *Notification) {
-    n := len(m.Data)
-    if n < p.minMapLen ||
-        n >= p.minMapLen + p.maxNrPools {
-        return
-    }
-    p.pools[n - p.minMapLen].Recycle(m)
+	n := len(m.Data)
+	if n < p.minMapLen ||
+		n >= p.minMapLen+p.maxNrPools {
+		return
+	}
+	p.pools[n-p.minMapLen].Recycle(m)
 }
 
 func newEmptyNotif() interface{} {
-    n := new(Notification)
-    n.Data = make(map[string]string, 10)
-    return n
+	n := new(Notification)
+	n.Data = make(map[string]string, 10)
+	return n
 }
 
 func NewEmptyNotification() *Notification {
-    n := new(Notification)
-    n.Data = make(map[string]string, 10)
-    return n
+	n := new(Notification)
+	n.Data = make(map[string]string, 10)
+	return n
 }
 
 func (n *Notification) IsEmpty() bool {
-    if len(n.Data) == 0 {
-        return true
-    }
-    return false
+	if len(n.Data) == 0 {
+		return true
+	}
+	return false
 }
 
 func (n *Notification) Recycle() {
-    if n.pool == nil {
-        return
-    }
-    n.pool.recycle(n)
+	if n.pool == nil {
+		return
+	}
+	n.pool.recycle(n)
 }
-

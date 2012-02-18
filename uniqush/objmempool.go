@@ -18,37 +18,36 @@
 package uniqush
 
 type ObjectMemoryPool struct {
-    objs []interface{}
-    maxnr int
-    f func () interface{}
+	objs  []interface{}
+	maxnr int
+	f     func() interface{}
 }
 
-func NewObjectMemoryPool(n int, f func()interface{}) *ObjectMemoryPool {
-    pool := new(ObjectMemoryPool)
-    if n <= 1 {
-        pool.maxnr = 0x0FFFFFFF
-        pool.objs = make([]interface{}, 0, 1024)
-    } else {
-        pool.maxnr = n
-        pool.objs = make([]interface{}, 0, n)
-    }
-    pool.f = f
-    return pool
+func NewObjectMemoryPool(n int, f func() interface{}) *ObjectMemoryPool {
+	pool := new(ObjectMemoryPool)
+	if n <= 1 {
+		pool.maxnr = 0x0FFFFFFF
+		pool.objs = make([]interface{}, 0, 1024)
+	} else {
+		pool.maxnr = n
+		pool.objs = make([]interface{}, 0, n)
+	}
+	pool.f = f
+	return pool
 }
 
 func (p *ObjectMemoryPool) Get() interface{} {
-    if len(p.objs) == 0 {
-        return p.f()
-    }
-    ret := p.objs[len(p.objs) - 1]
-    p.objs = p.objs[:len(p.objs) - 1]
-    return ret
+	if len(p.objs) == 0 {
+		return p.f()
+	}
+	ret := p.objs[len(p.objs)-1]
+	p.objs = p.objs[:len(p.objs)-1]
+	return ret
 }
 
 func (p *ObjectMemoryPool) Recycle(o interface{}) {
-    if len(p.objs) >= p.maxnr {
-        return
-    }
-    p.objs = append(p.objs, o)
+	if len(p.objs) >= p.maxnr {
+		return
+	}
+	p.objs = append(p.objs, o)
 }
-

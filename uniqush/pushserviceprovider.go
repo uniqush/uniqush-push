@@ -23,19 +23,18 @@ import (
 )
 
 type PushServiceProvider struct {
-    PushPeer
-    objPool *ObjectMemoryPool
+	PushPeer
+	objPool *ObjectMemoryPool
 }
 
 func NewEmptyPushServiceProvider() *PushServiceProvider {
-    psp := new(PushServiceProvider)
-    psp.InitPushPeer()
-    return psp
+	psp := new(PushServiceProvider)
+	psp.InitPushPeer()
+	return psp
 }
 
 func (psp *PushServiceProvider) recycle() {
-    if psp.objPool != nil {
-        psp.objPool.Recycle(psp)
-    }
+	if psp.objPool != nil {
+		psp.objPool.Recycle(psp)
+	}
 }
-

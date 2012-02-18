@@ -80,7 +80,6 @@ func (s *PeriodFlushStrategy) Flushed() {
 }
 
 type AlwaysInCacheStrategy struct {
-
 }
 
 func (s *AlwaysInCacheStrategy) Hit(string) {

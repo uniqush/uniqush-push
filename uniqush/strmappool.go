@@ -18,53 +18,52 @@
 package uniqush
 
 type stringMapPool struct {
-    pools []*ObjectMemoryPool
-    maxNrStringMapPools int
-    minMapLen int
+	pools               []*ObjectMemoryPool
+	maxNrStringMapPools int
+	minMapLen           int
 }
 
 func newStringMap() interface{} {
-    return make(map[string]string, 8)
+	return make(map[string]string, 8)
 }
 
 func newStringMapPool(n int, l int) *stringMapPool {
-    ret := new(stringMapPool)
-    if n <= 0 {
-        n = 16
-    }
-    if l <= 0 {
-        l = 2
-    }
-    ret.maxNrStringMapPools = n
-    ret.minMapLen = l
-    ret.pools = make([]*ObjectMemoryPool, ret.maxNrStringMapPools)
+	ret := new(stringMapPool)
+	if n <= 0 {
+		n = 16
+	}
+	if l <= 0 {
+		l = 2
+	}
+	ret.maxNrStringMapPools = n
+	ret.minMapLen = l
+	ret.pools = make([]*ObjectMemoryPool, ret.maxNrStringMapPools)
 
-    for i := 0; i < n; i++ {
-        ret.pools[i] = NewObjectMemoryPool(1024, newStringMap)
-    }
+	for i := 0; i < n; i++ {
+		ret.pools[i] = NewObjectMemoryPool(1024, newStringMap)
+	}
 
-    return ret
+	return ret
 }
 
 func (p *stringMapPool) get(n int) map[string]string {
-    if n <= 0 {
-        return make(map[string]string)
-    }
-    if n < p.minMapLen ||
-        n >= p.minMapLen + p.maxNrStringMapPools {
-        return make(map[string]string, n)
-    }
-    mapif := p.pools[n - p.minMapLen].Get()
-    ret := mapif.(map[string]string)
-    return ret
+	if n <= 0 {
+		return make(map[string]string)
+	}
+	if n < p.minMapLen ||
+		n >= p.minMapLen+p.maxNrStringMapPools {
+		return make(map[string]string, n)
+	}
+	mapif := p.pools[n-p.minMapLen].Get()
+	ret := mapif.(map[string]string)
+	return ret
 }
 
 func (p *stringMapPool) recycle(m map[string]string) {
-    n := len(m)
-    if n < p.minMapLen ||
-        n >= p.minMapLen + p.maxNrStringMapPools {
-        return
-    }
-    p.pools[n - p.minMapLen].Recycle(m)
+	n := len(m)
+	if n < p.minMapLen ||
+		n >= p.minMapLen+p.maxNrStringMapPools {
+		return
+	}
+	p.pools[n-p.minMapLen].Recycle(m)
 }
-

@@ -18,7 +18,7 @@
 package uniqush
 
 import (
-    "time"
+	"time"
 )
 
 /*
@@ -38,12 +38,12 @@ type PushProcessor struct {
 	databaseSetter
 	max_nr_gorountines int
 	max_nr_retry       int
-    /*
-	q                  *taskq.TaskQueue
-	qch                chan taskq.Task
-    */
-	backendch          chan<- *Request
-	psm                *PushServiceManager
+	/*
+		q                  *taskq.TaskQueue
+		qch                chan taskq.Task
+	*/
+	backendch chan<- *Request
+	psm       *PushServiceManager
 }
 
 const (
@@ -79,29 +79,29 @@ func (p *PushProcessor) retryRequest(req *Request,
 		newreq.backoffTime = req.backoffTime << 1
 	}
 
-    waitTime := newreq.backoffTime
-    if retryAfter > 0 {
-        waitTime = int64(retryAfter)
-    }
-
-    duration := time.Duration(waitTime * 1E9)
-    <-time.After(duration)
-    p.backendch <- newreq
-
-    /*
-	task := new(retryPushTask)
-	task.backendch = p.backendch
-	task.req = newreq
-
-	if retryAfter <= 0 {
-		task.After(newreq.backoffTime)
-	} else {
-		task.SetExecTime(int64(retryAfter) * 1E9)
+	waitTime := newreq.backoffTime
+	if retryAfter > 0 {
+		waitTime = int64(retryAfter)
 	}
 
-	t.backendch <- t.req
-	p.qch <- task
-    */
+	duration := time.Duration(waitTime * 1E9)
+	<-time.After(duration)
+	p.backendch <- newreq
+
+	/*
+		task := new(retryPushTask)
+		task.backendch = p.backendch
+		task.req = newreq
+
+		if retryAfter <= 0 {
+			task.After(newreq.backoffTime)
+		} else {
+			task.SetExecTime(int64(retryAfter) * 1E9)
+		}
+
+		t.backendch <- t.req
+		p.qch <- task
+	*/
 }
 
 func NewPushProcessor(logger *Logger,
@@ -115,11 +115,11 @@ func NewPushProcessor(logger *Logger,
 	ret.SetDatabase(dbfront)
 	ret.max_nr_gorountines = 1024
 	ret.max_nr_retry = 3
-    /*
-	ret.qch = make(chan taskq.Task)
-	ret.q = taskq.NewTaskQueue(ret.qch)
-	go ret.q.Run()
-    */
+	/*
+		ret.qch = make(chan taskq.Task)
+		ret.q = taskq.NewTaskQueue(ret.qch)
+		go ret.q.Run()
+	*/
 	ret.backendch = backendch
 
 	return ret

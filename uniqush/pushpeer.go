@@ -64,7 +64,7 @@ func (p *PushPeer) Name() string {
 	}
 	b, _ := json.Marshal(p.FixedData)
 	hash.Write(b)
-    h := make([]byte, 0, 64)
+	h := make([]byte, 0, 64)
 	p.name = fmt.Sprintf("%s:%x",
 		p.pushServiceType.Name(),
 		hash.Sum(h))

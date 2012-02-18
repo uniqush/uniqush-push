@@ -18,22 +18,21 @@
 package main
 
 import (
-    "github.com/monnand/uniqush/uniqush"
-    "os"
-    "fmt"
-    "flag"
+	"flag"
+	"fmt"
+	"github.com/monnand/uniqush/uniqush"
+	"os"
 )
 
 var conf = flag.String("config", "/etc/uniqush/uniqush.conf", "Config file path")
 
 func main() {
-    //conf := "/etc/uniqush/uniqush.conf"
-    flag.Parse()
-    unisys, err := uniqush.LoadUniqushSystem(*conf)
-    if err != nil {
-        fmt.Fprintf(os.Stderr, "Fatal Error: %v\n", err)
-        os.Exit(-1)
-    }
-    unisys.Run()
+	//conf := "/etc/uniqush/uniqush.conf"
+	flag.Parse()
+	unisys, err := uniqush.LoadUniqushSystem(*conf)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Fatal Error: %v\n", err)
+		os.Exit(-1)
+	}
+	unisys.Run()
 }
-

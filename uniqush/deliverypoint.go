@@ -17,23 +17,21 @@
 
 package uniqush
 
-import (
-)
+import ()
 
 type DeliveryPoint struct {
-    PushPeer
-    objPool *ObjectMemoryPool
+	PushPeer
+	objPool *ObjectMemoryPool
 }
 
 func NewEmptyDeliveryPoint() *DeliveryPoint {
-    ret := new(DeliveryPoint)
-    ret.InitPushPeer()
-    return ret
+	ret := new(DeliveryPoint)
+	ret.InitPushPeer()
+	return ret
 }
 
 func (dp *DeliveryPoint) recycle() {
-    if dp.objPool != nil {
-        dp.objPool.Recycle(dp)
-    }
+	if dp.objPool != nil {
+		dp.objPool.Recycle(dp)
+	}
 }
-

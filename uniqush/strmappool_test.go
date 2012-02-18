@@ -18,20 +18,18 @@
 package uniqush
 
 import (
-    "testing"
+	"testing"
 )
 
 func TestStrMapPool(t *testing.T) {
-    p := newStringMapPool(10, 2)
-    objs := make([]map[string]string, 15)
+	p := newStringMapPool(10, 2)
+	objs := make([]map[string]string, 15)
 
-    for i := 0; i < 15; i++ {
-        objs[i] = p.get(i)
-    }
+	for i := 0; i < 15; i++ {
+		objs[i] = p.get(i)
+	}
 
-    for _, o := range objs {
-        p.recycle(o)
-    }
+	for _, o := range objs {
+		p.recycle(o)
+	}
 }
-
-

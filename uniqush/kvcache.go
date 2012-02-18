@@ -39,7 +39,6 @@ type KeyValueFlusher interface {
 }
 
 type FakeFlusher struct {
-
 }
 
 func (f *FakeFlusher) Set(key string, v interface{}) error {

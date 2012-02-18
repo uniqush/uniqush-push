@@ -18,13 +18,12 @@
 package uniqush
 
 type UniqushFrontEnd interface {
-    SetChannel(ch chan<- *Request)
-    SetLogger(logger *Logger)
+	SetChannel(ch chan<- *Request)
+	SetLogger(logger *Logger)
 
-    // writer will be used to report real-time event
-    SetEventWriter(writer *EventWriter)
+	// writer will be used to report real-time event
+	SetEventWriter(writer *EventWriter)
 
-    SetStopChannel(ch chan<- bool)
-    Run()
+	SetStopChannel(ch chan<- bool)
+	Run()
 }
-

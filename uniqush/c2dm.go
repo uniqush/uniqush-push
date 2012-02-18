@@ -55,7 +55,6 @@ func init() {
 }
 
 type C2DMPushService struct {
-
 }
 
 func NewC2DMPushService() *C2DMPushService {

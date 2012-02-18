@@ -2,7 +2,7 @@ include $(GOROOT)/src/Make.inc
 
 TARG=uniqushd
 GOFILES=\
-	uniqush.go\
+	uniqushd.go\
 
 include $(GOROOT)/src/Make.cmd
 
