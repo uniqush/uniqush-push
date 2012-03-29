@@ -11,4 +11,5 @@ platform.
 - [This story](http://uniqush.org/wiki/UniqushStory) may help you to understand
 the basic idea of *uniqush*.
 - [Documentation](http://uniqush.org/wiki/UniqushDocumentIndex)
+- [Uniqush Blog](http://blog.uniqush.org) announces the latest news about uniqush.
 
