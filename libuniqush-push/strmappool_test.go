@@ -15,23 +15,21 @@
  *
  */
 
-package main
+package libuniqushpush
 
 import (
-	"flag"
-	"fmt"
-	"github.com/monnand/uniqush/libuniqush-push"
-	"os"
+	"testing"
 )
 
-var conf = flag.String("config", "/etc/uniqush/uniqush-push.conf", "Config file path")
+func TestStrMapPool(t *testing.T) {
+	p := newStringMapPool(10, 2)
+	objs := make([]map[string]string, 15)
 
-func main() {
-	flag.Parse()
-	unisys, err := libuniqushpush.LoadUniqushSystem(*conf)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "Fatal Error: %v\n", err)
-		os.Exit(-1)
+	for i := 0; i < 15; i++ {
+		objs[i] = p.get(i)
 	}
-	unisys.Run()
+
+	for _, o := range objs {
+		p.recycle(o)
+	}
 }

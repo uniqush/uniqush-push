@@ -1,0 +1,214 @@
+/*
+ * Copyright 2011 Nan Deng
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ *
+ */
+
+package libuniqushpush
+
+import (
+	"container/list"
+	"time"
+	//"fmt"
+)
+
+// This interface defines bahaviors of a cache
+// Like: if we should store this data; if we need to remove some data
+type KeyValueCacheStrategy interface {
+	// This should be called on cache hit.
+	Hit(key string)
+
+	// This should be called by cache when a key is inserted
+	Added(key string)
+
+	// This should be called when a key is removed
+	Removed(key string)
+
+	// This should be called on cache miss.
+	Miss(key string)
+
+	// This should return all keys which need to be removed
+	GetObsoleted() []string
+
+	// This should tell the cache if add the key into cache
+	ShouldAdd(key string) bool
+
+	// Nothing fancy
+	ShouldFlush() bool
+
+	// Called when things get dirty
+	Dirty(key string)
+
+	// All dirty things has become clear
+	Flushed()
+}
+
+type PeriodFlushStrategy struct {
+	last_flush_time int64
+	period          int64
+	min_dirty       int
+	nr_dirty        int
+}
+
+func (s *PeriodFlushStrategy) ShouldFlush() bool {
+	current_time := int64(time.Now().Second())
+	if current_time-s.last_flush_time >= s.period && s.nr_dirty >= s.min_dirty {
+		return true
+	}
+	return false
+}
+
+func (s *PeriodFlushStrategy) Dirty(key string) {
+	// FIXME Yes, it is not the true number of dirty items
+	s.nr_dirty++
+	return
+}
+
+func (s *PeriodFlushStrategy) Flushed() {
+	s.last_flush_time = int64(time.Now().Second())
+}
+
+type AlwaysInCacheStrategy struct {
+}
+
+func (s *AlwaysInCacheStrategy) Hit(string) {
+	return
+}
+
+func (s *AlwaysInCacheStrategy) Added(string) {
+	return
+}
+
+func (s *AlwaysInCacheStrategy) Removed(string) {
+	return
+}
+
+func (s *AlwaysInCacheStrategy) Miss(string) {
+	return
+}
+
+func (s *AlwaysInCacheStrategy) ShouldAdd(key string) bool {
+	return true
+}
+
+func (s *AlwaysInCacheStrategy) GetObsoleted() []string {
+	return nil
+}
+
+type AlwaysInCachePeriodFlushStrategy struct {
+	AlwaysInCacheStrategy
+	PeriodFlushStrategy
+}
+
+func NewAlwaysInCachePeriodFlushStrategy(period int64, min_dirty int) KeyValueCacheStrategy {
+	s := new(AlwaysInCachePeriodFlushStrategy)
+	s.last_flush_time = int64(time.Now().Second())
+	s.period = period
+	s.min_dirty = min_dirty
+	var ret KeyValueCacheStrategy
+	ret = s
+	return ret
+}
+
+type timedkey struct {
+	last_access_time int64
+	key              string
+}
+
+type LRUStrategy struct {
+	q     *list.List
+	items map[string]*list.Element
+	max   int
+}
+
+func NewLRUStrategy(max int) *LRUStrategy {
+	ret := new(LRUStrategy)
+	if max <= 0 {
+		ret.max = 1024
+	} else {
+		ret.max = max
+	}
+	ret.items = make(map[string]*list.Element, ret.max)
+	ret.q = list.New()
+	return ret
+}
+
+func (s *LRUStrategy) Hit(key string) {
+	//fmt.Print("Hit ", key, "\n")
+	if d, has := s.items[key]; has {
+		s.q.MoveToFront(d)
+	} else {
+		t := timedkey{int64(time.Now().Nanosecond()), key}
+		e := s.q.PushFront(t)
+		s.items[key] = e
+	}
+	return
+}
+
+func (s *LRUStrategy) Miss(key string) {
+	return
+}
+
+func (s *LRUStrategy) Added(key string) {
+	s.Hit(key)
+}
+
+func (s *LRUStrategy) Removed(key string) {
+	//fmt.Print("Removed ", key, "\n")
+	e, has := s.items[key]
+	if has {
+		s.q.Remove(e)
+		delete(s.items, key)
+	}
+}
+
+func (s *LRUStrategy) ShouldAdd(key string) bool {
+	return true
+}
+
+func (s *LRUStrategy) GetObsoleted() []string {
+	if s.q.Len() <= s.max {
+		return nil
+	}
+	nr_removed := s.q.Len() - s.max
+	e := s.q.Back()
+	ret := make([]string, 0, nr_removed)
+
+	for i := 0; i < nr_removed; i++ {
+		d := e.Value.(timedkey)
+		ret = append(ret, d.key)
+		e = e.Prev()
+	}
+
+	//fmt.Print("You should remove ", ret, "\n")
+
+	return ret
+}
+
+type lruPeriodFlushStrategy struct {
+	*LRUStrategy
+	PeriodFlushStrategy
+}
+
+func NewLRUPeriodFlushStrategy(max int, period int64, min_dirty int) KeyValueCacheStrategy {
+	lru := NewLRUStrategy(max)
+	s := new(lruPeriodFlushStrategy)
+	s.LRUStrategy = lru
+	s.period = period
+	s.min_dirty = min_dirty
+
+	var ret KeyValueCacheStrategy
+	ret = s
+	return ret
+}

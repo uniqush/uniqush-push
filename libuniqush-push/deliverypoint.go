@@ -15,23 +15,23 @@
  *
  */
 
-package main
+package libuniqushpush
 
-import (
-	"flag"
-	"fmt"
-	"github.com/monnand/uniqush/libuniqush-push"
-	"os"
-)
+import ()
 
-var conf = flag.String("config", "/etc/uniqush/uniqush-push.conf", "Config file path")
+type DeliveryPoint struct {
+	PushPeer
+	objPool *ObjectMemoryPool
+}
 
-func main() {
-	flag.Parse()
-	unisys, err := libuniqushpush.LoadUniqushSystem(*conf)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "Fatal Error: %v\n", err)
-		os.Exit(-1)
+func NewEmptyDeliveryPoint() *DeliveryPoint {
+	ret := new(DeliveryPoint)
+	ret.InitPushPeer()
+	return ret
+}
+
+func (dp *DeliveryPoint) recycle() {
+	if dp.objPool != nil {
+		dp.objPool.Recycle(dp)
 	}
-	unisys.Run()
 }
