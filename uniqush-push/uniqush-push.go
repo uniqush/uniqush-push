@@ -24,7 +24,7 @@ import (
 	"os"
 )
 
-var conf = flag.String("config", "/etc/uniqush/uniqush.conf", "Config file path")
+var conf = flag.String("config", "/etc/uniqush/uniqush-push.conf", "Config file path")
 
 func main() {
 	//conf := "/etc/uniqush/uniqush.conf"
