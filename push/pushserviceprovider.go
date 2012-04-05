@@ -15,23 +15,26 @@
  *
  */
 
-package main
+package push
 
 import (
-	"flag"
-	"fmt"
-	"github.com/monnand/uniqush/push"
-	"os"
+//    "fmt"
+//    "strings"
 )
 
-var conf = flag.String("config", "/etc/uniqush/uniqush-push.conf", "Config file path")
+type PushServiceProvider struct {
+	PushPeer
+	objPool *ObjectMemoryPool
+}
 
-func main() {
-	flag.Parse()
-	unisys, err := push.LoadUniqushSystem(*conf)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "Fatal Error: %v\n", err)
-		os.Exit(-1)
+func NewEmptyPushServiceProvider() *PushServiceProvider {
+	psp := new(PushServiceProvider)
+	psp.InitPushPeer()
+	return psp
+}
+
+func (psp *PushServiceProvider) recycle() {
+	if psp.objPool != nil {
+		psp.objPool.Recycle(psp)
 	}
-	unisys.Run()
 }

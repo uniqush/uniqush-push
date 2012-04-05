@@ -15,23 +15,15 @@
  *
  */
 
-package main
+package push
 
-import (
-	"flag"
-	"fmt"
-	"github.com/monnand/uniqush/push"
-	"os"
-)
+type UniqushFrontEnd interface {
+	SetChannel(ch chan<- *Request)
+	SetLogger(logger *Logger)
 
-var conf = flag.String("config", "/etc/uniqush/uniqush-push.conf", "Config file path")
+	// writer will be used to report real-time event
+	SetEventWriter(writer *EventWriter)
 
-func main() {
-	flag.Parse()
-	unisys, err := push.LoadUniqushSystem(*conf)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "Fatal Error: %v\n", err)
-		os.Exit(-1)
-	}
-	unisys.Run()
+	SetStopChannel(ch chan<- bool)
+	Run()
 }
