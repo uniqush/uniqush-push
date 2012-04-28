@@ -24,29 +24,12 @@ import (
 	"io/ioutil"
 	"net/http"
 	"net/url"
+	"crypto/tls"
 	"strings"
 )
 
-/* FIXME
- * Yes, it is http not https
- * Because:
- *  1) The certificate does not match the host name 
- *      android.apis.google.com
- *  2) Go does not support (until now) user defined
- *      verifier for TLS
- * The user defined verifier feature was submitted
- * and under reviewed:
- * http://codereview.appspot.com/4964043/
- *
- * However, even we can use a fake verifier, there
- * is still a security issue.
- *
- * Hope goole could fix the certificate problem
- * soon, or we have to use C2DM as an unsecure
- * service.
- */
 const (
-	serviceURL string = "http://android.apis.google.com/c2dm/send"
+	serviceURL string = "https://android.apis.google.com/c2dm/send"
 )
 
 func init() {
@@ -155,7 +138,12 @@ func (p *C2DMPushService) Push(psp *PushServiceProvider,
 
 	req.Header.Set("Authorization", "GoogleLogin auth="+authtoken)
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-	r, e20 := http.DefaultClient.Do(req)
+
+	conf := &tls.Config{}
+	tr := &http.Transport{TLSClientConfig:conf}
+	client := &http.Client{Transport: tr}
+
+	r, e20 := client.Do(req)
 	if e20 != nil {
 		return "", e20
 	}

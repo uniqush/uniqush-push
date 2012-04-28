@@ -27,9 +27,6 @@ import (
 	"time"
 )
 
-// There is ONLY ONE WebFrontEnd instance running in one program
-// It uses global variables.
-// (I know it's bad, but web.go does not support MethodHandler any more)
 type WebFrontEnd struct {
 	ch          chan<- *Request
 	logger      *Logger
