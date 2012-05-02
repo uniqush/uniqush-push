@@ -61,9 +61,7 @@ func (b *UniqushBackEnd) Run() {
 	if len(b.procs) < NR_ACTIONS {
 		return
 	}
-	for {
-		r := <-b.ch
-
+	for r := range b.ch {
 		if r.Action < 0 || r.Action >= NR_ACTIONS {
 			continue
 		}

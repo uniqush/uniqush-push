@@ -139,7 +139,7 @@ func (p *C2DMPushService) Push(psp *PushServiceProvider,
 	req.Header.Set("Authorization", "GoogleLogin auth="+authtoken)
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 
-	conf := &tls.Config{}
+	conf := &tls.Config{InsecureSkipVerify:true}
 	tr := &http.Transport{TLSClientConfig:conf}
 	client := &http.Client{Transport: tr}
 
