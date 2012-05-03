@@ -340,7 +340,7 @@ func (f *WebFrontEnd) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		kv = pool.get(len(r.Form))
 	} else {
 		/* It can be nothing but stop */
-		fmt.Fprintf(w, "Stop\r\n", id)
+		fmt.Fprintf(w, "Stop\r\n")
 		f.stop()
 		return
 	}
@@ -360,7 +360,7 @@ func (f *WebFrontEnd) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	switch r.URL.Path {
 	case STOP_PROGRAM_URL:
-		fmt.Fprintf(w, "Stop\r\n", id)
+		fmt.Fprintf(w, "Stop\r\n")
 		f.stop()
 	case ADD_PUSH_SERVICE_PROVIDER_TO_SERVICE_URL:
 		go f.addPushServiceProvider(kv, id, r.RemoteAddr, errch)
