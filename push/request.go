@@ -41,6 +41,8 @@ type Request struct {
 	nrRetries         int
 	backoffTime       int64
 
+	errch chan error
+
 	PushServiceProvider *PushServiceProvider
 	DeliveryPoint       *DeliveryPoint
 	Notification        *Notification
@@ -76,4 +78,16 @@ func (req *Request) ActionName() string {
 		return actionNames[req.Action]
 	}
 	return "InvalidAction"
+}
+
+func (req *Request) Respond(err error) {
+	if req.errch != nil {
+		req.errch <- err
+	}
+}
+
+func (req *Request) Finish() {
+	if req.errch != nil {
+		close(req.errch)
+	}
 }
