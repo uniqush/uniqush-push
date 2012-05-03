@@ -19,29 +19,15 @@ package push
 
 import (
 	"time"
+	"fmt"
+	"sync"
 )
-
-/*
-type retryPushTask struct {
-	taskq.TaskTime
-	req       *Request
-	backendch chan<- *Request
-}
-
-func (t *retryPushTask) Run(time int64) {
-	t.backendch <- t.req
-}
-*/
 
 type PushProcessor struct {
 	loggerEventWriter
 	databaseSetter
 	max_nr_gorountines int
 	max_nr_retry       int
-	/*
-		q                  *taskq.TaskQueue
-		qch                chan taskq.Task
-	*/
 	backendch chan<- *Request
 	psm       *PushServiceManager
 }
@@ -87,21 +73,6 @@ func (p *PushProcessor) retryRequest(req *Request,
 	duration := time.Duration(waitTime * 1E9)
 	<-time.After(duration)
 	p.backendch <- newreq
-
-	/*
-		task := new(retryPushTask)
-		task.backendch = p.backendch
-		task.req = newreq
-
-		if retryAfter <= 0 {
-			task.After(newreq.backoffTime)
-		} else {
-			task.SetExecTime(int64(retryAfter) * 1E9)
-		}
-
-		t.backendch <- t.req
-		p.qch <- task
-	*/
 }
 
 func NewPushProcessor(logger *Logger,
@@ -115,11 +86,6 @@ func NewPushProcessor(logger *Logger,
 	ret.SetDatabase(dbfront)
 	ret.max_nr_gorountines = 1024
 	ret.max_nr_retry = 3
-	/*
-		ret.qch = make(chan taskq.Task)
-		ret.q = taskq.NewTaskQueue(ret.qch)
-		go ret.q.Run()
-	*/
 	ret.backendch = backendch
 
 	return ret
@@ -158,24 +124,38 @@ func (p *PushProcessor) pushToDeliveryPoint(req *Request,
 		switch err.(type) {
 		case *RetryError:
 			re := err.(*RetryError)
+			e0 := fmt.Errorf("PushServiceProvider=%v Subscriber=%v DeliveryPoint=%v Retry",
+							 psp.Name(), subscriber, dp.Name())
+			req.Respond(e0)
 			go p.pushRetry(req, subscriber, psp, dp, re)
 		case *UnregisteredError:
+			req.Respond(err)
 			go p.unsubscribe(req, subscriber, dp)
 		}
+		req.Respond(err)
 		go p.pushFail(req, subscriber, psp, dp, err)
 	}
 	go p.pushSucc(req, subscriber, psp, dp, id)
 
 }
 
-func (p *PushProcessor) push(req *Request, subscriber string) {
+func (p *PushProcessor) push(req *Request,
+							 subscriber string,
+							 wg *sync.WaitGroup) {
 	pspdppairs, err := p.dbfront.GetPushServiceProviderDeliveryPointPairs(req.Service, subscriber)
+	defer func() {
+		if (wg != nil) {
+			wg.Done()
+		}
+	}()
 	if err != nil {
 		p.logger.Errorf("[PushFail] Service=%s Subscriber=%s DatabaseError %v", req.Service, subscriber, err)
 		p.writer.PushFail(req, subscriber, nil, nil, err)
+		req.Respond(err)
 	}
 	if len(pspdppairs) <= 0 {
 		p.logger.Warnf("[PushFail] Service=%s Subscriber=%s NoSubscriber", req.Service, subscriber)
+		req.Respond(fmt.Errorf("Subscriber=%v NoDevice", subscriber))
 		return
 	}
 
@@ -248,17 +228,18 @@ func (p *PushProcessor) pushSucc(req *Request,
 }
 
 func (p *PushProcessor) pushBulk(req *Request,
-	subscribers []string,
-	finish chan bool) {
+								subscribers []string,
+								wg *sync.WaitGroup) {
 	for _, sub := range subscribers {
-		p.push(req, sub)
+		p.push(req, sub, nil)
 	}
-	if finish != nil {
-		finish <- true
+	if wg != nil {
+		wg.Done()
 	}
 }
 
 func (p *PushProcessor) Process(req *Request) {
+	defer req.Finish()
 	if len(req.Subscribers) == 1 &&
 		req.PushServiceProvider != nil &&
 		req.DeliveryPoint != nil {
@@ -269,11 +250,15 @@ func (p *PushProcessor) Process(req *Request) {
 		return
 	}
 
+	wg := new(sync.WaitGroup)
+
 	// In most cases, we will use one goroutine per subscriber
 	if len(req.Subscribers) <= p.max_nr_gorountines {
 		for _, sub := range req.Subscribers {
-			go p.push(req, sub)
+			wg.Add(1)
+			go p.push(req, sub, wg)
 		}
+		wg.Wait()
 		return
 	}
 
@@ -282,9 +267,12 @@ func (p *PushProcessor) Process(req *Request) {
 	pos := 0
 
 	for pos = 0; pos < len(req.Subscribers)-nr_subs_last_goroutine; pos += nr_subs_per_goroutine {
-		go p.pushBulk(req, req.Subscribers[pos:pos+nr_subs_per_goroutine], nil)
+		wg.Add(1)
+		go p.pushBulk(req, req.Subscribers[pos:pos+nr_subs_per_goroutine], wg)
 	}
 	if pos < len(req.Subscribers) {
-		go p.pushBulk(req, req.Subscribers[pos:], nil)
+		wg.Add(1)
+		go p.pushBulk(req, req.Subscribers[pos:], wg)
 	}
+	wg.Wait()
 }

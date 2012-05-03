@@ -96,14 +96,14 @@ func (f *WebFrontEnd) SetLogger(logger *Logger) {
 	f.logger = logger
 }
 
-func (f *WebFrontEnd) addPushServiceProvider(kv map[string]string,
-	id, addr string) {
+func (f *WebFrontEnd) addPushServiceProvider(kv map[string]string, id, addr string, errch chan error) {
 	a := new(Request)
 	a.PunchTimestamp()
 
 	a.Action = ACTION_ADD_PUSH_SERVICE_PROVIDER
 	a.ID = id
 	a.RequestSenderAddr = addr
+	a.errch = errch
 	var ok bool
 	if a.Service, ok = kv["service"]; !ok {
 		f.logger.Errorf("[AddPushServiceRequestFail] Requestid=%s From=%s NoServiceName", id, addr)
@@ -124,10 +124,10 @@ func (f *WebFrontEnd) addPushServiceProvider(kv map[string]string,
 	f.strMapPools[ADD_PUSH_SERVICE_PROVIDER_TO_SERVICE_URL].recycle(kv)
 }
 
-func (f *WebFrontEnd) removePushServiceProvider(kv map[string]string,
-	id, addr string) {
+func (f *WebFrontEnd) removePushServiceProvider(kv map[string]string, id, addr string, errch chan error) {
 	a := new(Request)
 	a.PunchTimestamp()
+	a.errch = errch
 
 	a.Action = ACTION_REMOVE_PUSH_SERVICE_PROVIDER
 	a.ID = id
@@ -153,11 +153,11 @@ func (f *WebFrontEnd) removePushServiceProvider(kv map[string]string,
 	f.strMapPools[REMOVE_PUSH_SERVICE_PROVIDER_TO_SERVICE_URL].recycle(kv)
 }
 
-func (f *WebFrontEnd) addDeliveryPointToService(kv map[string]string,
-	id, addr string) {
+func (f *WebFrontEnd) addDeliveryPointToService(kv map[string]string, id, addr string, errch chan error) {
 	a := new(Request)
 	a.PunchTimestamp()
 	a.Action = ACTION_SUBSCRIBE
+	a.errch = errch
 
 	a.ID = id
 	a.RequestSenderAddr = addr
@@ -194,12 +194,12 @@ func (f *WebFrontEnd) addDeliveryPointToService(kv map[string]string,
 	return
 }
 
-func (f *WebFrontEnd) removeDeliveryPointFromService(kv map[string]string,
-	id, addr string) {
+func (f *WebFrontEnd) removeDeliveryPointFromService(kv map[string]string, id, addr string, errch chan error) {
 	a := new(Request)
 	a.PunchTimestamp()
 	a.Action = ACTION_UNSUBSCRIBE
 	a.RequestSenderAddr = addr
+	a.errch = errch
 
 	a.ID = id
 	a.RequestSenderAddr = addr
@@ -236,13 +236,14 @@ func (f *WebFrontEnd) removeDeliveryPointFromService(kv map[string]string,
 	return
 }
 
-func (f *WebFrontEnd) pushNotification(kv map[string]string, id, addr string) {
+func (f *WebFrontEnd) pushNotification(kv map[string]string, id, addr string, errch chan error) {
 	a := new(Request)
 	a.PunchTimestamp()
 	a.Action = ACTION_PUSH
 	a.RequestSenderAddr = addr
 
 	a.ID = id
+	a.errch = errch
 
 	var ok bool
 	if a.Service, ok = kv["service"]; !ok {
@@ -302,11 +303,13 @@ func (f *WebFrontEnd) pushNotification(kv map[string]string, id, addr string) {
 	if len(a.Subscribers) == 0 {
 		f.logger.Errorf("[PushNotificationFail] Requestid=%s From=%s NoSubscriber", id, addr)
 		f.writer.BadRequest(a, errors.New("NoSubscriber"))
+		a.Respond(fmt.Errorf("NoSubscriber"))
 		return
 	}
 	if a.Notification.IsEmpty() {
 		f.logger.Errorf("[PushNotificationFail] Requestid=%s From=%s EmptyData", id, addr)
 		f.writer.BadRequest(a, errors.New("NoMessageBody"))
+		a.Respond(fmt.Errorf("NoMessageBody"))
 		return
 	}
 	f.ch <- a
@@ -331,11 +334,13 @@ func (f *WebFrontEnd) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	r.ParseForm()
 	//kv := make(map[string]string, len(r.Form))
 	var kv map[string]string
+
+	errch := make(chan error)
 	if pool, ok := f.strMapPools[r.URL.Path]; ok {
 		kv = pool.get(len(r.Form))
 	} else {
 		/* It can be nothing but stop */
-		fmt.Fprintf(w, "id=%s\r\n", id)
+		fmt.Fprintf(w, "Stop\r\n", id)
 		f.stop()
 		return
 	}
@@ -355,19 +360,27 @@ func (f *WebFrontEnd) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	switch r.URL.Path {
 	case STOP_PROGRAM_URL:
+		fmt.Fprintf(w, "Stop\r\n", id)
 		f.stop()
 	case ADD_PUSH_SERVICE_PROVIDER_TO_SERVICE_URL:
-		go f.addPushServiceProvider(kv, id, r.RemoteAddr)
+		go f.addPushServiceProvider(kv, id, r.RemoteAddr, errch)
 	case REMOVE_PUSH_SERVICE_PROVIDER_TO_SERVICE_URL:
-		go f.removePushServiceProvider(kv, id, r.RemoteAddr)
+		go f.removePushServiceProvider(kv, id, r.RemoteAddr, errch)
 	case ADD_DELIVERY_POINT_TO_SERVICE_URL:
-		go f.addDeliveryPointToService(kv, id, r.RemoteAddr)
+		go f.addDeliveryPointToService(kv, id, r.RemoteAddr, errch)
 	case REMOVE_DELIVERY_POINT_FROM_SERVICE_URL:
-		go f.removeDeliveryPointFromService(kv, id, r.RemoteAddr)
+		go f.removeDeliveryPointFromService(kv, id, r.RemoteAddr, errch)
 	case PUSH_NOTIFICATION_URL:
-		go f.pushNotification(kv, id, r.RemoteAddr)
+		go f.pushNotification(kv, id, r.RemoteAddr, errch)
 	}
-	fmt.Fprintf(w, "id=%s\r\n", id)
+	i := 0
+	for e := range errch {
+		fmt.Fprintf(w, "%v\r\n", e)
+		i++
+	}
+	if i == 0 {
+		fmt.Fprintf(w, "Success!\r\n")
+	}
 }
 
 func (f *WebFrontEnd) Run() {

@@ -77,10 +77,13 @@ func NewQuotaExceededError(sp *PushServiceProvider) *QuotaExceededError {
 
 type DeviceQuotaExceededError struct {
 	remoteServerError
+	dp *DeliveryPoint
 }
 
-func NewDeviceQuotaExceededError() *DeviceQuotaExceededError {
-	return &DeviceQuotaExceededError{remoteServerError{"Device Quota Exceeded"}}
+func NewDeviceQuotaExceededError(dp *DeliveryPoint) *DeviceQuotaExceededError {
+	str := fmt.Sprintf("DeliveryPoint=%v DeviceQuotaExceeded", dp.Name())
+
+	return &DeviceQuotaExceededError{remoteServerError{str}, dp}
 }
 
 type UnregisteredError struct {
