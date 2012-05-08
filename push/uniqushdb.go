@@ -385,6 +385,11 @@ func (cdb *CachedUniqushDatabase) AddDeliveryPointToServiceSubscriber(srv, sub, 
 	}
 	if itf != nil {
 		dps := itf.([]string)
+		for _, d := range dps {
+			if d == dp {
+				return nil
+			}
+		}
 		dps = append(dps, dp)
 		cdb.srvsub_to_dps.Modify(key, dps)
 	}
