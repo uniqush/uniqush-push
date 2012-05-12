@@ -18,6 +18,7 @@
 package push
 
 import (
+	"crypto/sha1"
 	"errors"
 	"fmt"
 	"net/http"
@@ -330,7 +331,18 @@ const (
 )
 
 func (f *WebFrontEnd) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	id := fmt.Sprintf("%d", time.Now().Nanosecond())
+
+	now := time.Now().UTC()
+	id := fmt.Sprintf("%v-%v-%v",
+					now.Format("Mon Jan 2 15:04:05 -0700 MST 2006"),
+					now.Nanosecond(),
+					r.RemoteAddr)
+	hash := sha1.New()
+	hash.Write([]byte(id))
+	h := make([]byte, 0, 64)
+	id = fmt.Sprintf("%x", hash.Sum(h))
+
+	//id := fmt.Sprintf("%d", time.Now().Nanosecond())
 	r.ParseForm()
 	//kv := make(map[string]string, len(r.Form))
 	var kv map[string]string

@@ -18,8 +18,9 @@
 package push
 
 import (
+	"crypto/sha1"
 	"errors"
-
+	"time"
 	"fmt"
 	"io/ioutil"
 	"net/http"
@@ -122,7 +123,18 @@ func (p *C2DMPushService) Push(psp *PushServiceProvider,
 	if mid, ok := msg["id"]; ok {
 		data.Set("collapse_key", mid)
 	} else {
-		data.Set("collapse_key", msg["msg"])
+		now := time.Now().UTC()
+		ckey := fmt.Sprintf("%v-%v-%v-%v-%v",
+							dp.Name(),
+							psp.Name(),
+							now.Format("Mon Jan 2 15:04:05 -0700 MST 2006"),
+							now.Nanosecond(),
+							msg["msg"])
+		hash := sha1.New()
+		hash.Write([]byte(ckey))
+		h := make([]byte, 0, 64)
+		ckey = fmt.Sprintf("%x", hash.Sum(h))
+		data.Set("collapse_key", ckey)
 	}
 
 	for k, v := range msg {
@@ -237,8 +249,8 @@ func (p *C2DMPushService) Push(psp *PushServiceProvider,
 		return "", reterr
 	}
 	if refreshpsp {
-		re := NewRefreshDataError(psp, nil, errors.New("Unknown Error: "+msgid[6:]))
+		re := NewRefreshDataError(psp, nil, errors.New("Unknown Error from C2DM: "+msgid[6:]))
 		return "", re
 	}
-	return "", errors.New("Unknown Error: " + msgid[6:])
+	return "", errors.New("Unknown Error from C2DM: " + msgid[6:])
 }
