@@ -113,7 +113,12 @@ func (p *C2DMPushService) Push(psp *PushServiceProvider,
 
 	msg := n.Data
 	data := url.Values{}
-	data.Set("registration_id", dp.FixedData["regid"])
+	regid := dp.FixedData["regid"]
+	if len(regid) == 0 {
+		reterr := NewInvalidDeliveryPointError(psp, dp, errors.New("EmptyRegistrationID"))
+		return "", reterr
+	}
+	data.Set("registration_id", regid)
 	if mid, ok := msg["id"]; ok {
 		data.Set("collapse_key", mid)
 	} else {
@@ -217,6 +222,14 @@ func (p *C2DMPushService) Push(psp *PushServiceProvider,
 	case "MessageTooBig":
 		var reterr error
 		reterr = NewNotificationTooBigError(psp, dp, n)
+		if refreshpsp {
+			re := NewRefreshDataError(psp, nil, reterr)
+			reterr = re
+		}
+		return "", reterr
+	case "DeviceQuotaExceeded":
+		var reterr error
+		reterr = NewDeviceQuotaExceededError(dp)
 		if refreshpsp {
 			re := NewRefreshDataError(psp, nil, reterr)
 			reterr = re
