@@ -113,6 +113,7 @@ type UniqushSystem struct {
 	Database DatabaseFrontDeskIf
 	psm      *PushServiceManager
 	logfile  io.WriteCloser
+	version  string
 }
 
 var (
@@ -125,7 +126,7 @@ func (s *UniqushSystem) Finalize() {
 	s.psm.Finalize()
 }
 
-func LoadUniqushSystem(filename string) (*UniqushSystem, error) {
+func LoadUniqushSystem(filename, version string) (*UniqushSystem, error) {
 	if filename == "" {
 		filename = defaultConfigFilePath
 	}
@@ -138,6 +139,7 @@ func LoadUniqushSystem(filename string) (*UniqushSystem, error) {
 	ret.Stopch = make(chan bool)
 	ret.Bridge = make(chan *Request)
 	ret.logfile = os.Stderr
+	ret.version = version
 	ew := NewEventWriter(&NullWriter{})
 
 	logfilename, err := c.GetString("default", "logfile")
@@ -163,7 +165,7 @@ func LoadUniqushSystem(filename string) (*UniqushSystem, error) {
 	psm := GetPushServiceManager()
 	ret.psm = psm
 
-	ret.Frontend = NewWebFrontEnd(ret.Bridge, logger, addr, psm)
+	ret.Frontend = NewWebFrontEnd(ret.Bridge, logger, addr, psm, version)
 	ret.Frontend.SetStopChannel(ret.Stopch)
 	ret.Frontend.SetEventWriter(ew)
 

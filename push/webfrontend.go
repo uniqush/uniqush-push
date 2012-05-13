@@ -37,6 +37,7 @@ type WebFrontEnd struct {
 	psm         *PushServiceManager
 	strMapPools map[string]*stringMapPool
 	notifPools  map[string]*notificationPool
+	version string
 }
 
 type NullWriter struct{}
@@ -48,7 +49,8 @@ func (f *NullWriter) Write(p []byte) (int, error) {
 func NewWebFrontEnd(ch chan *Request,
 	logger *Logger,
 	addr string,
-	psm *PushServiceManager) UniqushFrontEnd {
+	psm *PushServiceManager,
+	version string) UniqushFrontEnd {
 	f := new(WebFrontEnd)
 	f.ch = ch
 	f.logger = logger
@@ -56,6 +58,7 @@ func NewWebFrontEnd(ch chan *Request,
 	f.stopch = nil
 	f.psm = psm
 	f.strMapPools = make(map[string]*stringMapPool, 5)
+	f.version = version
 
 	f.strMapPools[ADD_PUSH_SERVICE_PROVIDER_TO_SERVICE_URL] = newStringMapPool(16, 3)
 	f.strMapPools[REMOVE_PUSH_SERVICE_PROVIDER_TO_SERVICE_URL] = newStringMapPool(16, 3)
@@ -328,6 +331,7 @@ const (
 	REMOVE_DELIVERY_POINT_FROM_SERVICE_URL      = "/unsubscribe"
 	PUSH_NOTIFICATION_URL                       = "/push"
 	STOP_PROGRAM_URL                            = "/stop"
+	VERSION_INFO_URL                            = "/version"
 )
 
 func (f *WebFrontEnd) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -351,10 +355,15 @@ func (f *WebFrontEnd) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if pool, ok := f.strMapPools[r.URL.Path]; ok {
 		kv = pool.get(len(r.Form))
 	} else {
-		/* It can be nothing but stop */
-		fmt.Fprintf(w, "Stop\r\n")
-		f.stop()
-		return
+		switch r.URL.Path {
+		case VERSION_INFO_URL:
+			fmt.Fprintf(w, "uniqush-push %v\r\n", f.version)
+			return
+		case STOP_PROGRAM_URL:
+			fmt.Fprintf(w, "Stop\r\n")
+			f.stop()
+			return
+		}
 	}
 	for k, v := range r.Form {
 		if len(v) > 0 {
@@ -370,10 +379,11 @@ func (f *WebFrontEnd) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	fmt.Println("..........")
+	fmt.Println(r.URL.Path)
+	fmt.Println("..........")
+
 	switch r.URL.Path {
-	case STOP_PROGRAM_URL:
-		fmt.Fprintf(w, "Stop\r\n")
-		f.stop()
 	case ADD_PUSH_SERVICE_PROVIDER_TO_SERVICE_URL:
 		go f.addPushServiceProvider(kv, id, r.RemoteAddr, errch)
 	case REMOVE_PUSH_SERVICE_PROVIDER_TO_SERVICE_URL:
@@ -398,6 +408,7 @@ func (f *WebFrontEnd) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 func (f *WebFrontEnd) Run() {
 	f.logger.Configf("[Start] %s", f.addr)
 	http.Handle(STOP_PROGRAM_URL, f)
+	http.Handle(VERSION_INFO_URL, f)
 	http.Handle(ADD_PUSH_SERVICE_PROVIDER_TO_SERVICE_URL, f)
 	http.Handle(ADD_DELIVERY_POINT_TO_SERVICE_URL, f)
 	http.Handle(REMOVE_DELIVERY_POINT_FROM_SERVICE_URL, f)
