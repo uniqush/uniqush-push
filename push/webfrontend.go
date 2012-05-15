@@ -357,7 +357,7 @@ func (f *WebFrontEnd) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	} else {
 		switch r.URL.Path {
 		case VERSION_INFO_URL:
-			fmt.Fprintf(w, "uniqush-push %v\r\n", f.version)
+			fmt.Fprintf(w, "%v\r\n", f.version)
 			return
 		case STOP_PROGRAM_URL:
 			fmt.Fprintf(w, "Stop\r\n")
