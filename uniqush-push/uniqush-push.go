@@ -32,7 +32,7 @@ var version = "uniqush-push 1.2.7"
 func main() {
 	flag.Parse()
 	if *showVersion {
-		fmt.Printf("uniqush-push %v\n", version)
+		fmt.Printf("%v\n", version)
 		return
 	}
 	unisys, err := push.LoadUniqushSystem(*conf, version)
