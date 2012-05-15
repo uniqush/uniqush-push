@@ -64,10 +64,10 @@ func (p *APNSPushService) Finalize() {
 }
 
 func (p *APNSPushService) waitError(id string,
-		c net.Conn,
-		psp *PushServiceProvider,
-		dp *DeliveryPoint,
-		n *Notification) {
+	c net.Conn,
+	psp *PushServiceProvider,
+	dp *DeliveryPoint,
+	n *Notification) {
 	duration, err := time.ParseDuration("5s")
 	if err != nil {
 		return

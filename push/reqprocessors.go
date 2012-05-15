@@ -97,7 +97,7 @@ func (p *AddPushServiceProviderProcessor) Process(req *Request) {
 	}
 	p.writer.AddPushServiceSuccess(req)
 	p.logger.Infof("[AddPushServiceRequest] RequestId=%v Success PushServiceProviderID=%s",
-				   req.ID, req.PushServiceProvider.Name())
+		req.ID, req.PushServiceProvider.Name())
 	e := fmt.Errorf("PushServiceProvider=%v Success!", req.PushServiceProvider.Name())
 	req.Respond(e)
 	return
@@ -109,8 +109,8 @@ type RemovePushServiceProviderProcessor struct {
 }
 
 func NewRemovePushServiceProviderProcessor(logger *Logger,
-										   writer *EventWriter,
-										   dbfront DatabaseFrontDeskIf) RequestProcessor {
+	writer *EventWriter,
+	dbfront DatabaseFrontDeskIf) RequestProcessor {
 	ret := new(RemovePushServiceProviderProcessor)
 	ret.SetLogger(logger)
 	ret.SetEventWriter(writer)
@@ -165,7 +165,7 @@ func (p *SubscribeProcessor) Process(req *Request) {
 	dpname := req.DeliveryPoint.Name()
 	pspname := psp.Name()
 	p.logger.Infof("[SubscribeRequest] RequestId=%v Success DeliveryPoint=%s PushServiceProvider=%s",
-				   req.ID, dpname, pspname)
+		req.ID, dpname, pspname)
 	e := fmt.Errorf("DeliveryPoint=%v Success!", dpname)
 	req.Respond(e)
 	return
@@ -204,6 +204,6 @@ func (p *UnsubscribeProcessor) Process(req *Request) {
 	}
 	p.writer.SubscribeSuccess(req)
 	p.logger.Infof("[UnsubscribeRequest] RequestId=%v Success DeliveryPoint=%s",
-				   req.ID, req.DeliveryPoint.Name())
+		req.ID, req.DeliveryPoint.Name())
 	return
 }

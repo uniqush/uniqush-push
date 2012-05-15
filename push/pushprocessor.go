@@ -18,9 +18,9 @@
 package push
 
 import (
-	"time"
 	"fmt"
 	"sync"
+	"time"
 )
 
 type PushProcessor struct {
@@ -28,8 +28,8 @@ type PushProcessor struct {
 	databaseSetter
 	max_nr_gorountines int
 	max_nr_retry       int
-	backendch chan<- *Request
-	psm       *PushServiceManager
+	backendch          chan<- *Request
+	psm                *PushServiceManager
 }
 
 const (
@@ -125,7 +125,7 @@ func (p *PushProcessor) pushToDeliveryPoint(req *Request,
 		case *RetryError:
 			re := err.(*RetryError)
 			e0 := fmt.Errorf("PushServiceProvider=%v Subscriber=%v DeliveryPoint=%v Retry",
-							 psp.Name(), subscriber, dp.Name())
+				psp.Name(), subscriber, dp.Name())
 			req.Respond(e0)
 			go p.pushRetry(req, subscriber, psp, dp, re)
 		case *UnregisteredError:
@@ -140,11 +140,11 @@ func (p *PushProcessor) pushToDeliveryPoint(req *Request,
 }
 
 func (p *PushProcessor) push(req *Request,
-							 subscriber string,
-							 wg *sync.WaitGroup) {
+	subscriber string,
+	wg *sync.WaitGroup) {
 	pspdppairs, err := p.dbfront.GetPushServiceProviderDeliveryPointPairs(req.Service, subscriber)
 	defer func() {
-		if (wg != nil) {
+		if wg != nil {
 			wg.Done()
 		}
 	}()
@@ -228,8 +228,8 @@ func (p *PushProcessor) pushSucc(req *Request,
 }
 
 func (p *PushProcessor) pushBulk(req *Request,
-								subscribers []string,
-								wg *sync.WaitGroup) {
+	subscribers []string,
+	wg *sync.WaitGroup) {
 	for _, sub := range subscribers {
 		p.push(req, sub, nil)
 	}

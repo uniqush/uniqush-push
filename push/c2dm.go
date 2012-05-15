@@ -19,14 +19,14 @@ package push
 
 import (
 	"crypto/sha1"
+	"crypto/tls"
 	"errors"
-	"time"
 	"fmt"
 	"io/ioutil"
 	"net/http"
 	"net/url"
-	"crypto/tls"
 	"strings"
+	"time"
 )
 
 const (
@@ -125,11 +125,11 @@ func (p *C2DMPushService) Push(psp *PushServiceProvider,
 	} else {
 		now := time.Now().UTC()
 		ckey := fmt.Sprintf("%v-%v-%v-%v-%v",
-							dp.Name(),
-							psp.Name(),
-							now.Format("Mon Jan 2 15:04:05 -0700 MST 2006"),
-							now.Nanosecond(),
-							msg["msg"])
+			dp.Name(),
+			psp.Name(),
+			now.Format("Mon Jan 2 15:04:05 -0700 MST 2006"),
+			now.Nanosecond(),
+			msg["msg"])
 		hash := sha1.New()
 		hash.Write([]byte(ckey))
 		h := make([]byte, 0, 64)
@@ -156,8 +156,8 @@ func (p *C2DMPushService) Push(psp *PushServiceProvider,
 	req.Header.Set("Authorization", "GoogleLogin auth="+authtoken)
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 
-	conf := &tls.Config{InsecureSkipVerify:true}
-	tr := &http.Transport{TLSClientConfig:conf}
+	conf := &tls.Config{InsecureSkipVerify: true}
+	tr := &http.Transport{TLSClientConfig: conf}
 	client := &http.Client{Transport: tr}
 
 	r, e20 := client.Do(req)

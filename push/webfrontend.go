@@ -37,7 +37,7 @@ type WebFrontEnd struct {
 	psm         *PushServiceManager
 	strMapPools map[string]*stringMapPool
 	notifPools  map[string]*notificationPool
-	version string
+	version     string
 }
 
 type NullWriter struct{}
@@ -338,9 +338,9 @@ func (f *WebFrontEnd) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	now := time.Now().UTC()
 	id := fmt.Sprintf("%v-%v-%v",
-					now.Format("Mon Jan 2 15:04:05 -0700 MST 2006"),
-					now.Nanosecond(),
-					r.RemoteAddr)
+		now.Format("Mon Jan 2 15:04:05 -0700 MST 2006"),
+		now.Nanosecond(),
+		r.RemoteAddr)
 	hash := sha1.New()
 	hash.Write([]byte(id))
 	h := make([]byte, 0, 64)
