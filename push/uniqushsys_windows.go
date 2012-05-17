@@ -15,30 +15,17 @@
  *
  */
 
-package main
+package push
 
 import (
-	"flag"
-	"fmt"
-	"github.com/monnand/uniqush/push"
+	"os/signal"
 	"os"
+	"fmt"
 )
 
-var conf = flag.String("config", "/etc/uniqush/uniqush-push.conf", "Config file path")
-var showVersion = flag.Bool("version", false, "Version info")
-
-var version = "uniqush-push 1.2.8"
-
-func main() {
-	flag.Parse()
-	if *showVersion {
-		fmt.Printf("%v\n", version)
-		return
-	}
-	unisys, err := push.LoadUniqushSystem(*conf, version)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "Fatal Error: %v\n", err)
-		os.Exit(-1)
-	}
-	unisys.Run()
+func (s *UniqushSystem) signalSetup() {
+	ch := make(chan os.Signal, 1)
+	signal.Notify(ch, os.Kill)
+	<-ch
+	s.Stopch <- true
 }

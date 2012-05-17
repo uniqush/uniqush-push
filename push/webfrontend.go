@@ -379,10 +379,6 @@ func (f *WebFrontEnd) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	fmt.Println("..........")
-	fmt.Println(r.URL.Path)
-	fmt.Println("..........")
-
 	switch r.URL.Path {
 	case ADD_PUSH_SERVICE_PROVIDER_TO_SERVICE_URL:
 		go f.addPushServiceProvider(kv, id, r.RemoteAddr, errch)

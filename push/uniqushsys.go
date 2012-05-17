@@ -230,6 +230,7 @@ func LoadUniqushSystem(filename, version string) (*UniqushSystem, error) {
 
 func (s *UniqushSystem) Run() {
 	defer s.Finalize()
+	go s.signalSetup()
 	go s.Frontend.Run()
 	go s.Backend.Run()
 	<-s.Stopch
