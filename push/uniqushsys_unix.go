@@ -18,16 +18,15 @@
 package push
 
 import (
-	"os/signal"
-	"os"
-	"syscall"
 	"fmt"
+	"os"
+	"os/signal"
+	"syscall"
 )
 
 func (s *UniqushSystem) signalSetup() {
 	ch := make(chan os.Signal, 1)
 	signal.Notify(ch, syscall.SIGTERM, os.Kill)
 	<-ch
-	fmt.Printf("OK. Termitate!")
 	s.Stopch <- true
 }
