@@ -19,13 +19,12 @@ package push
 
 import (
 	"fmt"
-	"sync"
 )
 
 type RequestProcessor interface {
 	SetLogger(logger *Logger)
 	SetEventWriter(writer *EventWriter)
-	Process(req *Request, wg *sync.WaitGroup)
+	Process(req *Request)
 }
 
 type ActionPrinter struct {
@@ -42,8 +41,7 @@ func (p *ActionPrinter) SetLogger(logger *Logger) {
 	p.logger = logger
 }
 
-func (p *ActionPrinter) Process(r *Request, wg *sync.WaitGroup) {
-	defer wg.Done()
+func (p *ActionPrinter) Process(r *Request) {
 	p.logger.Debugf("Action: %d-%s, id: %s\n", r.Action, r.ActionName(), r.ID)
 	r.Finish()
 	return
@@ -88,9 +86,8 @@ func NewAddPushServiceProviderProcessor(logger *Logger, writer *EventWriter, dbf
 	return ret
 }
 
-func (p *AddPushServiceProviderProcessor) Process(req *Request, wg *sync.WaitGroup) {
+func (p *AddPushServiceProviderProcessor) Process(req *Request) {
 	defer req.Finish()
-	defer wg.Done()
 	err := p.dbfront.AddPushServiceProviderToService(req.Service, req.PushServiceProvider)
 	if err != nil {
 		p.writer.AddPushServiceFail(req, err)
@@ -122,9 +119,8 @@ func NewRemovePushServiceProviderProcessor(logger *Logger,
 	return ret
 }
 
-func (p *RemovePushServiceProviderProcessor) Process(req *Request, wg *sync.WaitGroup) {
+func (p *RemovePushServiceProviderProcessor) Process(req *Request) {
 	defer req.Finish()
-	defer wg.Done()
 	err := p.dbfront.RemovePushServiceProviderFromService(req.Service, req.PushServiceProvider)
 	if err != nil {
 		p.writer.RemovePushServiceFail(req, err)
@@ -151,9 +147,8 @@ func NewSubscribeProcessor(logger *Logger, writer *EventWriter, dbfront Database
 	return ret
 }
 
-func (p *SubscribeProcessor) Process(req *Request, wg *sync.WaitGroup) {
+func (p *SubscribeProcessor) Process(req *Request) {
 	defer req.Finish()
-	defer wg.Done()
 	if len(req.Subscribers) == 0 {
 		return
 	}
@@ -190,9 +185,8 @@ func NewUnsubscribeProcessor(logger *Logger, writer *EventWriter, dbfront Databa
 	return ret
 }
 
-func (p *UnsubscribeProcessor) Process(req *Request, wg *sync.WaitGroup) {
+func (p *UnsubscribeProcessor) Process(req *Request) {
 	defer req.Finish()
-	defer wg.Done()
 	if len(req.Subscribers) == 0 || req.DeliveryPoint == nil {
 		p.logger.Errorf("[UnSubscribeRequestFail] RequestId=%v Nil Pointer", req.ID)
 		req.Respond(fmt.Errorf("[UnSubscribeRequestFail] RequestId=%v Nil Pointer", req.ID))

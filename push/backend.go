@@ -77,6 +77,9 @@ func (b *UniqushBackEnd) Run() {
 		}
 		p := b.procs[r.Action]
 		b.wg.Add(1)
-		go p.Process(r, &b.wg)
+		go func () {
+			defer b.wg.Done()
+			p.Process(r)
+		}()
 	}
 }
