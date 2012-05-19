@@ -26,4 +26,5 @@ type UniqushFrontEnd interface {
 
 	SetStopChannel(ch chan<- bool)
 	Run()
+	Finalize()
 }

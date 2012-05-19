@@ -18,7 +18,6 @@
 package push
 
 import (
-	"fmt"
 	"os"
 	"os/signal"
 	"syscall"

@@ -238,8 +238,10 @@ func (p *PushProcessor) pushBulk(req *Request,
 	}
 }
 
-func (p *PushProcessor) Process(req *Request) {
+func (p *PushProcessor) Process(req *Request, wgg *sync.WaitGroup) {
 	defer req.Finish()
+	// NOTE: We won't wait retries.
+	defer wgg.Done()
 	if len(req.Subscribers) == 1 &&
 		req.PushServiceProvider != nil &&
 		req.DeliveryPoint != nil {

@@ -121,6 +121,8 @@ var (
 )
 
 func (s *UniqushSystem) Finalize() {
+	s.Frontend.Finalize()
+	s.Backend.Finalize()
 	s.logfile.Close()
 	s.Database.FlushCache()
 	s.psm.Finalize()

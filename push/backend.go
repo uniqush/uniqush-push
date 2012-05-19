@@ -17,17 +17,23 @@
 
 package push
 
+import (
+	"sync"
+)
+
 type UniqushBackEndIf interface {
 	SetChannel(ch <-chan *Request)
 	SetLogger(logger *Logger)
 	SetProcessor(action int, proc RequestProcessor)
 	Run()
+	Finalize()
 }
 
 type UniqushBackEnd struct {
 	procs  []RequestProcessor
 	ch     <-chan *Request
 	logger *Logger
+	wg sync.WaitGroup
 }
 
 func NewUniqushBackEnd(ch chan *Request, logger *Logger) UniqushBackEndIf {
@@ -57,6 +63,10 @@ func (b *UniqushBackEnd) SetProcessor(action int, proc RequestProcessor) {
 	b.procs[action] = proc
 }
 
+func (b *UniqushBackEnd) Finalize() {
+	b.wg.Wait()
+}
+
 func (b *UniqushBackEnd) Run() {
 	if len(b.procs) < NR_ACTIONS {
 		return
@@ -66,6 +76,7 @@ func (b *UniqushBackEnd) Run() {
 			continue
 		}
 		p := b.procs[r.Action]
-		go p.Process(r)
+		b.wg.Add(1)
+		go p.Process(r, &b.wg)
 	}
 }

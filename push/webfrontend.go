@@ -26,6 +26,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"sync/atomic"
 )
 
 type WebFrontEnd struct {
@@ -38,6 +39,7 @@ type WebFrontEnd struct {
 	strMapPools map[string]*stringMapPool
 	notifPools  map[string]*notificationPool
 	version     string
+	closed uint32
 }
 
 type NullWriter struct{}
@@ -59,6 +61,7 @@ func NewWebFrontEnd(ch chan *Request,
 	f.psm = psm
 	f.strMapPools = make(map[string]*stringMapPool, 5)
 	f.version = version
+	f.closed = 0
 
 	f.strMapPools[ADD_PUSH_SERVICE_PROVIDER_TO_SERVICE_URL] = newStringMapPool(16, 3)
 	f.strMapPools[REMOVE_PUSH_SERVICE_PROVIDER_TO_SERVICE_URL] = newStringMapPool(16, 3)
@@ -335,7 +338,12 @@ const (
 )
 
 func (f *WebFrontEnd) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	if atomic.CompareAndSwapUint32(&f.closed, 1, 1) {
+		fmt.Fprintf(w, "Closed\r\n")
+		return
+	}
 
+	// XXX well... Yes, I know I could use UUID
 	now := time.Now().UTC()
 	id := fmt.Sprintf("%v-%v-%v",
 		now.Format("Mon Jan 2 15:04:05 -0700 MST 2006"),
@@ -399,6 +407,10 @@ func (f *WebFrontEnd) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if i == 0 {
 		fmt.Fprintf(w, "Success!\r\n")
 	}
+}
+
+func (f *WebFrontEnd) Finalize() {
+	atomic.StoreUint32(&f.closed, 1)
 }
 
 func (f *WebFrontEnd) Run() {
