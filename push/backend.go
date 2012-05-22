@@ -33,7 +33,7 @@ type UniqushBackEnd struct {
 	procs  []RequestProcessor
 	ch     <-chan *Request
 	logger *Logger
-	wg sync.WaitGroup
+	wg     sync.WaitGroup
 }
 
 func NewUniqushBackEnd(ch chan *Request, logger *Logger) UniqushBackEndIf {
@@ -77,7 +77,7 @@ func (b *UniqushBackEnd) Run() {
 		}
 		p := b.procs[r.Action]
 		b.wg.Add(1)
-		go func () {
+		go func() {
 			defer b.wg.Done()
 			p.Process(r)
 		}()

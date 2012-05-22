@@ -159,10 +159,22 @@ func (p *PushProcessor) push(req *Request,
 		return
 	}
 
+	// XXX Why we have two same delivery points instances?
+	chked_dps := make([]string, 0, len(pspdppairs))
+
 	for _, pdpair := range pspdppairs {
 		psp := pdpair.PushServiceProvider
 		dp := pdpair.DeliveryPoint
-		p.pushToDeliveryPoint(req, subscriber, psp, dp)
+		pushit := true
+		for _, d := range chked_dps {
+			if d == dp.Name() {
+				pushit = false
+			}
+		}
+		if pushit {
+			p.pushToDeliveryPoint(req, subscriber, psp, dp)
+			chked_dps = append(chked_dps, dp.Name())
+		}
 	}
 }
 

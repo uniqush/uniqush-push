@@ -25,8 +25,8 @@ import (
 	"os"
 	"strconv"
 	"strings"
-	"time"
 	"sync/atomic"
+	"time"
 )
 
 type WebFrontEnd struct {
@@ -39,7 +39,7 @@ type WebFrontEnd struct {
 	strMapPools map[string]*stringMapPool
 	notifPools  map[string]*notificationPool
 	version     string
-	closed uint32
+	closed      uint32
 }
 
 type NullWriter struct{}
