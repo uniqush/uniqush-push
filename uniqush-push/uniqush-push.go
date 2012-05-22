@@ -27,7 +27,7 @@ import (
 var conf = flag.String("config", "/etc/uniqush/uniqush-push.conf", "Config file path")
 var showVersion = flag.Bool("version", false, "Version info")
 
-var version = "uniqush-push 1.2.8"
+var version = "uniqush-push 1.2.8.1"
 
 func main() {
 	flag.Parse()
