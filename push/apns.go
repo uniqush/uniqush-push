@@ -238,11 +238,11 @@ func (p *APNSPushService) reconnect(psp *PushServiceProvider) (net.Conn, error) 
 	}
 	tlsconn, err := tls.Dial("tcp", psp.VolatileData["addr"], conf)
 	if err != nil {
-		return nil, NewInvalidPushServiceProviderError(psp, err)
+		return nil, NewConnectionError(psp, err, "DialErr")
 	}
 	err = tlsconn.Handshake()
 	if err != nil {
-		return nil, NewInvalidPushServiceProviderError(psp, err)
+		return nil, NewConnectionError(psp, err, "HandshakeErr")
 	}
 	p.conns[name] = tlsconn
 	return tlsconn, nil

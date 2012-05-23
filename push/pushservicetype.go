@@ -144,6 +144,19 @@ func NewInvalidPushServiceProviderError(s *PushServiceProvider, err error) *Inva
 				s.Name() + "; " + err.Error()}, s, err}
 }
 
+type ConnectionError struct {
+	remoteServerError
+	PushServiceProvider *PushServiceProvider
+	Err                 error
+}
+
+func NewConnectionError(s *PushServiceProvider, err error, msg string) *InvalidPushServiceProviderError {
+	return &InvalidPushServiceProviderError{
+		remoteServerError{
+			"ConnectionError: [" + msg + "] psp=" +
+				s.Name() + "; " + err.Error()}, s, err}
+}
+
 type RetryError struct {
 	remoteServerError
 	RetryAfter int
