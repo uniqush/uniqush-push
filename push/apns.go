@@ -235,6 +235,7 @@ func (p *APNSPushService) reconnect(psp *PushServiceProvider) (net.Conn, error) 
 	}
 	conf := &tls.Config{
 		Certificates: []tls.Certificate{cert},
+		InsecureSkipVerify: true,
 	}
 	tlsconn, err := tls.Dial("tcp", psp.VolatileData["addr"], conf)
 	if err != nil {
