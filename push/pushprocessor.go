@@ -214,6 +214,9 @@ func (p *PushProcessor) pushFail(req *Request,
 		psp.PushServiceName(), req.ID, req.Service, subscriber,
 		psp.Name(), dp.Name(), err)
 	p.writer.PushFail(req, subscriber, psp, dp, err)
+	p.logger.Debugf("[%s][PushFailDebug] RequestId=%s Service=%s Subscriber=%s PushServiceProvider=\"%s\" DeliveryPoint=\"%s\" \"%v\"",
+		psp.PushServiceName(), req.ID, req.Service, subscriber,
+		psp.String(), dp.String(), err)
 	recycle(psp, dp, req.Notification)
 }
 

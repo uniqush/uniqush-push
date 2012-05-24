@@ -52,6 +52,8 @@ func (s *UniqushSystem) loadLogInfo(c *conf.ConfigFile, field string, prefix str
 		case "standard":
 			level = LOGLEVEL_INFO
 		case "verbose":
+			level = LOGLEVEL_INFO
+		case "debug":
 			level = LOGLEVEL_DEBUG
 		default:
 			level = LOGLEVEL_INFO
