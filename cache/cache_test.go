@@ -177,3 +177,29 @@ func TestFlushOnTimeOut(t *testing.T) {
 		}
 	}
 }
+
+func TestEvictValue(t *testing.T) {
+	kv := make(map[string]string)
+	kv["key1"] = "1"
+	kv["key2"] = "2"
+	kv["key3"] = "3"
+	kv["key4"] = "4"
+
+	f := newMemFlusher()
+
+	c := New(4, 3, 0*time.Second, f)
+	keys := []string{"key1", "key2", "key3", "key4"}
+
+	for _, k := range keys {
+		c.Set(k, kv[k])
+	}
+
+	c.Get("key1")
+	c.Set("key5", "xxx")
+	if v := c.Get("key1"); v == nil {
+		c.debug()
+		t.Errorf("key1 does not exist")
+	}
+
+}
+
