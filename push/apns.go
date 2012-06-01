@@ -123,13 +123,13 @@ func (p *APNSPushService) BuildPushServiceProviderFromMap(kv map[string]string, 
 		return errors.New("NoService")
 	}
 
-	if cert, ok := kv["cert"]; ok {
+	if cert, ok := kv["cert"]; ok && len(cert) > 0 {
 		psp.FixedData["cert"] = cert
 	} else {
 		return errors.New("NoCertificate")
 	}
 
-	if key, ok := kv["key"]; ok {
+	if key, ok := kv["key"]; ok && len(key) > 0 {
 		psp.FixedData["key"] = key
 	} else {
 		return errors.New("NoPrivateKey")
@@ -146,17 +146,17 @@ func (p *APNSPushService) BuildPushServiceProviderFromMap(kv map[string]string, 
 }
 
 func (p *APNSPushService) BuildDeliveryPointFromMap(kv map[string]string, dp *DeliveryPoint) error {
-	if service, ok := kv["service"]; ok {
+	if service, ok := kv["service"]; ok && len(service) > 0 {
 		dp.FixedData["service"] = service
 	} else {
 		return errors.New("NoService")
 	}
-	if sub, ok := kv["subscriber"]; ok {
+	if sub, ok := kv["subscriber"]; ok && len(sub) > 0 {
 		dp.FixedData["subscriber"] = sub
 	} else {
 		return errors.New("NoSubscriber")
 	}
-	if devtoken, ok := kv["devtoken"]; ok {
+	if devtoken, ok := kv["devtoken"]; ok && len(devtoken) > 0 {
 		dp.FixedData["devtoken"] = devtoken
 	} else {
 		return errors.New("NoDevToken")

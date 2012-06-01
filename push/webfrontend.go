@@ -112,16 +112,21 @@ func (f *WebFrontEnd) addPushServiceProvider(kv map[string]string, id, addr stri
 	a.RequestSenderAddr = addr
 	a.errch = errch
 	var ok bool
+
 	if a.Service, ok = kv["service"]; !ok {
 		f.logger.Errorf("[AddPushServiceRequestFail] Requestid=%s From=%s NoServiceName", id, addr)
-		f.writer.BadRequest(a, errors.New("NoServiceName"))
+		err := errors.New("NoServiceName")
+		f.writer.BadRequest(a, err)
+		a.Respond(err)
+		a.Finish()
 		return
 	}
-
 	psp, err := f.psm.BuildPushServiceProviderFromMap(kv)
 	if err != nil {
 		f.logger.Errorf("[AddPushServiceRequestFail] %v", err)
 		f.writer.BadRequest(a, err)
+		a.Respond(err)
+		a.Finish()
 		return
 	}
 	a.PushServiceProvider = psp
@@ -142,14 +147,18 @@ func (f *WebFrontEnd) removePushServiceProvider(kv map[string]string, id, addr s
 	var ok bool
 	if a.Service, ok = kv["service"]; !ok {
 		f.logger.Errorf("[RemovePushServiceRequestFail] Requestid=%s From=%s NoServiceName", id, addr)
-		f.writer.BadRequest(a, errors.New("NoServiceName"))
+		err := errors.New("NoServiceName")
+		f.writer.BadRequest(a, err)
+		a.Respond(err)
+		a.Finish()
 		return
 	}
-
 	psp, err := f.psm.BuildPushServiceProviderFromMap(kv)
 	if err != nil {
-		f.logger.Errorf("[AddPushServiceRequestFail] %v", err)
+		f.logger.Errorf("[RemovePushServiceRequestFail] %v", err)
 		f.writer.BadRequest(a, err)
+		a.Respond(err)
+		a.Finish()
 		return
 	}
 	a.PushServiceProvider = psp
@@ -174,13 +183,19 @@ func (f *WebFrontEnd) addDeliveryPointToService(kv map[string]string, id, addr s
 	var err error
 	if a.Service, ok = kv["service"]; !ok {
 		f.logger.Errorf("[SubscribeFail] Requestid=%s From=%s NoServiceName", id, addr)
-		f.writer.BadRequest(a, errors.New("NoServiceName"))
+		err = errors.New("NoServiceName")
+		f.writer.BadRequest(a, err)
+		a.Respond(err)
+		a.Finish()
 		return
 	}
 	var subscriber string
 	if subscriber, ok = kv["subscriber"]; !ok {
 		f.logger.Errorf("[SubscribeFail] Requestid=%s From=%s NoSubscriber", id, addr)
-		f.writer.BadRequest(a, errors.New("NoSubscriber"))
+		err = errors.New("NoSubscriber")
+		f.writer.BadRequest(a, err)
+		a.Respond(err)
+		a.Finish()
 		return
 	}
 
@@ -191,6 +206,8 @@ func (f *WebFrontEnd) addDeliveryPointToService(kv map[string]string, id, addr s
 	if err != nil {
 		f.logger.Errorf("[SubscribeFail] %v", err)
 		f.writer.BadRequest(a, err)
+		a.Respond(err)
+		a.Finish()
 		return
 	}
 	a.DeliveryPoint = dp
@@ -216,13 +233,19 @@ func (f *WebFrontEnd) removeDeliveryPointFromService(kv map[string]string, id, a
 	var err error
 	if a.Service, ok = kv["service"]; !ok {
 		f.logger.Errorf("[UnsubscribeFail] Requestid=%s From=%s NoServiceName", id, addr)
-		f.writer.BadRequest(a, errors.New("NoServiceName"))
+		err = errors.New("NoServiceName")
+		f.writer.BadRequest(a, err)
+		a.Respond(err)
+		a.Finish()
 		return
 	}
 	var subscriber string
 	if subscriber, ok = kv["subscriber"]; !ok {
 		f.logger.Errorf("[UnsubscribeFail] Requestid=%s From=%s NoSubscriber", id, addr)
-		f.writer.BadRequest(a, errors.New("NoSubscriber"))
+		err = errors.New("NoSubscriber")
+		f.writer.BadRequest(a, err)
+		a.Respond(err)
+		a.Finish()
 		return
 	}
 
@@ -233,6 +256,8 @@ func (f *WebFrontEnd) removeDeliveryPointFromService(kv map[string]string, id, a
 	if err != nil {
 		f.logger.Errorf("[UnsubscribeFail] %v", err)
 		f.writer.BadRequest(a, err)
+		a.Respond(err)
+		a.Finish()
 		return
 	}
 	a.DeliveryPoint = dp
@@ -255,7 +280,10 @@ func (f *WebFrontEnd) pushNotification(kv map[string]string, id, addr string, er
 	var ok bool
 	if a.Service, ok = kv["service"]; !ok {
 		f.logger.Errorf("[PushNotificationFail] Requestid=%s From=%s NoServiceName", id, addr)
-		f.writer.BadRequest(a, errors.New("NoServiceName"))
+		err := errors.New("NoServiceName")
+		f.writer.BadRequest(a, err)
+		a.Respond(err)
+		a.Finish()
 		return
 	}
 
@@ -309,19 +337,22 @@ func (f *WebFrontEnd) pushNotification(kv map[string]string, id, addr string, er
 
 	if len(a.Subscribers) == 0 {
 		f.logger.Errorf("[PushNotificationFail] Requestid=%s From=%s NoSubscriber", id, addr)
-		f.writer.BadRequest(a, errors.New("NoSubscriber"))
+		err := errors.New("NoSubscriber")
+		f.writer.BadRequest(a, err)
 		a.Respond(fmt.Errorf("NoSubscriber"))
+		a.Finish()
 		return
 	}
 	if a.Notification.IsEmpty() {
 		f.logger.Errorf("[PushNotificationFail] Requestid=%s From=%s EmptyData", id, addr)
-		f.writer.BadRequest(a, errors.New("NoMessageBody"))
+		err := errors.New("NoMessageBody")
+		f.writer.BadRequest(a, err)
 		a.Respond(fmt.Errorf("NoMessageBody"))
+		a.Finish()
 		return
 	}
 	f.ch <- a
-	// XXX Should we include the message body in the log?
-	f.logger.Infof("[PushNotificationRequest] Requestid=%s From=%s Service=%s Subscribers=%s Body=\"%s\"", id, addr, a.Service, subscribers, a.Notification.Data["msg"])
+	f.logger.Infof("[PushNotificationRequest] Requestid=%s From=%s Service=%s Subscribers=%s", id, addr, a.Service, subscribers)
 	f.logger.Debugf("[PushNotificationRequest] Data=%v", a.Notification.Data)
 	f.writer.RequestReceived(a)
 	f.strMapPools[PUSH_NOTIFICATION_URL].recycle(kv)
@@ -415,6 +446,7 @@ func (f *WebFrontEnd) Finalize() {
 
 func (f *WebFrontEnd) Run() {
 	f.logger.Configf("[Start] %s", f.addr)
+	f.logger.Debugf("[Version] %s", f.version)
 	http.Handle(STOP_PROGRAM_URL, f)
 	http.Handle(VERSION_INFO_URL, f)
 	http.Handle(ADD_PUSH_SERVICE_PROVIDER_TO_SERVICE_URL, f)

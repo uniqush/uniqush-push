@@ -53,18 +53,18 @@ func (p *C2DMPushService) Finalize() {}
 
 func (p *C2DMPushService) BuildPushServiceProviderFromMap(kv map[string]string,
 	psp *PushServiceProvider) error {
-	if service, ok := kv["service"]; ok {
+	if service, ok := kv["service"]; ok && len(service) > 0 {
 		psp.FixedData["service"] = service
 	} else {
 		return errors.New("NoService")
 	}
-	if senderid, ok := kv["senderid"]; ok {
+	if senderid, ok := kv["senderid"]; ok && len(senderid) > 0 {
 		psp.FixedData["senderid"] = senderid
 	} else {
 		return errors.New("NoSenderId")
 	}
 
-	if authtoken, ok := kv["authtoken"]; ok {
+	if authtoken, ok := kv["authtoken"]; ok && len(authtoken) > 0 {
 		psp.VolatileData["authtoken"] = authtoken
 	} else {
 		return errors.New("NoAuthToken")
@@ -75,23 +75,23 @@ func (p *C2DMPushService) BuildPushServiceProviderFromMap(kv map[string]string,
 
 func (p *C2DMPushService) BuildDeliveryPointFromMap(kv map[string]string,
 	dp *DeliveryPoint) error {
-	if service, ok := kv["service"]; ok {
+	if service, ok := kv["service"]; ok && len(service) > 0 {
 		dp.FixedData["service"] = service
 	} else {
 		return errors.New("NoService")
 	}
-	if sub, ok := kv["subscriber"]; ok {
+	if sub, ok := kv["subscriber"]; ok && len(sub) > 0 {
 		dp.FixedData["subscriber"] = sub
 	} else {
 		return errors.New("NoSubscriber")
 	}
-	if account, ok := kv["account"]; ok {
+	if account, ok := kv["account"]; ok && len(account) > 0 {
 		dp.FixedData["account"] = account
 	} else {
 		return errors.New("NoGoogleAccount")
 	}
 
-	if regid, ok := kv["regid"]; ok {
+	if regid, ok := kv["regid"]; ok && len(regid) > 0 {
 		dp.FixedData["regid"] = regid
 	} else {
 		return errors.New("NoRegId")
