@@ -39,7 +39,7 @@ func TestInsertValues(t *testing.T) {
 		value := c.Get(k).(string)
 		if value != v {
 			t.Errorf("should be %v on key %v. Got %v",
-					 v, k, value)
+				v, k, value)
 		}
 	}
 
@@ -152,3 +152,28 @@ func TestFlushOnDirty(t *testing.T) {
 	}
 }
 
+func TestFlushOnTimeOut(t *testing.T) {
+	kv := make(map[string]string)
+	kv["key1"] = "1"
+	kv["key2"] = "2"
+	kv["key3"] = "3"
+	kv["key4"] = "4"
+
+	f := newMemFlusher()
+	duration := 3 * time.Second
+
+	c := New(5, 5, duration, f)
+	keys := []string{"key1", "key2", "key3", "key4"}
+
+	for _, k := range keys {
+		c.Set(k, kv[k])
+	}
+
+	time.Sleep(duration + 1*time.Second)
+
+	for _, k := range keys {
+		if _, ok := f.data[k]; !ok {
+			t.Errorf("%v does not exist", k)
+		}
+	}
+}
