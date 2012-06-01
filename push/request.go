@@ -87,7 +87,13 @@ func (req *Request) Respond(err error) {
 }
 
 func (req *Request) Finish() {
+	defer func() {
+		if r := recover(); r != nil {
+			return
+		}
+	}()
 	if req.errch != nil {
 		close(req.errch)
+		req.errch = nil
 	}
 }
