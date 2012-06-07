@@ -20,7 +20,6 @@ package main
 import (
 	"flag"
 	"fmt"
-	"github.com/monnand/uniqush/push"
 	"os"
 )
 
@@ -35,7 +34,7 @@ func main() {
 		fmt.Printf("%v\n", version)
 		return
 	}
-	unisys, err := push.LoadUniqushSystem(*conf, version)
+	unisys, err := LoadPushProgram(*conf, version)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Fatal Error: %v\n", err)
 		os.Exit(-1)
