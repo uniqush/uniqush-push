@@ -40,7 +40,7 @@ const (
 	DELIVERY_POINT_COUNTER_PREFIX                         string = "delivery.point.counter:"
 )
 
-func NewPushRedisDB(c *DatabaseConfig) (*PushRedisDB, error) {
+func newPushRedisDB(c *DatabaseConfig) (*PushRedisDB, error) {
 	if c == nil {
 		return nil, errors.New("Invalid Database Config")
 	}

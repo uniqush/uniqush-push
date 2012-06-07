@@ -20,20 +20,20 @@ package pushdb
 import (
 	. "github.com/monnand/uniqush/pushsys"
 	"github.com/monnand/uniqush/cache"
-	"fmt"
+	"time"
 )
 
-type PushDatabaseCache struct {
+type pushRawDatabaseCache struct {
 	pspCache *cache.Cache
 	dpCache *cache.Cache
 	srvSub2Dp *cache.Cache
 	srv2Psp *cache.Cache
-	dbwriter PushDatabaseWriter
-	dbreader PushDatabaseReader
+	dbwriter pushRawDatabaseWriter
+	dbreader pushRawDatabaseReader
 }
 
-type pspFluser struct {
-	cdb *PushDatabaseCache
+type pspFlusher struct {
+	cdb *pushRawDatabaseCache
 }
 
 func (self *pspFlusher) Add(key string, value interface{}) {
@@ -47,7 +47,7 @@ func (self *pspFlusher) Remove(key string) {
 }
 
 type dpFlusher struct {
-	cdb *PushDatabaseCache
+	cdb *pushRawDatabaseCache
 }
 
 func (self *dpFlusher) Add(key string, value interface{}) {
@@ -56,13 +56,13 @@ func (self *dpFlusher) Add(key string, value interface{}) {
 	}
 }
 
-func (self *pspFlusher) Remove(key string) {
+func (self *dpFlusher) Remove(key string) {
 	self.cdb.dbwriter.RemoveDeliveryPoint(key)
 }
 
-func NewPushDatabaseCache(c *DatabaseConfig,
-						  dbreader PushDatabaseReader,
-						  dbwriter PushDatabaseWriter) (*PushDatabaseCache, error) {
+func NewpushRawDatabaseCache(c *DatabaseConfig,
+						  dbreader pushRawDatabaseReader,
+						  dbwriter pushRawDatabaseWriter) (*pushRawDatabaseCache, error) {
 	cacheSize := 1024
 	flushPeriod := 600
 	leastDirty := 128
@@ -72,21 +72,21 @@ func NewPushDatabaseCache(c *DatabaseConfig,
 		leastDirty = c.LeastDirty
 	}
 
-	cdb := new(PushDatabaseCache)
+	cdb := new(pushRawDatabaseCache)
 	cdb.dbreader = dbreader
 	cdb.dbwriter = dbwriter
 	pspflusher := &pspFlusher{cdb:cdb}
 	dpflusher := &dpFlusher{cdb:cdb}
-	cdb.pspCache = cache.New(cacheSize, leastDirty, flushPeriod * time.Second, pspflusher)
-	cdb.dpCache = cache.New(cacheSize, leastDirty, flushPeriod * time.Second, dpflusher)
-	cdb.srvSub2Dp = cache.New(cacheSize, leastDirty, flushPeriod * time.Second, nil)
-	cdb.srv2Psp = cache.New(cacheSize, leastDirty, flushPeriod * time.Second, nil)
-	return cdb
+	cdb.pspCache = cache.New(cacheSize, leastDirty, time.Duration(flushPeriod) * time.Second, pspflusher)
+	cdb.dpCache = cache.New(cacheSize, leastDirty, time.Duration(flushPeriod) * time.Second, dpflusher)
+	cdb.srvSub2Dp = cache.New(cacheSize, leastDirty, time.Duration(flushPeriod) * time.Second, nil)
+	cdb.srv2Psp = cache.New(cacheSize, leastDirty, time.Duration(flushPeriod) * time.Second, nil)
+	return cdb, nil
 }
 
-func (cdb *PushDatabaseCache) GetDeliveryPoint(dp string) (ret *DeliveryPoint, err error) {
+func (cdb *pushRawDatabaseCache) GetDeliveryPoint(dp string) (ret *DeliveryPoint, err error) {
 	if dpi := cdb.dpCache.Get(dp); dpi == nil {
-		ret, err = dbreader.GetDeliveryPoint(dp)
+		ret, err = cdb.dbreader.GetDeliveryPoint(dp)
 		if err != nil {
 			return nil, err
 		}
@@ -97,35 +97,35 @@ func (cdb *PushDatabaseCache) GetDeliveryPoint(dp string) (ret *DeliveryPoint, e
 	return ret, nil
 }
 
-func (cdb *PushDatabaseCache) GetPushServiceProvider(psp string) (ret *PushServiceProvider, err error) {
+func (cdb *pushRawDatabaseCache) GetPushServiceProvider(psp string) (ret *PushServiceProvider, err error) {
 	if pspi := cdb.pspCache.Get(psp); pspi == nil {
-		ret, err = dbreader.GetPushServiceProvider(psp)
+		ret, err = cdb.dbreader.GetPushServiceProvider(psp)
 		if err != nil {
 			return nil, err
 		}
 		cdb.dpCache.Set(psp, ret.Name())
 	} else {
-		ret = dpi.(*PushServiceProvider)
+		ret = pspi.(*PushServiceProvider)
 	}
 	return ret, nil
 }
 
-func (cdb *PushDatabaseCache) SetDeliveryPoint(dp *DeliveryPoint) error {
+func (cdb *pushRawDatabaseCache) SetDeliveryPoint(dp *DeliveryPoint) error {
 	cdb.dpCache.Set(dp.Name(), dp)
 	return nil
 }
 
-func (cdb *PushDatabaseCache) SetPushServiceProvider(psp *PushServiceProvider) error {
+func (cdb *pushRawDatabaseCache) SetPushServiceProvider(psp *PushServiceProvider) error {
 	cdb.pspCache.Set(psp.Name(), psp)
 	return nil
 }
 
-func (cdb *PushServiceProvider) RemoveDeliveryPoint(dp string) error {
+func (cdb *pushRawDatabaseCache) RemoveDeliveryPoint(dp string) error {
 	cdb.dpCache.Delete(dp)
 	return nil
 }
 
-func (cdb *PushServiceProvider) RemovePushServiceProvider(psp string) error {
+func (cdb *pushRawDatabaseCache) RemovePushServiceProvider(psp string) error {
 	cdb.pspCache.Delete(psp)
 	return nil
 }
