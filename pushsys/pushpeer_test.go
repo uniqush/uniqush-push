@@ -74,7 +74,7 @@ func TestPushPeer(t *testing.T) {
 	pp.VolatileData = make(map[string]string, 1)
 	pp.VolatileData["realauthtoken"] = "fsfad"
 
-	fmt.Printf("Name: %s\n", pp.Name("myname"))
+	fmt.Printf("Name: %s\n", pp.Name())
 
 	str := pp.Marshal()
 	fmt.Printf("Marshal: %s\n", string(str))
@@ -88,7 +88,7 @@ func TestPushPeer(t *testing.T) {
 		t.Errorf("%v\n", err)
 		return
 	}
-	fmt.Printf("Push Service: %s", psp.ToString())
+	fmt.Printf("Push Service: %s", psp.String())
 	value := psp.Marshal()
 	fmt.Printf("PSP Marshal: %s\n", string(value))
 }
@@ -107,10 +107,8 @@ func TestCompatability(t *testing.T) {
 	psm := GetPushServiceManager()
 	psm.RegisterPushServiceType(tpst)
 
-	psp := NewEmptyPushServiceProvider()
-	dp := NewEmptyDeliveryPoint()
-	psm.BuildPushServiceProviderFromMap(pspm, psp)
-	psm.BuildDeliveryPointFromMap(dpm, dp)
+	psp, _ := psm.BuildPushServiceProviderFromMap(pspm)
+	dp, _ := psm.BuildDeliveryPointFromMap(dpm)
 
 	if psp.PushServiceName() != dp.PushServiceName() {
 		t.Errorf("Should be compatible\n")

@@ -15,7 +15,7 @@
  *
  */
 
-package db
+package pushdb
 
 import (
 	"errors"

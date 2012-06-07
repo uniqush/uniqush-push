@@ -15,7 +15,7 @@
  *
  */
 
-package db
+package pushdb
 
 import (
 	. "github.com/monnand/uniqush/pushsys"
