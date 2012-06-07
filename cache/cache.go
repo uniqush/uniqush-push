@@ -89,7 +89,7 @@ func (c *Cache) debug() {
 
 func (c *Cache) checkAndFlush() {
 	c.mu.Lock()
-	if c.maxNrDirty > 0 && c.dirtyList.Len() >= c.maxNrDirty {
+	if c.dirtyList.Len() >= c.maxNrDirty {
 		c.mu.Unlock()
 		c.Flush()
 	} else {

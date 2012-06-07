@@ -15,7 +15,7 @@
  *
  */
 
-package objmempool
+package mempool
 
 type ObjectMemoryPool struct {
 	objs  []interface{}
