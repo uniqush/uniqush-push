@@ -34,6 +34,13 @@ const (
 	NR_LOGLEVELS
 )
 
+type nullWriter struct{}
+
+func (f *nullWriter) Write(p []byte) (int, error) {
+	return len(p), nil
+}
+
+
 type Logger struct {
 	logLevel int
 	loggers  []*log.Logger
@@ -114,7 +121,7 @@ func NewLogger(writer io.Writer, prefix string, logLevel int) *Logger {
 	ret := new(Logger)
 	ret.loggers = make([]*log.Logger, NR_LOGLEVELS)
 	if writer == nil {
-		ret.writer = &NullWriter{}
+		ret.writer = &nullWriter{}
 	} else {
 		ret.writer = writer
 	}
@@ -131,7 +138,7 @@ func (l *Logger) SetLogLevel(logLevel int) {
 	for i := 0; i <= logLevel; i++ {
 		l.loggers[i] = log.New(l.writer, l.prefix+logLevelToName[i]+" ", log.LstdFlags)
 	}
-	nullwriter := &NullWriter{}
+	nullwriter := &nullWriter{}
 	for i := logLevel + 1; i < NR_LOGLEVELS; i++ {
 		l.loggers[i] = log.New(nullwriter, l.prefix+logLevelToName[i]+" ", log.LstdFlags)
 	}

@@ -19,40 +19,40 @@ package main
 
 import (
 	"sync"
-	. "github.com/monnand/uniqush/uniqushlog"
+	"github.com/monnand/uniqush/uniqushlog"
 )
 
-type UniqushBackEndIf interface {
+type PushBackEnd interface {
 	SetChannel(ch <-chan *Request)
-	SetLogger(logger *Logger)
+	SetLogger(logger *uniqushlog.Logger)
 	SetProcessor(action int, proc RequestProcessor)
 	Run()
 	Finalize()
 }
 
-type UniqushBackEnd struct {
+type pushBackEnd struct {
 	procs  []RequestProcessor
 	ch     <-chan *Request
-	logger *Logger
+	logger *uniqushlog.Logger
 	wg     sync.WaitGroup
 }
 
-func NewUniqushBackEnd(ch chan *Request, logger *Logger) UniqushBackEndIf {
-	b := new(UniqushBackEnd)
+func NewPushBackEnd(ch chan *Request, logger *uniqushlog.Logger) PushBackEnd {
+	b := new(pushBackEnd)
 	b.ch = ch
 	b.logger = logger
 	return b
 }
 
-func (b *UniqushBackEnd) SetChannel(ch <-chan *Request) {
+func (b *pushBackEnd) SetChannel(ch <-chan *Request) {
 	b.ch = ch
 }
 
-func (b *UniqushBackEnd) SetLogger(logger *Logger) {
+func (b *pushBackEnd) SetLogger(logger *uniqushlog.Logger) {
 	b.logger = logger
 }
 
-func (b *UniqushBackEnd) SetProcessor(action int, proc RequestProcessor) {
+func (b *pushBackEnd) SetProcessor(action int, proc RequestProcessor) {
 	if len(b.procs) < NR_ACTIONS {
 		a := make([]RequestProcessor, NR_ACTIONS, NR_ACTIONS)
 		copy(a, b.procs)
@@ -64,11 +64,11 @@ func (b *UniqushBackEnd) SetProcessor(action int, proc RequestProcessor) {
 	b.procs[action] = proc
 }
 
-func (b *UniqushBackEnd) Finalize() {
+func (b *pushBackEnd) Finalize() {
 	b.wg.Wait()
 }
 
-func (b *UniqushBackEnd) Run() {
+func (b *pushBackEnd) Run() {
 	if len(b.procs) < NR_ACTIONS {
 		return
 	}

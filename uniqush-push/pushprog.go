@@ -23,6 +23,9 @@ import (
 	"io"
 	"os"
 	"strings"
+	. "github.com/monnand/uniqush/uniqushlog"
+	. "github.com/monnand/uniqush/pushdb"
+	. "github.com/monnand/uniqush/pushsys"
 )
 
 func (s *PushProgram) loadLogInfo(c *conf.ConfigFile, field string, prefix string) (*Logger, error) {
@@ -69,7 +72,7 @@ func (s *PushProgram) loadLogInfo(c *conf.ConfigFile, field string, prefix strin
 func loadDatabaseConfig(cf *conf.ConfigFile) (*DatabaseConfig, error) {
 	var err error
 	c := new(DatabaseConfig)
-	c.psm = GetPushServiceManager()
+	c.PushServiceManager = GetPushServiceManager()
 	c.Engine, err = cf.GetString("Database", "engine")
 	if err != nil || c.Engine == "" {
 		c.Engine = "redis"
@@ -108,11 +111,11 @@ func loadDatabaseConfig(cf *conf.ConfigFile) (*DatabaseConfig, error) {
 }
 
 type PushProgram struct {
-	Frontend UniqushFrontEnd
-	Backend  UniqushBackEndIf
+	Frontend PushFrontEnd
+	Backend  PushBackEnd
 	Stopch   chan bool
 	Bridge   chan *Request
-	Database DatabaseFrontDeskIf
+	Database PushDatabase
 	psm      *PushServiceManager
 	logfile  io.WriteCloser
 	version  string
@@ -144,7 +147,6 @@ func LoadPushProgram(filename, version string) (*PushProgram, error) {
 	ret.Bridge = make(chan *Request)
 	ret.logfile = os.Stderr
 	ret.version = version
-	ew := NewEventWriter(&NullWriter{})
 
 	logfilename, err := c.GetString("default", "logfile")
 	if err == nil && logfilename != "" {
@@ -169,15 +171,14 @@ func LoadPushProgram(filename, version string) (*PushProgram, error) {
 	psm := GetPushServiceManager()
 	ret.psm = psm
 
-	ret.Frontend = NewWebFrontEnd(ret.Bridge, logger, addr, psm, version)
+	ret.Frontend = newWebPushFrontEnd(ret.Bridge, logger, addr, psm, version)
 	ret.Frontend.SetStopChannel(ret.Stopch)
-	ret.Frontend.SetEventWriter(ew)
 
 	logger, e10 = ret.loadLogInfo(c, "Backend", "[Backend]")
 	if e10 != nil {
 		return nil, e10
 	}
-	ret.Backend = NewUniqushBackEnd(ret.Bridge, logger)
+	ret.Backend = NewPushBackEnd(ret.Bridge, logger)
 
 	var p RequestProcessor
 
@@ -186,8 +187,7 @@ func LoadPushProgram(filename, version string) (*PushProgram, error) {
 	if e0 != nil {
 		return nil, e0
 	}
-	dbf, e30 := NewDatabaseFrontDeskWithoutCache(dbconf)
-	//dbf, e30 := NewDatabaseFrontDesk(dbconf)
+	dbf, e30 := NewPushDatabaseWithoutCache(dbconf)
 
 	if e30 != nil {
 		return nil, e30
@@ -199,35 +199,35 @@ func LoadPushProgram(filename, version string) (*PushProgram, error) {
 	if e10 != nil {
 		return nil, e10
 	}
-	p = NewAddPushServiceProviderProcessor(logger, ew, dbf)
+	p = NewAddPushServiceProviderProcessor(logger, dbf)
 	ret.Backend.SetProcessor(ACTION_ADD_PUSH_SERVICE_PROVIDER, p)
 
 	logger, e10 = ret.loadLogInfo(c, "RemovePushServiceProvider", "[RemovePushServiceProvider]")
 	if e10 != nil {
 		return nil, e10
 	}
-	p = NewRemovePushServiceProviderProcessor(logger, ew, dbf)
+	p = NewRemovePushServiceProviderProcessor(logger, dbf)
 	ret.Backend.SetProcessor(ACTION_REMOVE_PUSH_SERVICE_PROVIDER, p)
 
 	logger, e10 = ret.loadLogInfo(c, "Subscribe", "[Subscribe]")
 	if e10 != nil {
 		return nil, e10
 	}
-	p = NewSubscribeProcessor(logger, ew, dbf)
+	p = NewSubscribeProcessor(logger, dbf)
 	ret.Backend.SetProcessor(ACTION_SUBSCRIBE, p)
 
 	logger, e10 = ret.loadLogInfo(c, "Unsubscribe", "[Unsubscribe]")
 	if e10 != nil {
 		return nil, e10
 	}
-	p = NewUnsubscribeProcessor(logger, ew, dbf)
+	p = NewUnsubscribeProcessor(logger, dbf)
 	ret.Backend.SetProcessor(ACTION_UNSUBSCRIBE, p)
 
 	logger, e10 = ret.loadLogInfo(c, "Push", "[Push]")
 	if e10 != nil {
 		return nil, e10
 	}
-	p = NewPushProcessor(logger, ew, dbf, ret.Bridge, psm)
+	p = NewPushProcessor(logger, dbf, ret.Bridge, psm)
 	ret.Backend.SetProcessor(ACTION_PUSH, p)
 	return ret, nil
 }

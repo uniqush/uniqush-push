@@ -23,18 +23,18 @@ import (
 	"os"
 )
 
-var conf = flag.String("config", "/etc/uniqush/uniqush-push.conf", "Config file path")
-var showVersion = flag.Bool("version", false, "Version info")
+var uniqushPushConfFlags = flag.String("config", "/etc/uniqush/uniqush-push.conf", "Config file path")
+var uniqushPushShowVersionFlag = flag.Bool("version", false, "Version info")
 
-var version = "uniqush-push 1.2.8.5"
+var uniqushPushVersion = "uniqush-push 1.2.8.5"
 
 func main() {
 	flag.Parse()
-	if *showVersion {
-		fmt.Printf("%v\n", version)
+	if *uniqushPushShowVersionFlag {
+		fmt.Printf("%v\n", uniqushPushVersion)
 		return
 	}
-	unisys, err := LoadPushProgram(*conf, version)
+	unisys, err := LoadPushProgram(*uniqushPushConfFlags, uniqushPushVersion)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Fatal Error: %v\n", err)
 		os.Exit(-1)

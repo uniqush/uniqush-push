@@ -27,49 +27,44 @@ import (
 	"strings"
 	"sync/atomic"
 	"time"
+	. "github.com/monnand/uniqush/pushsys"
+	. "github.com/monnand/uniqush/mempool"
+	"github.com/monnand/uniqush/uniqushlog"
 )
 
-type WebFrontEnd struct {
+type webPushFrontEnd struct {
 	ch          chan<- *Request
-	logger      *Logger
+	logger      *uniqushlog.Logger
 	addr        string
-	writer      *EventWriter
 	stopch      chan<- bool
 	psm         *PushServiceManager
-	strMapPools map[string]*stringMapPool
-	notifPools  map[string]*notificationPool
+	strMapPools map[string]*StringMapPool
+	notifPools  map[string]*NotificationPool
 	version     string
 	closed      uint32
 }
 
-type NullWriter struct{}
-
-func (f *NullWriter) Write(p []byte) (int, error) {
-	return len(p), nil
-}
-
-func NewWebFrontEnd(ch chan *Request,
-	logger *Logger,
+func newWebPushFrontEnd(ch chan *Request,
+	logger *uniqushlog.Logger,
 	addr string,
 	psm *PushServiceManager,
-	version string) UniqushFrontEnd {
-	f := new(WebFrontEnd)
+	version string) PushFrontEnd {
+	f := new(webPushFrontEnd)
 	f.ch = ch
 	f.logger = logger
-	f.writer = NewEventWriter(new(NullWriter))
 	f.stopch = nil
 	f.psm = psm
-	f.strMapPools = make(map[string]*stringMapPool, 5)
+	f.strMapPools = make(map[string]*StringMapPool, 5)
 	f.version = version
 	f.closed = 0
 
-	f.strMapPools[ADD_PUSH_SERVICE_PROVIDER_TO_SERVICE_URL] = newStringMapPool(16, 3)
-	f.strMapPools[REMOVE_PUSH_SERVICE_PROVIDER_TO_SERVICE_URL] = newStringMapPool(16, 3)
-	f.strMapPools[ADD_DELIVERY_POINT_TO_SERVICE_URL] = newStringMapPool(16, 3)
-	f.strMapPools[REMOVE_DELIVERY_POINT_FROM_SERVICE_URL] = newStringMapPool(16, 3)
-	f.strMapPools[PUSH_NOTIFICATION_URL] = newStringMapPool(16, 3)
+	f.strMapPools[ADD_PUSH_SERVICE_PROVIDER_TO_SERVICE_URL] = NewStringMapPool(16, 3)
+	f.strMapPools[REMOVE_PUSH_SERVICE_PROVIDER_TO_SERVICE_URL] = NewStringMapPool(16, 3)
+	f.strMapPools[ADD_DELIVERY_POINT_TO_SERVICE_URL] = NewStringMapPool(16, 3)
+	f.strMapPools[REMOVE_DELIVERY_POINT_FROM_SERVICE_URL] = NewStringMapPool(16, 3)
+	f.strMapPools[PUSH_NOTIFICATION_URL] = NewStringMapPool(16, 3)
 
-	f.notifPools = make(map[string]*notificationPool, 16)
+	f.notifPools = make(map[string]*NotificationPool, 16)
 
 	if len(addr) == 0 {
 		// By default, we only accept localhost connection
@@ -79,19 +74,15 @@ func NewWebFrontEnd(ch chan *Request,
 	return f
 }
 
-func (f *WebFrontEnd) SetEventWriter(writer *EventWriter) {
-	f.writer = writer
-}
-
-func (f *WebFrontEnd) SetChannel(ch chan<- *Request) {
+func (f *webPushFrontEnd) SetChannel(ch chan<- *Request) {
 	f.ch = ch
 }
 
-func (f *WebFrontEnd) SetStopChannel(ch chan<- bool) {
+func (f *webPushFrontEnd) SetStopChannel(ch chan<- bool) {
 	f.stopch = ch
 }
 
-func (f *WebFrontEnd) stop() {
+func (f *webPushFrontEnd) stop() {
 	if f.stopch != nil {
 		f.stopch <- true
 	} else {
@@ -99,11 +90,11 @@ func (f *WebFrontEnd) stop() {
 	}
 }
 
-func (f *WebFrontEnd) SetLogger(logger *Logger) {
+func (f *webPushFrontEnd) SetLogger(logger *uniqushlog.Logger) {
 	f.logger = logger
 }
 
-func (f *WebFrontEnd) addPushServiceProvider(kv map[string]string, id, addr string, errch chan error) {
+func (f *webPushFrontEnd) addPushServiceProvider(kv map[string]string, id, addr string, errch chan error) {
 	a := new(Request)
 	a.PunchTimestamp()
 
@@ -116,7 +107,6 @@ func (f *WebFrontEnd) addPushServiceProvider(kv map[string]string, id, addr stri
 	if a.Service, ok = kv["service"]; !ok {
 		f.logger.Errorf("[AddPushServiceRequestFail] Requestid=%s From=%s NoServiceName", id, addr)
 		err := errors.New("NoServiceName")
-		f.writer.BadRequest(a, err)
 		a.Respond(err)
 		a.Finish()
 		return
@@ -124,19 +114,17 @@ func (f *WebFrontEnd) addPushServiceProvider(kv map[string]string, id, addr stri
 	psp, err := f.psm.BuildPushServiceProviderFromMap(kv)
 	if err != nil {
 		f.logger.Errorf("[AddPushServiceRequestFail] %v", err)
-		f.writer.BadRequest(a, err)
 		a.Respond(err)
 		a.Finish()
 		return
 	}
 	a.PushServiceProvider = psp
 	f.ch <- a
-	f.writer.RequestReceived(a)
 	f.logger.Infof("[AddPushServiceRequest] Requestid=%s From=%s Service=%s", id, addr, psp.Name())
-	f.strMapPools[ADD_PUSH_SERVICE_PROVIDER_TO_SERVICE_URL].recycle(kv)
+	f.strMapPools[ADD_PUSH_SERVICE_PROVIDER_TO_SERVICE_URL].Recycle(kv)
 }
 
-func (f *WebFrontEnd) removePushServiceProvider(kv map[string]string, id, addr string, errch chan error) {
+func (f *webPushFrontEnd) removePushServiceProvider(kv map[string]string, id, addr string, errch chan error) {
 	a := new(Request)
 	a.PunchTimestamp()
 	a.errch = errch
@@ -148,7 +136,6 @@ func (f *WebFrontEnd) removePushServiceProvider(kv map[string]string, id, addr s
 	if a.Service, ok = kv["service"]; !ok {
 		f.logger.Errorf("[RemovePushServiceRequestFail] Requestid=%s From=%s NoServiceName", id, addr)
 		err := errors.New("NoServiceName")
-		f.writer.BadRequest(a, err)
 		a.Respond(err)
 		a.Finish()
 		return
@@ -156,7 +143,6 @@ func (f *WebFrontEnd) removePushServiceProvider(kv map[string]string, id, addr s
 	psp, err := f.psm.BuildPushServiceProviderFromMap(kv)
 	if err != nil {
 		f.logger.Errorf("[RemovePushServiceRequestFail] %v", err)
-		f.writer.BadRequest(a, err)
 		a.Respond(err)
 		a.Finish()
 		return
@@ -164,12 +150,11 @@ func (f *WebFrontEnd) removePushServiceProvider(kv map[string]string, id, addr s
 	a.PushServiceProvider = psp
 
 	f.ch <- a
-	f.writer.RequestReceived(a)
 	f.logger.Infof("[RemovePushServiceRequest] Requestid=%s From=%s Service=%s", id, addr, psp.Name())
-	f.strMapPools[REMOVE_PUSH_SERVICE_PROVIDER_TO_SERVICE_URL].recycle(kv)
+	f.strMapPools[REMOVE_PUSH_SERVICE_PROVIDER_TO_SERVICE_URL].Recycle(kv)
 }
 
-func (f *WebFrontEnd) addDeliveryPointToService(kv map[string]string, id, addr string, errch chan error) {
+func (f *webPushFrontEnd) addDeliveryPointToService(kv map[string]string, id, addr string, errch chan error) {
 	a := new(Request)
 	a.PunchTimestamp()
 	a.Action = ACTION_SUBSCRIBE
@@ -184,7 +169,6 @@ func (f *WebFrontEnd) addDeliveryPointToService(kv map[string]string, id, addr s
 	if a.Service, ok = kv["service"]; !ok {
 		f.logger.Errorf("[SubscribeFail] Requestid=%s From=%s NoServiceName", id, addr)
 		err = errors.New("NoServiceName")
-		f.writer.BadRequest(a, err)
 		a.Respond(err)
 		a.Finish()
 		return
@@ -193,7 +177,6 @@ func (f *WebFrontEnd) addDeliveryPointToService(kv map[string]string, id, addr s
 	if subscriber, ok = kv["subscriber"]; !ok {
 		f.logger.Errorf("[SubscribeFail] Requestid=%s From=%s NoSubscriber", id, addr)
 		err = errors.New("NoSubscriber")
-		f.writer.BadRequest(a, err)
 		a.Respond(err)
 		a.Finish()
 		return
@@ -205,20 +188,18 @@ func (f *WebFrontEnd) addDeliveryPointToService(kv map[string]string, id, addr s
 	dp, err = f.psm.BuildDeliveryPointFromMap(kv)
 	if err != nil {
 		f.logger.Errorf("[SubscribeFail] %v", err)
-		f.writer.BadRequest(a, err)
 		a.Respond(err)
 		a.Finish()
 		return
 	}
 	a.DeliveryPoint = dp
 	f.ch <- a
-	f.writer.RequestReceived(a)
 	f.logger.Infof("[SubscribeRequest] Requestid=%s From=%s Name=%s", id, addr, dp.Name())
-	f.strMapPools[ADD_DELIVERY_POINT_TO_SERVICE_URL].recycle(kv)
+	f.strMapPools[ADD_DELIVERY_POINT_TO_SERVICE_URL].Recycle(kv)
 	return
 }
 
-func (f *WebFrontEnd) removeDeliveryPointFromService(kv map[string]string, id, addr string, errch chan error) {
+func (f *webPushFrontEnd) removeDeliveryPointFromService(kv map[string]string, id, addr string, errch chan error) {
 	a := new(Request)
 	a.PunchTimestamp()
 	a.Action = ACTION_UNSUBSCRIBE
@@ -234,7 +215,6 @@ func (f *WebFrontEnd) removeDeliveryPointFromService(kv map[string]string, id, a
 	if a.Service, ok = kv["service"]; !ok {
 		f.logger.Errorf("[UnsubscribeFail] Requestid=%s From=%s NoServiceName", id, addr)
 		err = errors.New("NoServiceName")
-		f.writer.BadRequest(a, err)
 		a.Respond(err)
 		a.Finish()
 		return
@@ -243,7 +223,6 @@ func (f *WebFrontEnd) removeDeliveryPointFromService(kv map[string]string, id, a
 	if subscriber, ok = kv["subscriber"]; !ok {
 		f.logger.Errorf("[UnsubscribeFail] Requestid=%s From=%s NoSubscriber", id, addr)
 		err = errors.New("NoSubscriber")
-		f.writer.BadRequest(a, err)
 		a.Respond(err)
 		a.Finish()
 		return
@@ -255,20 +234,18 @@ func (f *WebFrontEnd) removeDeliveryPointFromService(kv map[string]string, id, a
 	dp, err = f.psm.BuildDeliveryPointFromMap(kv)
 	if err != nil {
 		f.logger.Errorf("[UnsubscribeFail] %v", err)
-		f.writer.BadRequest(a, err)
 		a.Respond(err)
 		a.Finish()
 		return
 	}
 	a.DeliveryPoint = dp
 	f.ch <- a
-	f.writer.RequestReceived(a)
 	f.logger.Infof("[UnsubscribeRequest] Requestid=%s From=%s Name=%s", id, addr, dp.Name())
-	f.strMapPools[REMOVE_DELIVERY_POINT_FROM_SERVICE_URL].recycle(kv)
+	f.strMapPools[REMOVE_DELIVERY_POINT_FROM_SERVICE_URL].Recycle(kv)
 	return
 }
 
-func (f *WebFrontEnd) pushNotification(kv map[string]string, id, addr string, errch chan error) {
+func (f *webPushFrontEnd) pushNotification(kv map[string]string, id, addr string, errch chan error) {
 	a := new(Request)
 	a.PunchTimestamp()
 	a.Action = ACTION_PUSH
@@ -281,22 +258,21 @@ func (f *WebFrontEnd) pushNotification(kv map[string]string, id, addr string, er
 	if a.Service, ok = kv["service"]; !ok {
 		f.logger.Errorf("[PushNotificationFail] Requestid=%s From=%s NoServiceName", id, addr)
 		err := errors.New("NoServiceName")
-		f.writer.BadRequest(a, err)
 		a.Respond(err)
 		a.Finish()
 		return
 	}
 
-	var notifpool *notificationPool
+	var notifpool *NotificationPool
 	var subscribers string
 	nr_fields := 0
 
 	if notifpool, ok = f.notifPools[a.Service]; !ok {
-		notifpool = newNotificationPool(16, 1)
+		notifpool = NewNotificationPool(16, 1)
 		f.notifPools[a.Service] = notifpool
 	}
 
-	a.Notification = notifpool.get(len(kv) - 2)
+	a.Notification = notifpool.Get(len(kv) - 2)
 
 	for k, v := range kv {
 		if len(v) <= 0 {
@@ -337,16 +313,12 @@ func (f *WebFrontEnd) pushNotification(kv map[string]string, id, addr string, er
 
 	if len(a.Subscribers) == 0 {
 		f.logger.Errorf("[PushNotificationFail] Requestid=%s From=%s NoSubscriber", id, addr)
-		err := errors.New("NoSubscriber")
-		f.writer.BadRequest(a, err)
 		a.Respond(fmt.Errorf("NoSubscriber"))
 		a.Finish()
 		return
 	}
 	if a.Notification.IsEmpty() {
 		f.logger.Errorf("[PushNotificationFail] Requestid=%s From=%s EmptyData", id, addr)
-		err := errors.New("NoMessageBody")
-		f.writer.BadRequest(a, err)
 		a.Respond(fmt.Errorf("NoMessageBody"))
 		a.Finish()
 		return
@@ -354,8 +326,7 @@ func (f *WebFrontEnd) pushNotification(kv map[string]string, id, addr string, er
 	f.ch <- a
 	f.logger.Infof("[PushNotificationRequest] Requestid=%s From=%s Service=%s Subscribers=%s", id, addr, a.Service, subscribers)
 	f.logger.Debugf("[PushNotificationRequest] Data=%v", a.Notification.Data)
-	f.writer.RequestReceived(a)
-	f.strMapPools[PUSH_NOTIFICATION_URL].recycle(kv)
+	f.strMapPools[PUSH_NOTIFICATION_URL].Recycle(kv)
 }
 
 const (
@@ -368,7 +339,7 @@ const (
 	VERSION_INFO_URL                            = "/version"
 )
 
-func (f *WebFrontEnd) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+func (f *webPushFrontEnd) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if atomic.CompareAndSwapUint32(&f.closed, 1, 1) {
 		fmt.Fprintf(w, "Closed\r\n")
 		return
@@ -392,7 +363,7 @@ func (f *WebFrontEnd) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	errch := make(chan error)
 	if pool, ok := f.strMapPools[r.URL.Path]; ok {
-		kv = pool.get(len(r.Form))
+		kv = pool.Get(len(r.Form))
 	} else {
 		switch r.URL.Path {
 		case VERSION_INFO_URL:
@@ -440,11 +411,11 @@ func (f *WebFrontEnd) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func (f *WebFrontEnd) Finalize() {
+func (f *webPushFrontEnd) Finalize() {
 	atomic.StoreUint32(&f.closed, 1)
 }
 
-func (f *WebFrontEnd) Run() {
+func (f *webPushFrontEnd) Run() {
 	f.logger.Configf("[Start] %s", f.addr)
 	f.logger.Debugf("[Version] %s", f.version)
 	http.Handle(STOP_PROGRAM_URL, f)

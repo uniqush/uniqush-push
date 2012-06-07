@@ -37,7 +37,7 @@ type DatabaseConfig struct {
 	EverySec   int64
 	LeastDirty int
 
-	psm *PushServiceManager
+	PushServiceManager *PushServiceManager
 }
 
 /*

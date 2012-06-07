@@ -33,17 +33,17 @@ type Notification struct {
 	   Delay bool
 	*/
 	Data map[string]string
-	pool *notificationPool
+	pool *NotificationPool
 }
 
-type notificationPool struct {
+type NotificationPool struct {
 	pools      []*mempool.ObjectMemoryPool
 	maxNrPools int
 	minMapLen  int
 }
 
-func newNotificationPool(n, l int) *notificationPool {
-	ret := new(notificationPool)
+func NewNotificationPool(n, l int) *NotificationPool {
+	ret := new(NotificationPool)
 	if n <= 0 {
 		n = 16
 	}
@@ -61,7 +61,7 @@ func newNotificationPool(n, l int) *notificationPool {
 	return ret
 }
 
-func (p *notificationPool) get(n int) *Notification {
+func (p *NotificationPool) Get(n int) *Notification {
 	if n <= 0 {
 		return NewEmptyNotification()
 	}
@@ -75,7 +75,7 @@ func (p *notificationPool) get(n int) *Notification {
 	return ret
 }
 
-func (p *notificationPool) recycle(m *Notification) {
+func (p *NotificationPool) recycle(m *Notification) {
 	n := len(m.Data)
 	if n < p.minMapLen ||
 		n >= p.minMapLen+p.maxNrPools {

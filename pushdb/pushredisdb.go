@@ -68,7 +68,7 @@ func newPushRedisDB(c *DatabaseConfig) (*PushRedisDB, error) {
 
 	ret := new(PushRedisDB)
 	ret.client = &client
-	ret.psm = c.psm
+	ret.psm = c.PushServiceManager
 	if ret.psm == nil {
 		ret.psm = GetPushServiceManager()
 	}

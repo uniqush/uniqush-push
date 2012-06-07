@@ -21,10 +21,13 @@ import (
 	"fmt"
 	"sync"
 	"time"
+	. "github.com/monnand/uniqush/uniqushlog"
+	. "github.com/monnand/uniqush/pushsys"
+	. "github.com/monnand/uniqush/pushdb"
 )
 
 type PushProcessor struct {
-	loggerEventWriter
+	logSetter
 	databaseSetter
 	max_nr_gorountines int
 	max_nr_retry       int
@@ -76,13 +79,11 @@ func (p *PushProcessor) retryRequest(req *Request,
 }
 
 func NewPushProcessor(logger *Logger,
-	writer *EventWriter,
-	dbfront DatabaseFrontDeskIf,
+	dbfront PushDatabase,
 	backendch chan<- *Request,
 	psm *PushServiceManager) RequestProcessor {
 	ret := new(PushProcessor)
 	ret.SetLogger(logger)
-	ret.SetEventWriter(writer)
 	ret.SetDatabase(dbfront)
 	ret.max_nr_gorountines = 1024
 	ret.max_nr_retry = 3
@@ -150,7 +151,6 @@ func (p *PushProcessor) push(req *Request,
 	}()
 	if err != nil {
 		p.logger.Errorf("[PushFail] Service=%s Subscriber=%s DatabaseError %v", req.Service, subscriber, err)
-		p.writer.PushFail(req, subscriber, nil, nil, err)
 		req.Respond(err)
 	}
 	if len(pspdppairs) <= 0 {
@@ -213,7 +213,6 @@ func (p *PushProcessor) pushFail(req *Request,
 	p.logger.Errorf("[%s][PushFail] RequestId=%s Service=%s Subscriber=%s PushServiceProvider=%s DeliveryPoint=%s \"%v\"",
 		psp.PushServiceName(), req.ID, req.Service, subscriber,
 		psp.Name(), dp.Name(), err)
-	p.writer.PushFail(req, subscriber, psp, dp, err)
 	p.logger.Debugf("[%s][PushFailDebug] RequestId=%s Service=%s Subscriber=%s PushServiceProvider=\"%s\" DeliveryPoint=\"%s\" \"%v\"",
 		psp.PushServiceName(), req.ID, req.Service, subscriber,
 		psp.String(), dp.String(), err)

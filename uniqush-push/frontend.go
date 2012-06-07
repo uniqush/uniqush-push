@@ -17,13 +17,11 @@
 
 package main
 
-type UniqushFrontEnd interface {
+import "github.com/monnand/uniqush/uniqushlog"
+
+type PushFrontEnd interface {
 	SetChannel(ch chan<- *Request)
-	SetLogger(logger *Logger)
-
-	// writer will be used to report real-time event
-	SetEventWriter(writer *EventWriter)
-
+	SetLogger(logger *uniqushlog.Logger)
 	SetStopChannel(ch chan<- bool)
 	Run()
 	Finalize()
