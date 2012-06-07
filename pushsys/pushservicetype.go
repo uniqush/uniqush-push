@@ -183,3 +183,16 @@ func (e *InvalidNotification) Error() string {
 	return fmt.Sprintf("Invalid Notification: %v; PushServiceProvider: %s; %v",
 		e.Notification.Data, e.PushServiceProvider.Name(), e.Details)
 }
+
+type ConnectionError struct {
+	remoteServerError
+	PushServiceProvider *PushServiceProvider
+	Err                 error
+}
+
+func NewConnectionError(s *PushServiceProvider, err error, msg string) *InvalidPushServiceProviderError {
+	return &InvalidPushServiceProviderError{
+		remoteServerError{
+			"ConnectionError: [" + msg + "] psp=" +
+				s.Name() + "; " + err.Error()}, s, err}
+}

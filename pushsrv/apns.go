@@ -15,13 +15,12 @@
  *
  */
 
-package push
+package pushsrv
 
 import (
 	"bytes"
 	"crypto/tls"
 	"errors"
-
 	"encoding/binary"
 	"encoding/hex"
 	"encoding/json"
@@ -31,39 +30,40 @@ import (
 	"strconv"
 	"sync/atomic"
 	"time"
+	. "github.com/monnand/uniqush/pushsys"
 )
 
-type APNSPushService struct {
+type apnsPushService struct {
 	nextid uint32
 	conns  map[string]net.Conn
 	pfp    PushFailureHandler
 }
 
-func init() {
-	GetPushServiceManager().RegisterPushServiceType(NewAPNSPushService())
+func InstallAPNS() {
+	GetPushServiceManager().RegisterPushServiceType(newAPNSPushService())
 }
 
-func NewAPNSPushService() *APNSPushService {
-	ret := new(APNSPushService)
+func newAPNSPushService() *apnsPushService {
+	ret := new(apnsPushService)
 	ret.conns = make(map[string]net.Conn, 5)
 	return ret
 }
 
-func (p *APNSPushService) Name() string {
+func (p *apnsPushService) Name() string {
 	return "apns"
 }
 
-func (p *APNSPushService) SetAsyncFailureHandler(pfp PushFailureHandler) {
+func (p *apnsPushService) SetAsyncFailureHandler(pfp PushFailureHandler) {
 	p.pfp = pfp
 }
 
-func (p *APNSPushService) Finalize() {
+func (p *apnsPushService) Finalize() {
 	for _, c := range p.conns {
 		c.Close()
 	}
 }
 
-func (p *APNSPushService) waitError(id string,
+func (p *apnsPushService) waitError(id string,
 	c net.Conn,
 	psp *PushServiceProvider,
 	dp *DeliveryPoint,
@@ -116,7 +116,7 @@ func (p *APNSPushService) waitError(id string,
 	}
 }
 
-func (p *APNSPushService) BuildPushServiceProviderFromMap(kv map[string]string, psp *PushServiceProvider) error {
+func (p *apnsPushService) BuildPushServiceProviderFromMap(kv map[string]string, psp *PushServiceProvider) error {
 	if service, ok := kv["service"]; ok {
 		psp.FixedData["service"] = service
 	} else {
@@ -145,7 +145,7 @@ func (p *APNSPushService) BuildPushServiceProviderFromMap(kv map[string]string, 
 	return nil
 }
 
-func (p *APNSPushService) BuildDeliveryPointFromMap(kv map[string]string, dp *DeliveryPoint) error {
+func (p *apnsPushService) BuildDeliveryPointFromMap(kv map[string]string, dp *DeliveryPoint) error {
 	if service, ok := kv["service"]; ok && len(service) > 0 {
 		dp.FixedData["service"] = service
 	} else {
@@ -216,7 +216,7 @@ func writen(w io.Writer, buf []byte) error {
 	return nil
 }
 
-func (p *APNSPushService) getConn(psp *PushServiceProvider) (net.Conn, error) {
+func (p *apnsPushService) getConn(psp *PushServiceProvider) (net.Conn, error) {
 	name := psp.Name()
 	if conn, ok := p.conns[name]; ok {
 		return conn, nil
@@ -224,7 +224,7 @@ func (p *APNSPushService) getConn(psp *PushServiceProvider) (net.Conn, error) {
 	return p.reconnect(psp)
 }
 
-func (p *APNSPushService) reconnect(psp *PushServiceProvider) (net.Conn, error) {
+func (p *apnsPushService) reconnect(psp *PushServiceProvider) (net.Conn, error) {
 	name := psp.Name()
 	if conn, ok := p.conns[name]; ok {
 		conn.Close()
@@ -249,7 +249,7 @@ func (p *APNSPushService) reconnect(psp *PushServiceProvider) (net.Conn, error) 
 	return tlsconn, nil
 }
 
-func (p *APNSPushService) Push(sp *PushServiceProvider,
+func (p *apnsPushService) Push(sp *PushServiceProvider,
 	s *DeliveryPoint,
 	n *Notification) (string, error) {
 	devtoken := s.FixedData["devtoken"]

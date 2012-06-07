@@ -15,7 +15,7 @@
  *
  */
 
-package push
+package pushsrv
 
 import (
 	"crypto/sha1"
@@ -27,31 +27,32 @@ import (
 	"net/url"
 	"strings"
 	"time"
+	. "github.com/monnand/uniqush/pushsys"
 )
 
 const (
 	serviceURL string = "https://android.apis.google.com/c2dm/send"
 )
 
-func init() {
+func InstallC2DM() {
 	psm := GetPushServiceManager()
-	psm.RegisterPushServiceType(NewC2DMPushService())
+	psm.RegisterPushServiceType(newC2DMPushService())
 }
 
-type C2DMPushService struct {
+type c2dmPushService struct {
 }
 
-func NewC2DMPushService() *C2DMPushService {
-	ret := new(C2DMPushService)
+func newC2DMPushService() *c2dmPushService {
+	ret := new(c2dmPushService)
 	return ret
 }
 
-func (p *C2DMPushService) SetAsyncFailureHandler(pf PushFailureHandler) {
+func (p *c2dmPushService) SetAsyncFailureHandler(pf PushFailureHandler) {
 }
 
-func (p *C2DMPushService) Finalize() {}
+func (p *c2dmPushService) Finalize() {}
 
-func (p *C2DMPushService) BuildPushServiceProviderFromMap(kv map[string]string,
+func (p *c2dmPushService) BuildPushServiceProviderFromMap(kv map[string]string,
 	psp *PushServiceProvider) error {
 	if service, ok := kv["service"]; ok && len(service) > 0 {
 		psp.FixedData["service"] = service
@@ -73,7 +74,7 @@ func (p *C2DMPushService) BuildPushServiceProviderFromMap(kv map[string]string,
 	return nil
 }
 
-func (p *C2DMPushService) BuildDeliveryPointFromMap(kv map[string]string,
+func (p *c2dmPushService) BuildDeliveryPointFromMap(kv map[string]string,
 	dp *DeliveryPoint) error {
 	if service, ok := kv["service"]; ok && len(service) > 0 {
 		dp.FixedData["service"] = service
@@ -100,11 +101,11 @@ func (p *C2DMPushService) BuildDeliveryPointFromMap(kv map[string]string,
 	return nil
 }
 
-func (p *C2DMPushService) Name() string {
+func (p *c2dmPushService) Name() string {
 	return "c2dm"
 }
 
-func (p *C2DMPushService) Push(psp *PushServiceProvider,
+func (p *c2dmPushService) Push(psp *PushServiceProvider,
 	dp *DeliveryPoint,
 	n *Notification) (string, error) {
 	if psp.PushServiceName() != dp.PushServiceName() ||

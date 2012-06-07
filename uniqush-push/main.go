@@ -21,6 +21,7 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"github.com/monnand/uniqush/pushsrv"
 )
 
 var uniqushPushConfFlags = flag.String("config", "/etc/uniqush/uniqush-push.conf", "Config file path")
@@ -28,12 +29,18 @@ var uniqushPushShowVersionFlag = flag.Bool("version", false, "Version info")
 
 var uniqushPushVersion = "uniqush-push 1.2.8.5"
 
+func installPushSrvices() {
+	pushsrv.InstallC2DM()
+	pushsrv.InstallAPNS()
+}
+
 func main() {
 	flag.Parse()
 	if *uniqushPushShowVersionFlag {
 		fmt.Printf("%v\n", uniqushPushVersion)
 		return
 	}
+	installPushSrvices()
 	unisys, err := LoadPushProgram(*uniqushPushConfFlags, uniqushPushVersion)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Fatal Error: %v\n", err)
