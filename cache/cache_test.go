@@ -210,7 +210,7 @@ func TestAlwaysInMemoryCache(t *testing.T) {
 	kv["key3"] = "3"
 	kv["key4"] = "4"
 
-	c := New(5, -1, 0*time.Second, nil)
+	c := New(-1, -1, 0*time.Second, nil)
 
 	for k, v := range kv {
 		c.Set(k, v)

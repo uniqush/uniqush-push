@@ -110,7 +110,11 @@ func New(capacity int, maxNrDirty int, flushPeriod time.Duration, flusher Flushe
 
 	cache.flushPeriod = flushPeriod
 	cache.capacity = capacity
-	cache.data = make(map[string]*list.Element, cache.capacity)
+	if cache.capacity < 0 {
+		cache.data = make(map[string]*list.Element, 1024)
+	} else {
+		cache.data = make(map[string]*list.Element, cache.capacity)
+	}
 	cache.list = list.New()
 	cache.dirtyList = list.New()
 	cache.flusher = flusher
