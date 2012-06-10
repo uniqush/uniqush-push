@@ -89,7 +89,7 @@ func (c *Cache) debug() {
 
 func (c *Cache) checkAndFlush() {
 	c.mu.Lock()
-	if c.dirtyList.Len() >= c.maxNrDirty {
+	if c.maxNrDirty >= 0 && c.dirtyList.Len() >= c.maxNrDirty {
 		c.mu.Unlock()
 		c.Flush()
 	} else {
@@ -97,6 +97,14 @@ func (c *Cache) checkAndFlush() {
 	}
 }
 
+// capacity: nr elements in the cache. 
+//  < 0 means always in memory;
+//  = 0 means no cache.
+// maxNrDirty: < 0 means no flush.
+// flushPeriod: 
+//  > 1 second means periodically flush; 
+//  0 second means no periodically flush; 
+//  undefined in range (0, 1).
 func New(capacity int, maxNrDirty int, flushPeriod time.Duration, flusher Flusher) *Cache {
 	cache := new(Cache)
 
@@ -149,7 +157,7 @@ func (c *Cache) Set(key string, value interface{}) {
 		elem := c.list.PushFront(&cacheItem{key: key, value: value})
 		c.data[key] = elem
 		c.dirtyList.PushBack(de)
-		if len(c.data) > c.capacity {
+		if c.capacity >= 0 && len(c.data) > c.capacity {
 			last := c.list.Back()
 			item := last.Value.(*cacheItem)
 			c.list.Remove(last)

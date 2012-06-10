@@ -203,3 +203,29 @@ func TestEvictValue(t *testing.T) {
 
 }
 
+func TestAlwaysInMemoryCache(t *testing.T) {
+	kv := make(map[string]string)
+	kv["key1"] = "1"
+	kv["key2"] = "2"
+	kv["key3"] = "3"
+	kv["key4"] = "4"
+
+	c := New(5, -1, 0*time.Second, nil)
+
+	for k, v := range kv {
+		c.Set(k, v)
+	}
+
+	for k, v := range kv {
+		value := c.Get(k).(string)
+		if value != v {
+			t.Errorf("should be %v on key %v. Got %v",
+				v, k, value)
+		}
+	}
+
+	value := c.Get("notexist")
+	if value != nil {
+		t.Errorf("Got nonexist")
+	}
+}

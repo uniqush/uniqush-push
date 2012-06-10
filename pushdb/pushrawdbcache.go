@@ -79,8 +79,8 @@ func NewpushRawDatabaseCache(c *DatabaseConfig,
 	dpflusher := &dpFlusher{cdb:cdb}
 	cdb.pspCache = cache.New(cacheSize, leastDirty, time.Duration(flushPeriod) * time.Second, pspflusher)
 	cdb.dpCache = cache.New(cacheSize, leastDirty, time.Duration(flushPeriod) * time.Second, dpflusher)
-	cdb.srvSub2Dp = cache.New(cacheSize, leastDirty, time.Duration(flushPeriod) * time.Second, nil)
-	cdb.srv2Psp = cache.New(cacheSize, leastDirty, time.Duration(flushPeriod) * time.Second, nil)
+	cdb.srvSub2Dp = cache.New(cacheSize, leastDirty, time.Duration(0) * time.Second, nil)
+	cdb.srv2Psp = cache.New(cacheSize, leastDirty, time.Duration(0) * time.Second, nil)
 	return cdb, nil
 }
 
@@ -130,3 +130,5 @@ func (cdb *pushRawDatabaseCache) RemovePushServiceProvider(psp string) error {
 	return nil
 }
 
+func (cdb *pushRawDatabaseCache) AddDeliveryPointToServiceSubscriber(srv, sub, dp string) error {
+}
