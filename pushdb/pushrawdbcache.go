@@ -132,5 +132,19 @@ func (cdb *pushRawDatabaseCache) RemovePushServiceProvider(psp string) error {
 	return nil
 }
 
+func (cdb *pushRawDatabaseCache) GetDeliveryPointsNameByServiceSubscriber(srv, sub string) (dps []string, err error) {
+	key := srv + ":" + sub
+	if i := cdb.srvSub2Dp.Get(key); i == nil {
+		dps, err = cdb.dbreader.GetDeliveryPointsNameByServiceSubscriber(srv, sub)
+		if err != nil {
+			return nil, err
+		}
+		cdb.srvSub2Dp.Set(key, dps)
+	} else {
+		dps = i.([]string)
+	}
+	return dps, nil
+}
+
 func (cdb *pushRawDatabaseCache) AddDeliveryPointToServiceSubscriber(srv, sub, dp string) error {
 }
