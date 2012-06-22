@@ -146,5 +146,7 @@ func (cdb *pushRawDatabaseCache) GetDeliveryPointsNameByServiceSubscriber(srv, s
 	return dps, nil
 }
 
+/*
 func (cdb *pushRawDatabaseCache) AddDeliveryPointToServiceSubscriber(srv, sub, dp string) error {
 }
+*/
