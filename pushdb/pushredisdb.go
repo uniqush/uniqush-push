@@ -21,7 +21,7 @@ import (
 	"errors"
 	"fmt"
 	. "github.com/monnand/uniqush/pushsys"
-	redis "github.com/monnand/redis.go"
+	redis "github.com/monnand/goredis"
 	"strconv"
 	"strings"
 )
