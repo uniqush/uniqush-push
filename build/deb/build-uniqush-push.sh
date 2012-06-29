@@ -31,7 +31,10 @@ DELIM
 cp $TEMP/bin/uniqush-push .
 cp $TEMP/src/github.com/monnand/uniqush/conf/uniqush-push.conf .
 
-equivs-build
+equivs-build $CTLSCRIPT
 
 rm -rf $TEMP
+rm -f $CTLSCRIPT
+rm -f uniqush-push
+rm -f uniqush-push.conf
 
