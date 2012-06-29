@@ -20,61 +20,62 @@ package pushsrv
 import (
 	"crypto/sha1"
 	"crypto/tls"
+	"encoding/json"
 	"errors"
+	"bytes"
 	"fmt"
 	"io/ioutil"
 	"net/http"
-	"net/url"
-	"strings"
 	"time"
 	. "github.com/monnand/uniqush/pushsys"
 )
 
 const (
-	c2dmServiceURL string = "https://android.apis.google.com/c2dm/send"
+	gcmServiceURL string = "https://android.googleapis.com/gcm/send"
 )
 
-func InstallC2DM() {
-	psm := GetPushServiceManager()
-	psm.RegisterPushServiceType(newC2DMPushService())
+type gcmPushService struct {
 }
 
-type c2dmPushService struct {
-}
-
-func newC2DMPushService() *c2dmPushService {
-	ret := new(c2dmPushService)
+func newGCMPushService() *gcmPushService {
+	ret := new(gcmPushService)
 	return ret
 }
 
-func (p *c2dmPushService) SetAsyncFailureHandler(pf PushFailureHandler) {
+func InstallGCM() {
+	psm := GetPushServiceManager()
+	psm.RegisterPushServiceType(newGCMPushService())
 }
 
-func (p *c2dmPushService) Finalize() {}
+func (p *gcmPushService) SetAsyncFailureHandler(pf PushFailureHandler) {
+}
 
-func (p *c2dmPushService) BuildPushServiceProviderFromMap(kv map[string]string,
+func (p *gcmPushService) Finalize() {}
+
+func (p *gcmPushService) BuildPushServiceProviderFromMap(kv map[string]string,
 	psp *PushServiceProvider) error {
 	if service, ok := kv["service"]; ok && len(service) > 0 {
 		psp.FixedData["service"] = service
 	} else {
 		return errors.New("NoService")
 	}
-	if senderid, ok := kv["senderid"]; ok && len(senderid) > 0 {
-		psp.FixedData["senderid"] = senderid
+
+	if projectid, ok := kv["projectid"]; ok && len(projectid) > 0 {
+		psp.FixedData["projectid"] = projectid
 	} else {
-		return errors.New("NoSenderId")
+		return errors.New("NoProjectID")
 	}
 
-	if authtoken, ok := kv["authtoken"]; ok && len(authtoken) > 0 {
-		psp.VolatileData["authtoken"] = authtoken
+	if authtoken, ok := kv["apikey"]; ok && len(authtoken) > 0 {
+		psp.VolatileData["apikey"] = authtoken
 	} else {
-		return errors.New("NoAuthToken")
+		return errors.New("NoAPIKey")
 	}
 
 	return nil
 }
 
-func (p *c2dmPushService) BuildDeliveryPointFromMap(kv map[string]string,
+func (p *gcmPushService) BuildDeliveryPointFromMap(kv map[string]string,
 	dp *DeliveryPoint) error {
 	if service, ok := kv["service"]; ok && len(service) > 0 {
 		dp.FixedData["service"] = service
@@ -101,11 +102,35 @@ func (p *c2dmPushService) BuildDeliveryPointFromMap(kv map[string]string,
 	return nil
 }
 
-func (p *c2dmPushService) Name() string {
-	return "c2dm"
+func (p *gcmPushService) Name() string {
+	return "gcm"
 }
 
-func (p *c2dmPushService) Push(psp *PushServiceProvider,
+type gcmData struct {
+	RegIDs []string `json:"registration_ids"`
+	CollapseKey string `json:"collapse_key"`
+	Data map[string]string `json:"data"`
+	DelayWhileIdle bool `json:"delay_while_idle"`
+	TimeToLive uint `json:"time_to_live"`
+}
+
+func (d *gcmData) String() string {
+	ret, err := json.Marshal(d)
+	if err != nil {
+		return ""
+	}
+	return string(ret)
+}
+
+type gcmResult struct {
+	MulticastID uint64 `json:"multicast_id"`
+	Success uint `json:"success"`
+	Failure uint `json:"failure"`
+	CanonicalIDs uint `json:"canonical_ids"`
+	Results []map[string]string `json:"results"`
+}
+
+func (p *gcmPushService) Push(psp *PushServiceProvider,
 	dp *DeliveryPoint,
 	n *Notification) (string, error) {
 	if psp.PushServiceName() != dp.PushServiceName() ||
@@ -113,16 +138,25 @@ func (p *c2dmPushService) Push(psp *PushServiceProvider,
 		return "", NewPushIncompatibleError(psp, dp, p)
 	}
 
+	fmt.Println("------------------------------")
+	fmt.Println("-------------PUSH-------------")
+	fmt.Println("------------------------------")
+
 	msg := n.Data
-	data := url.Values{}
-	regid := dp.FixedData["regid"]
-	if len(regid) == 0 {
+	data := new(gcmData)
+	data.RegIDs = make([]string, 1)
+
+	// TODO do something with ttl and delay_while_idle
+	data.TimeToLive = uint(0xFFFFFFFF)
+	data.DelayWhileIdle = false
+
+	data.RegIDs[0] = dp.FixedData["regid"]
+	if len(data.RegIDs[0]) == 0 {
 		reterr := NewInvalidDeliveryPointError(psp, dp, errors.New("EmptyRegistrationID"))
 		return "", reterr
 	}
-	data.Set("registration_id", regid)
-	if mid, ok := msg["id"]; ok {
-		data.Set("collapse_key", mid)
+	if mgroup, ok := msg["msggroup"]; ok {
+		data.CollapseKey = mgroup
 	} else {
 		now := time.Now().UTC()
 		ckey := fmt.Sprintf("%v-%v-%v-%v-%v",
@@ -135,27 +169,36 @@ func (p *c2dmPushService) Push(psp *PushServiceProvider,
 		hash.Write([]byte(ckey))
 		h := make([]byte, 0, 64)
 		ckey = fmt.Sprintf("%x", hash.Sum(h))
-		data.Set("collapse_key", ckey)
+		data.CollapseKey = ckey
 	}
+
+	nr_elem := len(msg)
+	data.Data = make(map[string]string, nr_elem)
 
 	for k, v := range msg {
 		switch k {
-		case "id":
+		case "msggroup":
 			continue
 		default:
-			data.Set("data."+k, v)
+			data.Data[k] = v
 		}
 	}
 
-	req, err := http.NewRequest("POST", c2dmServiceURL, strings.NewReader(data.Encode()))
+	jdata, err := json.Marshal(data)
+
+	if err != nil {
+		return "", errors.New("Json encoding error: " + err.Error())
+	}
+
+	req, err := http.NewRequest("POST", gcmServiceURL, bytes.NewReader(jdata))
 	if err != nil {
 		return "", err
 	}
 
-	authtoken := psp.VolatileData["authtoken"]
+	authtoken := psp.VolatileData["apikey"]
 
-	req.Header.Set("Authorization", "GoogleLogin auth="+authtoken)
-	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.Header.Set("Authorization", "key="+authtoken)
+	req.Header.Set("Content-Type", "application/json")
 
 	conf := &tls.Config{InsecureSkipVerify: true}
 	tr := &http.Transport{TLSClientConfig: conf}
@@ -168,10 +211,11 @@ func (p *c2dmPushService) Push(psp *PushServiceProvider,
 	refreshpsp := false
 	new_auth_token := r.Header.Get("Update-Client-Auth")
 	if new_auth_token != "" && authtoken != new_auth_token {
-		psp.VolatileData["authtoken"] = new_auth_token
+		psp.VolatileData["apikey"] = new_auth_token
 		refreshpsp = true
 	}
 
+	// TODO GCM specific error handle
 	switch r.StatusCode {
 	case 503:
 		/* TODO extract the retry after field */
@@ -196,62 +240,17 @@ func (p *c2dmPushService) Push(psp *PushServiceProvider,
 		return "", e30
 	}
 
-	msgid := string(contents)
-	msgid = strings.Replace(msgid, "\r", "", -1)
-	msgid = strings.Replace(msgid, "\n", "", -1)
-	if msgid[:3] == "id=" {
-		retid := fmt.Sprintf("c2dm:%s-%s", psp.Name(), msgid[3:])
-		if refreshpsp {
-			re := NewRefreshDataError(psp, nil, nil)
-			return retid, re
-		}
-		return retid, nil
+	var result gcmResult
+	err = json.Unmarshal(contents, &result)
+
+	if err != nil {
+		return "", err
 	}
-	switch msgid[6:] {
-	case "QuotaExceeded":
-		var reterr error
-		reterr = NewQuotaExceededError(psp)
-		if refreshpsp {
-			re := NewRefreshDataError(psp, nil, reterr)
-			reterr = re
-		}
-		return "", reterr
-	case "InvalidRegistration":
-		var reterr error
-		reterr = NewInvalidDeliveryPointError(psp, dp, errors.New("InvalidRegistration"))
-		if refreshpsp {
-			re := NewRefreshDataError(psp, nil, reterr)
-			reterr = re
-		}
-		return "", reterr
-	case "NotRegistered":
-		var reterr error
-		reterr = NewUnregisteredError(psp, dp)
-		if refreshpsp {
-			re := NewRefreshDataError(psp, nil, reterr)
-			reterr = re
-		}
-		return "", reterr
-	case "MessageTooBig":
-		var reterr error
-		reterr = NewNotificationTooBigError(psp, dp, n)
-		if refreshpsp {
-			re := NewRefreshDataError(psp, nil, reterr)
-			reterr = re
-		}
-		return "", reterr
-	case "DeviceQuotaExceeded":
-		var reterr error
-		reterr = NewDeviceQuotaExceededError(dp)
-		if refreshpsp {
-			re := NewRefreshDataError(psp, nil, reterr)
-			reterr = re
-		}
-		return "", reterr
+
+	if result.Failure > 0 {
+		return "", errors.New(string(contents))
 	}
-	if refreshpsp {
-		re := NewRefreshDataError(psp, nil, errors.New("Unknown Error from C2DM: "+msgid[6:]))
-		return "", re
-	}
-	return "", errors.New("Unknown Error from C2DM: " + msgid[6:])
+
+	return result.Results[0]["message_id"], nil
 }
+

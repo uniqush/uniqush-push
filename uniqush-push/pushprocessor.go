@@ -118,7 +118,7 @@ func (p *PushProcessor) pushToDeliveryPoint(req *Request,
 			re := err.(*RefreshDataError)
 			err = p.refreshData(req, psp.PushServiceName(), re)
 			if err == nil {
-				go p.pushSucc(req, subscriber, psp, dp, id)
+				p.pushSucc(req, subscriber, psp, dp, id)
 				return
 			}
 		}
@@ -128,16 +128,19 @@ func (p *PushProcessor) pushToDeliveryPoint(req *Request,
 			e0 := fmt.Errorf("PushServiceProvider=%v Subscriber=%v DeliveryPoint=%v Retry",
 				psp.Name(), subscriber, dp.Name())
 			req.Respond(e0)
-			go p.pushRetry(req, subscriber, psp, dp, re)
+			p.pushRetry(req, subscriber, psp, dp, re)
+			return
 		case *UnregisteredError:
 			req.Respond(err)
-			go p.unsubscribe(req, subscriber, dp)
+			p.unsubscribe(req, subscriber, dp)
+			return
 		}
 		req.Respond(err)
-		go p.pushFail(req, subscriber, psp, dp, err)
+		p.pushFail(req, subscriber, psp, dp, err)
+		return
+	} else {
+		p.pushSucc(req, subscriber, psp, dp, id)
 	}
-	go p.pushSucc(req, subscriber, psp, dp, id)
-
 }
 
 func (p *PushProcessor) push(req *Request,

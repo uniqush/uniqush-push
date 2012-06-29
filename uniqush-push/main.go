@@ -30,6 +30,7 @@ var uniqushPushShowVersionFlag = flag.Bool("version", false, "Version info")
 var uniqushPushVersion = "uniqush-push 1.2.8.5"
 
 func installPushSrvices() {
+	pushsrv.InstallGCM()
 	pushsrv.InstallC2DM()
 	pushsrv.InstallAPNS()
 }
