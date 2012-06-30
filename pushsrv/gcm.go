@@ -18,7 +18,6 @@
 package pushsrv
 
 import (
-	"crypto/sha1"
 	"crypto/tls"
 	"encoding/json"
 	"errors"
@@ -26,7 +25,6 @@ import (
 	"fmt"
 	"io/ioutil"
 	"net/http"
-	"time"
 	. "github.com/monnand/uniqush/pushsys"
 )
 
