@@ -108,10 +108,10 @@ func (p *gcmPushService) Name() string {
 
 type gcmData struct {
 	RegIDs []string `json:"registration_ids"`
-	CollapseKey string `json:"collapse_key"`
+	CollapseKey string `json:"collapse_key,omitempty"`
 	Data map[string]string `json:"data"`
-	DelayWhileIdle bool `json:"delay_while_idle"`
-	TimeToLive uint `json:"time_to_live"`
+	DelayWhileIdle bool `json:"delay_while_idle,omitempty"`
+	TimeToLive uint `json:"time_to_live,omitempty"`
 }
 
 func (d *gcmData) String() string {
@@ -138,16 +138,12 @@ func (p *gcmPushService) Push(psp *PushServiceProvider,
 		return "", NewPushIncompatibleError(psp, dp, p)
 	}
 
-	fmt.Println("------------------------------")
-	fmt.Println("-------------PUSH-------------")
-	fmt.Println("------------------------------")
-
 	msg := n.Data
 	data := new(gcmData)
 	data.RegIDs = make([]string, 1)
 
 	// TODO do something with ttl and delay_while_idle
-	data.TimeToLive = uint(0xFFFFFFFF)
+	data.TimeToLive = 0
 	data.DelayWhileIdle = false
 
 	data.RegIDs[0] = dp.FixedData["regid"]
@@ -158,18 +154,7 @@ func (p *gcmPushService) Push(psp *PushServiceProvider,
 	if mgroup, ok := msg["msggroup"]; ok {
 		data.CollapseKey = mgroup
 	} else {
-		now := time.Now().UTC()
-		ckey := fmt.Sprintf("%v-%v-%v-%v-%v",
-			dp.Name(),
-			psp.Name(),
-			now.Format("Mon Jan 2 15:04:05 -0700 MST 2006"),
-			now.Nanosecond(),
-			msg["msg"])
-		hash := sha1.New()
-		hash.Write([]byte(ckey))
-		h := make([]byte, 0, 64)
-		ckey = fmt.Sprintf("%x", hash.Sum(h))
-		data.CollapseKey = ckey
+		data.CollapseKey = ""
 	}
 
 	nr_elem := len(msg)
@@ -195,14 +180,16 @@ func (p *gcmPushService) Push(psp *PushServiceProvider,
 		return "", err
 	}
 
-	authtoken := psp.VolatileData["apikey"]
+	apikey := psp.VolatileData["apikey"]
 
-	req.Header.Set("Authorization", "key="+authtoken)
+	req.Header.Set("Authorization", "key="+apikey)
 	req.Header.Set("Content-Type", "application/json")
 
-	conf := &tls.Config{InsecureSkipVerify: true}
+	conf := &tls.Config{InsecureSkipVerify: false}
 	tr := &http.Transport{TLSClientConfig: conf}
 	client := &http.Client{Transport: tr}
+
+	fmt.Printf("Sending data %v\n", data)
 
 	r, e20 := client.Do(req)
 	if e20 != nil {
@@ -210,12 +197,12 @@ func (p *gcmPushService) Push(psp *PushServiceProvider,
 	}
 	refreshpsp := false
 	new_auth_token := r.Header.Get("Update-Client-Auth")
-	if new_auth_token != "" && authtoken != new_auth_token {
+	if new_auth_token != "" && apikey != new_auth_token {
 		psp.VolatileData["apikey"] = new_auth_token
 		refreshpsp = true
 	}
 
-	// TODO GCM specific error handle
+	// TODO More GCM specific error handle
 	switch r.StatusCode {
 	case 503:
 		/* TODO extract the retry after field */
