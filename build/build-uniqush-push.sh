@@ -23,6 +23,12 @@ fpm -s dir -t rpm -v $VERSION -n uniqush-push --license=$LICENSE --maintainer="N
 
 fpm -s dir -t deb -v $VERSION -n uniqush-push --license=$LICENSE --maintainer="Nan Deng" -d redis-server --vendor "uniqush" --url="http://uniqush.org" --category Network --description "Uniqush is a free and open source software which provides a unified push service for server-side notification to apps on mobile devices" -C $BUILD .
 
+cp $LICENSE $BUILD
+cd $BUILD
+tar czvf uniqush-push_${VERSION}_`uname -m`.tar.gz usr/ etc/ $LICENSE
+cp uniqush-push_${VERSION}_`uname -m`.tar.gz ../
+cd ..
+
 rm -rf $TEMP
 rm -rf $BUILD
 rm -f uniqush-push
