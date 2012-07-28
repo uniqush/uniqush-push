@@ -1,6 +1,7 @@
 #!/bin/sh
 
 TEMP=`pwd`/tmpgopath
+LICENSE=Apache-2.0
 
 mkdir -p $TEMP/bin
 mkdir -p $TEMP/src
@@ -16,15 +17,18 @@ mkdir -p $BUILD/etc/uniqush-push
 
 cp $TEMP/bin/uniqush-push $BUILD/usr/bin
 cp $TEMP/src/github.com/monnand/uniqush/conf/uniqush-push.conf $BUILD/etc/uniqush-push
-cp $TEMP/src/github.com/monnand/uniqush/LICENSE APACHE
+cp $TEMP/src/github.com/monnand/uniqush/LICENSE $LICENSE
 
-fpm -s dir -t deb -v $VERSION -n uniqush-push --license=APACHE --maintainer="Nan Deng" --vendor "uniqush" --url="http://uniqush.org" $BUILD
+TARGETS=(deb rpm)
 
-fpm -s dir -t rpm -v $VERSION -n uniqush-push --license=APACHE --maintainer="Nan Deng" --vendor "uniqush" --url="http://uniqush.org" $BUILD
+for target in ${TARGETS[*]}
+do
+fpm -s dir -t $target -v $VERSION -n uniqush-push --license=$LICENSE --maintainer="Nan Deng" -d redis --vendor "uniqush" --url="http://uniqush.org" --category Network --description "Uniqush is a free and open source software which provides a unified push service for server-side notification to apps on mobile devices" -C $BUILD .
+done
 
 rm -rf $TEMP
 rm -rf $BUILD
 rm -f uniqush-push
 rm -f uniqush-push.conf
-rm -f APACHE
+rm -f $LICENSE 
 
