@@ -19,7 +19,7 @@ package main
 
 import (
 	"time"
-	. "github.com/monnand/uniqush/pushsys"
+	. "github.com/uniqush/pushsys"
 )
 
 const (

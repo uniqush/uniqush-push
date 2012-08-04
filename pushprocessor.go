@@ -21,9 +21,9 @@ import (
 	"fmt"
 	"sync"
 	"time"
-	. "github.com/monnand/uniqush/uniqushlog"
-	. "github.com/monnand/uniqush/pushsys"
-	. "github.com/monnand/uniqush/pushdb"
+	. "github.com/uniqush/log"
+	. "github.com/uniqush/pushsys"
+	. "github.com/uniqush/pushdb"
 )
 
 type PushProcessor struct {

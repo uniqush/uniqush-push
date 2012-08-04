@@ -27,9 +27,9 @@ import (
 	"strings"
 	"sync/atomic"
 	"time"
-	. "github.com/monnand/uniqush/pushsys"
-	. "github.com/monnand/uniqush/mempool"
-	"github.com/monnand/uniqush/uniqushlog"
+	. "github.com/uniqush/pushsys"
+	. "github.com/uniqush/mempool"
+	"github.com/uniqush/log"
 )
 
 type webPushFrontEnd struct {

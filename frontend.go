@@ -17,7 +17,7 @@
 
 package main
 
-import "github.com/monnand/uniqush/uniqushlog"
+import "github.com/uniqush/log"
 
 type PushFrontEnd interface {
 	SetChannel(ch chan<- *Request)

@@ -19,8 +19,8 @@ package main
 
 import (
 	"fmt"
-	"github.com/monnand/uniqush/uniqushlog"
-	. "github.com/monnand/uniqush/pushdb"
+	"github.com/uniqush/log"
+	. "github.com/uniqush/pushdb"
 )
 
 type RequestProcessor interface {

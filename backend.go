@@ -19,7 +19,7 @@ package main
 
 import (
 	"sync"
-	"github.com/monnand/uniqush/uniqushlog"
+	"github.com/uniqush/log"
 )
 
 type PushBackEnd interface {

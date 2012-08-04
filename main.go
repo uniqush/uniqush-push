@@ -21,7 +21,7 @@ import (
 	"flag"
 	"fmt"
 	"os"
-	"github.com/monnand/uniqush/pushsrv"
+	"github.com/uniqush/pushsrv"
 )
 
 var uniqushPushConfFlags = flag.String("config", "/etc/uniqush/uniqush-push.conf", "Config file path")

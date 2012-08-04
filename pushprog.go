@@ -23,9 +23,9 @@ import (
 	"io"
 	"os"
 	"strings"
-	. "github.com/monnand/uniqush/uniqushlog"
-	. "github.com/monnand/uniqush/pushdb"
-	. "github.com/monnand/uniqush/pushsys"
+	. "github.com/uniqush/log"
+	. "github.com/uniqush/pushdb"
+	. "github.com/uniqush/pushsys"
 )
 
 func (s *PushProgram) loadLogInfo(c *conf.ConfigFile, field string, prefix string) (*Logger, error) {
