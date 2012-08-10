@@ -19,11 +19,11 @@ package main
 
 import (
 	"fmt"
+	. "github.com/uniqush/log"
+	. "github.com/uniqush/pushdb"
+	. "github.com/uniqush/pushsys"
 	"sync"
 	"time"
-	. "github.com/uniqush/log"
-	. "github.com/uniqush/pushsys"
-	. "github.com/uniqush/pushdb"
 )
 
 type PushProcessor struct {

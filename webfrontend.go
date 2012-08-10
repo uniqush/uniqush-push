@@ -21,15 +21,15 @@ import (
 	"crypto/sha1"
 	"errors"
 	"fmt"
+	"github.com/uniqush/log"
+	. "github.com/uniqush/mempool"
+	. "github.com/uniqush/pushsys"
 	"net/http"
 	"os"
 	"strconv"
 	"strings"
 	"sync/atomic"
 	"time"
-	. "github.com/uniqush/pushsys"
-	. "github.com/uniqush/mempool"
-	"github.com/uniqush/log"
 )
 
 type webPushFrontEnd struct {

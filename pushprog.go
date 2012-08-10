@@ -20,12 +20,12 @@ package main
 import (
 	//"goconf.googlecode.com/hg"
 	"code.google.com/p/monnand-goconf"
-	"io"
-	"os"
-	"strings"
 	. "github.com/uniqush/log"
 	. "github.com/uniqush/pushdb"
 	. "github.com/uniqush/pushsys"
+	"io"
+	"os"
+	"strings"
 )
 
 func (s *PushProgram) loadLogInfo(c *conf.ConfigFile, field string, prefix string) (*Logger, error) {

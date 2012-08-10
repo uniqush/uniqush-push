@@ -18,8 +18,8 @@
 package main
 
 import (
-	"sync"
 	"github.com/uniqush/log"
+	"sync"
 )
 
 type PushBackEnd interface {

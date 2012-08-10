@@ -20,8 +20,8 @@ package main
 import (
 	"flag"
 	"fmt"
-	"os"
 	"github.com/uniqush/pushsrv"
+	"os"
 )
 
 var uniqushPushConfFlags = flag.String("config", "/etc/uniqush/uniqush-push.conf", "Config file path")
