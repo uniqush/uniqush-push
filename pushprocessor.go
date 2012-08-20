@@ -18,7 +18,6 @@
 package main
 
 import (
-	"fmt"
 	. "github.com/uniqush/log"
 	. "github.com/uniqush/pushdb"
 	. "github.com/uniqush/pushsys"
@@ -80,7 +79,7 @@ func (p *PushProcessor) retryRequest(req *Request, retryAfter time.Duration, sub
 		waitTime = int64(retryAfter.Seconds())
 	}
 
-	duration := time.Duration(waitTime * time.Second)
+	duration := time.Duration(time.Duration(waitTime) * time.Second)
 	time.Sleep(duration)
 	p.backendch <- newreq
 }
@@ -121,10 +120,10 @@ func recycle(psp *PushServiceProvider,
 	n *Notification) {
 	// TODO recycle only when they are not in cache!
 	if psp != nil {
-		psp.recycle()
+		psp.Recycle()
 	}
 	if dp != nil {
-		dp.recycle()
+		dp.Recycle()
 	}
 	if n != nil {
 		n.Recycle()
@@ -153,7 +152,7 @@ func (p *PushProcessor) pushFail(req *Request, subscriber string, psp *PushServi
 }
 
 func (p *PushProcessor) pushRetry(req *Request, subscriber string, psp *PushServiceProvider, dp *DeliveryPoint, err *RetryError) {
-	go p.retryRequest(req, err.RetryAfter, subscriber, psp, dp)
+	go p.retryRequest(req, err.After, subscriber, psp, dp)
 	p.logger.Warnf("[%s][PushRetry] RequestId=%s Service=%s Subscriber=%s PushServiceProvider=%s DeliveryPoint=%s \"%v\"",
 		psp.PushServiceName(), req.ID, req.Service, subscriber,
 		psp.Name(), dp.Name(), err)
@@ -179,13 +178,13 @@ func (self *PushProcessor) processResult(req *Request, resChan chan *PushResult,
 			continue
 		}
 		switch err := res.Err.(type) {
-		case RetryError:
+		case *RetryError:
 			self.pushRetry(req, sub, res.Provider, res.Destination, err)
-		case PushServiceProviderUpdate:
+		case *PushServiceProviderUpdate:
 			self.updatePushServiceProvider(req, err.Provider)
-		case DeliveryPointUpdate:
+		case *DeliveryPointUpdate:
 			self.updateDeliveryPoint(req, err.Destination)
-		case UnsubscribeUpdate:
+		case *UnsubscribeUpdate:
 			self.unsubscribe(req, sub, err.Destination)
 		default:
 			self.pushFail(req, sub, res.Provider, res.Destination, err)
@@ -198,8 +197,8 @@ func (p *PushProcessor) Process(req *Request) {
 	defer req.Finish()
 
 	resChan := make(chan *PushResult)
-
 	pairSubMap := make(map[string]string, len(req.Subscribers))
+	wg := new(sync.WaitGroup)
 
 	if len(req.Subscribers) == 1 && req.PushServiceProvider != nil && req.DeliveryPoint != nil {
 		psp := req.PushServiceProvider
@@ -211,22 +210,23 @@ func (p *PushProcessor) Process(req *Request) {
 		pairSubMap[psp.Name()+"::"+dp.Name()] = sub
 		wg.Add(1)
 		go func() {
-			p.psm.Push(psp, dpChanMap, resChan, notif)
+			p.psm.Push(psp, ch, resChan, notif)
 			wg.Done()
 		}()
 		ch <- dp
 		close(ch)
 
+		wg.Wait()
 		p.processResult(req, resChan, pairSubMap)
+		return
 	}
 
 	dpChanMap := make(map[string]chan *DeliveryPoint)
-	wg := new(sync.WaitGroup)
 	for _, sub := range req.Subscribers {
 		pspDpList, err := p.dbfront.GetPushServiceProviderDeliveryPointPairs(req.Service, sub)
 
 		if err != nil {
-			p.logger.Errorf("[PushFail] Service=%s Subscriber=%s DatabaseError %v", req.Service, subscriber, err)
+			p.logger.Errorf("[PushFail] Service=%s Subscriber=%s DatabaseError %v", req.Service, sub, err)
 			req.Respond(err)
 		}
 
@@ -242,7 +242,7 @@ func (p *PushProcessor) Process(req *Request) {
 				dpChanMap[psp.Name()] = ch
 				wg.Add(1)
 				go func() {
-					p.psm.Push(psp, dpChanMap, resChan, notif)
+					p.psm.Push(psp, ch, resChan, notif)
 					wg.Done()
 				}()
 				ch <- dp
