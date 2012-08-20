@@ -20,8 +20,8 @@ package main
 import (
 	"fmt"
 	"github.com/uniqush/log"
-    "regexp"
 	. "github.com/uniqush/pushdb"
+	"regexp"
 )
 
 type RequestProcessor interface {
@@ -66,45 +66,45 @@ func (d *databaseSetter) SetDatabase(dbfront PushDatabase) {
 }
 
 type requestValidator struct {
-    validSubscriberPattern *regexp.Regexp
-    validServicePattern *regexp.Regexp
+	validSubscriberPattern *regexp.Regexp
+	validServicePattern    *regexp.Regexp
 }
 
 func (r *requestValidator) InitValidator() {
-    var err error
-    r.validServicePattern, err = regexp.Compile("^[a-zA-z\\.0-9-_]+$")
-    if err != nil {
-        r.validServicePattern = nil
-    }
-    r.validSubscriberPattern, err = regexp.Compile("^[a-zA-z\\.0-9-_]+$")
-    if err != nil {
-        r.validSubscriberPattern = nil
-    }
+	var err error
+	r.validServicePattern, err = regexp.Compile("^[a-zA-z\\.0-9-_]+$")
+	if err != nil {
+		r.validServicePattern = nil
+	}
+	r.validSubscriberPattern, err = regexp.Compile("^[a-zA-z\\.0-9-_]+$")
+	if err != nil {
+		r.validSubscriberPattern = nil
+	}
 }
 
 func (r *requestValidator) Validate(req *Request) error {
-    for _, sub := range req.Subscribers {
-        if !r.validSubscriberPattern.MatchString(sub) {
-            return fmt.Errorf("invalid subscriber name: %s. Accept charaters: a-z, A-Z, 0-9, -, _ or .", sub)
-        }
-    }
-    if !r.validServicePattern.MatchString(req.Service) {
-        return fmt.Errorf("invalid service name: %s. Accept charaters: a-z, A-Z, 0-9, -, _ or .", req.Service)
-    }
-    return nil
+	for _, sub := range req.Subscribers {
+		if !r.validSubscriberPattern.MatchString(sub) {
+			return fmt.Errorf("invalid subscriber name: %s. Accept charaters: a-z, A-Z, 0-9, -, _ or .", sub)
+		}
+	}
+	if !r.validServicePattern.MatchString(req.Service) {
+		return fmt.Errorf("invalid service name: %s. Accept charaters: a-z, A-Z, 0-9, -, _ or .", req.Service)
+	}
+	return nil
 }
 
 type AddPushServiceProviderProcessor struct {
 	logSetter
 	databaseSetter
-    requestValidator
+	requestValidator
 }
 
 func NewAddPushServiceProviderProcessor(logger *uniqushlog.Logger, dbfront PushDatabase) RequestProcessor {
 	ret := new(AddPushServiceProviderProcessor)
 	ret.SetLogger(logger)
 	ret.SetDatabase(dbfront)
-    ret.InitValidator()
+	ret.InitValidator()
 
 	return ret
 }
@@ -112,12 +112,12 @@ func NewAddPushServiceProviderProcessor(logger *uniqushlog.Logger, dbfront PushD
 func (p *AddPushServiceProviderProcessor) Process(req *Request) {
 	defer req.Finish()
 
-    err := p.Validate(req)
-    if err != nil {
+	err := p.Validate(req)
+	if err != nil {
 		p.logger.Errorf("[AddPushServiceRequestFail] RequestId=%v %v", req.ID, err)
 		req.Respond(fmt.Errorf("[AddPushServiceRequestFail] RequestId=%v %v", req.ID, err))
-        return
-    }
+		return
+	}
 	err = p.dbfront.AddPushServiceProviderToService(req.Service, req.PushServiceProvider)
 	if err != nil {
 		p.logger.Errorf("[AddPushServiceRequestFail] RequestId=%v DatabaseError %v", req.ID, err)
@@ -134,7 +134,7 @@ func (p *AddPushServiceProviderProcessor) Process(req *Request) {
 type RemovePushServiceProviderProcessor struct {
 	logSetter
 	databaseSetter
-    requestValidator
+	requestValidator
 }
 
 func NewRemovePushServiceProviderProcessor(logger *uniqushlog.Logger,
@@ -142,7 +142,7 @@ func NewRemovePushServiceProviderProcessor(logger *uniqushlog.Logger,
 	ret := new(RemovePushServiceProviderProcessor)
 	ret.SetLogger(logger)
 	ret.SetDatabase(dbfront)
-    ret.InitValidator()
+	ret.InitValidator()
 
 	return ret
 }
@@ -150,12 +150,12 @@ func NewRemovePushServiceProviderProcessor(logger *uniqushlog.Logger,
 func (p *RemovePushServiceProviderProcessor) Process(req *Request) {
 	defer req.Finish()
 
-    err0 := p.Validate(req)
-    if err0 != nil {
+	err0 := p.Validate(req)
+	if err0 != nil {
 		p.logger.Errorf("[RemovePushServiceRequestFail] RequestId=%v %v", req.ID, err0)
 		req.Respond(fmt.Errorf("[RemovePushServiceRequestFail] RequestId=%v %v", req.ID, err0))
-        return
-    }
+		return
+	}
 
 	err := p.dbfront.RemovePushServiceProviderFromService(req.Service, req.PushServiceProvider)
 	if err != nil {
@@ -170,14 +170,14 @@ func (p *RemovePushServiceProviderProcessor) Process(req *Request) {
 type SubscribeProcessor struct {
 	logSetter
 	databaseSetter
-    requestValidator
+	requestValidator
 }
 
 func NewSubscribeProcessor(logger *uniqushlog.Logger, dbfront PushDatabase) RequestProcessor {
 	ret := new(SubscribeProcessor)
 	ret.SetLogger(logger)
 	ret.SetDatabase(dbfront)
-    ret.InitValidator()
+	ret.InitValidator()
 
 	return ret
 }
@@ -188,12 +188,12 @@ func (p *SubscribeProcessor) Process(req *Request) {
 		return
 	}
 
-    err0 := p.Validate(req)
-    if err0 != nil {
+	err0 := p.Validate(req)
+	if err0 != nil {
 		p.logger.Errorf("[SubscribeRequestFail] RequestId=%v %v", req.ID, err0)
 		req.Respond(fmt.Errorf("[SubscribeRequestFail] RequestId=%v %v", req.ID, err0))
-        return
-    }
+		return
+	}
 
 	psp, err := p.dbfront.AddDeliveryPointToService(req.Service,
 		req.Subscribers[0],
@@ -215,14 +215,14 @@ func (p *SubscribeProcessor) Process(req *Request) {
 type UnsubscribeProcessor struct {
 	logSetter
 	databaseSetter
-    requestValidator
+	requestValidator
 }
 
 func NewUnsubscribeProcessor(logger *uniqushlog.Logger, dbfront PushDatabase) RequestProcessor {
 	ret := new(UnsubscribeProcessor)
 	ret.SetLogger(logger)
 	ret.SetDatabase(dbfront)
-    ret.InitValidator()
+	ret.InitValidator()
 
 	return ret
 }
@@ -235,12 +235,12 @@ func (p *UnsubscribeProcessor) Process(req *Request) {
 		return
 
 	}
-    err0 := p.Validate(req)
-    if err0 != nil {
+	err0 := p.Validate(req)
+	if err0 != nil {
 		p.logger.Errorf("[UnSubscribeRequestFail] RequestId=%v %v", req.ID, err0)
 		req.Respond(fmt.Errorf("[UnSubscribeRequestFail] RequestId=%v %v", req.ID, err0))
-        return
-    }
+		return
+	}
 
 	err := p.dbfront.RemoveDeliveryPointFromService(req.Service,
 		req.Subscribers[0],
