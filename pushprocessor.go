@@ -35,7 +35,7 @@ type PushProcessor struct {
 }
 
 const (
-	init_backoff_time = 3
+	init_backoff_time = 5
 )
 
 func NewPushProcessor(logger *Logger, dbfront PushDatabase, backendch chan<- *Request, psm *PushServiceManager) RequestProcessor {
