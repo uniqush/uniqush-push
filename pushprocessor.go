@@ -39,7 +39,7 @@ const (
 	init_backoff_time = 3
 )
 
-func (p *PushProcessor) retryRequest(req *Request, retryAfter int, subscriber string, psp *PushServiceProvider, dp *DeliveryPoint) {
+func (p *PushProcessor) retryRequest(req *Request, retryAfter time.Duration, subscriber string, psp *PushServiceProvider, dp *DeliveryPoint) {
 	if req.nrRetries >= p.max_nr_retry {
 		return
 	}
@@ -65,12 +65,12 @@ func (p *PushProcessor) retryRequest(req *Request, retryAfter int, subscriber st
 	}
 
 	waitTime := newreq.backoffTime
-	if retryAfter > 0 {
-		waitTime = int64(retryAfter)
+	if retryAfter > 0 * time.Second {
+		waitTime = int64(retryAfter.Seconds())
 	}
 
-	duration := time.Duration(waitTime * 1E9)
-	<-time.After(duration)
+	duration := time.Duration(waitTime * time.Second)
+	time.Sleep(duration)
 	p.backendch <- newreq
 }
 
@@ -205,17 +205,24 @@ func recycle(psp *PushServiceProvider,
 	}
 }
 
-func (p *PushProcessor) pushFail(req *Request,
-	subscriber string,
-	psp *PushServiceProvider,
-	dp *DeliveryPoint,
-	err error) {
+func (p *PushProcessor) pushFail(req *Request, subscriber string, psp *PushServiceProvider, dp *DeliveryPoint, err error) {
+
+	pspName := "All"
+	dpName := "All"
+	pspSrv := "UnknownService"
+
+	if psp != nil {
+		pspName = psp.Name()
+		pspSrv = psp.PushServiceName()
+	}
+	if dp != nil {
+		dpName = dp.Name()
+	}
+
 	p.logger.Errorf("[%s][PushFail] RequestId=%s Service=%s Subscriber=%s PushServiceProvider=%s DeliveryPoint=%s \"%v\"",
-		psp.PushServiceName(), req.ID, req.Service, subscriber,
-		psp.Name(), dp.Name(), err)
+		pspSrv, req.ID, req.Service, subscriber, pspName, dpName, err)
 	p.logger.Debugf("[%s][PushFailDebug] RequestId=%s Service=%s Subscriber=%s PushServiceProvider=\"%s\" DeliveryPoint=\"%s\" Notification=\"%v\" \"%v\"",
-		psp.PushServiceName(), req.ID, req.Service, subscriber,
-		psp.String(), dp.String(), req.Notification, err)
+		pspSrv, req.ID, req.Service, subscriber, pspName, dpName, req.Notification, err)
 	recycle(psp, dp, req.Notification)
 }
 
@@ -258,6 +265,7 @@ func (self *PushProcessor) processResult(req *Request, resChan chan *PushResult,
 		}
 		switch err := res.Err.(type) {
 		case RetryError:
+			self.pushRetry(req, sub, res.Provider, res.Destination, err)
 		}
 	}
 }
