@@ -31,7 +31,7 @@ var uniqushPushVersion = "uniqush-push 1.3.1"
 
 func installPushSrvices() {
 	pushsrv.InstallGCM()
-	pushsrv.InstallC2DM()
+	//pushsrv.InstallC2DM()
 	pushsrv.InstallAPNS()
 }
 

@@ -39,11 +39,7 @@ const (
 	init_backoff_time = 3
 )
 
-func (p *PushProcessor) retryRequest(req *Request,
-	retryAfter int,
-	subscriber string,
-	psp *PushServiceProvider,
-	dp *DeliveryPoint) {
+func (p *PushProcessor) retryRequest(req *Request, retryAfter int, subscriber string, psp *PushServiceProvider, dp *DeliveryPoint) {
 	if req.nrRetries >= p.max_nr_retry {
 		return
 	}
@@ -78,10 +74,7 @@ func (p *PushProcessor) retryRequest(req *Request,
 	p.backendch <- newreq
 }
 
-func NewPushProcessor(logger *Logger,
-	dbfront PushDatabase,
-	backendch chan<- *Request,
-	psm *PushServiceManager) RequestProcessor {
+func NewPushProcessor(logger *Logger, dbfront PushDatabase, backendch chan<- *Request, psm *PushServiceManager) RequestProcessor {
 	ret := new(PushProcessor)
 	ret.SetLogger(logger)
 	ret.SetDatabase(dbfront)
@@ -201,11 +194,15 @@ func recycle(psp *PushServiceProvider,
 	dp *DeliveryPoint,
 	n *Notification) {
 	// TODO recycle only when they are not in cache!
-	/*
-	   psp.recycle()
-	   dp.recycle()
-	*/
-	n.Recycle()
+	if psp != nil {
+		psp.recycle()
+	}
+	if dp != nil {
+		dp.recycle()
+	}
+	if n != nil {
+		n.Recycle()
+	}
 }
 
 func (p *PushProcessor) pushFail(req *Request,
@@ -216,28 +213,20 @@ func (p *PushProcessor) pushFail(req *Request,
 	p.logger.Errorf("[%s][PushFail] RequestId=%s Service=%s Subscriber=%s PushServiceProvider=%s DeliveryPoint=%s \"%v\"",
 		psp.PushServiceName(), req.ID, req.Service, subscriber,
 		psp.Name(), dp.Name(), err)
-	p.logger.Debugf("[%s][PushFailDebug] RequestId=%s Service=%s Subscriber=%s PushServiceProvider=\"%s\" DeliveryPoint=\"%s\" \"%v\"",
+	p.logger.Debugf("[%s][PushFailDebug] RequestId=%s Service=%s Subscriber=%s PushServiceProvider=\"%s\" DeliveryPoint=\"%s\" Notification=\"%v\" \"%v\"",
 		psp.PushServiceName(), req.ID, req.Service, subscriber,
-		psp.String(), dp.String(), err)
+		psp.String(), dp.String(), req.Notification, err)
 	recycle(psp, dp, req.Notification)
 }
 
-func (p *PushProcessor) pushRetry(req *Request,
-	subscriber string,
-	psp *PushServiceProvider,
-	dp *DeliveryPoint,
-	err *RetryError) {
+func (p *PushProcessor) pushRetry(req *Request, subscriber string, psp *PushServiceProvider, dp *DeliveryPoint, err *RetryError) {
 	go p.retryRequest(req, err.RetryAfter, subscriber, psp, dp)
 	p.logger.Warnf("[%s][PushRetry] RequestId=%s Service=%s Subscriber=%s PushServiceProvider=%s DeliveryPoint=%s \"%v\"",
 		psp.PushServiceName(), req.ID, req.Service, subscriber,
 		psp.Name(), dp.Name(), err)
 }
 
-func (p *PushProcessor) pushSucc(req *Request,
-	subscriber string,
-	psp *PushServiceProvider,
-	dp *DeliveryPoint,
-	id string) {
+func (p *PushProcessor) pushSucc(req *Request, subscriber string, psp *PushServiceProvider, dp *DeliveryPoint, id string) {
 	p.logger.Infof("[%s][PushSuccess] RequestId=%s Service=%s Subscriber=%s PushServiceProvider=%s DeliveryPoint=%s MsgId=%s",
 		psp.PushServiceName(), req.ID, req.Service, subscriber,
 		psp.Name(), dp.Name(), id)
@@ -255,42 +244,80 @@ func (p *PushProcessor) pushBulk(req *Request,
 	}
 }
 
+func (self *PushProcessor) processResult(req *Request, resChan chan *PushResult, pairSubMap map[string]string) {
+	for res := range resChan {
+		sub := "All"
+		if res.Provider != nil && res.Destination != nil {
+			if s, ok := pairSubMap[res.Provider.Name() + "::" + res.Destination.Name()]; ok {
+				sub = s
+			}
+		}
+		if res.Err == nil {
+			self.pushSucc(req, sub, res.Provider, res.Destination, res.MsgId)
+			continue
+		}
+		switch err := res.Err.(type) {
+		case RetryError:
+		}
+	}
+}
+
 // NOTE: We won't wait retries.
 func (p *PushProcessor) Process(req *Request) {
 	defer req.Finish()
-	if len(req.Subscribers) == 1 &&
-		req.PushServiceProvider != nil &&
-		req.DeliveryPoint != nil {
-		p.pushToDeliveryPoint(req,
-			req.Subscribers[0],
-			req.PushServiceProvider,
-			req.DeliveryPoint)
-		return
+
+	resChan := make(chan *PushResult)
+
+	pairSubMap := make(map[string]string, len(req.Subscribers))
+
+	if len(req.Subscribers) == 1 && req.PushServiceProvider != nil && req.DeliveryPoint != nil {
+		psp := req.PushServiceProvider
+		dp := req.DeliveryPoint
+		notif := req.Notification
+		ch := make(chan *DeliveryPoint)
+		sub := req.Subscribers[0]
+
+		pairSubMap[psp.Name() + "::" + dp.Name()] = sub
+		wg.Add(1)
+		go func() {
+			p.psm.Push(psp, dpChanMap, resChan, notif)
+			wg.Done()
+		}()
+		ch <- dp
+		close(ch)
 	}
 
+	dpChanMap := make(map[string]chan *DeliveryPoint)
 	wg := new(sync.WaitGroup)
+	for _, sub := range req.Subscribers {
+		pspDpList, err := p.dbfront.GetPushServiceProviderDeliveryPointPairs(req.Service, sub)
 
-	// In most cases, we will use one goroutine per subscriber
-	if len(req.Subscribers) <= p.max_nr_gorountines {
-		for _, sub := range req.Subscribers {
-			wg.Add(1)
-			go p.push(req, sub, wg)
+		if err != nil {
+			p.logger.Errorf("[PushFail] Service=%s Subscriber=%s DatabaseError %v", req.Service, subscriber, err)
+			req.Respond(err)
 		}
-		wg.Wait()
-		return
-	}
 
-	nr_subs_per_goroutine := len(req.Subscribers) / p.max_nr_gorountines
-	nr_subs_last_goroutine := len(req.Subscribers) % p.max_nr_gorountines
-	pos := 0
-
-	for pos = 0; pos < len(req.Subscribers)-nr_subs_last_goroutine; pos += nr_subs_per_goroutine {
-		wg.Add(1)
-		go p.pushBulk(req, req.Subscribers[pos:pos+nr_subs_per_goroutine], wg)
+		for _, pair := range pspDpList {
+			psp := pair.PushServiceProvider
+			dp := pair.DeliveryPoint
+			notif := req.Notification
+			pairSubMap[psp.Name() + "::" + dp.Name()] = sub
+			if ch, ok := dpChanMap[psp.Name()]; ok {
+				ch <- dp
+			} else {
+				ch := make(chan *DeliveryPoint)
+				dpChanMap[psp.Name()] = ch
+				wg.Add(1)
+				go func() {
+					p.psm.Push(psp, dpChanMap, resChan, notif)
+					wg.Done()
+				}()
+				ch <- dp
+			}
+		}
 	}
-	if pos < len(req.Subscribers) {
-		wg.Add(1)
-		go p.pushBulk(req, req.Subscribers[pos:], wg)
+	for _, dpch := range dpChanMap {
+		close(dpch)
 	}
 	wg.Wait()
 }
