@@ -169,7 +169,9 @@ func (self *PushProcessor) processResult(req *Request, resChan chan *PushResult,
 	for res := range resChan {
 		sub := "All"
 		if res.Provider != nil && res.Destination != nil {
-			if s, ok := pairSubMap[res.Provider.Name()+"::"+res.Destination.Name()]; ok {
+			if s, ok := res.Destination.VolatileData["subscriber"]; ok {
+				sub = s
+			} else if s, ok := pairSubMap[res.Provider.Name()+"::"+res.Destination.Name()]; ok {
 				sub = s
 			}
 		}
@@ -197,6 +199,7 @@ func (p *PushProcessor) Process(req *Request) {
 	defer req.Finish()
 
 	resChan := make(chan *PushResult)
+	// TODO we should remove this variable one day.
 	pairSubMap := make(map[string]string, len(req.Subscribers))
 	wg := new(sync.WaitGroup)
 
@@ -206,6 +209,7 @@ func (p *PushProcessor) Process(req *Request) {
 		notif := req.Notification
 		ch := make(chan *DeliveryPoint)
 		sub := req.Subscribers[0]
+		dp.VolatileData["subscriber"] = sub
 
 		pairSubMap[psp.Name()+"::"+dp.Name()] = sub
 		wg.Add(1)
@@ -222,6 +226,12 @@ func (p *PushProcessor) Process(req *Request) {
 	}
 
 	dpChanMap := make(map[string]chan *DeliveryPoint)
+
+	wg.Add(1)
+	go func() {
+		p.processResult(req, resChan, pairSubMap)
+		wg.Done()
+	}()
 	for _, sub := range req.Subscribers {
 		pspDpList, err := p.dbfront.GetPushServiceProviderDeliveryPointPairs(req.Service, sub)
 
@@ -235,6 +245,8 @@ func (p *PushProcessor) Process(req *Request) {
 			dp := pair.DeliveryPoint
 			notif := req.Notification
 			pairSubMap[psp.Name()+"::"+dp.Name()] = sub
+			// XXX this is ugly and dirty. But what can we do?
+			dp.VolatileData["subscriber"] = sub
 			if ch, ok := dpChanMap[psp.Name()]; ok {
 				ch <- dp
 			} else {
@@ -252,6 +264,5 @@ func (p *PushProcessor) Process(req *Request) {
 	for _, dpch := range dpChanMap {
 		close(dpch)
 	}
-	p.processResult(req, resChan, pairSubMap)
 	wg.Wait()
 }
