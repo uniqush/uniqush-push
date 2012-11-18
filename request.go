@@ -18,7 +18,7 @@
 package main
 
 import (
-	. "github.com/uniqush/pushsys"
+	. "github.com/uniqush/uniqush-push/push"
 	"time"
 )
 
