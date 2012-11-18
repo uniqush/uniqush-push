@@ -23,7 +23,7 @@ import (
 	"fmt"
 	"github.com/uniqush/log"
 	. "github.com/uniqush/mempool"
-	. "github.com/uniqush/pushsys"
+	. "github.com/uniqush/uniqush-push/push"
 	"net/http"
 	"os"
 	"strconv"

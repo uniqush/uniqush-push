@@ -19,8 +19,8 @@ package main
 
 import (
 	. "github.com/uniqush/log"
-	. "github.com/uniqush/pushdb"
-	. "github.com/uniqush/pushsys"
+	. "github.com/uniqush/uniqush-push/db"
+	. "github.com/uniqush/uniqush-push/push"
 	"sync"
 	"time"
 )

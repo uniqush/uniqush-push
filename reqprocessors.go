@@ -20,7 +20,7 @@ package main
 import (
 	"fmt"
 	"github.com/uniqush/log"
-	. "github.com/uniqush/pushdb"
+	. "github.com/uniqush/uniqush-push/db"
 	"regexp"
 )
 
