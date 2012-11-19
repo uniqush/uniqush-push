@@ -20,7 +20,7 @@ package main
 import (
 	"flag"
 	"fmt"
-	"github.com/uniqush/pushsrv"
+	"github.com/uniqush/uniqush-push/srv"
 	"os"
 )
 
@@ -30,9 +30,9 @@ var uniqushPushShowVersionFlag = flag.Bool("version", false, "Version info")
 var uniqushPushVersion = "uniqush-push 1.3.2"
 
 func installPushSrvices() {
-	pushsrv.InstallGCM()
-	pushsrv.InstallC2DM()
-	pushsrv.InstallAPNS()
+	srv.InstallGCM()
+	srv.InstallC2DM()
+	srv.InstallAPNS()
 }
 
 func main() {
