@@ -302,12 +302,21 @@ func (p *apnsPushService) Push(sp *PushServiceProvider,
 	}
 
 	for i := 0; i < 2; i++ {
-		err = writen(tlsconn, pdu)
+		err = writen(tlsconn, pdu[:1])
 		if err != nil {
 			tlsconn, err = p.reconnect(sp)
 			if err != nil {
 				return "", err
 			}
+			continue
+		}
+		err = writen(tlsconn, pdu[1:])
+		if err != nil {
+			tlsconn, err = p.reconnect(sp)
+			if err != nil {
+				return "", err
+			}
+			continue
 		} else {
 			break
 		}
