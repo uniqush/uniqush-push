@@ -33,6 +33,10 @@ import (
 	"time"
 )
 
+const (
+	maxWaitTime time.Duration = 5
+)
+
 type pushRequest struct {
 	psp *PushServiceProvider
 	dp *DeliveryPoint
@@ -199,7 +203,7 @@ func (self *apnsPushService) Push(psp *PushServiceProvider, dpQueue <-chan *Deli
 				select {
 				case res := <-resultChannel:
 					resQueue <- res
-				case <-time.After(5 * time.Second):
+				case <-time.After(maxWaitTime * time.Second):
 					return
 
 				}
@@ -478,9 +482,14 @@ func (self *apnsPushService) pushWorker(psp *PushServiceProvider, reqChan chan *
 					result.Err = fmt.Errorf("Unknown Error: %d", apnsres.status)
 				}
 
-				req.resChan<-result
-				close(req.resChan)
 				delete(reqIdMap, apnsres.msgId)
+				go func() {
+					select {
+					case req.resChan<-result:
+					case <-time.After((maxWaitTime + 1) * time.Second):
+					}
+					close(req.resChan)
+				}()
 			}
 		}
 	}
