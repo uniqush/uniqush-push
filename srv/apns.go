@@ -43,7 +43,6 @@ type pushRequest struct {
 
 type apnsPushService struct {
 	nextid uint32
-	conns  map[string]net.Conn
 	connLock *sync.Mutex
 
 	connChan map[string]chan *pushRequest
@@ -56,7 +55,6 @@ func InstallAPNS() {
 
 func newAPNSPushService() *apnsPushService {
 	ret := new(apnsPushService)
-	ret.conns = make(map[string]net.Conn, 5)
 	ret.connChan = make(map[string]chan *pushRequest, 5)
 	ret.chanLock = new(sync.Mutex)
 	ret.connLock= new(sync.Mutex)
@@ -68,9 +66,12 @@ func (p *apnsPushService) Name() string {
 }
 
 func (p *apnsPushService) Finalize() {
-	for _, c := range p.conns {
-		c.Close()
+	p.connLock.Lock()
+	defer p.connLock.Unlock()
+	for _, c := range p.connChan {
+		close(c)
 	}
+	p.connChan = make(map[string]chan *pushRequest)
 }
 func (p *apnsPushService) BuildPushServiceProviderFromMap(kv map[string]string, psp *PushServiceProvider) error {
 	if service, ok := kv["service"]; ok {
@@ -123,26 +124,6 @@ func (p *apnsPushService) BuildDeliveryPointFromMap(kv map[string]string, dp *De
 	return nil
 }
 
-func applyAlertLocMsg(alert map[string]interface{}, v string) (error) {
-	var data map[string]interface{}
-
-	var err = json.Unmarshal([]byte(v), &data)
-	if err != nil {
-		return err
-	}
-
-	for k, v := range data {
-		switch k {
-		case "loc-key":
-			alert[k] = v
-		case "loc-args":
-			alert[k] = v
-		}
-	}
-
-	return nil
-}
-
 func toAPNSPayload(n *Notification) ([]byte, error) {
 	payload := make(map[string]interface{})
 	aps := make(map[string]interface{})
@@ -151,11 +132,10 @@ func toAPNSPayload(n *Notification) ([]byte, error) {
 		switch k {
 		case "msg":
 			alert["body"] = v
-		case "loc-msg":
-			err := applyAlertLocMsg(alert, v)
-			if err != nil {
-				return nil, err
-			}
+		case "loc-key":
+			alert[k] = v
+		case "loc-args":
+			alert[k] = v
 		case "badge":
 			b, err := strconv.Atoi(v)
 			if err != nil {
@@ -200,42 +180,6 @@ func writen(w io.Writer, buf []byte) error {
 		buf = buf[l:]
 	}
 	return nil
-}
-
-func (p *apnsPushService) getConn(psp *PushServiceProvider) (net.Conn, error) {
-	name := psp.Name()
-	if conn, ok := p.conns[name]; ok {
-		return conn, nil
-	}
-	return p.reconnect(psp)
-}
-
-func (p *apnsPushService) reconnect(psp *PushServiceProvider) (net.Conn, error) {
-	name := psp.Name()
-	p.connLock.Lock()
-	defer p.connLock.Unlock()
-
-	if conn, ok := p.conns[name]; ok {
-		conn.Close()
-	}
-	cert, err := tls.LoadX509KeyPair(psp.FixedData["cert"], psp.FixedData["key"])
-	if err != nil {
-		return nil, NewBadPushServiceProviderWithDetails(psp, err.Error())
-	}
-	conf := &tls.Config{
-		Certificates:       []tls.Certificate{cert},
-		InsecureSkipVerify: true,
-	}
-	tlsconn, err := tls.Dial("tcp", psp.VolatileData["addr"], conf)
-	if err != nil {
-		return nil, NewConnectionError(err)
-	}
-	err = tlsconn.Handshake()
-	if err != nil {
-		return nil, NewConnectionError(err)
-	}
-	p.conns[name] = tlsconn
-	return tlsconn, nil
 }
 
 
@@ -294,21 +238,36 @@ func (self *apnsPushService) Push(psp *PushServiceProvider, dpQueue <-chan *Deli
 	close(resQueue)
 }
 
-func (self *apnsPushService) resultCollector(psp *PushServiceProvider, resChan chan<- *apnsResult) {
-	c, err := self.getConn(psp)
-	if err != nil {
-		res := new(apnsResult)
-		res.err = NewConnectionError(err)
-		resChan<-res
-		return
-	}
-
+func (self *apnsPushService) resultCollector(psp *PushServiceProvider, resChan chan<- *apnsResult, c net.Conn) {
 	for {
 		var cmd uint8
 		var status uint8
 		var msgid uint32
+		buf := make([]byte, 6)
 
-		err = binary.Read(c, binary.BigEndian, &cmd)
+		n, err := c.Read(buf)
+
+		// The connection is closed by remote server. It could recover.
+		if err == io.EOF {
+			res := new(apnsResult)
+			res.err = io.EOF
+			resChan <- res
+			return
+		} else if err != nil {
+			// Otherwise, it cannot recover.
+			res := new(apnsResult)
+			res.err = NewConnectionError(err)
+			resChan<-res
+			return
+		}
+
+		if n != 6 {
+			continue
+		}
+
+		byteBuffer := bytes.NewBuffer(buf)
+
+		err = binary.Read(byteBuffer, binary.BigEndian, &cmd)
 		if err != nil {
 			res := new(apnsResult)
 			res.err = NewConnectionError(err)
@@ -316,7 +275,7 @@ func (self *apnsPushService) resultCollector(psp *PushServiceProvider, resChan c
 			continue
 		}
 
-		err = binary.Read(c, binary.BigEndian, &status)
+		err = binary.Read(byteBuffer, binary.BigEndian, &status)
 		if err != nil {
 			res := new(apnsResult)
 			res.err = NewConnectionError(err)
@@ -324,14 +283,13 @@ func (self *apnsPushService) resultCollector(psp *PushServiceProvider, resChan c
 			continue
 		}
 
-		err = binary.Read(c, binary.BigEndian, &msgid)
+		err = binary.Read(byteBuffer, binary.BigEndian, &msgid)
 		if err != nil {
 			res := new(apnsResult)
 			res.err = NewConnectionError(err)
 			resChan<-res
 			continue
 		}
-
 
 		res := new(apnsResult)
 		res.msgId = msgid
@@ -340,7 +298,7 @@ func (self *apnsPushService) resultCollector(psp *PushServiceProvider, resChan c
 	}
 }
 
-func (self *apnsPushService) singlePush(psp *PushServiceProvider, dp *DeliveryPoint, notif *Notification, mid uint32) error {
+func (self *apnsPushService) singlePush(psp *PushServiceProvider, dp *DeliveryPoint, notif *Notification, mid uint32, tlsconn net.Conn) error {
 	devtoken := dp.FixedData["devtoken"]
 
 	btoken, err := hex.DecodeString(devtoken)
@@ -381,27 +339,34 @@ func (self *apnsPushService) singlePush(psp *PushServiceProvider, dp *DeliveryPo
 	binary.Write(buffer, binary.BigEndian, bpayload)
 	pdu := buffer.Bytes()
 
-	tlsconn, err := self.getConn(psp)
-	if err != nil {
-		return NewConnectionError(err)
-	}
-
-	for i := 0; i < 2; i++ {
-		err = writen(tlsconn, pdu)
-		if err != nil {
-			tlsconn, err = self.reconnect(psp)
-			if err != nil {
-				return NewConnectionError(err)
-			}
-		} else {
-			break
-		}
-	}
+	err = writen(tlsconn, pdu)
 	if err != nil {
 		return NewConnectionError(err)
 	}
 
 	return nil
+}
+
+func connectAPNS(psp *PushServiceProvider) (net.Conn, error) {
+	cert, err := tls.LoadX509KeyPair(psp.FixedData["cert"], psp.FixedData["key"])
+	if err != nil {
+		return nil, NewBadPushServiceProviderWithDetails(psp, err.Error())
+	}
+
+	conf := &tls.Config{
+		Certificates:       []tls.Certificate{cert},
+		//InsecureSkipVerify: true,
+	}
+
+	tlsconn, err := tls.Dial("tcp", psp.VolatileData["addr"], conf)
+	if err != nil {
+		return nil, NewConnectionError(err)
+	}
+	err = tlsconn.Handshake()
+	if err != nil {
+		return nil, NewConnectionError(err)
+	}
+	return tlsconn, nil
 }
 
 func (self *apnsPushService) pushWorker(psp *PushServiceProvider, reqChan chan *pushRequest) {
@@ -410,13 +375,27 @@ func (self *apnsPushService) pushWorker(psp *PushServiceProvider, reqChan chan *
 	reqIdMap := make(map[uint32]*pushRequest)
 
 	var connErr error
-
 	connErr = nil
 
-	go self.resultCollector(psp, resChan)
+	conn, err := connectAPNS(psp)
+	if err != nil {
+		connErr = err
+	}
+
+	go self.resultCollector(psp, resChan, conn)
+
 	for {
 		select {
 		case req := <-reqChan:
+			// closed by another goroutine
+			// close the connection and exit
+			if req == nil {
+				if connErr == nil {
+					conn.Close()
+				}
+				return
+			}
+
 			dp := req.dp
 			notif := req.notif
 			mid := req.mid
@@ -433,7 +412,7 @@ func (self *apnsPushService) pushWorker(psp *PushServiceProvider, reqChan chan *
 			}
 
 			reqIdMap[mid] = req
-			err := self.singlePush(psp, dp, notif, mid)
+			err := self.singlePush(psp, dp, notif, mid, conn)
 
 			if err != nil {
 				result := new(PushResult)
@@ -447,6 +426,18 @@ func (self *apnsPushService) pushWorker(psp *PushServiceProvider, reqChan chan *
 			}
 
 		case apnsres := <-resChan:
+			// Connection Closed by remote server.
+			// Recover it.
+			if apnsres.err == io.EOF {
+				conn.Close()
+				conn, err = connectAPNS(psp)
+				if err != nil {
+					connErr = err
+					continue
+				}
+				go self.resultCollector(psp, resChan, conn)
+				continue
+			}
 			if cerr, ok := apnsres.err.(*ConnectionError); ok {
 				connErr = cerr
 			}
