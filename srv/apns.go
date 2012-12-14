@@ -34,6 +34,7 @@ import (
 )
 
 type pushRequest struct {
+	psp *PushServiceProvider
 	dp *DeliveryPoint
 	notif *Notification
 	mid uint32
@@ -41,10 +42,7 @@ type pushRequest struct {
 }
 
 type apnsPushService struct {
-	connLock *sync.Mutex
-
-	connChan map[string]chan *pushRequest
-	chanLock *sync.Mutex
+	reqChan chan *pushRequest
 }
 
 func InstallAPNS() {
@@ -53,9 +51,8 @@ func InstallAPNS() {
 
 func newAPNSPushService() *apnsPushService {
 	ret := new(apnsPushService)
-	ret.connChan = make(map[string]chan *pushRequest, 5)
-	ret.chanLock = new(sync.Mutex)
-	ret.connLock= new(sync.Mutex)
+	ret.reqChan = make(chan *pushRequest)
+	go ret.pushMux()
 	return ret
 }
 
@@ -64,13 +61,10 @@ func (p *apnsPushService) Name() string {
 }
 
 func (p *apnsPushService) Finalize() {
-	p.connLock.Lock()
-	defer p.connLock.Unlock()
-	for _, c := range p.connChan {
-		close(c)
-	}
-	p.connChan = make(map[string]chan *pushRequest)
+	close(p.reqChan)
+	p.reqChan = nil
 }
+
 func (p *apnsPushService) BuildPushServiceProviderFromMap(kv map[string]string, psp *PushServiceProvider) error {
 	if service, ok := kv["service"]; ok {
 		psp.FixedData["service"] = service
@@ -180,20 +174,6 @@ func writen(w io.Writer, buf []byte) error {
 	return nil
 }
 
-
-func (self *apnsPushService) getRequestChannel(psp *PushServiceProvider) chan *pushRequest{
-	var ch chan *pushRequest
-	var ok bool
-	self.chanLock.Lock()
-	if ch, ok = self.connChan[psp.Name()]; !ok {
-		ch = make(chan *pushRequest)
-		self.connChan[psp.Name()] = ch
-		go self.pushWorker(psp, ch)
-	}
-	self.chanLock.Unlock()
-	return ch
-}
-
 type apnsResult struct {
 	msgId uint32
 	status uint8
@@ -201,9 +181,6 @@ type apnsResult struct {
 }
 
 func (self *apnsPushService) Push(psp *PushServiceProvider, dpQueue <-chan *DeliveryPoint, resQueue chan<- *PushResult, notif *Notification) {
-	/* First, get the request channel */
-	ch := self.getRequestChannel(psp)
-
 	wg := new(sync.WaitGroup)
 
 	for dp := range dpQueue {
@@ -214,8 +191,9 @@ func (self *apnsPushService) Push(psp *PushServiceProvider, dpQueue <-chan *Deli
 			req.dp = dp
 			req.notif = notif
 			req.resChan = resultChannel
+			req.psp = psp
 
-			ch<-req
+			self.reqChan <- req
 
 			for {
 				select {
@@ -364,6 +342,26 @@ func connectAPNS(psp *PushServiceProvider) (net.Conn, error) {
 		return nil, NewConnectionError(err)
 	}
 	return tlsconn, nil
+}
+
+func (self *apnsPushService) pushMux() {
+	connChan := make(map[string]chan *pushRequest, 10)
+	for req := range self.reqChan {
+		if req == nil {
+			break
+		}
+		psp := req.psp
+		var ch chan *pushRequest
+		if ch, ok := connChan[psp.Name()]; !ok {
+			ch = make(chan *pushRequest)
+			connChan[psp.Name()] = ch
+			go self.pushWorker(psp, ch)
+		}
+		ch <- req
+	}
+	for _, c := range connChan {
+		close(c)
+	}
 }
 
 func (self *apnsPushService) pushWorker(psp *PushServiceProvider, reqChan chan *pushRequest) {
