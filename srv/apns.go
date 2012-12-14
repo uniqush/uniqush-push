@@ -29,7 +29,6 @@ import (
 	"io"
 	"net"
 	"strconv"
-	"sync/atomic"
 	"sync"
 	"time"
 )
@@ -42,7 +41,6 @@ type pushRequest struct {
 }
 
 type apnsPushService struct {
-	nextid uint32
 	connLock *sync.Mutex
 
 	connChan map[string]chan *pushRequest
@@ -216,7 +214,6 @@ func (self *apnsPushService) Push(psp *PushServiceProvider, dpQueue <-chan *Deli
 			req.dp = dp
 			req.notif = notif
 			req.resChan = resultChannel
-			req.mid = atomic.AddUint32(&(self.nextid), 1)
 
 			ch<-req
 
@@ -384,6 +381,10 @@ func (self *apnsPushService) pushWorker(psp *PushServiceProvider, reqChan chan *
 
 	go self.resultCollector(psp, resChan, conn)
 
+	var nextid uint32
+
+	nextid = 5
+
 	for {
 		select {
 		case req := <-reqChan:
@@ -398,7 +399,8 @@ func (self *apnsPushService) pushWorker(psp *PushServiceProvider, reqChan chan *
 
 			dp := req.dp
 			notif := req.notif
-			mid := req.mid
+			mid := nextid
+			nextid++
 
 			if connErr != nil {
 				result := new(PushResult)
