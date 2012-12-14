@@ -23,6 +23,7 @@ import (
 	. "github.com/uniqush/uniqush-push/push"
 	"sync"
 	"time"
+	"fmt"
 )
 
 type PushProcessor struct {
@@ -198,7 +199,6 @@ func (self *PushProcessor) processResult(req *Request, resChan chan *PushResult,
 func (p *PushProcessor) Process(req *Request) {
 	defer req.Finish()
 
-	resChan := make(chan *PushResult)
 	// TODO we should remove this variable one day.
 	pairSubMap := make(map[string]string, len(req.Subscribers))
 	wg := new(sync.WaitGroup)
@@ -210,6 +210,7 @@ func (p *PushProcessor) Process(req *Request) {
 		ch := make(chan *DeliveryPoint)
 		sub := req.Subscribers[0]
 		dp.VolatileData["subscriber"] = sub
+		resChan := make(chan *PushResult)
 
 		pairSubMap[psp.Name()+"::"+dp.Name()] = sub
 		wg.Add(1)
@@ -227,17 +228,20 @@ func (p *PushProcessor) Process(req *Request) {
 
 	dpChanMap := make(map[string]chan *DeliveryPoint)
 
-	wg.Add(1)
-	go func() {
-		p.processResult(req, resChan, pairSubMap)
-		wg.Done()
-	}()
 	for _, sub := range req.Subscribers {
 		pspDpList, err := p.dbfront.GetPushServiceProviderDeliveryPointPairs(req.Service, sub)
 
 		if err != nil {
 			p.logger.Errorf("[PushFail] Service=%s Subscriber=%s DatabaseError %v", req.Service, sub, err)
 			req.Respond(err)
+			continue
+		}
+
+		if len(pspDpList) == 0 {
+			p.logger.Errorf("[PushFail] Service=%s Subscriber=%s NoDevice", req.Service, sub)
+			err = fmt.Errorf("[PushFail] Service=%s Subscriber=%s NoDevice", req.Service, sub)
+			req.Respond(err)
+			continue
 		}
 
 		for _, pair := range pspDpList {
@@ -252,11 +256,18 @@ func (p *PushProcessor) Process(req *Request) {
 			} else {
 				ch := make(chan *DeliveryPoint)
 				dpChanMap[psp.Name()] = ch
+				resChan := make(chan *PushResult)
 				wg.Add(1)
 				go func() {
 					p.psm.Push(psp, ch, resChan, notif)
 					wg.Done()
 				}()
+				wg.Add(1)
+				go func() {
+					p.processResult(req, resChan, pairSubMap)
+					wg.Done()
+				}()
+
 				ch <- dp
 			}
 		}
