@@ -247,6 +247,7 @@ func (self *apnsPushService) resultCollector(psp *PushServiceProvider, resChan c
 
 		err = binary.Read(byteBuffer, binary.BigEndian, &cmd)
 		if err != nil {
+			res := new(apnsResult)
 			res.err = err
 			resChan<-res
 			continue
@@ -254,6 +255,7 @@ func (self *apnsPushService) resultCollector(psp *PushServiceProvider, resChan c
 
 		err = binary.Read(byteBuffer, binary.BigEndian, &status)
 		if err != nil {
+			res := new(apnsResult)
 			res.err = err
 			resChan<-res
 			continue
@@ -261,6 +263,7 @@ func (self *apnsPushService) resultCollector(psp *PushServiceProvider, resChan c
 
 		err = binary.Read(byteBuffer, binary.BigEndian, &msgid)
 		if err != nil {
+			res := new(apnsResult)
 			res.err = err
 			resChan<-res
 			continue
