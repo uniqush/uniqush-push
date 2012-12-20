@@ -86,10 +86,7 @@ func (p *gcmPushService) BuildDeliveryPointFromMap(kv map[string]string,
 	}
 	if account, ok := kv["account"]; ok && len(account) > 0 {
 		dp.FixedData["account"] = account
-	} else {
-		return errors.New("NoGoogleAccount")
 	}
-
 	if regid, ok := kv["regid"]; ok && len(regid) > 0 {
 		dp.FixedData["regid"] = regid
 	} else {
