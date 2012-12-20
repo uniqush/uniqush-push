@@ -66,7 +66,6 @@ func (p *apnsPushService) Name() string {
 
 func (p *apnsPushService) Finalize() {
 	close(p.reqChan)
-	p.reqChan = nil
 }
 
 func (p *apnsPushService) BuildPushServiceProviderFromMap(kv map[string]string, psp *PushServiceProvider) error {
@@ -248,24 +247,21 @@ func (self *apnsPushService) resultCollector(psp *PushServiceProvider, resChan c
 
 		err = binary.Read(byteBuffer, binary.BigEndian, &cmd)
 		if err != nil {
-			res := new(apnsResult)
-			res.err = NewConnectionError(err)
+			res.err = err
 			resChan<-res
 			continue
 		}
 
 		err = binary.Read(byteBuffer, binary.BigEndian, &status)
 		if err != nil {
-			res := new(apnsResult)
-			res.err = NewConnectionError(err)
+			res.err = err
 			resChan<-res
 			continue
 		}
 
 		err = binary.Read(byteBuffer, binary.BigEndian, &msgid)
 		if err != nil {
-			res := new(apnsResult)
-			res.err = NewConnectionError(err)
+			res.err = err
 			resChan<-res
 			continue
 		}
