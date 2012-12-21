@@ -150,6 +150,7 @@ func (p *PushProcessor) pushFail(req *Request, subscriber string, psp *PushServi
 	p.logger.Debugf("[%s][PushFailDebug] RequestId=%s Service=%s Subscriber=%s PushServiceProvider=\"%s\" DeliveryPoint=\"%s\" Notification=\"%v\" \"%v\"",
 		pspSrv, req.ID, req.Service, subscriber, pspName, dpName, req.Notification, err)
 	recycle(psp, dp, req.Notification)
+	req.Respond(err)
 }
 
 func (p *PushProcessor) pushRetry(req *Request, subscriber string, psp *PushServiceProvider, dp *DeliveryPoint, err *RetryError) {

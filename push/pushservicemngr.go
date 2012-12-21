@@ -90,7 +90,7 @@ func (m *PushServiceManager) BuildPushServiceProviderFromMap(kv map[string]strin
 			psp.pushServiceType = pst
 			return
 		}
-		return nil, errors.New("Unknown Push Service Type")
+		return nil, fmt.Errorf("Unknown Push Service Type: %v", ptname)
 	}
 	return nil, errors.New("No Push Service Type Specified")
 }
@@ -118,7 +118,7 @@ func (m *PushServiceManager) BuildPushServiceProviderFromBytes(value []byte) (ps
 			}
 			return
 		}
-		return nil, errors.New("Unknown Push Service Type")
+		return nil, fmt.Errorf("Unknown Push Service Type: %v", ptname)
 	}
 	return nil, errors.New("No Push Service Type Specified")
 }
@@ -138,7 +138,7 @@ func (m *PushServiceManager) BuildDeliveryPointFromMap(kv map[string]string) (dp
 			dp.pushServiceType = pst
 			return
 		}
-		return nil, errors.New("Unknown Push Service Type")
+		return nil, fmt.Errorf("Unknown Push Service Type: %v", ptname)
 	}
 	return nil, errors.New("No Push Service Type Specified")
 }
@@ -162,7 +162,7 @@ func (m *PushServiceManager) BuildDeliveryPointFromBytes(value []byte) (dp *Deli
 			}
 			return
 		}
-		return nil, errors.New("Unknown Push Service Type")
+		return nil, fmt.Errorf("Unknown Push Service Type: %v", ptname)
 	}
 	return nil, errors.New("No Push Service Type Specified")
 }
