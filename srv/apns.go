@@ -38,10 +38,10 @@ const (
 )
 
 type pushRequest struct {
-	psp *PushServiceProvider
-	dp *DeliveryPoint
-	notif *Notification
-	mid uint32
+	psp     *PushServiceProvider
+	dp      *DeliveryPoint
+	notif   *Notification
+	mid     uint32
 	resChan chan<- *PushResult
 }
 
@@ -93,6 +93,10 @@ func (p *apnsPushService) BuildPushServiceProviderFromMap(kv map[string]string, 
 			return nil
 		}
 	}
+	if addr, ok := kv["addr"]; ok {
+		psp.VolatileData["addr"] = addr
+		return nil
+	}
 	psp.VolatileData["addr"] = "gateway.push.apple.com:2195"
 	return nil
 }
@@ -109,9 +113,6 @@ func (p *apnsPushService) BuildDeliveryPointFromMap(kv map[string]string, dp *De
 		return errors.New("NoSubscriber")
 	}
 	if devtoken, ok := kv["devtoken"]; ok && len(devtoken) > 0 {
-		if len(devtoken) != 40 {
-			return fmt.Errorf("Dev token %v is invalid: it should be 40 characters", devtoken)
-		}
 		dp.FixedData["devtoken"] = devtoken
 	} else {
 		return errors.New("NoDevToken")
@@ -178,9 +179,9 @@ func writen(w io.Writer, buf []byte) error {
 }
 
 type apnsResult struct {
-	msgId uint32
+	msgId  uint32
 	status uint8
-	err error
+	err    error
 }
 
 func (self *apnsPushService) Push(psp *PushServiceProvider, dpQueue <-chan *DeliveryPoint, resQueue chan<- *PushResult, notif *Notification) {
@@ -188,7 +189,8 @@ func (self *apnsPushService) Push(psp *PushServiceProvider, dpQueue <-chan *Deli
 
 	for dp := range dpQueue {
 		wg.Add(1)
-		go func () {
+		go func() {
+			defer wg.Done()
 			resultChannel := make(chan *PushResult, 1)
 			req := new(pushRequest)
 			req.dp = dp
@@ -198,21 +200,38 @@ func (self *apnsPushService) Push(psp *PushServiceProvider, dpQueue <-chan *Deli
 
 			self.reqChan <- req
 
+			n := 0
 			for {
+				fmt.Println("Wait for result...")
 				select {
 				case res := <-resultChannel:
+					fmt.Println("Got a result.")
+					if res == nil {
+						return
+					}
 					resQueue <- res
+					n++
 				case <-time.After(maxWaitTime * time.Second):
+					if n == 0 {
+						fmt.Println("Time out")
+						res := new(PushResult)
+						res.Provider = psp
+						res.Destination = dp
+						res.Content = notif
+						res.MsgId = "Unknown"
+						res.Err = fmt.Errorf("Unkown")
+						resQueue <- res
+					}
 					return
-
 				}
 			}
-			wg.Done()
 
 		}()
 	}
 
+	fmt.Println("Wait for goroutines")
 	wg.Wait()
+	fmt.Println("Done")
 	close(resQueue)
 }
 
@@ -235,7 +254,7 @@ func (self *apnsPushService) resultCollector(psp *PushServiceProvider, resChan c
 			// Otherwise, it cannot recover.
 			res := new(apnsResult)
 			res.err = NewConnectionError(err)
-			resChan<-res
+			resChan <- res
 			return
 		}
 
@@ -249,7 +268,7 @@ func (self *apnsPushService) resultCollector(psp *PushServiceProvider, resChan c
 		if err != nil {
 			res := new(apnsResult)
 			res.err = err
-			resChan<-res
+			resChan <- res
 			continue
 		}
 
@@ -257,7 +276,7 @@ func (self *apnsPushService) resultCollector(psp *PushServiceProvider, resChan c
 		if err != nil {
 			res := new(apnsResult)
 			res.err = err
-			resChan<-res
+			resChan <- res
 			continue
 		}
 
@@ -265,14 +284,14 @@ func (self *apnsPushService) resultCollector(psp *PushServiceProvider, resChan c
 		if err != nil {
 			res := new(apnsResult)
 			res.err = err
-			resChan<-res
+			resChan <- res
 			continue
 		}
 
 		res := new(apnsResult)
 		res.msgId = msgid
 		res.status = status
-		resChan<-res
+		resChan <- res
 	}
 }
 
@@ -333,7 +352,7 @@ func connectAPNS(psp *PushServiceProvider) (net.Conn, error) {
 
 	conf := &tls.Config{
 		Certificates:       []tls.Certificate{cert},
-		//InsecureSkipVerify: true,
+		InsecureSkipVerify: true,
 	}
 
 	tlsconn, err := tls.Dial("tcp", psp.VolatileData["addr"], conf)
@@ -350,17 +369,22 @@ func connectAPNS(psp *PushServiceProvider) (net.Conn, error) {
 func (self *apnsPushService) pushMux() {
 	connChan := make(map[string]chan *pushRequest, 10)
 	for req := range self.reqChan {
+		fmt.Println("Received a request. Trying to find its psp\n")
 		if req == nil {
 			break
 		}
 		psp := req.psp
 		var ch chan *pushRequest
-		if ch, ok := connChan[psp.Name()]; !ok {
+		var ok bool
+		if ch, ok = connChan[psp.Name()]; !ok {
+			fmt.Println("Cannot find the psp chan. Create one\n")
 			ch = make(chan *pushRequest)
 			connChan[psp.Name()] = ch
 			go self.pushWorker(psp, ch)
 		}
+		fmt.Println("Send the request to psp\n")
 		ch <- req
+		fmt.Println("Done!\n")
 	}
 	for _, c := range connChan {
 		close(c)
@@ -377,10 +401,12 @@ func (self *apnsPushService) pushWorker(psp *PushServiceProvider, reqChan chan *
 
 	conn, err := connectAPNS(psp)
 	if err != nil {
+		fmt.Printf("connection error: %v\n", err)
 		connErr = err
+	} else {
+		fmt.Printf("established a connection\n")
+		go self.resultCollector(psp, resChan, conn)
 	}
-
-	go self.resultCollector(psp, resChan, conn)
 
 	var nextid uint32
 
@@ -389,6 +415,8 @@ func (self *apnsPushService) pushWorker(psp *PushServiceProvider, reqChan chan *
 	for {
 		select {
 		case req := <-reqChan:
+
+			fmt.Printf("Received a request\n")
 			// closed by another goroutine
 			// close the connection and exit
 			if req == nil {
@@ -410,11 +438,12 @@ func (self *apnsPushService) pushWorker(psp *PushServiceProvider, reqChan chan *
 				result.Destination = dp
 				result.MsgId = fmt.Sprintf("%v", mid)
 				result.Err = connErr
-				req.resChan<-result
+				req.resChan <- result
 				continue
 			}
 
 			reqIdMap[mid] = req
+			fmt.Printf("Ready to push\n")
 			err := self.singlePush(psp, dp, notif, mid, conn)
 
 			if err != nil {
@@ -424,7 +453,7 @@ func (self *apnsPushService) pushWorker(psp *PushServiceProvider, reqChan chan *
 				result.Destination = dp
 				result.MsgId = fmt.Sprintf("apns:%v-%v", psp.Name(), mid)
 				result.Err = err
-				req.resChan<-result
+				req.resChan <- result
 				delete(reqIdMap, mid)
 			}
 
@@ -454,7 +483,7 @@ func (self *apnsPushService) pushWorker(psp *PushServiceProvider, reqChan chan *
 				if apnsres.err != nil {
 					result := new(PushResult)
 					result.Err = apnsres.err
-					req.resChan<-result
+					req.resChan <- result
 					continue
 				}
 
@@ -484,7 +513,7 @@ func (self *apnsPushService) pushWorker(psp *PushServiceProvider, reqChan chan *
 				delete(reqIdMap, apnsres.msgId)
 				go func() {
 					select {
-					case req.resChan<-result:
+					case req.resChan <- result:
 					case <-time.After((maxWaitTime + 1) * time.Second):
 					}
 					close(req.resChan)
@@ -493,4 +522,3 @@ func (self *apnsPushService) pushWorker(psp *PushServiceProvider, reqChan chan *
 		}
 	}
 }
-
