@@ -261,7 +261,6 @@ func (self *apnsPushService) resultCollector(psp *PushServiceProvider, resChan c
 
 		// The connection is closed by remote server. It could recover.
 		if err == io.EOF {
-			fmt.Println("EOFEOF")
 			res := new(apnsResult)
 			res.err = io.EOF
 			resChan <- res
@@ -273,8 +272,6 @@ func (self *apnsPushService) resultCollector(psp *PushServiceProvider, resChan c
 			resChan <- res
 			return
 		}
-
-		fmt.Printf("APNS reply: %v\n", buf)
 
 		byteBuffer := bytes.NewBuffer(buf)
 
@@ -302,7 +299,6 @@ func (self *apnsPushService) resultCollector(psp *PushServiceProvider, resChan c
 			continue
 		}
 
-		fmt.Printf("APNS result for msg %v: %v\n", msgid, status)
 		res := new(apnsResult)
 		res.msgId = msgid
 		res.status = status
