@@ -18,12 +18,12 @@
 package main
 
 import (
+	"fmt"
 	. "github.com/uniqush/log"
 	. "github.com/uniqush/uniqush-push/db"
 	. "github.com/uniqush/uniqush-push/push"
 	"sync"
 	"time"
-	"fmt"
 )
 
 type PushProcessor struct {
@@ -96,6 +96,7 @@ func (p *PushProcessor) unsubscribe(req *Request, subscriber string, dp *Deliver
 	a.Subscribers[0] = subscriber
 	a.DeliveryPoint = dp
 	p.backendch <- a
+	req.Respond(fmt.Errorf("Unsubscribed"))
 }
 
 func (self *PushProcessor) updatePushServiceProvider(req *Request, psp *PushServiceProvider) error {
