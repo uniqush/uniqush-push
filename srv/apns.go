@@ -182,22 +182,6 @@ func writen(w io.Writer, buf []byte) error {
 	return nil
 }
 
-func readn(r io.Reader, buf []byte) error {
-	n := len(buf)
-	for n >= 0 {
-		l, err := r.Read(buf)
-		if err != nil {
-			return err
-		}
-		if l >= n {
-			return nil
-		}
-		n -= l
-		buf = buf[l:]
-	}
-	return nil
-}
-
 type apnsResult struct {
 	msgId  uint32
 	status uint8
@@ -257,7 +241,7 @@ func (self *apnsPushService) resultCollector(psp *PushServiceProvider, resChan c
 		var msgid uint32
 		buf := make([]byte, 6)
 
-		err := readn(c, buf)
+		err := io.ReadFull(c, buf)
 
 		// The connection is closed by remote server. It could recover.
 		if err == io.EOF {
