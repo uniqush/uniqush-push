@@ -241,7 +241,7 @@ func (self *apnsPushService) resultCollector(psp *PushServiceProvider, resChan c
 		var msgid uint32
 		buf := make([]byte, 6)
 
-		err := io.ReadFull(c, buf)
+		n, err := io.ReadFull(c, buf)
 
 		// The connection is closed by remote server. It could recover.
 		if err == io.EOF {
@@ -249,7 +249,7 @@ func (self *apnsPushService) resultCollector(psp *PushServiceProvider, resChan c
 			res.err = io.EOF
 			resChan <- res
 			return
-		} else if err != nil {
+		} else if err != nil || n != len(buf) {
 			// Otherwise, it cannot recover.
 			res := new(apnsResult)
 			res.err = NewConnectionError(err)
