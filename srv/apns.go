@@ -408,8 +408,9 @@ func (self *apnsPushService) pushWorker(psp *PushServiceProvider, reqChan chan *
 	}
 
 	var nextid uint32
-
 	nextid = 5
+
+	tmpErrReconnect := fmt.Errorf("Reconnect")
 
 	for {
 		select {
@@ -428,6 +429,17 @@ func (self *apnsPushService) pushWorker(psp *PushServiceProvider, reqChan chan *
 			notif := req.notif
 			mid := nextid
 			nextid++
+
+			// Connection dropped by remote server.
+			// Reconnect it.
+			if connErr == tmpErrReconnect {
+				conn, err = connectAPNS(psp)
+				if err != nil {
+					connErr = err
+				} else {
+					go self.resultCollector(psp, resChan, conn)
+				}
+			}
 
 			if connErr != nil {
 				if connErrReported {
@@ -502,12 +514,7 @@ func (self *apnsPushService) pushWorker(psp *PushServiceProvider, reqChan chan *
 					close(req.resChan)
 				}
 				reqIdMap = make(map[uint32]*pushRequest)
-				conn, err = connectAPNS(psp)
-				if err != nil {
-					connErr = err
-					continue
-				}
-				go self.resultCollector(psp, resChan, conn)
+				connErr = tmpErrReconnect
 				continue
 			}
 			if cerr, ok := apnsres.err.(*ConnectionError); ok {
