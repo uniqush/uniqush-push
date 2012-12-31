@@ -359,12 +359,10 @@ func connectAPNS(psp *PushServiceProvider) (net.Conn, error) {
 	tlsconn, err := tls.Dial("tcp", psp.VolatileData["addr"], conf)
 	if err != nil {
 		return nil, err
-		//return nil, NewConnectionError(err)
 	}
 	err = tlsconn.Handshake()
 	if err != nil {
 		return nil, err
-		//return nil, NewConnectionError(err)
 	}
 	return tlsconn, nil
 }
@@ -482,10 +480,10 @@ func (self *apnsPushService) pushWorker(psp *PushServiceProvider, reqChan chan *
 				}
 			}
 
-			reqIdMap[mid] = req
 			err := self.singlePush(psp, dp, notif, mid, conn)
 
 			if err != nil {
+				// encountered some difficulty on sending the data.
 				result := new(PushResult)
 				result.Content = notif
 				result.Provider = psp
@@ -493,8 +491,10 @@ func (self *apnsPushService) pushWorker(psp *PushServiceProvider, reqChan chan *
 				result.MsgId = fmt.Sprintf("apns:%v-%v", psp.Name(), mid)
 				result.Err = err
 				req.resChan <- result
-				delete(reqIdMap, mid)
 				close(req.resChan)
+			} else {
+				// wait the result from APNs
+				reqIdMap[mid] = req
 			}
 
 		case apnsres := <-resChan:
