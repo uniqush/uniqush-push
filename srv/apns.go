@@ -437,6 +437,7 @@ func (self *apnsPushService) pushWorker(psp *PushServiceProvider, reqChan chan *
 				if err != nil {
 					connErr = err
 				} else {
+					connErr = nil
 					go self.resultCollector(psp, resChan, conn)
 				}
 			}
