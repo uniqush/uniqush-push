@@ -29,16 +29,6 @@ import (
 	"io"
 	"net"
 	"strconv"
-<<<<<<< HEAD
-	"sync/atomic"
-	"time"
-)
-
-type apnsPushService struct {
-	nextid uint32
-	conns  map[string]net.Conn
-	pfp    PushFailureHandler
-=======
 	"sync"
 	"time"
 )
@@ -57,7 +47,6 @@ type pushRequest struct {
 
 type apnsPushService struct {
 	reqChan chan *pushRequest
->>>>>>> master
 }
 
 func InstallAPNS() {
@@ -66,12 +55,8 @@ func InstallAPNS() {
 
 func newAPNSPushService() *apnsPushService {
 	ret := new(apnsPushService)
-<<<<<<< HEAD
-	ret.conns = make(map[string]net.Conn, 5)
-=======
 	ret.reqChan = make(chan *pushRequest)
 	go ret.pushMux()
->>>>>>> master
 	return ret
 }
 
@@ -79,72 +64,8 @@ func (p *apnsPushService) Name() string {
 	return "apns"
 }
 
-<<<<<<< HEAD
-func (p *apnsPushService) SetAsyncFailureHandler(pfp PushFailureHandler) {
-	p.pfp = pfp
-}
-
-func (p *apnsPushService) Finalize() {
-	for _, c := range p.conns {
-		c.Close()
-	}
-}
-
-func (p *apnsPushService) waitError(id string,
-	c net.Conn,
-	psp *PushServiceProvider,
-	dp *DeliveryPoint,
-	n *Notification) {
-	duration, err := time.ParseDuration("5s")
-	if err != nil {
-		return
-	}
-	deadline := time.Now().Add(duration)
-	//c.SetReadTimeout(5E9)
-	err = c.SetDeadline(deadline)
-	if err != nil {
-		return
-	}
-	readb := [6]byte{}
-	nr, err := c.Read(readb[:])
-	if err != nil {
-		return
-	}
-	if nr > 0 {
-		switch readb[1] {
-		case 2:
-			p.pfp.OnPushFail(p,
-				id,
-				NewInvalidDeliveryPointError(psp,
-					dp,
-					errors.New("Missing device token")))
-		case 3:
-			err := NewInvalidNotification(psp, dp, n, errors.New("Missing topic"))
-			p.pfp.OnPushFail(p, id, err)
-		case 4:
-			err := NewInvalidNotification(psp, dp, n, errors.New("Missing payload"))
-			p.pfp.OnPushFail(p, id, err)
-		case 5:
-			err := NewInvalidNotification(psp, dp, n, errors.New("Invalid token size"))
-			p.pfp.OnPushFail(p, id, err)
-		case 6:
-			err := NewInvalidNotification(psp, dp, n, errors.New("Invalid topic size"))
-			p.pfp.OnPushFail(p, id, err)
-		case 7:
-			err := NewInvalidNotification(psp, dp, n, errors.New("Invalid payload size"))
-			p.pfp.OnPushFail(p, id, err)
-		case 8:
-			err := NewInvalidDeliveryPointError(psp, dp, errors.New("Invalid token"))
-			p.pfp.OnPushFail(p, id, err)
-		default:
-			err := errors.New("Unknown Error")
-			p.pfp.OnPushFail(p, id, err)
-		}
-	}
-=======
 func (p *apnsPushService) Finalize() {
 	close(p.reqChan)
->>>>>>> master
 }
 
 func (p *apnsPushService) BuildPushServiceProviderFromMap(kv map[string]string, psp *PushServiceProvider) error {
@@ -165,28 +86,21 @@ func (p *apnsPushService) BuildPushServiceProviderFromMap(kv map[string]string, 
 	} else {
 		return errors.New("NoPrivateKey")
 	}
-<<<<<<< HEAD
-
-=======
 	if skip, ok := kv["skipverify"]; ok {
 		if skip == "true" {
 			psp.VolatileData["skipverify"] = "true"
 		}
 	}
->>>>>>> master
 	if sandbox, ok := kv["sandbox"]; ok {
 		if sandbox == "true" {
 			psp.VolatileData["addr"] = "gateway.sandbox.push.apple.com:2195"
 			return nil
 		}
 	}
-<<<<<<< HEAD
-=======
 	if addr, ok := kv["addr"]; ok {
 		psp.VolatileData["addr"] = addr
 		return nil
 	}
->>>>>>> master
 	psp.VolatileData["addr"] = "gateway.push.apple.com:2195"
 	return nil
 }
@@ -218,13 +132,10 @@ func toAPNSPayload(n *Notification) ([]byte, error) {
 		switch k {
 		case "msg":
 			alert["body"] = v
-<<<<<<< HEAD
-=======
 		case "loc-key":
 			alert[k] = v
 		case "loc-args":
 			alert[k] = v
->>>>>>> master
 		case "badge":
 			b, err := strconv.Atoi(v)
 			if err != nil {
@@ -240,11 +151,8 @@ func toAPNSPayload(n *Notification) ([]byte, error) {
 			continue
 		case "expiry":
 			continue
-<<<<<<< HEAD
-=======
 		case "ttl":
 			continue
->>>>>>> master
 		default:
 			payload[k] = v
 		}
@@ -274,55 +182,6 @@ func writen(w io.Writer, buf []byte) error {
 	return nil
 }
 
-<<<<<<< HEAD
-func (p *apnsPushService) getConn(psp *PushServiceProvider) (net.Conn, error) {
-	name := psp.Name()
-	if conn, ok := p.conns[name]; ok {
-		return conn, nil
-	}
-	return p.reconnect(psp)
-}
-
-func (p *apnsPushService) reconnect(psp *PushServiceProvider) (net.Conn, error) {
-	name := psp.Name()
-	if conn, ok := p.conns[name]; ok {
-		conn.Close()
-	}
-	cert, err := tls.LoadX509KeyPair(psp.FixedData["cert"], psp.FixedData["key"])
-	if err != nil {
-		return nil, NewInvalidPushServiceProviderError(psp, err)
-	}
-	conf := &tls.Config{
-		Certificates:       []tls.Certificate{cert},
-		InsecureSkipVerify: true,
-	}
-	tlsconn, err := tls.Dial("tcp", psp.VolatileData["addr"], conf)
-	if err != nil {
-		return nil, NewConnectionError(psp, err, "DialErr")
-	}
-	err = tlsconn.Handshake()
-	if err != nil {
-		return nil, NewConnectionError(psp, err, "HandshakeErr")
-	}
-	p.conns[name] = tlsconn
-	return tlsconn, nil
-}
-
-func (p *apnsPushService) Push(sp *PushServiceProvider,
-	s *DeliveryPoint,
-	n *Notification) (string, error) {
-	devtoken := s.FixedData["devtoken"]
-	btoken, err := hex.DecodeString(devtoken)
-	if err != nil {
-		return "", NewInvalidDeliveryPointError(sp, s, err)
-	}
-
-	bpayload, err := toAPNSPayload(n)
-	if err != nil {
-		return "", NewInvalidNotification(sp, s, n, err)
-	}
-	buffer := bytes.NewBuffer([]byte{})
-=======
 type apnsResult struct {
 	msgId  uint32
 	status uint8
@@ -451,29 +310,10 @@ func (self *apnsPushService) singlePush(psp *PushServiceProvider, dp *DeliveryPo
 
 	buffer := bytes.NewBuffer([]byte{})
 
->>>>>>> master
 	// command
 	binary.Write(buffer, binary.BigEndian, uint8(1))
 
 	// transaction id
-<<<<<<< HEAD
-	mid := atomic.AddUint32(&(p.nextid), 1)
-	if smid, ok := n.Data["id"]; ok {
-		imid, err := strconv.ParseUint(smid, 10, 0)
-		if err == nil {
-			mid = uint32(imid)
-		}
-	}
-	binary.Write(buffer, binary.BigEndian, mid)
-
-	// Expiry
-	expiry := uint32(time.Now().Second() + 60*60)
-
-	if sexpiry, ok := n.Data["expiry"]; ok {
-		uiexp, err := strconv.ParseUint(sexpiry, 10, 0)
-		if err == nil {
-			expiry = uint32(uiexp)
-=======
 	binary.Write(buffer, binary.BigEndian, mid)
 
 	// Expiry: default is one hour
@@ -483,7 +323,6 @@ func (self *apnsPushService) singlePush(psp *PushServiceProvider, dp *DeliveryPo
 		ttl, err := strconv.ParseUint(ttlstr, 10, 32)
 		if err == nil {
 			expiry = unixNow + uint32(ttl)
->>>>>>> master
 		}
 	}
 	binary.Write(buffer, binary.BigEndian, expiry)
@@ -497,41 +336,6 @@ func (self *apnsPushService) singlePush(psp *PushServiceProvider, dp *DeliveryPo
 	binary.Write(buffer, binary.BigEndian, bpayload)
 	pdu := buffer.Bytes()
 
-<<<<<<< HEAD
-	tlsconn, err := p.getConn(sp)
-	if err != nil {
-		return "", err
-	}
-
-	for i := 0; i < 2; i++ {
-		err = writen(tlsconn, pdu[:1])
-		if err != nil {
-			tlsconn, err = p.reconnect(sp)
-			if err != nil {
-				return "", err
-			}
-			continue
-		}
-		err = writen(tlsconn, pdu[1:])
-		if err != nil {
-			tlsconn, err = p.reconnect(sp)
-			if err != nil {
-				return "", err
-			}
-			continue
-		} else {
-			break
-		}
-	}
-
-	if err != nil {
-		return "", err
-	}
-
-	id := fmt.Sprintf("apns:%s-%d", sp.Name(), mid)
-	go p.waitError(id, tlsconn, sp, s, n)
-	return id, nil
-=======
 	err = writen(tlsconn, pdu)
 	if err != nil {
 		return NewConnectionError(err)
@@ -773,5 +577,4 @@ func (self *apnsPushService) pushWorker(psp *PushServiceProvider, reqChan chan *
 			}
 		}
 	}
->>>>>>> master
 }

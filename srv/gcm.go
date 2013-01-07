@@ -23,17 +23,11 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-<<<<<<< HEAD
-	. "github.com/uniqush/uniqush-push/push"
-	"io/ioutil"
-	"net/http"
-=======
 	"time"
 	. "github.com/uniqush/uniqush-push/push"
 	"io/ioutil"
 	"net/http"
 	"strconv"
->>>>>>> master
 )
 
 const (
@@ -53,12 +47,6 @@ func InstallGCM() {
 	psm.RegisterPushServiceType(newGCMPushService())
 }
 
-<<<<<<< HEAD
-func (p *gcmPushService) SetAsyncFailureHandler(pf PushFailureHandler) {
-}
-
-=======
->>>>>>> master
 func (p *gcmPushService) Finalize() {}
 
 func (p *gcmPushService) BuildPushServiceProviderFromMap(kv map[string]string,
@@ -98,14 +86,7 @@ func (p *gcmPushService) BuildDeliveryPointFromMap(kv map[string]string,
 	}
 	if account, ok := kv["account"]; ok && len(account) > 0 {
 		dp.FixedData["account"] = account
-<<<<<<< HEAD
-	} else {
-		return errors.New("NoGoogleAccount")
 	}
-
-=======
-	}
->>>>>>> master
 	if regid, ok := kv["regid"]; ok && len(regid) > 0 {
 		dp.FixedData["regid"] = regid
 	} else {
@@ -143,29 +124,6 @@ type gcmResult struct {
 	Results      []map[string]string `json:"results"`
 }
 
-<<<<<<< HEAD
-func (p *gcmPushService) Push(psp *PushServiceProvider,
-	dp *DeliveryPoint,
-	n *Notification) (string, error) {
-	if psp.PushServiceName() != dp.PushServiceName() ||
-		psp.PushServiceName() != p.Name() {
-		return "", NewPushIncompatibleError(psp, dp, p)
-	}
-
-	msg := n.Data
-	data := new(gcmData)
-	data.RegIDs = make([]string, 1)
-
-	// TODO do something with ttl and delay_while_idle
-	data.TimeToLive = 0
-	data.DelayWhileIdle = false
-
-	data.RegIDs[0] = dp.FixedData["regid"]
-	if len(data.RegIDs[0]) == 0 {
-		reterr := NewInvalidDeliveryPointError(psp, dp, errors.New("EmptyRegistrationID"))
-		return "", reterr
-	}
-=======
 func (self *gcmPushService) multicast(psp *PushServiceProvider, dpList []*DeliveryPoint, resQueue chan<- *PushResult, notif *Notification) {
 	if len(dpList) == 0 {
 		return
@@ -184,7 +142,6 @@ func (self *gcmPushService) multicast(psp *PushServiceProvider, dpList []*Delive
 	data.TimeToLive = 60 * 60
 	data.DelayWhileIdle = false
 
->>>>>>> master
 	if mgroup, ok := msg["msggroup"]; ok {
 		data.CollapseKey = mgroup
 	} else {
@@ -198,31 +155,17 @@ func (self *gcmPushService) multicast(psp *PushServiceProvider, dpList []*Delive
 		switch k {
 		case "msggroup":
 			continue
-<<<<<<< HEAD
-=======
 		case "ttl":
 			ttl, err := strconv.ParseUint(v, 10, 32)
 			if err != nil {
 				continue
 			}
 			data.TimeToLive = uint(ttl)
->>>>>>> master
 		default:
 			data.Data[k] = v
 		}
 	}
 
-<<<<<<< HEAD
-	jdata, err := json.Marshal(data)
-
-	if err != nil {
-		return "", errors.New("Json encoding error: " + err.Error())
-	}
-
-	req, err := http.NewRequest("POST", gcmServiceURL, bytes.NewReader(jdata))
-	if err != nil {
-		return "", err
-=======
 	jdata, e0 := json.Marshal(data)
 	if e0 != nil {
 		for _, dp := range dpList {
@@ -249,7 +192,6 @@ func (self *gcmPushService) multicast(psp *PushServiceProvider, dpList []*Delive
 			resQueue<-res
 		}
 		return
->>>>>>> master
 	}
 
 	apikey := psp.VolatileData["apikey"]
@@ -261,44 +203,6 @@ func (self *gcmPushService) multicast(psp *PushServiceProvider, dpList []*Delive
 	tr := &http.Transport{TLSClientConfig: conf}
 	client := &http.Client{Transport: tr}
 
-<<<<<<< HEAD
-	fmt.Printf("Sending data %v\n", data)
-
-	r, e20 := client.Do(req)
-	if e20 != nil {
-		return "", e20
-	}
-	refreshpsp := false
-	new_auth_token := r.Header.Get("Update-Client-Auth")
-	if new_auth_token != "" && apikey != new_auth_token {
-		psp.VolatileData["apikey"] = new_auth_token
-		refreshpsp = true
-	}
-
-	// TODO More GCM specific error handle
-	switch r.StatusCode {
-	case 503:
-		/* TODO extract the retry after field */
-		after := -1
-		var reterr error
-		reterr = NewRetryError(after)
-		if refreshpsp {
-			re := NewRefreshDataError(psp, nil, reterr)
-			reterr = re
-		}
-		return "", reterr
-	case 401:
-		return "", NewInvalidPushServiceProviderError(psp, errors.New("Invalid Auth Token"))
-	}
-
-	contents, e30 := ioutil.ReadAll(r.Body)
-	if e30 != nil {
-		if refreshpsp {
-			re := NewRefreshDataError(psp, nil, e30)
-			e30 = re
-		}
-		return "", e30
-=======
 	r, e2 := client.Do(req)
 	if e2 != nil {
 		for _, dp := range dpList {
@@ -364,24 +268,12 @@ func (self *gcmPushService) multicast(psp *PushServiceProvider, dpList []*Delive
 		res.Err = err
 		resQueue<-res
 		return
->>>>>>> master
 	}
 
 	var result gcmResult
 	err = json.Unmarshal(contents, &result)
 
 	if err != nil {
-<<<<<<< HEAD
-		return "", err
-	}
-
-	if result.Failure > 0 {
-		return "", errors.New(string(contents))
-	}
-
-	return result.Results[0]["message_id"], nil
-}
-=======
 		res := new(PushResult)
 		res.Provider = psp
 		res.Content = notif
@@ -486,4 +378,3 @@ func (self *gcmPushService) Push(psp *PushServiceProvider, dpQueue <-chan *Deliv
 	close(resQueue)
 }
 
->>>>>>> master
