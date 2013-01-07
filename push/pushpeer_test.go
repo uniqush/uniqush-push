@@ -40,10 +40,6 @@ func (t *testPushServiceType) Finalize() {
 	return
 }
 
-func (t *testPushServiceType) SetAsyncFailureHandler(pfp PushFailureHandler) {
-	return
-}
-
 func (t *testPushServiceType) BuildPushServiceProviderFromMap(kv map[string]string, psp *PushServiceProvider) error {
 	for k, v := range kv {
 		psp.FixedData[k] = v
@@ -58,9 +54,8 @@ func (t *testPushServiceType) BuildDeliveryPointFromMap(kv map[string]string, dp
 	return nil
 }
 
-func (t *testPushServiceType) Push(psp *PushServiceProvider, dp *DeliveryPoint, n *Notification) (string, error) {
+func (t* testPushServiceType) Push(*PushServiceProvider, <-chan *DeliveryPoint, chan<- *PushResult, *Notification) {
 	fmt.Print("Push!\n")
-	return "", nil
 }
 
 func TestPushPeer(t *testing.T) {
@@ -90,6 +85,7 @@ func TestPushPeer(t *testing.T) {
 	}
 	fmt.Printf("Push Service: %s", psp.String())
 	value := psp.Marshal()
+	fmt.Printf("PSP Name: %v\n", psp.Name())
 	fmt.Printf("PSP Marshal: %s\n", string(value))
 }
 

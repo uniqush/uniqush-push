@@ -18,20 +18,20 @@
 package push
 
 import (
-	"testing"
+	//"testing"
 	"fmt"
-	"atomic"
+	"sync/atomic"
 )
 
-type testPushServiceType struct {
+type fakePST struct {
 	nextid uint32
 }
 
-func (self *testPushServiceType) Name() string {
-	return "testPushServiceType"
+func (self *fakePST) Name() string {
+	return "fakePST"
 }
 
-func (self *testPushServiceType) BuildPushServiceProviderFromMap(data map[string]string, psp *PushServiceProvider) error {
+func (self *fakePST) BuildPushServiceProviderFromMap(data map[string]string, psp *PushServiceProvider) error {
 	if name, ok := data["name"]; !ok {
 		return fmt.Errorf("Malformed data to construct psp: No name")
 	} else {
@@ -40,7 +40,7 @@ func (self *testPushServiceType) BuildPushServiceProviderFromMap(data map[string
 	return nil
 }
 
-func (self *testPushServiceType) BuildDeliveryPointFromMap(data map[string]string, dp *DeliveryPoint) error {
+func (self *fakePST) BuildDeliveryPointFromMap(data map[string]string, dp *DeliveryPoint) error {
 	if name, ok := data["name"]; !ok {
 		return fmt.Errorf("Malformed data to construct dp: No name")
 	} else {
@@ -49,14 +49,15 @@ func (self *testPushServiceType) BuildDeliveryPointFromMap(data map[string]strin
 	return nil
 }
 
-func (self *testPushServiceType) Finalize() {
+func (self *fakePST) Finalize() {
 }
 
-func (self *testPushServiceType) Push(psp *PushServiceProvider, dpChan <-chan *DeliveryPoint, resChan chan<- *PushResult, notif *Notification) {
+func (self *fakePST) Push(psp *PushServiceProvider, dpChan <-chan *DeliveryPoint, resChan chan<- *PushResult, notif *Notification) {
 	for dp := range dpChan {
 		mid := atomic.AddUint32(&(self.nextid), 1)
 		msgid := fmt.Sprintf("%v", mid)
 		res := &PushResult{Provider: psp, Destination: dp, Content: notif, MsgId: msgid}
+		resChan <- res
 	}
 }
 
