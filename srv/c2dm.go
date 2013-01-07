@@ -20,25 +20,39 @@ package srv
 import (
 	"crypto/sha1"
 	"crypto/tls"
+<<<<<<< HEAD
 	"errors"
 	"fmt"
+=======
+	"sync"
+	"errors"
+	"fmt"
+	"time"
+	"strings"
+>>>>>>> master
 	. "github.com/uniqush/uniqush-push/push"
 	"io/ioutil"
 	"net/http"
 	"net/url"
+<<<<<<< HEAD
 	"strings"
 	"time"
+=======
+>>>>>>> master
 )
 
 const (
 	c2dmServiceURL string = "https://android.apis.google.com/c2dm/send"
 )
 
+<<<<<<< HEAD
 func InstallC2DM() {
 	psm := GetPushServiceManager()
 	psm.RegisterPushServiceType(newC2DMPushService())
 }
 
+=======
+>>>>>>> master
 type c2dmPushService struct {
 }
 
@@ -47,7 +61,13 @@ func newC2DMPushService() *c2dmPushService {
 	return ret
 }
 
+<<<<<<< HEAD
 func (p *c2dmPushService) SetAsyncFailureHandler(pf PushFailureHandler) {
+=======
+func InstallC2DM() {
+	psm := GetPushServiceManager()
+	psm.RegisterPushServiceType(newC2DMPushService())
+>>>>>>> master
 }
 
 func (p *c2dmPushService) Finalize() {}
@@ -59,10 +79,18 @@ func (p *c2dmPushService) BuildPushServiceProviderFromMap(kv map[string]string,
 	} else {
 		return errors.New("NoService")
 	}
+<<<<<<< HEAD
 	if senderid, ok := kv["senderid"]; ok && len(senderid) > 0 {
 		psp.FixedData["senderid"] = senderid
 	} else {
 		return errors.New("NoSenderId")
+=======
+
+	if senderid, ok := kv["senderid"]; ok && len(senderid) > 0 {
+		psp.FixedData["senderid"] = senderid
+	} else {
+		return errors.New("NoSenderID")
+>>>>>>> master
 	}
 
 	if authtoken, ok := kv["authtoken"]; ok && len(authtoken) > 0 {
@@ -70,7 +98,10 @@ func (p *c2dmPushService) BuildPushServiceProviderFromMap(kv map[string]string,
 	} else {
 		return errors.New("NoAuthToken")
 	}
+<<<<<<< HEAD
 
+=======
+>>>>>>> master
 	return nil
 }
 
@@ -105,19 +136,29 @@ func (p *c2dmPushService) Name() string {
 	return "c2dm"
 }
 
+<<<<<<< HEAD
 func (p *c2dmPushService) Push(psp *PushServiceProvider,
 	dp *DeliveryPoint,
 	n *Notification) (string, error) {
 	if psp.PushServiceName() != dp.PushServiceName() ||
 		psp.PushServiceName() != p.Name() {
 		return "", NewPushIncompatibleError(psp, dp, p)
+=======
+func (p *c2dmPushService) singlePush(psp *PushServiceProvider, dp *DeliveryPoint, n *Notification) (string, error) {
+	if psp.PushServiceName() != dp.PushServiceName() || psp.PushServiceName() != p.Name() {
+		return "", NewIncompatibleError()
+>>>>>>> master
 	}
 
 	msg := n.Data
 	data := url.Values{}
 	regid := dp.FixedData["regid"]
 	if len(regid) == 0 {
+<<<<<<< HEAD
 		reterr := NewInvalidDeliveryPointError(psp, dp, errors.New("EmptyRegistrationID"))
+=======
+		reterr := NewBadDeliveryPointWithDetails(dp, "EmptyRegistrationID")
+>>>>>>> master
 		return "", reterr
 	}
 	data.Set("registration_id", regid)
@@ -165,15 +206,23 @@ func (p *c2dmPushService) Push(psp *PushServiceProvider,
 	if e20 != nil {
 		return "", e20
 	}
+<<<<<<< HEAD
 	refreshpsp := false
 	new_auth_token := r.Header.Get("Update-Client-Auth")
 	if new_auth_token != "" && authtoken != new_auth_token {
 		psp.VolatileData["authtoken"] = new_auth_token
 		refreshpsp = true
+=======
+	new_auth_token := r.Header.Get("Update-Client-Auth")
+	if new_auth_token != "" && authtoken != new_auth_token {
+		psp.VolatileData["authtoken"] = new_auth_token
+		return "", NewPushServiceProviderUpdate(psp)
+>>>>>>> master
 	}
 
 	switch r.StatusCode {
 	case 503:
+<<<<<<< HEAD
 		/* TODO extract the retry after field */
 		after := -1
 		var reterr error
@@ -185,14 +234,29 @@ func (p *c2dmPushService) Push(psp *PushServiceProvider,
 		return "", reterr
 	case 401:
 		return "", NewInvalidPushServiceProviderError(psp, errors.New("Invalid Auth Token"))
+=======
+		fallthrough
+	case 500:
+		after := 0 * time.Second
+		var reterr error
+		reterr = NewRetryError(after)
+		return "", reterr
+	case 401:
+		return "", NewBadPushServiceProvider(psp)
+	case 400:
+		return "", NewBadNotification()
+>>>>>>> master
 	}
 
 	contents, e30 := ioutil.ReadAll(r.Body)
 	if e30 != nil {
+<<<<<<< HEAD
 		if refreshpsp {
 			re := NewRefreshDataError(psp, nil, e30)
 			e30 = re
 		}
+=======
+>>>>>>> master
 		return "", e30
 	}
 
@@ -201,6 +265,7 @@ func (p *c2dmPushService) Push(psp *PushServiceProvider,
 	msgid = strings.Replace(msgid, "\n", "", -1)
 	if msgid[:3] == "id=" {
 		retid := fmt.Sprintf("c2dm:%s-%s", psp.Name(), msgid[3:])
+<<<<<<< HEAD
 		if refreshpsp {
 			re := NewRefreshDataError(psp, nil, nil)
 			return retid, re
@@ -255,3 +320,49 @@ func (p *c2dmPushService) Push(psp *PushServiceProvider,
 	}
 	return "", errors.New("Unknown Error from C2DM: " + msgid[6:])
 }
+=======
+		return retid, nil
+	}
+	var reterr error
+	switch msgid[6:] {
+	case "QuotaExceeded":
+		reterr = NewBadPushServiceProviderWithDetails(psp, msgid[6:])
+	case "InvalidRegistration":
+		reterr = NewBadDeliveryPointWithDetails(dp, msgid[6:])
+	case "NotRegistered":
+		reterr = NewBadDeliveryPointWithDetails(dp, msgid[6:])
+	case "MessageTooBig":
+		reterr = NewBadNotificationWithDetails(msgid[6:])
+	case "DeviceQuotaExceeded":
+		reterr = NewBadDeliveryPointWithDetails(dp, msgid[6:])
+	default:
+		reterr = errors.New("Unknown Error from C2DM: " + msgid[6:])
+	}
+	return "", reterr
+}
+
+func (self *c2dmPushService) Push(psp *PushServiceProvider, dpQueue <-chan *DeliveryPoint, resQueue chan<- *PushResult, notif *Notification) {
+	wg := new(sync.WaitGroup)
+	for dp := range dpQueue {
+		wg.Add(1)
+		go func() {
+			res := new(PushResult)
+			res.Provider = psp
+			res.Destination = dp
+			res.Content = notif
+			msgid, err := self.singlePush(psp, dp, notif)
+			if err != nil {
+				res.Err = err
+			} else {
+				res.MsgId = msgid
+			}
+			resQueue<-res
+			wg.Done()
+		}()
+	}
+
+	wg.Wait()
+	close(resQueue)
+}
+
+>>>>>>> master

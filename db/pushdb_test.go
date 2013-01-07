@@ -18,11 +18,11 @@
 package db
 
 import (
+	"testing"
 	"fmt"
+	"strconv"
 	redis "github.com/monnand/goredis"
 	. "github.com/uniqush/uniqush-push/push"
-	"strconv"
-	"testing"
 )
 
 var dbconf *DatabaseConfig
@@ -62,6 +62,7 @@ func clearData() {
 	client.Flush(true)
 }
 
+
 func TestConnectAndDelete(t *testing.T) {
 	_, err := connectDatabase()
 	if err != nil {
@@ -72,3 +73,4 @@ func TestConnectAndDelete(t *testing.T) {
 
 func TestInsertAndGetPushServiceProviders(t *testing.T) {
 }
+

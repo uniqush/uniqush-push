@@ -23,9 +23,17 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+<<<<<<< HEAD
 	. "github.com/uniqush/uniqush-push/push"
 	"io/ioutil"
 	"net/http"
+=======
+	"time"
+	. "github.com/uniqush/uniqush-push/push"
+	"io/ioutil"
+	"net/http"
+	"strconv"
+>>>>>>> master
 )
 
 const (
@@ -45,9 +53,12 @@ func InstallGCM() {
 	psm.RegisterPushServiceType(newGCMPushService())
 }
 
+<<<<<<< HEAD
 func (p *gcmPushService) SetAsyncFailureHandler(pf PushFailureHandler) {
 }
 
+=======
+>>>>>>> master
 func (p *gcmPushService) Finalize() {}
 
 func (p *gcmPushService) BuildPushServiceProviderFromMap(kv map[string]string,
@@ -87,10 +98,14 @@ func (p *gcmPushService) BuildDeliveryPointFromMap(kv map[string]string,
 	}
 	if account, ok := kv["account"]; ok && len(account) > 0 {
 		dp.FixedData["account"] = account
+<<<<<<< HEAD
 	} else {
 		return errors.New("NoGoogleAccount")
 	}
 
+=======
+	}
+>>>>>>> master
 	if regid, ok := kv["regid"]; ok && len(regid) > 0 {
 		dp.FixedData["regid"] = regid
 	} else {
@@ -128,6 +143,7 @@ type gcmResult struct {
 	Results      []map[string]string `json:"results"`
 }
 
+<<<<<<< HEAD
 func (p *gcmPushService) Push(psp *PushServiceProvider,
 	dp *DeliveryPoint,
 	n *Notification) (string, error) {
@@ -149,6 +165,26 @@ func (p *gcmPushService) Push(psp *PushServiceProvider,
 		reterr := NewInvalidDeliveryPointError(psp, dp, errors.New("EmptyRegistrationID"))
 		return "", reterr
 	}
+=======
+func (self *gcmPushService) multicast(psp *PushServiceProvider, dpList []*DeliveryPoint, resQueue chan<- *PushResult, notif *Notification) {
+	if len(dpList) == 0 {
+		return
+	}
+
+	regIds := make([]string, 0, len(dpList))
+
+	for _, dp := range dpList {
+		regIds = append(regIds, dp.VolatileData["regid"])
+	}
+	msg := notif.Data
+	data := new(gcmData)
+	data.RegIDs = regIds
+
+	// TTL: default is one hour
+	data.TimeToLive = 60 * 60
+	data.DelayWhileIdle = false
+
+>>>>>>> master
 	if mgroup, ok := msg["msggroup"]; ok {
 		data.CollapseKey = mgroup
 	} else {
@@ -162,11 +198,21 @@ func (p *gcmPushService) Push(psp *PushServiceProvider,
 		switch k {
 		case "msggroup":
 			continue
+<<<<<<< HEAD
+=======
+		case "ttl":
+			ttl, err := strconv.ParseUint(v, 10, 32)
+			if err != nil {
+				continue
+			}
+			data.TimeToLive = uint(ttl)
+>>>>>>> master
 		default:
 			data.Data[k] = v
 		}
 	}
 
+<<<<<<< HEAD
 	jdata, err := json.Marshal(data)
 
 	if err != nil {
@@ -176,6 +222,34 @@ func (p *gcmPushService) Push(psp *PushServiceProvider,
 	req, err := http.NewRequest("POST", gcmServiceURL, bytes.NewReader(jdata))
 	if err != nil {
 		return "", err
+=======
+	jdata, e0 := json.Marshal(data)
+	if e0 != nil {
+		for _, dp := range dpList {
+			res := new(PushResult)
+			res.Provider = psp
+			res.Content = notif
+
+			res.Err = e0
+			res.Destination = dp
+			resQueue<-res
+		}
+		return
+	}
+
+	req, e1 := http.NewRequest("POST", gcmServiceURL, bytes.NewReader(jdata))
+	if e1 != nil {
+		for _, dp := range dpList {
+			res := new(PushResult)
+			res.Provider = psp
+			res.Content = notif
+
+			res.Err = e1
+			res.Destination = dp
+			resQueue<-res
+		}
+		return
+>>>>>>> master
 	}
 
 	apikey := psp.VolatileData["apikey"]
@@ -187,6 +261,7 @@ func (p *gcmPushService) Push(psp *PushServiceProvider,
 	tr := &http.Transport{TLSClientConfig: conf}
 	client := &http.Client{Transport: tr}
 
+<<<<<<< HEAD
 	fmt.Printf("Sending data %v\n", data)
 
 	r, e20 := client.Do(req)
@@ -223,12 +298,80 @@ func (p *gcmPushService) Push(psp *PushServiceProvider,
 			e30 = re
 		}
 		return "", e30
+=======
+	r, e2 := client.Do(req)
+	if e2 != nil {
+		for _, dp := range dpList {
+			res := new(PushResult)
+			res.Provider = psp
+			res.Content = notif
+
+			res.Err = e2
+			res.Destination = dp
+			resQueue<-res
+		}
+		return
+	}
+	new_auth_token := r.Header.Get("Update-Client-Auth")
+	if new_auth_token != "" && apikey != new_auth_token {
+		psp.VolatileData["apikey"] = new_auth_token
+		res := new(PushResult)
+		res.Provider = psp
+		res.Content = notif
+		res.Err = NewPushServiceProviderUpdate(psp)
+		resQueue<-res
+	}
+
+	switch r.StatusCode {
+	case 503:
+		fallthrough
+	case 500:
+		/* TODO extract the retry after field */
+		after := 0 * time.Second
+		for _, dp := range dpList {
+			res := new(PushResult)
+			res.Provider = psp
+			res.Content = notif
+			res.Destination = dp
+			err := NewRetryError(after)
+			res.Err = err
+			resQueue<-res
+		}
+		return
+	case 401:
+		err := NewBadPushServiceProvider(psp)
+		res := new(PushResult)
+		res.Provider = psp
+		res.Content = notif
+		res.Err = err
+		resQueue<-res
+		return
+	case 400:
+		err := NewBadNotification()
+		res := new(PushResult)
+		res.Provider = psp
+		res.Content = notif
+		res.Err = err
+		resQueue<-res
+		return
+	}
+
+	contents, err := ioutil.ReadAll(r.Body)
+	if err != nil {
+		res := new(PushResult)
+		res.Provider = psp
+		res.Content = notif
+		res.Err = err
+		resQueue<-res
+		return
+>>>>>>> master
 	}
 
 	var result gcmResult
 	err = json.Unmarshal(contents, &result)
 
 	if err != nil {
+<<<<<<< HEAD
 		return "", err
 	}
 
@@ -238,3 +381,109 @@ func (p *gcmPushService) Push(psp *PushServiceProvider,
 
 	return result.Results[0]["message_id"], nil
 }
+=======
+		res := new(PushResult)
+		res.Provider = psp
+		res.Content = notif
+		res.Err = err
+		resQueue<-res
+		return
+	}
+
+	for i, r := range result.Results {
+		if i >= len(dpList) {
+			break
+		}
+		dp := dpList[i]
+		if errmsg, ok := r["error"]; ok {
+			switch (errmsg) {
+			case "Unavailable":
+				after, _  := time.ParseDuration("2s")
+				res := new(PushResult)
+				res.Err = NewRetryError(after)
+				res.Provider = psp
+				res.Content = notif
+				res.Destination = dp
+				resQueue<-res
+			case "NotRegistered":
+				res := new(PushResult)
+				res.Err = NewUnsubscribeUpdate(dp)
+				res.Provider = psp
+				res.Content = notif
+				res.Destination = dp
+				resQueue<-res
+			default:
+				res := new(PushResult)
+				res.Err = fmt.Errorf("GCMError: %v", errmsg)
+				res.Provider = psp
+				res.Content = notif
+				res.Destination = dp
+				resQueue<-res
+			}
+		}
+		if newregid, ok := r["registration_id"]; ok {
+			dp.VolatileData["regid"] = newregid
+			res := new(PushResult)
+			res.Err = NewDeliveryPointUpdate(dp)
+			res.Provider = psp
+			res.Content = notif
+			res.Destination = dp
+			resQueue<-res
+		}
+		if msgid, ok := r["message_id"]; ok {
+			res := new(PushResult)
+			res.Provider = psp
+			res.Content = notif
+			res.Destination = dp
+			res.MsgId = fmt.Sprintf("%v:%v", psp.Name(), msgid)
+			resQueue<-res
+		}
+	}
+
+}
+
+func (self *gcmPushService) Push(psp *PushServiceProvider, dpQueue <-chan *DeliveryPoint, resQueue chan<- *PushResult, notif *Notification) {
+
+	maxNrDst := 1000
+	dpList := make([]*DeliveryPoint, 0, maxNrDst)
+	fmt.Printf("Inside gcm push\n")
+	for dp := range dpQueue {
+
+		fmt.Printf("Inside delivery point: %v\n", dp.Name())
+		if psp.PushServiceName() != dp.PushServiceName() || psp.PushServiceName() != self.Name() {
+			res := new(PushResult)
+			res.Provider = psp
+			res.Destination = dp
+			res.Content = notif
+			res.Err = NewIncompatibleError()
+			resQueue<-res
+			continue
+		}
+		if _, ok := dp.VolatileData["regid"]; ok {
+			dpList = append(dpList, dp)
+		} else if regid, ok := dp.FixedData["regid"]; ok {
+			dp.VolatileData["regid"] = regid
+			dpList = append(dpList, dp)
+		} else {
+			res := new(PushResult)
+			res.Provider = psp
+			res.Destination = dp
+			res.Content = notif
+			res.Err = NewBadDeliveryPoint(dp)
+			resQueue<-res
+			continue
+		}
+
+		if len(dpList) >= maxNrDst {
+			self.multicast(psp, dpList, resQueue, notif)
+			dpList = dpList[:0]
+		}
+	}
+	if len(dpList) > 0 {
+		self.multicast(psp, dpList, resQueue, notif)
+	}
+
+	close(resQueue)
+}
+
+>>>>>>> master

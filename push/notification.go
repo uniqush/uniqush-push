@@ -19,19 +19,10 @@ package push
 
 import (
 	"github.com/uniqush/mempool"
+	"encoding/json"
 )
 
 type Notification struct {
-	/* We don't want too complicated
-	   Message string
-	   Badge int
-	   Image string
-	   Sound string
-
-	   // Defined but not used now
-	   IsLoc bool
-	   Delay bool
-	*/
 	Data map[string]string
 	pool *NotificationPool
 }
@@ -40,6 +31,11 @@ type NotificationPool struct {
 	pools      []*mempool.ObjectMemoryPool
 	maxNrPools int
 	minMapLen  int
+}
+
+func (self *Notification) String() string {
+	ret, _ := json.Marshal(self.Data)
+	return string(ret)
 }
 
 func NewNotificationPool(n, l int) *NotificationPool {

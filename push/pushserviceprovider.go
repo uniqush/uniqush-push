@@ -44,7 +44,7 @@ func (psp *PushServiceProvider) Copy() *PushServiceProvider {
 	return ret
 }
 
-func (psp *PushServiceProvider) recycle() {
+func (psp *PushServiceProvider) Recycle() {
 	if psp.objPool != nil {
 		psp.objPool.Recycle(psp)
 	}

@@ -19,180 +19,61 @@ package push
 
 import "fmt"
 
-type PushFailureHandler interface {
-	OnPushFail(pst PushServiceType, id string, err error)
+type PushResult struct {
+	Provider    *PushServiceProvider
+	Destination *DeliveryPoint
+	Content     *Notification
+	MsgId       string
+	Err         error
+}
+
+func (r *PushResult) IsError() bool {
+	if r.Err == nil {
+		return false
+	}
+	return true
+}
+
+func (r *PushResult) Error() string {
+	if !r.IsError() {
+		return fmt.Sprintf("PushServiceProvider=%v DeliveryPoint=%v MsgId=%v Succsess!",
+			r.Provider.Name(),
+			r.Destination.Name(),
+			r.MsgId)
+	}
+
+	ret := fmt.Sprintf("Failed PushServiceProvider=%s DeliveryPoint=%s %v",
+		r.Provider.Name(),
+		r.Destination.Name(),
+		r.Err)
+	return ret
 }
 
 type PushServiceType interface {
-	// Passing a pointer to PushServiceProvider allows us to use a memory pool to store a set of empty *PushServiceProvider
+	/*
+	 * Passing a pointer to PushServiceProvider allows us
+	 * to use a memory pool to store a set of empty *PushServiceProvider
+	 */
 	BuildPushServiceProviderFromMap(map[string]string, *PushServiceProvider) error
+
 	BuildDeliveryPointFromMap(map[string]string, *DeliveryPoint) error
 	Name() string
-	Push(*PushServiceProvider, *DeliveryPoint, *Notification) (string, error)
-	SetAsyncFailureHandler(pfp PushFailureHandler)
+
+	/*
+	 * NOTE: This method should always be run in a separate goroutine.
+	 * The implementation of this method should return only
+	 * if it finished all push request.
+	 *
+	 * Once this method returns, it cannot use the second channel
+	 * to report error. (For example, it cannot fork a new goroutine
+	 * and use this channel in this goroutine after the function returns.)
+	 *
+	 * Any implementation MUST close the second channel (chan<- *PushResult)
+	 * once the works done.
+	 *
+	 */
+	Push(*PushServiceProvider, <-chan *DeliveryPoint, chan<- *PushResult, *Notification)
+
 	Finalize()
 }
 
-type PushIncompatibleError struct {
-	psp *PushServiceProvider
-	dp  *DeliveryPoint
-	pst PushServiceType
-}
-
-func (p *PushIncompatibleError) Error() string {
-	return p.psp.PushServiceName() +
-		" does not compatible with " +
-		p.dp.PushServiceName() + " using " +
-		p.pst.Name()
-}
-
-func NewPushIncompatibleError(psp *PushServiceProvider,
-	dp *DeliveryPoint,
-	pst PushServiceType) *PushIncompatibleError {
-	ret := new(PushIncompatibleError)
-	ret.psp = psp
-	ret.dp = dp
-	ret.pst = pst
-	return ret
-}
-
-type remoteServerError struct {
-	msg string
-}
-
-func (r *remoteServerError) Error() string {
-	return r.msg
-}
-
-type QuotaExceededError struct {
-	remoteServerError
-	PushServiceProvider *PushServiceProvider
-}
-
-func NewQuotaExceededError(sp *PushServiceProvider) *QuotaExceededError {
-	return &QuotaExceededError{
-		remoteServerError{"Service Quota Exceeded" + sp.Name()},
-		sp}
-}
-
-type DeviceQuotaExceededError struct {
-	remoteServerError
-	dp *DeliveryPoint
-}
-
-func NewDeviceQuotaExceededError(dp *DeliveryPoint) *DeviceQuotaExceededError {
-	str := fmt.Sprintf("DeliveryPoint=%v DeviceQuotaExceeded", dp.Name())
-
-	return &DeviceQuotaExceededError{remoteServerError{str}, dp}
-}
-
-type UnregisteredError struct {
-	remoteServerError
-	PushServiceProvider *PushServiceProvider
-	DeliveryPoint       *DeliveryPoint
-}
-
-func NewUnregisteredError(sp *PushServiceProvider, s *DeliveryPoint) *UnregisteredError {
-	return &UnregisteredError{
-		remoteServerError{"Device Unsubcribed: " + s.Name() + " unsubscribed the service " + sp.Name()},
-		sp, s}
-}
-
-type NotificationTooBigError struct {
-	remoteServerError
-	PushServiceProvider *PushServiceProvider
-	DeliveryPoint       *DeliveryPoint
-	Notification        *Notification
-}
-
-func NewNotificationTooBigError(sp *PushServiceProvider, s *DeliveryPoint, n *Notification) *NotificationTooBigError {
-	return &NotificationTooBigError{remoteServerError{"Notification Too Big"}, sp, s, n}
-}
-
-type InvalidDeliveryPointError struct {
-	PushServiceProvider *PushServiceProvider
-	DeliveryPoint       *DeliveryPoint
-	Err                 error
-}
-
-func NewInvalidDeliveryPointError(sp *PushServiceProvider, s *DeliveryPoint, err error) *InvalidDeliveryPointError {
-	ret := new(InvalidDeliveryPointError)
-	ret.PushServiceProvider = sp
-	ret.DeliveryPoint = s
-	ret.Err = err
-	return ret
-}
-
-func (e *InvalidDeliveryPointError) Error() string {
-	ret := fmt.Sprintf("Invalid Delivery Point: %s, under service %s; %v",
-		e.DeliveryPoint.Name(),
-		e.PushServiceProvider.Name(),
-		e.Err)
-	return ret
-}
-
-type InvalidPushServiceProviderError struct {
-	remoteServerError
-	PushServiceProvider *PushServiceProvider
-	Err                 error
-}
-
-func NewInvalidPushServiceProviderError(s *PushServiceProvider, err error) *InvalidPushServiceProviderError {
-	return &InvalidPushServiceProviderError{
-		remoteServerError{
-			"Inalid Service Provider: " +
-				s.Name() + "; " + err.Error()}, s, err}
-}
-
-type RetryError struct {
-	remoteServerError
-	RetryAfter int
-}
-
-func NewRetryError(RetryAfter int) *RetryError {
-	return &RetryError{remoteServerError{"Retry"}, RetryAfter}
-}
-
-type RefreshDataError struct {
-	remoteServerError
-	PushServiceProvider *PushServiceProvider
-	DeliveryPoint       *DeliveryPoint
-	OtherError          error
-}
-
-func NewRefreshDataError(psp *PushServiceProvider, dp *DeliveryPoint, o error) *RefreshDataError {
-	return &RefreshDataError{
-		remoteServerError{"Refresh Push Service Provider"}, psp, dp, o}
-}
-
-type InvalidNotification struct {
-	PushServiceProvider *PushServiceProvider
-	DeliveryPoint       *DeliveryPoint
-	Notification        *Notification
-	Details             error
-}
-
-func NewInvalidNotification(psp *PushServiceProvider,
-	dp *DeliveryPoint,
-	n *Notification,
-	err error) *InvalidNotification {
-	return &InvalidNotification{psp, dp, n, err}
-}
-
-func (e *InvalidNotification) Error() string {
-	return fmt.Sprintf("Invalid Notification: %v; PushServiceProvider: %s; %v",
-		e.Notification.Data, e.PushServiceProvider.Name(), e.Details)
-}
-
-type ConnectionError struct {
-	remoteServerError
-	PushServiceProvider *PushServiceProvider
-	Err                 error
-}
-
-func NewConnectionError(s *PushServiceProvider, err error, msg string) *InvalidPushServiceProviderError {
-	return &InvalidPushServiceProviderError{
-		remoteServerError{
-			"ConnectionError: [" + msg + "] psp=" +
-				s.Name() + "; " + err.Error()}, s, err}
-}

@@ -19,14 +19,11 @@ package push
 
 import (
 	"errors"
+	"fmt"
 	"github.com/uniqush/mempool"
 	"strings"
+	"sync"
 )
-
-type nullPushFailureHandler struct{}
-
-func (f *nullPushFailureHandler) OnPushFail(pst PushServiceType, id string, err error) {
-}
 
 type serviceTypeObjPool struct {
 	pst     PushServiceType
@@ -36,7 +33,6 @@ type serviceTypeObjPool struct {
 
 type PushServiceManager struct {
 	serviceTypes map[string]*serviceTypeObjPool
-	pfp          PushFailureHandler
 }
 
 var (
@@ -51,7 +47,6 @@ func init() {
 func newPushServiceManager() *PushServiceManager {
 	ret := new(PushServiceManager)
 	ret.serviceTypes = make(map[string]*serviceTypeObjPool, 5)
-	ret.pfp = &nullPushFailureHandler{}
 	return ret
 }
 
@@ -60,12 +55,6 @@ func GetPushServiceManager() *PushServiceManager {
 		pushServiceManager = newPushServiceManager()
 	}
 	return pushServiceManager
-}
-
-func (m *PushServiceManager) SetAsyncFailureProcessor(pfp PushFailureHandler) {
-	if pfp != nil {
-		m.pfp = pfp
-	}
 }
 
 func newPushServiceProvider() interface{} {
@@ -83,7 +72,6 @@ func (m *PushServiceManager) RegisterPushServiceType(pt PushServiceType) error {
 	pair.dpPool = mempool.NewObjectMemoryPool(1024, newDeliveryPoint)
 	pair.pst = pt
 	m.serviceTypes[name] = pair
-	pt.SetAsyncFailureHandler(m.pfp)
 	return nil
 }
 
@@ -96,13 +84,13 @@ func (m *PushServiceManager) BuildPushServiceProviderFromMap(kv map[string]strin
 			err = pst.BuildPushServiceProviderFromMap(kv, psp)
 			psp.objPool = pair.pspPool
 			if err != nil {
-				psp.recycle()
+				psp.Recycle()
 				return nil, err
 			}
 			psp.pushServiceType = pst
 			return
 		}
-		return nil, errors.New("Unknown Push Service Type")
+		return nil, fmt.Errorf("Unknown Push Service Type: %v", ptname)
 	}
 	return nil, errors.New("No Push Service Type Specified")
 }
@@ -124,13 +112,13 @@ func (m *PushServiceManager) BuildPushServiceProviderFromBytes(value []byte) (ps
 			psp.pushServiceType = pair.pst
 			err = psp.Unmarshal([]byte(parts[1]))
 			if err != nil {
-				psp.recycle()
+				psp.Recycle()
 				psp = nil
 				return
 			}
 			return
 		}
-		return nil, errors.New("Unknown Push Service Type")
+		return nil, fmt.Errorf("Unknown Push Service Type: %v", ptname)
 	}
 	return nil, errors.New("No Push Service Type Specified")
 }
@@ -144,13 +132,13 @@ func (m *PushServiceManager) BuildDeliveryPointFromMap(kv map[string]string) (dp
 			pst := pair.pst
 			err = pst.BuildDeliveryPointFromMap(kv, dp)
 			if err != nil {
-				dp.recycle()
+				dp.Recycle()
 				return nil, err
 			}
 			dp.pushServiceType = pst
 			return
 		}
-		return nil, errors.New("Unknown Push Service Type")
+		return nil, fmt.Errorf("Unknown Push Service Type: %v", ptname)
 	}
 	return nil, errors.New("No Push Service Type Specified")
 }
@@ -168,23 +156,37 @@ func (m *PushServiceManager) BuildDeliveryPointFromBytes(value []byte) (dp *Deli
 			dp.pushServiceType = pst
 			err = dp.Unmarshal([]byte(parts[1]))
 			if err != nil {
-				dp.recycle()
+				dp.Recycle()
 				dp = nil
 				return
 			}
 			return
 		}
-		return nil, errors.New("Unknown Push Service Type")
+		return nil, fmt.Errorf("Unknown Push Service Type: %v", ptname)
 	}
 	return nil, errors.New("No Push Service Type Specified")
 }
 
-func (m *PushServiceManager) Push(psp *PushServiceProvider, dp *DeliveryPoint, n *Notification) (id string, err error) {
+func (m *PushServiceManager) Push(psp *PushServiceProvider, dpQueue <-chan *DeliveryPoint, resQueue chan<- *PushResult, notif *Notification) {
+	wg := new(sync.WaitGroup)
+
 	if psp.pushServiceType != nil {
-		id, err = psp.pushServiceType.Push(psp, dp, n)
-		return
+		wg.Add(1)
+		go func() {
+			psp.pushServiceType.Push(psp, dpQueue, resQueue, notif)
+			wg.Done()
+		}()
+	} else {
+		r := new(PushResult)
+		r.Provider = psp
+		r.Destination = nil
+		r.MsgId = ""
+		r.Content = notif
+		r.Err = fmt.Errorf("InvalidPushServiceProvider")
+		resQueue <- r
 	}
-	return "", NewInvalidPushServiceProviderError(psp, errors.New("Unknown Service Type"))
+
+	wg.Wait()
 }
 
 func (m *PushServiceManager) Finalize() {
