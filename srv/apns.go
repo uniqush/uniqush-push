@@ -41,8 +41,8 @@ type pushRequest struct {
 	psp     *PushServiceProvider
 	dp      *DeliveryPoint
 	notif   *Notification
-	mid     uint32
 	resChan chan<- *PushResult
+	msgIdChan chan<- string
 }
 
 type apnsPushService struct {
@@ -196,13 +196,17 @@ func (self *apnsPushService) Push(psp *PushServiceProvider, dpQueue <-chan *Deli
 		go func() {
 			defer wg.Done()
 			resultChannel := make(chan *PushResult, 1)
+			msgIdChannel := make(chan string)
 			req := new(pushRequest)
 			req.dp = dp
 			req.notif = notif
 			req.resChan = resultChannel
 			req.psp = psp
+			req.msgIdChan = msgIdChannel
 
 			self.reqChan <- req
+
+			messageId := <-msgIdChannel
 
 			n := 0
 			for {
@@ -214,13 +218,14 @@ func (self *apnsPushService) Push(psp *PushServiceProvider, dpQueue <-chan *Deli
 					resQueue <- res
 					n++
 				case <-time.After(maxWaitTime * time.Second):
+					// It should success according to APNS' document
 					if n == 0 {
 						res := new(PushResult)
 						res.Provider = psp
 						res.Destination = dp
 						res.Content = notif
-						res.MsgId = "Unknown"
-						res.Err = fmt.Errorf("Unkown")
+						res.MsgId = messageId
+						res.Err = nil
 						resQueue <- res
 					}
 					return
@@ -427,6 +432,9 @@ func (self *apnsPushService) pushWorker(psp *PushServiceProvider, reqChan chan *
 			notif := req.notif
 			mid := nextid
 			nextid++
+			messageId := fmt.Sprintf("apns:%v-%v", psp.Name(), mid)
+
+			req.msgIdChan <- messageId
 
 			// Connection dropped by remote server.
 			// Reconnect it.
@@ -456,7 +464,7 @@ func (self *apnsPushService) pushWorker(psp *PushServiceProvider, reqChan chan *
 						result.Content = notif
 						result.Provider = psp
 						result.Destination = dp
-						result.MsgId = fmt.Sprintf("%v", mid)
+						result.MsgId = messageId
 						result.Err = connErr
 						req.resChan <- result
 						close(req.resChan)
@@ -472,7 +480,7 @@ func (self *apnsPushService) pushWorker(psp *PushServiceProvider, reqChan chan *
 					result.Content = notif
 					result.Provider = psp
 					result.Destination = dp
-					result.MsgId = fmt.Sprintf("%v", mid)
+					result.MsgId = messageId
 					result.Err = connErr
 					req.resChan <- result
 					close(req.resChan)
@@ -488,7 +496,7 @@ func (self *apnsPushService) pushWorker(psp *PushServiceProvider, reqChan chan *
 				result.Content = notif
 				result.Provider = psp
 				result.Destination = dp
-				result.MsgId = fmt.Sprintf("apns:%v-%v", psp.Name(), mid)
+				result.MsgId = messageId
 				result.Err = err
 				req.resChan <- result
 				close(req.resChan)
