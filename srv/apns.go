@@ -38,10 +38,10 @@ const (
 )
 
 type pushRequest struct {
-	psp     *PushServiceProvider
-	dp      *DeliveryPoint
-	notif   *Notification
-	resChan chan<- *PushResult
+	psp       *PushServiceProvider
+	dp        *DeliveryPoint
+	notif     *Notification
+	resChan   chan<- *PushResult
 	msgIdChan chan<- string
 }
 
@@ -124,6 +124,31 @@ func (p *apnsPushService) BuildDeliveryPointFromMap(kv map[string]string, dp *De
 	return nil
 }
 
+func parseList(str string) []string {
+	ret := make([]string, 0, 10)
+	elem := make([]rune, 0, len(str))
+	escape := false
+	for _, r := range str {
+		if escape {
+			escape = false
+			elem = append(elem, r)
+		} else if r == '\\' {
+			escape = true
+		} else if r == ',' {
+			if len(elem) > 0 {
+				ret = append(ret, string(elem))
+			}
+			elem = elem[:0]
+		} else {
+			elem = append(elem, r)
+		}
+	}
+	if len(elem) > 0 {
+		ret = append(ret, string(elem))
+	}
+	return ret
+}
+
 func toAPNSPayload(n *Notification) ([]byte, error) {
 	payload := make(map[string]interface{})
 	aps := make(map[string]interface{})
@@ -135,7 +160,7 @@ func toAPNSPayload(n *Notification) ([]byte, error) {
 		case "loc-key":
 			alert[k] = v
 		case "loc-args":
-			alert[k] = v
+			alert[k] = parseList(v)
 		case "badge":
 			b, err := strconv.Atoi(v)
 			if err != nil {
@@ -157,6 +182,7 @@ func toAPNSPayload(n *Notification) ([]byte, error) {
 			payload[k] = v
 		}
 	}
+
 	aps["alert"] = alert
 	payload["aps"] = aps
 	j, err := json.Marshal(payload)
