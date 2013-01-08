@@ -157,6 +157,8 @@ func toAPNSPayload(n *Notification) ([]byte, error) {
 		switch k {
 		case "msg":
 			alert["body"] = v
+		case "action-loc-key":
+			alert[k] = v
 		case "loc-key":
 			alert[k] = v
 		case "loc-args":
