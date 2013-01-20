@@ -120,7 +120,7 @@ func (f *webPushFrontEnd) addPushServiceProvider(kv map[string]string, id, addr 
 	}
 	a.PushServiceProvider = psp
 	f.ch <- a
-	f.logger.Infof("[AddPushServiceRequest] Requestid=%s From=%s Service=%s", id, addr, psp.Name())
+	f.logger.Infof("[AddPushServiceRequest] Requestid=%s From=%s PushServiceProvider=%s Service=%v", id, addr, psp.Name(), a.Service)
 	f.strMapPools[ADD_PUSH_SERVICE_PROVIDER_TO_SERVICE_URL].Recycle(kv)
 }
 
@@ -150,7 +150,7 @@ func (f *webPushFrontEnd) removePushServiceProvider(kv map[string]string, id, ad
 	a.PushServiceProvider = psp
 
 	f.ch <- a
-	f.logger.Infof("[RemovePushServiceRequest] Requestid=%s From=%s Service=%s", id, addr, psp.Name())
+	f.logger.Infof("[RemovePushServiceRequest] Requestid=%s From=%s PushServiceProvider=%s Service=%v", id, addr, psp.Name(), a.Service)
 	f.strMapPools[REMOVE_PUSH_SERVICE_PROVIDER_TO_SERVICE_URL].Recycle(kv)
 }
 
@@ -194,7 +194,7 @@ func (f *webPushFrontEnd) addDeliveryPointToService(kv map[string]string, id, ad
 	}
 	a.DeliveryPoint = dp
 	f.ch <- a
-	f.logger.Infof("[SubscribeRequest] Requestid=%s From=%s Name=%s", id, addr, dp.Name())
+	f.logger.Infof("[SubscribeRequest] Requestid=%s From=%s DeliveryPoint=%s Subscriber=%v Service=%v", id, addr, dp.Name(), subscriber, a.Service)
 	f.strMapPools[ADD_DELIVERY_POINT_TO_SERVICE_URL].Recycle(kv)
 	return
 }
@@ -240,7 +240,7 @@ func (f *webPushFrontEnd) removeDeliveryPointFromService(kv map[string]string, i
 	}
 	a.DeliveryPoint = dp
 	f.ch <- a
-	f.logger.Infof("[UnsubscribeRequest] Requestid=%s From=%s Name=%s", id, addr, dp.Name())
+	f.logger.Infof("[UnsubscribeRequest] Requestid=%s From=%s DeliveryPoint=%s Subscriber=%v Service=%v", id, addr, dp.Name(), subscriber, a.Service)
 	f.strMapPools[REMOVE_DELIVERY_POINT_FROM_SERVICE_URL].Recycle(kv)
 	return
 }
