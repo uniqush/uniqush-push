@@ -76,4 +76,3 @@ type PushServiceType interface {
 
 	Finalize()
 }
-

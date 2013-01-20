@@ -18,8 +18,8 @@
 package push
 
 import (
-	"github.com/uniqush/mempool"
 	"encoding/json"
+	"github.com/uniqush/mempool"
 )
 
 type Notification struct {

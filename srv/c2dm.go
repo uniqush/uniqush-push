@@ -20,15 +20,15 @@ package srv
 import (
 	"crypto/sha1"
 	"crypto/tls"
-	"sync"
 	"errors"
 	"fmt"
-	"time"
-	"strings"
 	. "github.com/uniqush/uniqush-push/push"
 	"io/ioutil"
 	"net/http"
 	"net/url"
+	"strings"
+	"sync"
+	"time"
 )
 
 const (
@@ -225,7 +225,7 @@ func (self *c2dmPushService) Push(psp *PushServiceProvider, dpQueue <-chan *Deli
 			} else {
 				res.MsgId = msgid
 			}
-			resQueue<-res
+			resQueue <- res
 			wg.Done()
 		}()
 	}
@@ -233,4 +233,3 @@ func (self *c2dmPushService) Push(psp *PushServiceProvider, dpQueue <-chan *Deli
 	wg.Wait()
 	close(resQueue)
 }
-

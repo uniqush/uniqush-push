@@ -143,18 +143,18 @@ func (r *PushRedisDB) RemovePushServiceProvider(psp string) error {
 }
 
 func (r *PushRedisDB) GetDeliveryPointsNameByServiceSubscriber(srv, usr string) (map[string][]string, error) {
-    keys := make([]string, 1)
-    if !strings.Contains(usr, "*") && !strings.Contains(srv, "*") {
-        keys[0] = SERVICE_SUBSCRIBER_TO_DELIVERY_POINTS_PREFIX + srv + ":" + usr
-    } else {
-        var err error
-        keys, err = r.client.Keys(SERVICE_SUBSCRIBER_TO_DELIVERY_POINTS_PREFIX + srv + ":" + usr)
-        if err != nil {
-            return nil, err
-        }
-    }
+	keys := make([]string, 1)
+	if !strings.Contains(usr, "*") && !strings.Contains(srv, "*") {
+		keys[0] = SERVICE_SUBSCRIBER_TO_DELIVERY_POINTS_PREFIX + srv + ":" + usr
+	} else {
+		var err error
+		keys, err = r.client.Keys(SERVICE_SUBSCRIBER_TO_DELIVERY_POINTS_PREFIX + srv + ":" + usr)
+		if err != nil {
+			return nil, err
+		}
+	}
 
-    ret := make(map[string][]string, len(keys))
+	ret := make(map[string][]string, len(keys))
 	for _, k := range keys {
 		m, err := r.client.Smembers(k)
 		if err != nil {
@@ -163,15 +163,15 @@ func (r *PushRedisDB) GetDeliveryPointsNameByServiceSubscriber(srv, usr string) 
 		if m == nil {
 			continue
 		}
-        elem := strings.Split(k, ":")
-        s := elem[1]
-        if l, ok := ret[s]; !ok || l == nil {
-            ret[s] = make([]string, 0, len(keys))
-        }
+		elem := strings.Split(k, ":")
+		s := elem[1]
+		if l, ok := ret[s]; !ok || l == nil {
+			ret[s] = make([]string, 0, len(keys))
+		}
 		for _, bm := range m {
-            dpl := ret[s]
-            dpl = append(dpl, string(bm))
-            ret[s] = dpl
+			dpl := ret[s]
+			dpl = append(dpl, string(bm))
+			ret[s] = dpl
 		}
 	}
 	return ret, nil

@@ -60,4 +60,3 @@ func (self *fakePST) Push(psp *PushServiceProvider, dpChan <-chan *DeliveryPoint
 		resChan <- res
 	}
 }
-

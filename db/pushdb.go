@@ -210,34 +210,34 @@ func (f *pushDatabaseOpts) GetPushServiceProviderDeliveryPointPairs(service stri
 	ret := make([]PushServiceProviderDeliveryPointPair, 0, len(dpnames))
 
 	for srv, dpl := range dpnames {
-        for _, d := range dpl {
-            dp, e0 := f.db.GetDeliveryPoint(d)
-            if e0 != nil {
-                return nil, e0
-            }
-            if dp == nil {
-                continue
-            }
+		for _, d := range dpl {
+			dp, e0 := f.db.GetDeliveryPoint(d)
+			if e0 != nil {
+				return nil, e0
+			}
+			if dp == nil {
+				continue
+			}
 
-            pspname, e := f.db.GetPushServiceProviderNameByServiceDeliveryPoint(srv, d)
-            if e != nil {
-                return nil, e
-            }
+			pspname, e := f.db.GetPushServiceProviderNameByServiceDeliveryPoint(srv, d)
+			if e != nil {
+				return nil, e
+			}
 
-            if len(pspname) == 0 {
-                continue
-            }
+			if len(pspname) == 0 {
+				continue
+			}
 
-            psp, e1 := f.db.GetPushServiceProvider(pspname)
-            if e1 != nil {
-                return nil, e1
-            }
-            if psp == nil {
-                continue
-            }
+			psp, e1 := f.db.GetPushServiceProvider(pspname)
+			if e1 != nil {
+				return nil, e1
+			}
+			if psp == nil {
+				continue
+			}
 
-            ret = append(ret, PushServiceProviderDeliveryPointPair{psp, dp})
-        }
+			ret = append(ret, PushServiceProviderDeliveryPointPair{psp, dp})
+		}
 	}
 
 	return ret, nil

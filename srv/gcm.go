@@ -23,11 +23,11 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"time"
 	. "github.com/uniqush/uniqush-push/push"
 	"io/ioutil"
 	"net/http"
 	"strconv"
+	"time"
 )
 
 const (
@@ -175,7 +175,7 @@ func (self *gcmPushService) multicast(psp *PushServiceProvider, dpList []*Delive
 
 			res.Err = e0
 			res.Destination = dp
-			resQueue<-res
+			resQueue <- res
 		}
 		return
 	}
@@ -189,7 +189,7 @@ func (self *gcmPushService) multicast(psp *PushServiceProvider, dpList []*Delive
 
 			res.Err = e1
 			res.Destination = dp
-			resQueue<-res
+			resQueue <- res
 		}
 		return
 	}
@@ -212,7 +212,7 @@ func (self *gcmPushService) multicast(psp *PushServiceProvider, dpList []*Delive
 
 			res.Err = e2
 			res.Destination = dp
-			resQueue<-res
+			resQueue <- res
 		}
 		return
 	}
@@ -223,7 +223,7 @@ func (self *gcmPushService) multicast(psp *PushServiceProvider, dpList []*Delive
 		res.Provider = psp
 		res.Content = notif
 		res.Err = NewPushServiceProviderUpdate(psp)
-		resQueue<-res
+		resQueue <- res
 	}
 
 	switch r.StatusCode {
@@ -239,7 +239,7 @@ func (self *gcmPushService) multicast(psp *PushServiceProvider, dpList []*Delive
 			res.Destination = dp
 			err := NewRetryError(after)
 			res.Err = err
-			resQueue<-res
+			resQueue <- res
 		}
 		return
 	case 401:
@@ -248,7 +248,7 @@ func (self *gcmPushService) multicast(psp *PushServiceProvider, dpList []*Delive
 		res.Provider = psp
 		res.Content = notif
 		res.Err = err
-		resQueue<-res
+		resQueue <- res
 		return
 	case 400:
 		err := NewBadNotification()
@@ -256,7 +256,7 @@ func (self *gcmPushService) multicast(psp *PushServiceProvider, dpList []*Delive
 		res.Provider = psp
 		res.Content = notif
 		res.Err = err
-		resQueue<-res
+		resQueue <- res
 		return
 	}
 
@@ -266,7 +266,7 @@ func (self *gcmPushService) multicast(psp *PushServiceProvider, dpList []*Delive
 		res.Provider = psp
 		res.Content = notif
 		res.Err = err
-		resQueue<-res
+		resQueue <- res
 		return
 	}
 
@@ -278,7 +278,7 @@ func (self *gcmPushService) multicast(psp *PushServiceProvider, dpList []*Delive
 		res.Provider = psp
 		res.Content = notif
 		res.Err = err
-		resQueue<-res
+		resQueue <- res
 		return
 	}
 
@@ -288,29 +288,29 @@ func (self *gcmPushService) multicast(psp *PushServiceProvider, dpList []*Delive
 		}
 		dp := dpList[i]
 		if errmsg, ok := r["error"]; ok {
-			switch (errmsg) {
+			switch errmsg {
 			case "Unavailable":
-				after, _  := time.ParseDuration("2s")
+				after, _ := time.ParseDuration("2s")
 				res := new(PushResult)
 				res.Err = NewRetryError(after)
 				res.Provider = psp
 				res.Content = notif
 				res.Destination = dp
-				resQueue<-res
+				resQueue <- res
 			case "NotRegistered":
 				res := new(PushResult)
 				res.Err = NewUnsubscribeUpdate(dp)
 				res.Provider = psp
 				res.Content = notif
 				res.Destination = dp
-				resQueue<-res
+				resQueue <- res
 			default:
 				res := new(PushResult)
 				res.Err = fmt.Errorf("GCMError: %v", errmsg)
 				res.Provider = psp
 				res.Content = notif
 				res.Destination = dp
-				resQueue<-res
+				resQueue <- res
 			}
 		}
 		if newregid, ok := r["registration_id"]; ok {
@@ -320,7 +320,7 @@ func (self *gcmPushService) multicast(psp *PushServiceProvider, dpList []*Delive
 			res.Provider = psp
 			res.Content = notif
 			res.Destination = dp
-			resQueue<-res
+			resQueue <- res
 		}
 		if msgid, ok := r["message_id"]; ok {
 			res := new(PushResult)
@@ -328,7 +328,7 @@ func (self *gcmPushService) multicast(psp *PushServiceProvider, dpList []*Delive
 			res.Content = notif
 			res.Destination = dp
 			res.MsgId = fmt.Sprintf("%v:%v", psp.Name(), msgid)
-			resQueue<-res
+			resQueue <- res
 		}
 	}
 
@@ -348,7 +348,7 @@ func (self *gcmPushService) Push(psp *PushServiceProvider, dpQueue <-chan *Deliv
 			res.Destination = dp
 			res.Content = notif
 			res.Err = NewIncompatibleError()
-			resQueue<-res
+			resQueue <- res
 			continue
 		}
 		if _, ok := dp.VolatileData["regid"]; ok {
@@ -362,7 +362,7 @@ func (self *gcmPushService) Push(psp *PushServiceProvider, dpQueue <-chan *Deliv
 			res.Destination = dp
 			res.Content = notif
 			res.Err = NewBadDeliveryPoint(dp)
-			resQueue<-res
+			resQueue <- res
 			continue
 		}
 
@@ -377,4 +377,3 @@ func (self *gcmPushService) Push(psp *PushServiceProvider, dpQueue <-chan *Deliv
 
 	close(resQueue)
 }
-

@@ -81,7 +81,7 @@ func NewIncompatibleError() error {
 
 type BadDeliveryPoint struct {
 	Destination *DeliveryPoint
-	Details string
+	Details     string
 }
 
 func (e *BadDeliveryPoint) Error() string {
@@ -103,7 +103,7 @@ func NewBadDeliveryPointWithDetails(dp *DeliveryPoint, details string) error {
 
 type BadPushServiceProvider struct {
 	Provider *PushServiceProvider
-	Details string
+	Details  string
 }
 
 func (e *BadPushServiceProvider) Error() string {
@@ -169,4 +169,3 @@ func (e *ConnectionError) Error() string {
 func NewConnectionError(err error) error {
 	return &ConnectionError{Err: err}
 }
-

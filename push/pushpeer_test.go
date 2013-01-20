@@ -54,7 +54,7 @@ func (t *testPushServiceType) BuildDeliveryPointFromMap(kv map[string]string, dp
 	return nil
 }
 
-func (t* testPushServiceType) Push(*PushServiceProvider, <-chan *DeliveryPoint, chan<- *PushResult, *Notification) {
+func (t *testPushServiceType) Push(*PushServiceProvider, <-chan *DeliveryPoint, chan<- *PushResult, *Notification) {
 	fmt.Print("Push!\n")
 }
 
