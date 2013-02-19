@@ -29,17 +29,15 @@ import (
 
 type RestAPI struct {
 	psm       *PushServiceManager
-	logOutput io.Writer
-	logLevel  int
-	version   string
+	loggers	[]log.Logger
 	backend   *PushBackEnd
 }
 
-func NewRestAPI(psm *PushServiceManager, logOutput io.Writer, logLevel int, version string, backend *PushBackEnd) *RestAPI {
+// loggers: sequence is web, add
+func NewRestAPI(psm *PushServiceManager, loggers []log.Logger, version string, backend *PushBackEnd) *RestAPI {
 	ret := new(RestAPI)
 	ret.psm = psm
-	ret.logOutput = logOutput
-	ret.logLevel = logLevel
+	ret.loggers = loggers
 	ret.version = version
 	ret.backend = backend
 	return ret
@@ -53,6 +51,15 @@ const (
 	PUSH_NOTIFICATION_URL                       = "/push"
 	STOP_PROGRAM_URL                            = "/stop"
 	VERSION_INFO_URL                            = "/version"
+)
+
+const (
+	LOGGER_WEB = iota
+	LOGGER_ADDPSP
+	LOGGER_RMPSP
+	LOGGER_SUB
+	LOGGER_UNSUB
+	LOGGER_PUSH
 )
 
 var validServicePattern *regexp.Regexp
@@ -166,12 +173,15 @@ func (self RestAPI) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	writer := io.MultiWriter(self.logOutput, w)
+	logLevel := log.LOGLEVEL_INFO
 	switch r.URL.Path {
 	case ADD_PUSH_SERVICE_PROVIDER_TO_SERVICE_URL:
-		logger := log.NewLogger(writer, "[AddPushServiceProvider]", self.logLevel)
+		weblogger := log.NewLogger(writer, "[AddPushServiceProvider]", logLevel)
+		logger := log.MultiLogger(weblogger, self.loggers[LOGGER_ADDPSP])
 		self.changePushServiceProvider(kv, logger, true)
 	case REMOVE_PUSH_SERVICE_PROVIDER_TO_SERVICE_URL:
-		logger := log.NewLogger(writer, "[RemovePushServiceProvider]", self.logLevel)
+		weblogger := log.NewLogger(writer, "[RemovePushServiceProvider]", logLevel)
+		logger := log.MultiLogger(weblogger, self.loggers[LOGGER_RMPSP])
 		self.changePushServiceProvider(kv, logger, false)
 	}
 }
