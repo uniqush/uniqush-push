@@ -22,6 +22,7 @@ import (
 	. "github.com/uniqush/uniqush-push/db"
 	. "github.com/uniqush/uniqush-push/push"
 )
+
 type PushBackEnd struct {
 	psm       *PushServiceManager
 	db        PushDatabase
@@ -53,4 +54,3 @@ func (self *PushBackEnd) RemovePushServiceProvider(service string, psp *PushServ
 	}
 	return nil
 }
-

@@ -18,19 +18,19 @@
 package main
 
 import (
-	"strings"
 	"fmt"
 	"github.com/uniqush/log"
 	. "github.com/uniqush/uniqush-push/push"
-	"io"
 	"net/http"
 	"regexp"
+	"strings"
 )
 
 type RestAPI struct {
-	psm       *PushServiceManager
-	loggers	[]log.Logger
-	backend   *PushBackEnd
+	psm     *PushServiceManager
+	loggers []log.Logger
+	backend *PushBackEnd
+	version string
 }
 
 // loggers: sequence is web, add
@@ -133,7 +133,7 @@ func getServiceFromMap(kv map[string]string, validate bool) (service string, err
 	return
 }
 
-func (self *RestAPI) changePushServiceProvider(kv map[string]string, logger *log.Logger, add bool) {
+func (self *RestAPI) changePushServiceProvider(kv map[string]string, logger log.Logger, add bool) {
 	psp, err := self.psm.BuildPushServiceProviderFromMap(kv)
 	if err != nil {
 		logger.Errorf("Cannot build push service provider: %v", err)
@@ -172,7 +172,7 @@ func (self RestAPI) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			kv[k] = v[0]
 		}
 	}
-	writer := io.MultiWriter(self.logOutput, w)
+	writer := w
 	logLevel := log.LOGLEVEL_INFO
 	switch r.URL.Path {
 	case ADD_PUSH_SERVICE_PROVIDER_TO_SERVICE_URL:
