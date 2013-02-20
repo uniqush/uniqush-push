@@ -20,6 +20,8 @@ package main
 import (
 	"code.google.com/p/goconf/conf"
 	. "github.com/uniqush/log"
+	. "github.com/uniqush/uniqush-push/db"
+	. "github.com/uniqush/uniqush-push/push"
 	"io"
 	"os"
 	"strings"
@@ -32,6 +34,7 @@ const (
 	LOGGER_SUB
 	LOGGER_UNSUB
 	LOGGER_PUSH
+	LOGGER_NR_LOGGERS
 )
 
 func loadLogger(writer io.Writer, c *conf.ConfigFile, field string, prefix string) (Logger, error) {
@@ -73,4 +76,108 @@ func loadLogger(writer io.Writer, c *conf.ConfigFile, field string, prefix strin
 	return logger, nil
 }
 
+func loadDatabaseConfig(cf *conf.ConfigFile) (*DatabaseConfig, error) {
+	var err error
+	c := new(DatabaseConfig)
+	c.PushServiceManager = GetPushServiceManager()
+	c.Engine, err = cf.GetString("Database", "engine")
+	if err != nil || c.Engine == "" {
+		c.Engine = "redis"
+	}
+	c.Name, err = cf.GetString("Database", "name")
+	if err != nil || c.Name == "" {
+		c.Name = "0"
+	}
+	c.Port, err = cf.GetInt("Database", "port")
+	if err != nil || c.Port <= 0 {
+		c.Port = -1
+	}
+	c.Host, err = cf.GetString("Database", "host")
+	if err != nil || c.Host == "" {
+		c.Host = "localhost"
+	}
+	c.Password, err = cf.GetString("Database", "password")
+	if err != nil {
+		c.Password = ""
+	}
+	i, e := cf.GetInt("Database", "everysec")
+	c.EverySec = int64(i)
+	if e != nil || c.EverySec <= 60 {
+		c.EverySec = 600
+	}
+	c.LeastDirty, err = cf.GetInt("Database", "leastdirty")
+	if err != nil || c.LeastDirty < 0 {
+		c.LeastDirty = 10
+	}
+	c.CacheSize, err = cf.GetInt("Database", "cachesize")
+	if err != nil || c.CacheSize < 0 {
+		c.CacheSize = 1024
+	}
 
+	return c, nil
+}
+
+var (
+	defaultConfigFilePath string = "/etc/uniqush/uniqush.conf"
+)
+
+func LoadLoggers(filename string) (loggers []Logger, err error) {
+	if filename == "" {
+		filename = defaultConfigFilePath
+	}
+	c, err := conf.ReadConfigFile(filename)
+	if err != nil {
+		return nil, err
+	}
+
+	var logfile io.Writer
+
+	logfilename, err := c.GetString("default", "logfile")
+	if err == nil && logfilename != "" {
+		logfile, err = os.OpenFile(logfilename, os.O_WRONLY|os.O_APPEND|os.O_CREATE, 0600)
+		if err != nil {
+			logfile = os.Stderr
+		}
+	} else {
+		logfile = os.Stderr
+	}
+
+	loggers = make([]Logger, LOGGER_NR_LOGGERS)
+	loggers[LOGGER_WEB], err = loadLogger(logfile, c, "WebFrontend", "[WebFrontend]")
+	if err != nil {
+		loggers = nil
+		return
+	}
+
+	loggers[LOGGER_ADDPSP], err = loadLogger(logfile, c, "AddPushServiceProvider", "[AddPushServiceProvider]")
+	if err != nil {
+		loggers = nil
+		return
+	}
+
+	loggers[LOGGER_RMPSP], err = loadLogger(logfile, c, "RemovePushServiceProvider", "[RemovePushServiceProvider]")
+	if err != nil {
+		loggers = nil
+		return
+	}
+
+	loggers[LOGGER_SUB], err = loadLogger(logfile, c, "Subscribe", "[Subscribe]")
+	if err != nil {
+		loggers = nil
+		return
+	}
+
+	loggers[LOGGER_UNSUB], err = loadLogger(logfile, c, "Unsubscribe", "[Unsubscribe]")
+	if err != nil {
+		loggers = nil
+		return
+	}
+
+	loggers[LOGGER_PUSH], err = loadLogger(logfile, c, "Push", "[Push]")
+	if err != nil {
+		loggers = nil
+		return
+	}
+
+	return
+}
