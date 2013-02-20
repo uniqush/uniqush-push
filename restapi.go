@@ -53,15 +53,6 @@ const (
 	VERSION_INFO_URL                            = "/version"
 )
 
-const (
-	LOGGER_WEB = iota
-	LOGGER_ADDPSP
-	LOGGER_RMPSP
-	LOGGER_SUB
-	LOGGER_UNSUB
-	LOGGER_PUSH
-)
-
 var validServicePattern *regexp.Regexp
 var validSubscriberPattern *regexp.Regexp
 
