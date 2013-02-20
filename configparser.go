@@ -76,7 +76,7 @@ func loadLogger(writer io.Writer, c *conf.ConfigFile, field string, prefix strin
 	return logger, nil
 }
 
-func loadDatabaseConfig(cf *conf.ConfigFile) (*DatabaseConfig, error) {
+func LoadDatabaseConfig(cf *conf.ConfigFile) (*DatabaseConfig, error) {
 	var err error
 	c := new(DatabaseConfig)
 	c.PushServiceManager = GetPushServiceManager()
@@ -121,15 +121,18 @@ var (
 	defaultConfigFilePath string = "/etc/uniqush/uniqush.conf"
 )
 
-func LoadLoggers(filename string) (loggers []Logger, err error) {
+func OpenConfig(filename string) (c *conf.ConfigFile, err error) {
 	if filename == "" {
 		filename = defaultConfigFilePath
 	}
-	c, err := conf.ReadConfigFile(filename)
+	c, err = conf.ReadConfigFile(filename)
 	if err != nil {
 		return nil, err
 	}
+	return
+}
 
+func LoadLoggers(c *conf.ConfigFile) (loggers []Logger, err error) {
 	var logfile io.Writer
 
 	logfilename, err := c.GetString("default", "logfile")
@@ -178,6 +181,47 @@ func LoadLoggers(filename string) (loggers []Logger, err error) {
 		loggers = nil
 		return
 	}
-
 	return
 }
+
+func LoadRestAddr(c *conf.ConfigFile) (string, error) {
+	addr, err := c.GetString("WebFrontend", "addr")
+	if err != nil || addr == "" {
+		addr = "localhost:9898"
+		err = nil
+	}
+	return addr, err
+}
+
+
+func Run(conf, version string) error {
+	c, err := OpenConfig(conf)
+	if err != nil {
+		return err
+	}
+	loggers, err := LoadLoggers(c)
+	if err != nil {
+		return err
+	}
+	dbconf, err := LoadDatabaseConfig(c)
+	if err != nil {
+		return err
+	}
+	addr, err := LoadRestAddr(c)
+	if err != nil {
+		return err
+	}
+	psm := GetPushServiceManager()
+
+	db, err := NewPushDatabaseWithoutCache(dbconf)
+	if err != nil {
+		return err
+	}
+
+	backend := NewPushBackEnd(psm, db, loggers)
+	rest := NewRestAPI(psm, loggers, version, backend)
+	rest.Run(addr)
+	return nil
+}
+
+

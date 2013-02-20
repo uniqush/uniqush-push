@@ -26,15 +26,15 @@ import (
 type PushBackEnd struct {
 	psm       *PushServiceManager
 	db        PushDatabase
-	logger    *Logger
+	loggers    []Logger
 	notifpool *NotificationPool
 }
 
-func NewPushBackEnd(psm *PushServiceManager, database PushDatabase, logger *Logger) *PushBackEnd {
+func NewPushBackEnd(psm *PushServiceManager, database PushDatabase, loggers []Logger) *PushBackEnd {
 	ret := new(PushBackEnd)
 	ret.psm = psm
 	ret.db = database
-	ret.logger = logger
+	ret.loggers = loggers
 	ret.notifpool = NewNotificationPool(0, 0)
 	return ret
 }

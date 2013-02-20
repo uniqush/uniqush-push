@@ -146,7 +146,7 @@ func (self *RestAPI) changePushServiceProvider(kv map[string]string, logger log.
 	return
 }
 
-func (self RestAPI) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+func (self *RestAPI) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	switch r.URL.Path {
 	case VERSION_INFO_URL:
 		fmt.Fprintf(w, "%v\r\n", self.version)
@@ -176,3 +176,20 @@ func (self RestAPI) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		self.changePushServiceProvider(kv, logger, false)
 	}
 }
+
+func (self *RestAPI) Run(addr string) {
+	self.loggers[LOGGER_WEB].Configf("[Start] %s", addr)
+	self.loggers[LOGGER_WEB].Debugf("[Version] %s", self.version)
+	http.Handle(STOP_PROGRAM_URL, self)
+	http.Handle(VERSION_INFO_URL, self)
+	http.Handle(ADD_PUSH_SERVICE_PROVIDER_TO_SERVICE_URL, self)
+	http.Handle(ADD_DELIVERY_POINT_TO_SERVICE_URL, self)
+	http.Handle(REMOVE_DELIVERY_POINT_FROM_SERVICE_URL, self)
+	http.Handle(REMOVE_PUSH_SERVICE_PROVIDER_TO_SERVICE_URL, self)
+	http.Handle(PUSH_NOTIFICATION_URL, self)
+	err := http.ListenAndServe(addr, nil)
+	if err != nil {
+		self.loggers[LOGGER_WEB].Fatalf("HTTPServerError \"%v\"", err)
+	}
+}
+
