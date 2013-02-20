@@ -20,6 +20,7 @@ package main
 import (
 	"flag"
 	"fmt"
+	"os"
 	. "github.com/uniqush/uniqush-push/srv"
 )
 
@@ -41,6 +42,11 @@ func main() {
 		return
 	}
 	installPushSrvices()
+
+	err := Run(*uniqushPushConfFlags, uniqushPushVersion)
+	if err != nil {
+		fmt.Fprint(os.Stderr, "Cannot start: %v\n", err)
+	}
 }
 
 
