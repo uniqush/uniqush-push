@@ -127,13 +127,14 @@ func getServiceFromMap(kv map[string]string, validate bool) (service string, err
 func (self *RestAPI) changePushServiceProvider(kv map[string]string, logger log.Logger, remoteAddr string, add bool) {
 	psp, err := self.psm.BuildPushServiceProviderFromMap(kv)
 	if err != nil {
-		logger.Errorf("Cannot build push service provider: %v", err)
+		logger.Errorf("From=%v Cannot build push service provider: %v", remoteAddr, err)
 		return
 	}
 	defer psp.Recycle()
 	service, err := getServiceFromMap(kv, true)
 	if err != nil {
-		logger.Errorf("Cannot get service name: %v", service)
+		logger.Errorf("From=%v Cannot get service name: %v; %v", remoteAddr, service, err)
+		return
 	}
 	if add {
 		err = self.backend.AddPushServiceProvider(service, psp)
@@ -141,10 +142,49 @@ func (self *RestAPI) changePushServiceProvider(kv map[string]string, logger log.
 		err = self.backend.RemovePushServiceProvider(service, psp)
 	}
 	if err != nil {
-		logger.Errorf("Cannot add the push service provider: %v\n", err)
+		logger.Errorf("From=%v Failed: %v", remoteAddr, err)
+		return
 	}
 	logger.Infof("From=%v Service=%v PushServiceProvider=%v Success!", remoteAddr, service, psp.Name())
 	return
+}
+
+func (self *RestAPI) changeSubscription(kv map[string]string, logger log.Logger, remoteAddr string, issub bool) {
+	dp, err := self.psm.BuildDeliveryPointFromMap(kv)
+	if err != nil {
+		logger.Errorf("Cannot build delivery point: %v", err)
+		return
+	}
+	defer dp.Recycle()
+	service, err := getServiceFromMap(kv, true)
+	if err != nil {
+		logger.Errorf("From=%v Cannot get service name: %v; %v", remoteAddr, service, err)
+		return
+	}
+	subs, err := getSubscribersFromMap(kv, true)
+	if err != nil {
+		logger.Errorf("From=%v Cannot get subscriber: %v", remoteAddr, service, err)
+		return
+	}
+
+	var psp *PushServiceProvider
+	if issub {
+		psp, err = self.backend.Subscribe(service, subs[0], dp)
+		if psp != nil {
+			defer psp.Recycle()
+		}
+	} else {
+		err = self.backend.Unsubscribe(service, subs[0], dp)
+	}
+	if err != nil {
+		logger.Errorf("From=%v Failed: %v", remoteAddr, err)
+		return
+	}
+	if psp == nil {
+		logger.Infof("From=%v Service=%v Subscriber=%v DeliveryPoint=%v Success!", remoteAddr, service, subs[0], dp.Name())
+	} else {
+		logger.Infof("From=%v Service=%v Subscriber=%v PushServiceProvider=%v DeliveryPoint=%v Success!", remoteAddr, service, subs[0], psp.Name(), dp.Name())
+	}
 }
 
 func (self *RestAPI) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -176,6 +216,14 @@ func (self *RestAPI) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		weblogger := log.NewLogger(writer, "[RemovePushServiceProvider]", logLevel)
 		logger := log.MultiLogger(weblogger, self.loggers[LOGGER_RMPSP])
 		self.changePushServiceProvider(kv, logger, remoteAddr, false)
+	case ADD_DELIVERY_POINT_TO_SERVICE_URL:
+		weblogger := log.NewLogger(writer, "[Subscribe]", logLevel)
+		logger := log.MultiLogger(weblogger, self.loggers[LOGGER_SUB])
+		self.changeSubscription(kv, logger, remoteAddr, true)
+	case REMOVE_DELIVERY_POINT_FROM_SERVICE_URL:
+		weblogger := log.NewLogger(writer, "[Unsubscribe]", logLevel)
+		logger := log.MultiLogger(weblogger, self.loggers[LOGGER_UNSUB])
+		self.changeSubscription(kv, logger, remoteAddr, false)
 	}
 }
 

@@ -54,3 +54,20 @@ func (self *PushBackEnd) RemovePushServiceProvider(service string, psp *PushServ
 	}
 	return nil
 }
+
+func (self *PushBackEnd) Subscribe(service, sub string, dp *DeliveryPoint) (*PushServiceProvider, error) {
+	psp, err := self.db.AddDeliveryPointToService(service, sub, dp)
+	if err != nil {
+		return nil, err
+	}
+	return psp, nil
+}
+
+func (self *PushBackEnd) Unsubscribe(service, sub string, dp *DeliveryPoint) error {
+	err := self.db.RemoveDeliveryPointFromService(service, sub, dp)
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
