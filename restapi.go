@@ -124,7 +124,7 @@ func getServiceFromMap(kv map[string]string, validate bool) (service string, err
 	return
 }
 
-func (self *RestAPI) changePushServiceProvider(kv map[string]string, logger log.Logger, add bool) {
+func (self *RestAPI) changePushServiceProvider(kv map[string]string, logger log.Logger, remoteAddr string, add bool) {
 	psp, err := self.psm.BuildPushServiceProviderFromMap(kv)
 	if err != nil {
 		logger.Errorf("Cannot build push service provider: %v", err)
@@ -143,6 +143,7 @@ func (self *RestAPI) changePushServiceProvider(kv map[string]string, logger log.
 	if err != nil {
 		logger.Errorf("Cannot add the push service provider: %v\n", err)
 	}
+	logger.Infof("From=%v Service=%v PushServiceProvider=%v Success!", remoteAddr, service, psp.Name())
 	return
 }
 
@@ -165,15 +166,16 @@ func (self *RestAPI) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	writer := w
 	logLevel := log.LOGLEVEL_INFO
+	remoteAddr := r.RemoteAddr
 	switch r.URL.Path {
 	case ADD_PUSH_SERVICE_PROVIDER_TO_SERVICE_URL:
 		weblogger := log.NewLogger(writer, "[AddPushServiceProvider]", logLevel)
 		logger := log.MultiLogger(weblogger, self.loggers[LOGGER_ADDPSP])
-		self.changePushServiceProvider(kv, logger, true)
+		self.changePushServiceProvider(kv, logger, remoteAddr, true)
 	case REMOVE_PUSH_SERVICE_PROVIDER_TO_SERVICE_URL:
 		weblogger := log.NewLogger(writer, "[RemovePushServiceProvider]", logLevel)
 		logger := log.MultiLogger(weblogger, self.loggers[LOGGER_RMPSP])
-		self.changePushServiceProvider(kv, logger, false)
+		self.changePushServiceProvider(kv, logger, remoteAddr, false)
 	}
 }
 

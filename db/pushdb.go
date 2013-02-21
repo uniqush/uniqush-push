@@ -113,7 +113,15 @@ func (f *pushDatabaseOpts) RemovePushServiceProviderFromService(service string, 
 	db := f.db
 	f.dblock.Lock()
 	defer f.dblock.Unlock()
-	return db.RemovePushServiceProviderFromService(service, name)
+	err := db.RemovePushServiceProviderFromService(service, name)
+	if err != nil {
+		return err
+	}
+	err = db.RemovePushServiceProvider(name)
+	if err != nil {
+		return err
+	}
+	return nil
 }
 
 func (f *pushDatabaseOpts) AddPushServiceProviderToService(service string,
