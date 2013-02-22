@@ -22,6 +22,7 @@ import (
 	. "github.com/uniqush/uniqush-push/db"
 	. "github.com/uniqush/uniqush-push/push"
 	"sync"
+	"time"
 )
 
 type PushBackEnd struct {
@@ -72,7 +73,17 @@ func (self *PushBackEnd) Unsubscribe(service, sub string, dp *DeliveryPoint) err
 	return nil
 }
 
-func (self *PushBackEnd) retry(service, sub string, psp *PushServiceProvider, dp *DeliveryPoint, notif *Notification) {
+func (self *PushBackEnd) retry(service, sub string, psp *PushServiceProvider, dp *DeliveryPoint, notif *Notification, after time.Duration) {
+	ch := make(chan *DeliveryPoint)
+	resChan := make(chan *PushResult)
+	maxNrRetry := 3
+	for nr := 0; nr < maxNrRetry; nr++ {
+		<-time.After(after)
+		go func() {
+			self.psm.Push(psp, ch, resChan, notif)
+		}()
+		ch <- dp
+	}
 }
 
 func (self *PushBackEnd) fixError(event error, logger Logger) error {
@@ -87,7 +98,7 @@ func (self *PushBackEnd) fixError(event error, logger Logger) error {
 		if sub, ok = err.Destination.FixedData["subscriber"]; !ok {
 			return nil
 		}
-		go self.retry(service, sub, err.Provider, err.Destination, err.Content)
+		go self.retry(service, sub, err.Provider, err.Destination, err.Content, err.After)
 	case *PushServiceProviderUpdate:
 		if service, ok = err.Provider.FixedData["service"]; !ok {
 			return nil
@@ -145,7 +156,7 @@ func (self *PushBackEnd) collectResult(service string, resChan <-chan *PushResul
 		}
 		err := self.fixError(res.Err, logger)
 		if err != nil {
-			logger.Infof("Service=%v Subscriber=%v PushServiceProvider=%v DeliveryPoint=%v MsgId=%v Failed: %v", service, sub, res.Provider.Name(), res.Destination.Name(), res.MsgId, err)
+			logger.Infof("Service=%v Subscriber=%v PushServiceProvider=%v DeliveryPoint=%v Failed: %v", service, sub, res.Provider.Name(), res.Destination.Name(), err)
 		}
 	}
 }
