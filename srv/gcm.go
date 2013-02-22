@@ -237,7 +237,7 @@ func (self *gcmPushService) multicast(psp *PushServiceProvider, dpList []*Delive
 			res.Provider = psp
 			res.Content = notif
 			res.Destination = dp
-			err := NewRetryError(after)
+			err := NewRetryError(psp, dp, notif, after)
 			res.Err = err
 			resQueue <- res
 		}
@@ -292,15 +292,15 @@ func (self *gcmPushService) multicast(psp *PushServiceProvider, dpList []*Delive
 			case "Unavailable":
 				after, _ := time.ParseDuration("2s")
 				res := new(PushResult)
-				res.Err = NewRetryError(after)
 				res.Provider = psp
 				res.Content = notif
 				res.Destination = dp
+				res.Err = NewRetryError(psp, dp, notif, after)
 				resQueue <- res
 			case "NotRegistered":
 				res := new(PushResult)
-				res.Err = NewUnsubscribeUpdate(dp)
 				res.Provider = psp
+				res.Err = NewUnsubscribeUpdate(psp, dp)
 				res.Content = notif
 				res.Destination = dp
 				resQueue <- res

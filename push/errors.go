@@ -26,14 +26,22 @@ import (
 
 type RetryError struct {
 	After time.Duration
+	Provider *PushServiceProvider
+	Destination *DeliveryPoint
+	Content *Notification
 }
 
 func (e *RetryError) Error() string {
 	return fmt.Sprintf("Retry")
 }
 
-func NewRetryError(after time.Duration) error {
-	return &RetryError{After: after}
+func NewRetryError(psp *PushServiceProvider, dp *DeliveryPoint, notif *Notification, after time.Duration) error {
+	return &RetryError{
+		After: after,
+		Provider: psp,
+		Destination: dp,
+		Content: notif,
+	}
 }
 
 /*********************/
@@ -145,6 +153,7 @@ func NewBadNotificationWithDetails(details string) error {
 /*********************/
 
 type UnsubscribeUpdate struct {
+	Provider *PushServiceProvider
 	Destination *DeliveryPoint
 }
 
@@ -152,8 +161,11 @@ func (e *UnsubscribeUpdate) Error() string {
 	return fmt.Sprintf("RequestUnsubscribe %v", e.Destination.Name())
 }
 
-func NewUnsubscribeUpdate(dp *DeliveryPoint) error {
-	return &UnsubscribeUpdate{Destination: dp}
+func NewUnsubscribeUpdate(psp *PushServiceProvider, dp *DeliveryPoint) error {
+	return &UnsubscribeUpdate{
+		Provider: psp,
+		Destination: dp,
+	}
 }
 
 /*********************/

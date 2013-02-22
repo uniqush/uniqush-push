@@ -87,6 +87,12 @@ func (m *PushServiceManager) BuildPushServiceProviderFromMap(kv map[string]strin
 				psp.Recycle()
 				return nil, err
 			}
+			if _, ok := psp.FixedData["service"]; !ok {
+				psp.Recycle()
+				err = fmt.Errorf("Bad Push Service Provider Implementation: service field is mandatory")
+				psp = nil
+				return
+			}
 			psp.pushServiceType = pst
 			return
 		}
@@ -116,6 +122,12 @@ func (m *PushServiceManager) BuildPushServiceProviderFromBytes(value []byte) (ps
 				psp = nil
 				return
 			}
+			if _, ok := psp.FixedData["service"]; !ok {
+				psp.Recycle()
+				err = fmt.Errorf("Bad Push Service Provider Implementation: service field is mandatory")
+				psp = nil
+				return
+			}
 			return
 		}
 		return nil, fmt.Errorf("Unknown Push Service Type: %v", ptname)
@@ -136,6 +148,12 @@ func (m *PushServiceManager) BuildDeliveryPointFromMap(kv map[string]string) (dp
 				return nil, err
 			}
 			dp.pushServiceType = pst
+			if _, ok := dp.FixedData["subscriber"]; !ok {
+					dp.Recycle()
+					err = fmt.Errorf("Bad Delivery Point Implementation: subscriber field is mandatory")
+					dp= nil
+					return
+			}
 			return
 		}
 		return nil, fmt.Errorf("Unknown Push Service Type: %v", ptname)
