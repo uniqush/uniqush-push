@@ -73,20 +73,7 @@ func (self *PushBackEnd) Unsubscribe(service, sub string, dp *DeliveryPoint) err
 	return nil
 }
 
-func (self *PushBackEnd) retry(service, sub string, psp *PushServiceProvider, dp *DeliveryPoint, notif *Notification, after time.Duration) {
-	ch := make(chan *DeliveryPoint)
-	resChan := make(chan *PushResult)
-	maxNrRetry := 3
-	for nr := 0; nr < maxNrRetry; nr++ {
-		<-time.After(after)
-		go func() {
-			self.psm.Push(psp, ch, resChan, notif)
-		}()
-		ch <- dp
-	}
-}
-
-func (self *PushBackEnd) fixError(event error, logger Logger) error {
+func (self *PushBackEnd) fixError(reqId string, event error, logger Logger, after time.Duration) error {
 	var service string
 	var sub string
 	var ok bool
@@ -98,7 +85,21 @@ func (self *PushBackEnd) fixError(event error, logger Logger) error {
 		if sub, ok = err.Destination.FixedData["subscriber"]; !ok {
 			return nil
 		}
-		go self.retry(service, sub, err.Provider, err.Destination, err.Content, err.After)
+		if after <= 0 * time.Second {
+			after = 5 * time.Second
+		}
+		if after > 1 * time.Minute {
+			logger.Errorf("RequestID=%v Service=%v Subscriber=%v PushServiceProvider=%v DeliveryPoint=%v Failed after retry", reqId, service, sub, err.Provider.Name(), err.Destination.Name())
+			return nil
+		}
+		logger.Infof("RequestID=%v Service=%v Subscriber=%v PushServiceProvider=%v DeliveryPoint=%v Retry after %v", reqId, service, sub, err.Provider.Name(), err.Destination.Name(), after)
+		go func() {
+			<-time.After(after)
+			subs := make([]string, 1)
+			subs[0] = sub
+			after = 2 * after
+			self.pushImpl(reqId, service, subs, err.Content, self.loggers[LOGGER_PUSH], err.Provider, err.Destination, after)
+		}()
 	case *PushServiceProviderUpdate:
 		if service, ok = err.Provider.FixedData["service"]; !ok {
 			return nil
@@ -106,9 +107,9 @@ func (self *PushBackEnd) fixError(event error, logger Logger) error {
 		psp := err.Provider
 		e := self.db.ModifyPushServiceProvider(psp)
 		if e != nil {
-			logger.Errorf("Service=%v PushServiceProvider=%v Update Failed: %v", service, psp.Name(), e)
+			logger.Errorf("RequestID=%v Service=%v PushServiceProvider=%v Update Failed: %v", reqId, service, psp.Name(), e)
 		} else {
-			logger.Infof("Service=%v PushServiceProvider=%v Update Success", service, psp.Name())
+			logger.Infof("RequestID=%v Service=%v PushServiceProvider=%v Update Success", reqId, service, psp.Name())
 		}
 	case *DeliveryPointUpdate:
 		if sub, ok = err.Destination.FixedData["subscriber"]; !ok {
@@ -141,38 +142,50 @@ func (self *PushBackEnd) fixError(event error, logger Logger) error {
 	return nil
 }
 
-func (self *PushBackEnd) collectResult(service string, resChan <-chan *PushResult, logger Logger) {
+func (self *PushBackEnd) collectResult(reqId string, service string, resChan <-chan *PushResult, logger Logger, after time.Duration) {
 	for res := range resChan {
 		var sub string
 		var ok bool
 		if res.Provider != nil && res.Destination != nil {
 			if sub, ok = res.Destination.FixedData["subscriber"]; !ok {
-				logger.Errorf("Subscriber=%v DeliveryPoint=%v Bad Delivery Point: No subscriber", sub, res.Destination.Name())
+				logger.Errorf("RequestID=%v Subscriber=%v DeliveryPoint=%v Bad Delivery Point: No subscriber", reqId, sub, res.Destination.Name())
 			}
 		}
 		if res.Err == nil {
-			logger.Infof("Service=%v Subscriber=%v PushServiceProvider=%v DeliveryPoint=%v MsgId=%v Success!", service, sub, res.Provider.Name(), res.Destination.Name(), res.MsgId)
+			logger.Infof("RequestID=%v Service=%v Subscriber=%v PushServiceProvider=%v DeliveryPoint=%v MsgId=%v Success!", reqId, service, sub, res.Provider.Name(), res.Destination.Name(), res.MsgId)
 			continue
 		}
-		err := self.fixError(res.Err, logger)
+		err := self.fixError(reqId, res.Err, logger, after)
 		if err != nil {
-			logger.Infof("Service=%v Subscriber=%v PushServiceProvider=%v DeliveryPoint=%v Failed: %v", service, sub, res.Provider.Name(), res.Destination.Name(), err)
+			logger.Infof("RequestID=%v Service=%v Subscriber=%v PushServiceProvider=%v DeliveryPoint=%v Failed: %v", reqId, service, sub, res.Provider.Name(), res.Destination.Name(), err)
 		}
 	}
 }
 
-func (self *PushBackEnd) Push(service string, subs []string, notif *Notification, logger Logger) {
+func (self *PushBackEnd) Push(reqId string, service string, subs []string, notif *Notification, logger Logger) {
+	self.pushImpl(reqId, service, subs, notif, logger, nil, nil, 0 * time.Second)
+}
+
+func (self *PushBackEnd) pushImpl(reqId string, service string, subs []string, notif *Notification, logger Logger, provider *PushServiceProvider, dest *DeliveryPoint, after time.Duration) {
 	dpChanMap := make(map[string]chan *DeliveryPoint)
 	wg := new(sync.WaitGroup)
 	for _, sub := range subs {
-		pspDpList, err := self.db.GetPushServiceProviderDeliveryPointPairs(service, sub)
-		if err != nil {
-			logger.Errorf("Service=%v Subscriber=%v Failed: Database Error %v", service, sub, err)
-			continue
+		var pspDpList []PushServiceProviderDeliveryPointPair
+		if provider != nil && dest != nil {
+			pspDpList := make([]PushServiceProviderDeliveryPointPair, 1)
+			pspDpList[0].PushServiceProvider = provider
+			pspDpList[0].DeliveryPoint = dest
+		} else {
+			var err error
+			pspDpList, err = self.db.GetPushServiceProviderDeliveryPointPairs(service, sub)
+			if err != nil {
+				logger.Errorf("RequestID=%v Service=%v Subscriber=%v Failed: Database Error %v", reqId, service, sub, err)
+				continue
+			}
 		}
 
 		if len(pspDpList) == 0 {
-			logger.Errorf("Service=%v Subscriber=%v Failed: No device", service, sub)
+			logger.Errorf("RequestID=%v Service=%v Subscriber=%v Failed: No device", reqId, service, sub)
 			continue
 		}
 
@@ -192,7 +205,7 @@ func (self *PushBackEnd) Push(service string, subs []string, notif *Notification
 				}()
 				wg.Add(1)
 				go func() {
-					self.collectResult(service, resChan, logger)
+					self.collectResult(reqId, service, resChan, logger, after)
 					wg.Done()
 				}()
 			}

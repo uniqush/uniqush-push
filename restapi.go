@@ -21,6 +21,7 @@ import (
 	"fmt"
 	"github.com/uniqush/log"
 	. "github.com/uniqush/uniqush-push/push"
+	"github.com/nu7hatch/gouuid"
 	"net/http"
 	"regexp"
 	"strings"
@@ -207,6 +208,8 @@ func (self *RestAPI) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	writer := w
 	logLevel := log.LOGLEVEL_INFO
 	remoteAddr := r.RemoteAddr
+	rid, _ := uuid.NewV4()
+	fmt.Printf("Request ID: %v\n", rid)
 	switch r.URL.Path {
 	case ADD_PUSH_SERVICE_PROVIDER_TO_SERVICE_URL:
 		weblogger := log.NewLogger(writer, "[AddPushServiceProvider]", logLevel)
