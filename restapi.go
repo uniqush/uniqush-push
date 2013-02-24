@@ -25,6 +25,7 @@ import (
 	"net/http"
 	"regexp"
 	"strings"
+	"strconv"
 )
 
 type RestAPI struct {
@@ -164,7 +165,7 @@ func (self *RestAPI) changeSubscription(kv map[string]string, logger log.Logger,
 	}
 	subs, err := getSubscribersFromMap(kv, true)
 	if err != nil {
-		logger.Errorf("From=%v Cannot get subscriber: %v", remoteAddr, service, err)
+		logger.Errorf("From=%v Service=%v Cannot get subscriber: %v", remoteAddr, service, err)
 		return
 	}
 
@@ -188,6 +189,55 @@ func (self *RestAPI) changeSubscription(kv map[string]string, logger log.Logger,
 	}
 }
 
+func (self *RestAPI) pushNotification(reqId string, kv map[string]string, logger log.Logger, remoteAddr string) {
+	service, err := getServiceFromMap(kv, true)
+	if err != nil {
+		logger.Errorf("RequestId=%v From=%v Cannot get service name: %v; %v", reqId, remoteAddr, service, err)
+		return
+	}
+	subs, err := getSubscribersFromMap(kv, false)
+	if err != nil {
+		logger.Errorf("RequestId=%v From=%v Service=%v Cannot get subscriber: %v", reqId, remoteAddr, service, err)
+		return
+	}
+	if len(subs) == 0 {
+		logger.Errorf("RequestId=%v From=%v Service=%v NoSubscriber", reqId, remoteAddr, service)
+		return
+	}
+
+	notif := NewEmptyNotification()
+
+	for k, v := range kv {
+		if len(v) <= 0 {
+			continue
+		}
+		switch k {
+		case "badge":
+			if v != "" {
+				var e error
+				_, e = strconv.Atoi(v)
+				if e == nil {
+					notif.Data["badge"] = v
+				} else {
+					notif.Data["badge"] = "0"
+				}
+			}
+		default:
+			notif.Data[k] = v
+		}
+	}
+
+	if notif.IsEmpty() {
+		logger.Errorf("RequestId=%v From=%v Service=%v EmptyNotification", reqId, remoteAddr, service)
+		return
+	}
+
+	logger.Infof("RequestId=%v From=%v Service=%v Subscribers=\"%v\"", reqId, remoteAddr, service, subs)
+
+	self.backend.Push(reqId, service, subs, notif, logger)
+	return
+}
+
 func (self *RestAPI) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	switch r.URL.Path {
 	case VERSION_INFO_URL:
@@ -208,8 +258,6 @@ func (self *RestAPI) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	writer := w
 	logLevel := log.LOGLEVEL_INFO
 	remoteAddr := r.RemoteAddr
-	rid, _ := uuid.NewV4()
-	fmt.Printf("Request ID: %v\n", rid)
 	switch r.URL.Path {
 	case ADD_PUSH_SERVICE_PROVIDER_TO_SERVICE_URL:
 		weblogger := log.NewLogger(writer, "[AddPushServiceProvider]", logLevel)
@@ -227,6 +275,11 @@ func (self *RestAPI) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		weblogger := log.NewLogger(writer, "[Unsubscribe]", logLevel)
 		logger := log.MultiLogger(weblogger, self.loggers[LOGGER_UNSUB])
 		self.changeSubscription(kv, logger, remoteAddr, false)
+	case PUSH_NOTIFICATION_URL:
+		weblogger := log.NewLogger(writer, "[Push]", logLevel)
+		logger := log.MultiLogger(weblogger, self.loggers[LOGGER_PUSH])
+		rid, _ := uuid.NewV4()
+		self.pushNotification(rid.String(), kv, logger, remoteAddr)
 	}
 }
 
