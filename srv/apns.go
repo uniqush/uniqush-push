@@ -89,7 +89,7 @@ func (p *apnsPushService) BuildPushServiceProviderFromMap(kv map[string]string, 
 
 	_, err := tls.LoadX509KeyPair(psp.FixedData["cert"], psp.FixedData["key"])
 	if err != nil {
-		return NewBadPushServiceProviderWithDetails(psp, err.Error())
+		return err
 	}
 
 	if skip, ok := kv["skipverify"]; ok {
