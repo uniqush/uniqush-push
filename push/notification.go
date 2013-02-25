@@ -19,73 +19,16 @@ package push
 
 import (
 	"encoding/json"
-	"github.com/uniqush/mempool"
 )
 
 type Notification struct {
 	Data map[string]string
-	pool *NotificationPool
-}
-
-type NotificationPool struct {
-	pools      []*mempool.ObjectMemoryPool
-	maxNrPools int
-	minMapLen  int
 }
 
 func (self *Notification) String() string {
 	ret, _ := json.Marshal(self.Data)
 	return string(ret)
 }
-
-func NewNotificationPool(n, l int) *NotificationPool {
-	ret := new(NotificationPool)
-	if n <= 0 {
-		n = 16
-	}
-	if l <= 0 {
-		l = 2
-	}
-	ret.maxNrPools = n
-	ret.minMapLen = l
-	ret.pools = make([]*mempool.ObjectMemoryPool, ret.maxNrPools)
-
-	for i := 0; i < n; i++ {
-		ret.pools[i] = mempool.NewObjectMemoryPool(1024, newEmptyNotif)
-	}
-
-	return ret
-}
-
-func (p *NotificationPool) Get(n int) *Notification {
-	if n <= 0 {
-		return NewEmptyNotification()
-	}
-	if n < p.minMapLen ||
-		n >= p.minMapLen+p.maxNrPools {
-		return NewEmptyNotification()
-	}
-	mapif := p.pools[n-p.minMapLen].Get()
-	ret := mapif.(*Notification)
-	ret.pool = p
-	return ret
-}
-
-func (p *NotificationPool) recycle(m *Notification) {
-	n := len(m.Data)
-	if n < p.minMapLen ||
-		n >= p.minMapLen+p.maxNrPools {
-		return
-	}
-	p.pools[n-p.minMapLen].Recycle(m)
-}
-
-func newEmptyNotif() interface{} {
-	n := new(Notification)
-	n.Data = make(map[string]string, 10)
-	return n
-}
-
 func NewEmptyNotification() *Notification {
 	n := new(Notification)
 	n.Data = make(map[string]string, 10)
@@ -99,9 +42,3 @@ func (n *Notification) IsEmpty() bool {
 	return false
 }
 
-func (n *Notification) Recycle() {
-	if n.pool == nil {
-		return
-	}
-	n.pool.recycle(n)
-}
