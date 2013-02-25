@@ -132,7 +132,6 @@ func (self *RestAPI) changePushServiceProvider(kv map[string]string, logger log.
 		logger.Errorf("From=%v Cannot build push service provider: %v", remoteAddr, err)
 		return
 	}
-	defer psp.Recycle()
 	service, err := getServiceFromMap(kv, true)
 	if err != nil {
 		logger.Errorf("From=%v Cannot get service name: %v; %v", remoteAddr, service, err)
@@ -157,7 +156,6 @@ func (self *RestAPI) changeSubscription(kv map[string]string, logger log.Logger,
 		logger.Errorf("Cannot build delivery point: %v", err)
 		return
 	}
-	defer dp.Recycle()
 	service, err := getServiceFromMap(kv, true)
 	if err != nil {
 		logger.Errorf("From=%v Cannot get service name: %v; %v", remoteAddr, service, err)
@@ -172,9 +170,6 @@ func (self *RestAPI) changeSubscription(kv map[string]string, logger log.Logger,
 	var psp *PushServiceProvider
 	if issub {
 		psp, err = self.backend.Subscribe(service, subs[0], dp)
-		if psp != nil {
-			defer psp.Recycle()
-		}
 	} else {
 		err = self.backend.Unsubscribe(service, subs[0], dp)
 	}

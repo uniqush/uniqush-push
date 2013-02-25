@@ -105,7 +105,6 @@ func (self *PushBackEnd) fixError(reqId string, event error, logger Logger, afte
 			return nil
 		}
 		psp := err.Provider
-		defer psp.Recycle()
 		e := self.db.ModifyPushServiceProvider(psp)
 		if e != nil {
 			logger.Errorf("RequestID=%v Service=%v PushServiceProvider=%v Update Failed: %v", reqId, service, psp.Name(), e)
