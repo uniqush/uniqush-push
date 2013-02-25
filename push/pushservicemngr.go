@@ -20,19 +20,16 @@ package push
 import (
 	"errors"
 	"fmt"
-	"github.com/uniqush/mempool"
 	"strings"
 	"sync"
 )
 
-type serviceTypeObjPool struct {
+type serviceType struct {
 	pst     PushServiceType
-	pspPool *mempool.ObjectMemoryPool
-	dpPool  *mempool.ObjectMemoryPool
 }
 
 type PushServiceManager struct {
-	serviceTypes map[string]*serviceTypeObjPool
+	serviceTypes map[string]*serviceType
 }
 
 var (
@@ -46,7 +43,7 @@ func init() {
 /* This is a singleton */
 func newPushServiceManager() *PushServiceManager {
 	ret := new(PushServiceManager)
-	ret.serviceTypes = make(map[string]*serviceTypeObjPool, 5)
+	ret.serviceTypes = make(map[string]*serviceType, 5)
 	return ret
 }
 
@@ -67,9 +64,7 @@ func newDeliveryPoint() interface{} {
 
 func (m *PushServiceManager) RegisterPushServiceType(pt PushServiceType) error {
 	name := pt.Name()
-	pair := new(serviceTypeObjPool)
-	pair.pspPool = mempool.NewObjectMemoryPool(1024, newPushServiceProvider)
-	pair.dpPool = mempool.NewObjectMemoryPool(1024, newDeliveryPoint)
+	pair := new(serviceType)
 	pair.pst = pt
 	m.serviceTypes[name] = pair
 	return nil
@@ -83,15 +78,12 @@ func (m *PushServiceManager) BuildPushServiceProviderFromMap(kv map[string]strin
 			// psp = pspif.(*PushServiceProvider)
 			// psp.objPool = pair.pspPool
 			psp = NewEmptyPushServiceProvider()
-			psp.objPool = nil
 			pst := pair.pst
 			err = pst.BuildPushServiceProviderFromMap(kv, psp)
 			if err != nil {
-				psp.Recycle()
 				return nil, err
 			}
 			if _, ok := psp.FixedData["service"]; !ok {
-				psp.Recycle()
 				err = fmt.Errorf("Bad Push Service Provider Implementation: service field is mandatory")
 				psp = nil
 				return
@@ -116,16 +108,13 @@ func (m *PushServiceManager) BuildPushServiceProviderFromBytes(value []byte) (ps
 			// psp.objPool = pair.pspPool
 
 			psp = NewEmptyPushServiceProvider()
-			psp.objPool = nil
 			psp.pushServiceType = pair.pst
 			err = psp.Unmarshal([]byte(parts[1]))
 			if err != nil {
-				psp.Recycle()
 				psp = nil
 				return
 			}
 			if _, ok := psp.FixedData["service"]; !ok {
-				psp.Recycle()
 				err = fmt.Errorf("Bad Push Service Provider Implementation: service field is mandatory")
 				psp = nil
 				return
@@ -145,16 +134,13 @@ func (m *PushServiceManager) BuildDeliveryPointFromMap(kv map[string]string) (dp
 			// dp.objPool = pair.dpPool
 
 			dp = NewEmptyDeliveryPoint()
-			dp.objPool = nil
 			pst := pair.pst
 			err = pst.BuildDeliveryPointFromMap(kv, dp)
 			if err != nil {
-				dp.Recycle()
 				return nil, err
 			}
 			dp.pushServiceType = pst
 			if _, ok := dp.FixedData["subscriber"]; !ok {
-					dp.Recycle()
 					err = fmt.Errorf("Bad Delivery Point Implementation: subscriber field is mandatory")
 					dp= nil
 					return
@@ -177,12 +163,10 @@ func (m *PushServiceManager) BuildDeliveryPointFromBytes(value []byte) (dp *Deli
 			// dp.objPool = pair.dpPool
 
 			dp = NewEmptyDeliveryPoint()
-			dp.objPool = nil
 			pst := pair.pst
 			dp.pushServiceType = pst
 			err = dp.Unmarshal([]byte(parts[1]))
 			if err != nil {
-				dp.Recycle()
 				dp = nil
 				return
 			}

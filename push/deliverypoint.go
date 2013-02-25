@@ -21,17 +21,6 @@ import (
 	"github.com/uniqush/mempool"
 )
 
-type DeliveryPoint struct {
-	PushPeer
-	objPool *mempool.ObjectMemoryPool
-}
-
-func NewEmptyDeliveryPoint() *DeliveryPoint {
-	ret := new(DeliveryPoint)
-	ret.InitPushPeer()
-	return ret
-}
-
 func (dp *DeliveryPoint) Copy() *DeliveryPoint {
 	var ret *DeliveryPoint
 	if dp.objPool == nil {

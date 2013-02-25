@@ -133,3 +133,23 @@ func (p *PushPeer) Unmarshal(value []byte) error {
 
 	return nil
 }
+
+type DeliveryPoint struct {
+	PushPeer
+}
+
+func NewEmptyDeliveryPoint() *DeliveryPoint {
+	ret := new(DeliveryPoint)
+	ret.InitPushPeer()
+	return ret
+}
+
+type PushServiceProvider struct {
+	PushPeer
+}
+
+func NewEmptyPushServiceProvider() *PushServiceProvider {
+	psp := new(PushServiceProvider)
+	psp.InitPushPeer()
+	return psp
+}
