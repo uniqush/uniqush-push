@@ -86,6 +86,12 @@ func (p *apnsPushService) BuildPushServiceProviderFromMap(kv map[string]string, 
 	} else {
 		return errors.New("NoPrivateKey")
 	}
+
+	_, err := tls.LoadX509KeyPair(psp.FixedData["cert"], psp.FixedData["key"])
+	if err != nil {
+		return NewBadPushServiceProviderWithDetails(psp, err.Error())
+	}
+
 	if skip, ok := kv["skipverify"]; ok {
 		if skip == "true" {
 			psp.VolatileData["skipverify"] = "true"

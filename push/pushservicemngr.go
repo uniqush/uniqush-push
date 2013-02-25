@@ -78,11 +78,14 @@ func (m *PushServiceManager) RegisterPushServiceType(pt PushServiceType) error {
 func (m *PushServiceManager) BuildPushServiceProviderFromMap(kv map[string]string) (psp *PushServiceProvider, err error) {
 	if ptname, ok := kv["pushservicetype"]; ok {
 		if pair, ok := m.serviceTypes[ptname]; ok {
-			pspif := pair.pspPool.Get()
-			psp = pspif.(*PushServiceProvider)
+			// XXX We are not ready to use pool
+			// pspif := pair.pspPool.Get()
+			// psp = pspif.(*PushServiceProvider)
+			// psp.objPool = pair.pspPool
+			psp = NewEmptyPushServiceProvider()
+			psp.objPool = nil
 			pst := pair.pst
 			err = pst.BuildPushServiceProviderFromMap(kv, psp)
-			psp.objPool = pair.pspPool
 			if err != nil {
 				psp.Recycle()
 				return nil, err
@@ -107,14 +110,13 @@ func (m *PushServiceManager) BuildPushServiceProviderFromBytes(value []byte) (ps
 	if len(parts) >= 2 {
 		ptname := parts[0]
 		if pair, ok := m.serviceTypes[ptname]; ok {
-			// XXX potential secrurity risk:
-			// all data in pspPool are not cleared.
-			// It may easily get some data from the previous
-			// struct if there are some fields which have not
-			// been over written.
-			pspif := pair.pspPool.Get()
-			psp = pspif.(*PushServiceProvider)
-			psp.objPool = pair.pspPool
+			// XXX We are not ready to use pool
+			// pspif := pair.pspPool.Get()
+			// psp = pspif.(*PushServiceProvider)
+			// psp.objPool = pair.pspPool
+
+			psp = NewEmptyPushServiceProvider()
+			psp.objPool = nil
 			psp.pushServiceType = pair.pst
 			err = psp.Unmarshal([]byte(parts[1]))
 			if err != nil {
@@ -138,9 +140,12 @@ func (m *PushServiceManager) BuildPushServiceProviderFromBytes(value []byte) (ps
 func (m *PushServiceManager) BuildDeliveryPointFromMap(kv map[string]string) (dp *DeliveryPoint, err error) {
 	if ptname, ok := kv["pushservicetype"]; ok {
 		if pair, ok := m.serviceTypes[ptname]; ok {
-			dpif := pair.dpPool.Get()
-			dp = dpif.(*DeliveryPoint)
-			dp.objPool = pair.dpPool
+			// dpif := pair.dpPool.Get()
+			// dp = dpif.(*DeliveryPoint)
+			// dp.objPool = pair.dpPool
+
+			dp = NewEmptyDeliveryPoint()
+			dp.objPool = nil
 			pst := pair.pst
 			err = pst.BuildDeliveryPointFromMap(kv, dp)
 			if err != nil {
@@ -167,9 +172,12 @@ func (m *PushServiceManager) BuildDeliveryPointFromBytes(value []byte) (dp *Deli
 	if len(parts) >= 2 {
 		ptname := parts[0]
 		if pair, ok := m.serviceTypes[ptname]; ok {
-			dpif := pair.dpPool.Get()
-			dp = dpif.(*DeliveryPoint)
-			dp.objPool = pair.dpPool
+			// dpif := pair.dpPool.Get()
+			// dp = dpif.(*DeliveryPoint)
+			// dp.objPool = pair.dpPool
+
+			dp = NewEmptyDeliveryPoint()
+			dp.objPool = nil
 			pst := pair.pst
 			dp.pushServiceType = pst
 			err = dp.Unmarshal([]byte(parts[1]))

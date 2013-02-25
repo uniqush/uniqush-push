@@ -46,6 +46,7 @@ func (psp *PushServiceProvider) Copy() *PushServiceProvider {
 
 func (psp *PushServiceProvider) Recycle() {
 	if psp.objPool != nil {
+		psp.clear()
 		psp.objPool.Recycle(psp)
 	}
 }

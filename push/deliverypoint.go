@@ -46,6 +46,7 @@ func (dp *DeliveryPoint) Copy() *DeliveryPoint {
 
 func (dp *DeliveryPoint) Recycle() {
 	if dp.objPool != nil {
+		dp.clear()
 		dp.objPool.Recycle(dp)
 	}
 }

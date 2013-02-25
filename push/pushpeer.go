@@ -88,6 +88,16 @@ func (p *PushPeer) Name() string {
 	return p.name
 }
 
+func (p *PushPeer) clear() {
+	for k, _ := range p.FixedData {
+		delete(p.FixedData, k)
+	}
+	for k, _ := range p.VolatileData {
+		delete(p.VolatileData, k)
+	}
+	p.name = ""
+}
+
 func (p *PushPeer) Marshal() []byte {
 	if p.pushServiceType == nil {
 		return nil
