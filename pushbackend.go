@@ -29,7 +29,6 @@ type PushBackEnd struct {
 	psm       *PushServiceManager
 	db        PushDatabase
 	loggers    []Logger
-	notifpool *NotificationPool
 }
 
 func NewPushBackEnd(psm *PushServiceManager, database PushDatabase, loggers []Logger) *PushBackEnd {
@@ -37,7 +36,6 @@ func NewPushBackEnd(psm *PushServiceManager, database PushDatabase, loggers []Lo
 	ret.psm = psm
 	ret.db = database
 	ret.loggers = loggers
-	ret.notifpool = NewNotificationPool(0, 0)
 	return ret
 }
 
