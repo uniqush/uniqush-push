@@ -10,6 +10,7 @@ mkdir -p $TEMP/pkg
 GOBIN=$TEMP/bin GOPATH=$TEMP go get github.com/uniqush/uniqush-push
 
 PWD=`pwd`
+cd $TEMP/src/github.com/uniqush/log/ && git checkout exp && go build
 cd $TEMP/src/github.com/uniqush/uniqush-push/ && git checkout exp && go build
 cp $TEMP/src/github.com/uniqush/uniqush-push/uniqush-push $TEMP/bin/uniqush-push 
 cd $TEMP/
