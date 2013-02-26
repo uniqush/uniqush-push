@@ -234,6 +234,7 @@ func (self *RestAPI) pushNotification(reqId string, kv map[string]string, logger
 }
 
 func (self *RestAPI) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	defer r.Body.Close()
 	switch r.URL.Path {
 	case VERSION_INFO_URL:
 		fmt.Fprintf(w, "%v\r\n", self.version)
