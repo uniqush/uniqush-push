@@ -221,6 +221,7 @@ func Run(conf, version string) error {
 	backend := NewPushBackEnd(psm, db, loggers)
 	rest := NewRestAPI(psm, loggers, version, backend)
 	stopChan := make(chan bool)
+	go rest.signalSetup()
 	go rest.Run(addr, stopChan)
 	<-stopChan
 	return nil

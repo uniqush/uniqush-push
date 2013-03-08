@@ -18,6 +18,7 @@
 package main
 
 import (
+	"io"
 	"fmt"
 	"github.com/nu7hatch/gouuid"
 	"github.com/uniqush/log"
@@ -237,14 +238,14 @@ func (self *RestAPI) pushNotification(reqId string, kv map[string]string, logger
 	return
 }
 
-func (self *RestAPI) stop(w http.ResponseWriter, r *http.Request) {
-	remoteAddr := r.RemoteAddr
+func (self *RestAPI) stop(w io.Writer, remoteAddr string) {
 	self.waitGroup.Wait()
 	self.backend.Finalize()
 	self.loggers[LOGGER_WEB].Infof("stopped by %v", remoteAddr)
-	r.Body.Close()
+	if w != nil {
+		fmt.Fprintf(w, "Stopped\r\n")
+	}
 	self.stopChan <- true
-	fmt.Fprintf(w, "Stopped\r\n")
 	return
 }
 
@@ -257,7 +258,8 @@ func (self *RestAPI) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		self.loggers[LOGGER_WEB].Infof("Checked version from %v", remoteAddr)
 		return
 	case STOP_PROGRAM_URL:
-		self.stop(w, r)
+		self.stop(w, remoteAddr)
+		r.Body.Close()
 		return
 	}
 	r.ParseForm()
