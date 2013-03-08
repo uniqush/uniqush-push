@@ -50,29 +50,29 @@ func (r *PushResult) Error() string {
 }
 
 type PushServiceType interface {
-	/*
-	 * Passing a pointer to PushServiceProvider allows us
-	 * to use a memory pool to store a set of empty *PushServiceProvider
-	 */
+
+	// Passing a pointer to PushServiceProvider allows us
+	// to use a memory pool to store a set of empty *PushServiceProvider
 	BuildPushServiceProviderFromMap(map[string]string, *PushServiceProvider) error
 
 	BuildDeliveryPointFromMap(map[string]string, *DeliveryPoint) error
 	Name() string
 
-	/*
-	 * NOTE: This method should always be run in a separate goroutine.
-	 * The implementation of this method should return only
-	 * if it finished all push request.
-	 *
-	 * Once this method returns, it cannot use the second channel
-	 * to report error. (For example, it cannot fork a new goroutine
-	 * and use this channel in this goroutine after the function returns.)
-	 *
-	 * Any implementation MUST close the second channel (chan<- *PushResult)
-	 * once the works done.
-	 *
-	 */
+	// NOTE: This method should always be run in a separate goroutine.
+	// The implementation of this method should return only
+	// if it finished all push request.
+	// 
+	// Once this method returns, it cannot use the second channel
+	// to report error. (For example, it cannot fork a new goroutine
+	// and use this channel in this goroutine after the function returns.)
+	// 
+	// Any implementation MUST close the second channel (chan<- *PushResult)
+	// once the works done.
 	Push(*PushServiceProvider, <-chan *DeliveryPoint, chan<- *PushResult, *Notification)
+
+	// Set a channel for the push service provider so that it can report error even if
+	// there is no method call on it.
+	SetErrorReportChan(errChan chan<- error)
 
 	Finalize()
 }

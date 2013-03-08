@@ -30,6 +30,7 @@ type serviceType struct {
 
 type PushServiceManager struct {
 	serviceTypes map[string]*serviceType
+	errChan chan<- error
 }
 
 var (
@@ -65,6 +66,9 @@ func newDeliveryPoint() interface{} {
 func (m *PushServiceManager) RegisterPushServiceType(pt PushServiceType) error {
 	name := pt.Name()
 	pair := new(serviceType)
+	if m.errChan != nil {
+		pt.SetErrorReportChan(m.errChan)
+	}
 	pair.pst = pt
 	m.serviceTypes[name] = pair
 	return nil
@@ -197,6 +201,13 @@ func (m *PushServiceManager) Push(psp *PushServiceProvider, dpQueue <-chan *Deli
 	}
 
 	wg.Wait()
+}
+
+func (m *PushServiceManager) SetErrorReportChan(errChan chan<- error) {
+	m.errChan = errChan
+	for _, t := range m.serviceTypes {
+		t.pst.SetErrorReportChan(errChan)
+	}
 }
 
 func (m *PushServiceManager) Finalize() {
