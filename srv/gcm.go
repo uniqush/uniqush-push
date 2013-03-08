@@ -377,3 +377,8 @@ func (self *gcmPushService) Push(psp *PushServiceProvider, dpQueue <-chan *Deliv
 
 	close(resQueue)
 }
+
+func (self *gcmPushService) SetErrorReportChan(errChan chan<- error) {
+	return
+}
+

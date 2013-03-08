@@ -233,3 +233,8 @@ func (self *c2dmPushService) Push(psp *PushServiceProvider, dpQueue <-chan *Deli
 	wg.Wait()
 	close(resQueue)
 }
+
+func (self *c2dmPushService) SetErrorReportChan(errChan chan<- error) {
+	return
+}
+
