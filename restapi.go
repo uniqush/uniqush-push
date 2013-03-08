@@ -19,13 +19,13 @@ package main
 
 import (
 	"fmt"
+	"github.com/nu7hatch/gouuid"
 	"github.com/uniqush/log"
 	. "github.com/uniqush/uniqush-push/push"
-	"github.com/nu7hatch/gouuid"
 	"net/http"
 	"regexp"
-	"strings"
 	"strconv"
+	"strings"
 	"sync"
 )
 
@@ -34,8 +34,8 @@ type RestAPI struct {
 	loggers []log.Logger
 	backend *PushBackEnd
 	version string
-
 	waitGroup *sync.WaitGroup
+	stopChan chan<- bool
 }
 
 // loggers: sequence is web, add
@@ -237,17 +237,27 @@ func (self *RestAPI) pushNotification(reqId string, kv map[string]string, logger
 	return
 }
 
+func (self *RestAPI) stop(w http.ResponseWriter, r *http.Request) {
+	remoteAddr := r.RemoteAddr
+	self.waitGroup.Wait()
+	self.backend.Finalize()
+	self.loggers[LOGGER_WEB].Infof("stopped by %v", remoteAddr)
+	r.Body.Close()
+	self.stopChan <- true
+	fmt.Fprintf(w, "Stopped\r\n")
+	return
+}
+
 func (self *RestAPI) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	defer r.Body.Close()
+	remoteAddr := r.RemoteAddr
 	switch r.URL.Path {
 	case VERSION_INFO_URL:
 		fmt.Fprintf(w, "%v\r\n", self.version)
+		self.loggers[LOGGER_WEB].Infof("Checked version from %v", remoteAddr)
 		return
 	case STOP_PROGRAM_URL:
-		fmt.Fprintf(w, "Waiting..\r\n")
-		self.waitGroup.Wait()
-		self.backend.Finalize()
-		fmt.Fprintf(w, "Done\r\n")
+		self.stop(w, r)
 		return
 	}
 	r.ParseForm()
@@ -259,7 +269,6 @@ func (self *RestAPI) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	writer := w
 	logLevel := log.LOGLEVEL_INFO
-	remoteAddr := r.RemoteAddr
 
 	self.waitGroup.Add(1)
 	defer self.waitGroup.Done()
@@ -288,7 +297,7 @@ func (self *RestAPI) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func (self *RestAPI) Run(addr string) {
+func (self *RestAPI) Run(addr string, stopChan chan<- bool) {
 	self.loggers[LOGGER_WEB].Configf("[Start] %s", addr)
 	self.loggers[LOGGER_WEB].Debugf("[Version] %s", self.version)
 	http.Handle(STOP_PROGRAM_URL, self)
@@ -298,9 +307,10 @@ func (self *RestAPI) Run(addr string) {
 	http.Handle(REMOVE_DELIVERY_POINT_FROM_SERVICE_URL, self)
 	http.Handle(REMOVE_PUSH_SERVICE_PROVIDER_TO_SERVICE_URL, self)
 	http.Handle(PUSH_NOTIFICATION_URL, self)
+	self.stopChan = stopChan
 	err := http.ListenAndServe(addr, nil)
 	if err != nil {
 		self.loggers[LOGGER_WEB].Fatalf("HTTPServerError \"%v\"", err)
 	}
+	return
 }
-
