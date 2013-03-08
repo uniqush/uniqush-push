@@ -18,6 +18,7 @@
 package main
 
 import (
+	"github.com/nu7hatch/gouuid"
 	. "github.com/uniqush/log"
 	. "github.com/uniqush/uniqush-push/db"
 	. "github.com/uniqush/uniqush-push/push"
@@ -26,13 +27,15 @@ import (
 )
 
 type PushBackEnd struct {
-	psm       *PushServiceManager
-	db        PushDatabase
-	loggers    []Logger
+	psm     *PushServiceManager
+	db      PushDatabase
+	loggers []Logger
+	errChan chan error
 }
 
 func (self *PushBackEnd) Finalize() {
 	self.db.FlushCache()
+	close(self.errChan)
 }
 
 func NewPushBackEnd(psm *PushServiceManager, database PushDatabase, loggers []Logger) *PushBackEnd {
@@ -40,6 +43,9 @@ func NewPushBackEnd(psm *PushServiceManager, database PushDatabase, loggers []Lo
 	ret.psm = psm
 	ret.db = database
 	ret.loggers = loggers
+	ret.errChan = make(chan error)
+	go ret.processError()
+	psm.SetErrorReportChan(ret.errChan)
 	return ret
 }
 
@@ -75,6 +81,13 @@ func (self *PushBackEnd) Unsubscribe(service, sub string, dp *DeliveryPoint) err
 	return nil
 }
 
+func (self *PushBackEnd) processError() {
+	for err := range self.errChan {
+		rid, _ := uuid.NewV4()
+		self.fixError(rid.String(), err, self.loggers[LOGGER_PUSH], 0*time.Second)
+	}
+}
+
 func (self *PushBackEnd) fixError(reqId string, event error, logger Logger, after time.Duration) error {
 	var service string
 	var sub string
@@ -87,10 +100,10 @@ func (self *PushBackEnd) fixError(reqId string, event error, logger Logger, afte
 		if sub, ok = err.Destination.FixedData["subscriber"]; !ok {
 			return nil
 		}
-		if after <= 0 * time.Second {
+		if after <= 0*time.Second {
 			after = 5 * time.Second
 		}
-		if after > 1 * time.Minute {
+		if after > 1*time.Minute {
 			logger.Errorf("RequestID=%v Service=%v Subscriber=%v PushServiceProvider=%v DeliveryPoint=%v Failed after retry", reqId, service, sub, err.Provider.Name(), err.Destination.Name())
 			return nil
 		}
@@ -165,7 +178,7 @@ func (self *PushBackEnd) collectResult(reqId string, service string, resChan <-c
 }
 
 func (self *PushBackEnd) Push(reqId string, service string, subs []string, notif *Notification, logger Logger) {
-	self.pushImpl(reqId, service, subs, notif, logger, nil, nil, 0 * time.Second)
+	self.pushImpl(reqId, service, subs, notif, logger, nil, nil, 0*time.Second)
 }
 
 func (self *PushBackEnd) pushImpl(reqId string, service string, subs []string, notif *Notification, logger Logger, provider *PushServiceProvider, dest *DeliveryPoint, after time.Duration) {
@@ -219,4 +232,3 @@ func (self *PushBackEnd) pushImpl(reqId string, service string, subs []string, n
 	}
 	wg.Wait()
 }
-
