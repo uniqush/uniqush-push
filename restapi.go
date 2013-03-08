@@ -26,6 +26,7 @@ import (
 	"regexp"
 	"strings"
 	"strconv"
+	"sync"
 )
 
 type RestAPI struct {
@@ -33,6 +34,8 @@ type RestAPI struct {
 	loggers []log.Logger
 	backend *PushBackEnd
 	version string
+
+	waitGroup *sync.WaitGroup
 }
 
 // loggers: sequence is web, add
@@ -42,6 +45,7 @@ func NewRestAPI(psm *PushServiceManager, loggers []log.Logger, version string, b
 	ret.loggers = loggers
 	ret.version = version
 	ret.backend = backend
+	ret.waitGroup = new(sync.WaitGroup)
 	return ret
 }
 
@@ -240,8 +244,10 @@ func (self *RestAPI) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		fmt.Fprintf(w, "%v\r\n", self.version)
 		return
 	case STOP_PROGRAM_URL:
-		fmt.Fprintf(w, "Stop\r\n")
-		// TODO do something
+		fmt.Fprintf(w, "Waiting..\r\n")
+		self.waitGroup.Wait()
+		self.backend.Finalize()
+		fmt.Fprintf(w, "Done\r\n")
 		return
 	}
 	r.ParseForm()
@@ -254,6 +260,9 @@ func (self *RestAPI) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	writer := w
 	logLevel := log.LOGLEVEL_INFO
 	remoteAddr := r.RemoteAddr
+
+	self.waitGroup.Add(1)
+	defer self.waitGroup.Done()
 	switch r.URL.Path {
 	case ADD_PUSH_SERVICE_PROVIDER_TO_SERVICE_URL:
 		weblogger := log.NewLogger(writer, "[AddPushServiceProvider]", logLevel)
