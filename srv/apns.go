@@ -612,3 +612,8 @@ func (self *apnsPushService) pushWorker(psp *PushServiceProvider, reqChan chan *
 		}
 	}
 }
+
+func (self *apnsPushService) SetErrorReportChan(errChan chan<- error) {
+	return
+}
+
