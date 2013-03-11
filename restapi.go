@@ -259,7 +259,6 @@ func (self *RestAPI) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	case STOP_PROGRAM_URL:
 		self.stop(w, remoteAddr)
-		r.Body.Close()
 		return
 	}
 	r.ParseForm()
