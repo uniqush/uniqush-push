@@ -26,6 +26,7 @@ import (
 	"errors"
 	"fmt"
 	. "github.com/uniqush/uniqush-push/push"
+	"github.com/uniqush/cache"
 	"io"
 	"net"
 	"strconv"
@@ -43,6 +44,7 @@ type pushRequest struct {
 	notif     *Notification
 	resChan   chan<- *PushResult
 	msgIdChan chan<- string
+	errChan   chan<- error
 }
 
 type apnsPushService struct {
@@ -330,7 +332,11 @@ func (self *apnsPushService) resultCollector(psp *PushServiceProvider, resChan c
 }
 
 func (self *apnsPushService) singlePush(psp *PushServiceProvider, dp *DeliveryPoint, notif *Notification, mid uint32, tlsconn net.Conn) error {
-	devtoken := dp.FixedData["devtoken"]
+	devtoken, ok := dp.FixedData["devtoken"]
+
+	if !ok {
+		return NewBadDeliveryPointWithDetails(dp, "NoDevtoken")
+	}
 
 	btoken, err := hex.DecodeString(devtoken)
 	if err != nil {
@@ -378,7 +384,67 @@ func (self *apnsPushService) singlePush(psp *PushServiceProvider, dp *DeliveryPo
 	return nil
 }
 
-func connectAPNS(psp *PushServiceProvider) (net.Conn, error) {
+func connectFeedback(psp *PushServiceProvider) (net.Conn, error) {
+	cert, err := tls.LoadX509KeyPair(psp.FixedData["cert"], psp.FixedData["key"])
+	if err != nil {
+		return nil, NewBadPushServiceProviderWithDetails(psp, err.Error())
+	}
+
+	conf := &tls.Config{
+		Certificates:       []tls.Certificate{cert},
+		InsecureSkipVerify: false,
+	}
+
+	if skip, ok := psp.VolatileData["skipverify"]; ok {
+		if skip == "true" {
+			conf.InsecureSkipVerify = true
+		}
+	}
+
+	addr := "feedback.sandbox.push.apple.com:2196"
+	if psp.VolatileData["addr"] == "gateway.push.apple.com:2195" {
+		addr = "feedback.push.apple.com:2196"
+	} else if psp.VolatileData["addr"] == "gateway.sandbox.push.apple.com:2195" {
+		addr = "feedback.sandbox.push.apple.com:2196"
+	} else {
+		ae := strings.Split(psp.VolatileData["addr"], ":")
+		addr = fmt.Sprintf("%v:2196", ae[0])
+	}
+	tlsconn, err := tls.Dial("tcp", addr, conf)
+	if err != nil {
+		return nil, err
+	}
+	err = tlsconn.Handshake()
+	if err != nil {
+		return nil, err
+	}
+	return tlsconn, nil
+}
+
+// connect the feedback service with exp back off retry
+func (self *apnsPushService) connectFeedbackOrRetry(psp *PushServiceProvider) net.Conn {
+	retryAfter := 1 * time.Minute
+	for retryAfter <= 1 * time.Hour {
+		conn, err := connectFeedback(psp)
+		if err == nil {
+			return conn
+		}
+		<-time.After(retryAfter)
+		retryAfter = retryAfter * 2
+	}
+	return nil
+}
+
+func (self *apnsPushService) feedbackReceiver(psp *PushServiceProvider, feedbackChan chan<- string) {
+	conn := self.connectFeedback
+	if conn == nil {
+		return
+	}
+	for {
+	}
+}
+
+func (self *apnsPushService) connectAPNS(psp *PushServiceProvider) (net.Conn, error) {
 	cert, err := tls.LoadX509KeyPair(psp.FixedData["cert"], psp.FixedData["key"])
 	if err != nil {
 		return nil, NewBadPushServiceProviderWithDetails(psp, err.Error())
@@ -432,6 +498,9 @@ func (self *apnsPushService) pushWorker(psp *PushServiceProvider, reqChan chan *
 
 	reqIdMap := make(map[uint32]*pushRequest)
 
+	dpCache := cache.New(1024, -1, 0 * time.Second, nil)
+	dropedDp := make([]string, 0, 1024)
+
 	var connErr error
 	connErr = nil
 
@@ -467,6 +536,35 @@ func (self *apnsPushService) pushWorker(psp *PushServiceProvider, reqChan chan *
 			mid := nextid
 			nextid++
 			messageId := fmt.Sprintf("apns:%v-%v", psp.Name(), mid)
+
+			if devtoken, ok := dp.FixedData["devtoken"]; ok {
+				droppedIdx := -1
+				for i, token := range dropedDp {
+					// If the delivery point was dropped before,
+					// then unsubscribe this delivery point
+					if devtoken == token {
+						droppedIdx = i
+						err := NewUnsubscribeUpdate(psp, dp)
+						result := new(PushResult)
+						result.Content = notif
+						result.Provider = psp
+						result.Destination = dp
+						result.MsgId = messageId
+						result.Err = err
+						req.resChan <- result
+					}
+				}
+				if droppedIdx >= 0 && droppedIdx < len(dropedDp) {
+					dropedDp[droppedIdx], dropedDp = dropedDp[len(dropedDp] - 1], dropedDp[:len(dropedDp - 1]
+					// Continue to serve next request
+					continue
+				} else {
+					// Cache this delivery point for future look up if we receive
+					// feedback from APNS saying this delivery point
+					// unsubscribed our service.
+					dpCache.Set(devtoken, dp)
+				}
+			}
 
 			req.msgIdChan <- messageId
 
@@ -614,6 +712,6 @@ func (self *apnsPushService) pushWorker(psp *PushServiceProvider, reqChan chan *
 }
 
 func (self *apnsPushService) SetErrorReportChan(errChan chan<- error) {
+	self.errChan = errChan
 	return
 }
-
