@@ -30,6 +30,7 @@ import (
 	"io"
 	"net"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 )
@@ -44,11 +45,11 @@ type pushRequest struct {
 	notif     *Notification
 	resChan   chan<- *PushResult
 	msgIdChan chan<- string
-	errChan   chan<- error
 }
 
 type apnsPushService struct {
 	reqChan chan *pushRequest
+	errChan   chan<- error
 }
 
 func InstallAPNS() {
@@ -435,14 +436,44 @@ func (self *apnsPushService) connectFeedbackOrRetry(psp *PushServiceProvider) ne
 	return nil
 }
 
-func (self *apnsPushService) feedbackReceiver(psp *PushServiceProvider, feedbackChan chan<- string) {
+func (self *apnsPushService) feedbackReceiver(psp *PushServiceProvider) []string {
 	conn := self.connectFeedbackOrRetry(psp)
 	if conn == nil {
-		return
+		return nil
 	}
+	defer func() {
+		if conn != nil {
+			conn.Close()
+		}
+	}()
+
+	ret := make([]string, 0, 1)
 	for {
 		var unsubTime uint32
-		var tokenLen uint32
+		var tokenLen uint16
+
+
+		err := binary.Read(conn, binary.BigEndian, &unsubTime)
+		if err != nil {
+			return ret
+		}
+		err = binary.Read(conn, binary.BigEndian, &tokenLen)
+		if err != nil {
+			return ret
+		}
+		devtoken := make([]byte, int(tokenLen))
+
+		n, err := io.ReadFull(conn, devtoken)
+		if err != nil {
+			return ret
+		}
+		if n != int(tokenLen) {
+			return ret
+		}
+
+		devtokenstr := hex.EncodeToString(devtoken)
+		devtokenstr = strings.ToLower(devtokenstr)
+		ret = append(ret, devtokenstr)
 	}
 }
 
@@ -501,14 +532,14 @@ func (self *apnsPushService) pushWorker(psp *PushServiceProvider, reqChan chan *
 	reqIdMap := make(map[uint32]*pushRequest)
 
 	dpCache := cache.New(1024, -1, 0 * time.Second, nil)
-	dropedDp := make([]string, 0, 1024)
+	//dropedDp := make([]string, 0, 1024)
 
 	var connErr error
 	connErr = nil
 
 	connErrReported := false
 
-	conn, err := connectAPNS(psp)
+	conn, err := self.connectAPNS(psp)
 	if err != nil {
 		connErr = err
 	} else {
@@ -540,32 +571,7 @@ func (self *apnsPushService) pushWorker(psp *PushServiceProvider, reqChan chan *
 			messageId := fmt.Sprintf("apns:%v-%v", psp.Name(), mid)
 
 			if devtoken, ok := dp.FixedData["devtoken"]; ok {
-				droppedIdx := -1
-				for i, token := range dropedDp {
-					// If the delivery point was dropped before,
-					// then unsubscribe this delivery point
-					if devtoken == token {
-						droppedIdx = i
-						err := NewUnsubscribeUpdate(psp, dp)
-						result := new(PushResult)
-						result.Content = notif
-						result.Provider = psp
-						result.Destination = dp
-						result.MsgId = messageId
-						result.Err = err
-						req.resChan <- result
-					}
-				}
-				if droppedIdx >= 0 && droppedIdx < len(dropedDp) {
-					dropedDp[droppedIdx], dropedDp = dropedDp[len(dropedDp] - 1], dropedDp[:len(dropedDp - 1]
-					// Continue to serve next request
-					continue
-				} else {
-					// Cache this delivery point for future look up if we receive
-					// feedback from APNS saying this delivery point
-					// unsubscribed our service.
-					dpCache.Set(devtoken, dp)
-				}
+				dpCache.Set(devtoken, dp)
 			}
 
 			req.msgIdChan <- messageId
@@ -573,7 +579,7 @@ func (self *apnsPushService) pushWorker(psp *PushServiceProvider, reqChan chan *
 			// Connection dropped by remote server.
 			// Reconnect it.
 			if connErr == tmpErrReconnect {
-				conn, err = connectAPNS(psp)
+				conn, err = self.connectAPNS(psp)
 				if err != nil {
 					connErr = err
 				} else {
@@ -590,7 +596,7 @@ func (self *apnsPushService) pushWorker(psp *PushServiceProvider, reqChan chan *
 					}
 
 					// try to recover by re-connecting the server
-					conn, err = connectAPNS(psp)
+					conn, err = self.connectAPNS(psp)
 					if err != nil {
 						// we failed again.
 						connErr = err
@@ -637,6 +643,19 @@ func (self *apnsPushService) pushWorker(psp *PushServiceProvider, reqChan chan *
 			} else {
 				// wait the result from APNs
 				reqIdMap[mid] = req
+			}
+			unsubed := self.feedbackReceiver(psp)
+			for _, unsubDev := range unsubed {
+				dpif := dpCache.Delete(unsubDev)
+				if dpif == nil {
+					continue
+				}
+				dp, ok := dpif.(*DeliveryPoint)
+				if !ok {
+					continue
+				}
+				err := NewUnsubscribeUpdate(psp, dp)
+				self.errChan <- err
 			}
 
 		case apnsres := <-resChan:
@@ -695,7 +714,9 @@ func (self *apnsPushService) pushWorker(psp *PushServiceProvider, reqChan chan *
 				case 7:
 					result.Err = NewBadNotificationWithDetails("Invalid payload size")
 				case 8:
-					result.Err = NewBadDeliveryPointWithDetails(req.dp, "Invalid Token")
+					// result.Err = NewBadDeliveryPointWithDetails(req.dp, "Invalid Token")
+					// This token is invalid, we should unsubscribe this device.
+					result.Err = NewUnsubscribeUpdate(psp, req.dp)
 				default:
 					result.Err = fmt.Errorf("Unknown Error: %d", apnsres.status)
 				}
