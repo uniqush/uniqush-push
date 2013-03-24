@@ -207,6 +207,14 @@ func (self *PushBackEnd) pushImpl(reqId string, service string, subs []string, n
 		for _, pair := range pspDpList {
 			psp := pair.PushServiceProvider
 			dp := pair.DeliveryPoint
+			if psp == nil {
+				logger.Errorf("RequestID=%v Service=%v Subscriber=%v Failed once: nil Push Service Provider", reqId, service, sub)
+				continue
+			}
+			if dp == nil {
+				logger.Errorf("RequestID=%v Service=%v Subscriber=%v Failed once: nil Delivery Point", reqId, service, sub)
+				continue
+			}
 			var ch chan *DeliveryPoint
 			var ok bool
 			if ch, ok = dpChanMap[psp.Name()]; !ok {

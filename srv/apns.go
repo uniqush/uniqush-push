@@ -436,11 +436,13 @@ func (self *apnsPushService) connectFeedbackOrRetry(psp *PushServiceProvider) ne
 }
 
 func (self *apnsPushService) feedbackReceiver(psp *PushServiceProvider, feedbackChan chan<- string) {
-	conn := self.connectFeedback
+	conn := self.connectFeedbackOrRetry(psp)
 	if conn == nil {
 		return
 	}
 	for {
+		var unsubTime uint32
+		var tokenLen uint32
 	}
 }
 
