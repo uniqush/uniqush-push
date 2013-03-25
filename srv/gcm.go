@@ -381,4 +381,3 @@ func (self *gcmPushService) Push(psp *PushServiceProvider, dpQueue <-chan *Deliv
 func (self *gcmPushService) SetErrorReportChan(errChan chan<- error) {
 	return
 }
-

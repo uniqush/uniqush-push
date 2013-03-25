@@ -25,8 +25,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	. "github.com/uniqush/uniqush-push/push"
 	"github.com/uniqush/cache"
+	. "github.com/uniqush/uniqush-push/push"
 	"io"
 	"net"
 	"strconv"
@@ -49,7 +49,7 @@ type pushRequest struct {
 
 type apnsPushService struct {
 	reqChan chan *pushRequest
-	errChan   chan<- error
+	errChan chan<- error
 }
 
 func InstallAPNS() {
@@ -328,6 +328,7 @@ func (self *apnsPushService) resultCollector(psp *PushServiceProvider, resChan c
 		res := new(apnsResult)
 		res.msgId = msgid
 		res.status = status
+		fmt.Printf("MsgId=%v, status=%v\n", msgid, status)
 		resChan <- res
 	}
 }
@@ -425,7 +426,7 @@ func connectFeedback(psp *PushServiceProvider) (net.Conn, error) {
 // connect the feedback service with exp back off retry
 func (self *apnsPushService) connectFeedbackOrRetry(psp *PushServiceProvider) net.Conn {
 	retryAfter := 1 * time.Minute
-	for retryAfter <= 1 * time.Hour {
+	for retryAfter <= 1*time.Hour {
 		conn, err := connectFeedback(psp)
 		if err == nil {
 			return conn
@@ -451,7 +452,6 @@ func (self *apnsPushService) feedbackReceiver(psp *PushServiceProvider) []string
 	for {
 		var unsubTime uint32
 		var tokenLen uint16
-
 
 		err := binary.Read(conn, binary.BigEndian, &unsubTime)
 		if err != nil {
@@ -531,7 +531,7 @@ func (self *apnsPushService) pushWorker(psp *PushServiceProvider, reqChan chan *
 
 	reqIdMap := make(map[uint32]*pushRequest)
 
-	dpCache := cache.New(1024, -1, 0 * time.Second, nil)
+	dpCache := cache.New(1024, -1, 0*time.Second, nil)
 	//dropedDp := make([]string, 0, 1024)
 
 	var connErr error

@@ -237,4 +237,3 @@ func (self *c2dmPushService) Push(psp *PushServiceProvider, dpQueue <-chan *Deli
 func (self *c2dmPushService) SetErrorReportChan(errChan chan<- error) {
 	return
 }
-
