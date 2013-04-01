@@ -40,7 +40,7 @@ import (
 // we will use its associated Push Service Provider to send.
 //
 // For performance consideration, the database may become inconsistent
-// if the user did a wrong operation. For example, add a non-exist 
+// if the user did a wrong operation. For example, add a non-exist
 // delivery point to Service-Subscriber pair.
 //
 
