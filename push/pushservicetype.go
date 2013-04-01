@@ -61,11 +61,11 @@ type PushServiceType interface {
 	// NOTE: This method should always be run in a separate goroutine.
 	// The implementation of this method should return only
 	// if it finished all push request.
-	// 
+	//
 	// Once this method returns, it cannot use the second channel
 	// to report error. (For example, it cannot fork a new goroutine
 	// and use this channel in this goroutine after the function returns.)
-	// 
+	//
 	// Any implementation MUST close the second channel (chan<- *PushResult)
 	// once the works done.
 	Push(*PushServiceProvider, <-chan *DeliveryPoint, chan<- *PushResult, *Notification)

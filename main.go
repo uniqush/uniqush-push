@@ -20,14 +20,14 @@ package main
 import (
 	"flag"
 	"fmt"
-	"os"
 	. "github.com/uniqush/uniqush-push/srv"
+	"os"
 )
 
 var uniqushPushConfFlags = flag.String("config", "/etc/uniqush/uniqush-push.conf", "Config file path")
 var uniqushPushShowVersionFlag = flag.Bool("version", false, "Version info")
 
-var uniqushPushVersion = "uniqush-push 1.4.1"
+var uniqushPushVersion = "uniqush-push 1.4.2"
 
 func installPushSrvices() {
 	InstallGCM()
@@ -48,5 +48,3 @@ func main() {
 		fmt.Fprint(os.Stderr, "Cannot start: %v\n", err)
 	}
 }
-
-

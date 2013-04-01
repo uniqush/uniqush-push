@@ -164,6 +164,7 @@ func (self *PushBackEnd) collectResult(reqId string, service string, resChan <-c
 		if res.Provider != nil && res.Destination != nil {
 			if sub, ok = res.Destination.FixedData["subscriber"]; !ok {
 				logger.Errorf("RequestID=%v Subscriber=%v DeliveryPoint=%v Bad Delivery Point: No subscriber", reqId, sub, res.Destination.Name())
+				continue
 			}
 		}
 		if res.Err == nil {
@@ -172,7 +173,15 @@ func (self *PushBackEnd) collectResult(reqId string, service string, resChan <-c
 		}
 		err := self.fixError(reqId, res.Err, logger, after)
 		if err != nil {
-			logger.Infof("RequestID=%v Service=%v Subscriber=%v PushServiceProvider=%v DeliveryPoint=%v Failed: %v", reqId, service, sub, res.Provider.Name(), res.Destination.Name(), err)
+			pspName := "Unknown"
+			dpName := "Unknown"
+			if res.Provider != nil {
+				pspName = res.Provider.Name()
+			}
+			if res.Destination != nil {
+				dpName = res.Destination.Name()
+			}
+			logger.Infof("RequestID=%v Service=%v Subscriber=%v PushServiceProvider=%v DeliveryPoint=%v Failed: %v", reqId, service, sub, pspName, dpName, err)
 		}
 	}
 }
@@ -207,6 +216,14 @@ func (self *PushBackEnd) pushImpl(reqId string, service string, subs []string, n
 		for _, pair := range pspDpList {
 			psp := pair.PushServiceProvider
 			dp := pair.DeliveryPoint
+			if psp == nil {
+				logger.Errorf("RequestID=%v Service=%v Subscriber=%v Failed once: nil Push Service Provider", reqId, service, sub)
+				continue
+			}
+			if dp == nil {
+				logger.Errorf("RequestID=%v Service=%v Subscriber=%v Failed once: nil Delivery Point", reqId, service, sub)
+				continue
+			}
 			var ch chan *DeliveryPoint
 			var ok bool
 			if ch, ok = dpChanMap[psp.Name()]; !ok {

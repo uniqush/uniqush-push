@@ -41,4 +41,3 @@ func (n *Notification) IsEmpty() bool {
 	}
 	return false
 }
-

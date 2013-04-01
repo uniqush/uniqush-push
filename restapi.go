@@ -18,11 +18,11 @@
 package main
 
 import (
-	"io"
 	"fmt"
 	"github.com/nu7hatch/gouuid"
 	"github.com/uniqush/log"
 	. "github.com/uniqush/uniqush-push/push"
+	"io"
 	"net/http"
 	"regexp"
 	"strconv"
@@ -31,12 +31,12 @@ import (
 )
 
 type RestAPI struct {
-	psm     *PushServiceManager
-	loggers []log.Logger
-	backend *PushBackEnd
-	version string
+	psm       *PushServiceManager
+	loggers   []log.Logger
+	backend   *PushBackEnd
+	version   string
 	waitGroup *sync.WaitGroup
-	stopChan chan<- bool
+	stopChan  chan<- bool
 }
 
 // loggers: sequence is web, add

@@ -25,10 +25,12 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/uniqush/cache"
 	. "github.com/uniqush/uniqush-push/push"
 	"io"
 	"net"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 )
@@ -47,6 +49,7 @@ type pushRequest struct {
 
 type apnsPushService struct {
 	reqChan chan *pushRequest
+	errChan chan<- error
 }
 
 func InstallAPNS() {
@@ -325,12 +328,17 @@ func (self *apnsPushService) resultCollector(psp *PushServiceProvider, resChan c
 		res := new(apnsResult)
 		res.msgId = msgid
 		res.status = status
+		fmt.Printf("MsgId=%v, status=%v\n", msgid, status)
 		resChan <- res
 	}
 }
 
 func (self *apnsPushService) singlePush(psp *PushServiceProvider, dp *DeliveryPoint, notif *Notification, mid uint32, tlsconn net.Conn) error {
-	devtoken := dp.FixedData["devtoken"]
+	devtoken, ok := dp.FixedData["devtoken"]
+
+	if !ok {
+		return NewBadDeliveryPointWithDetails(dp, "NoDevtoken")
+	}
 
 	btoken, err := hex.DecodeString(devtoken)
 	if err != nil {
@@ -378,7 +386,98 @@ func (self *apnsPushService) singlePush(psp *PushServiceProvider, dp *DeliveryPo
 	return nil
 }
 
-func connectAPNS(psp *PushServiceProvider) (net.Conn, error) {
+func connectFeedback(psp *PushServiceProvider) (net.Conn, error) {
+	cert, err := tls.LoadX509KeyPair(psp.FixedData["cert"], psp.FixedData["key"])
+	if err != nil {
+		return nil, NewBadPushServiceProviderWithDetails(psp, err.Error())
+	}
+
+	conf := &tls.Config{
+		Certificates:       []tls.Certificate{cert},
+		InsecureSkipVerify: false,
+	}
+
+	if skip, ok := psp.VolatileData["skipverify"]; ok {
+		if skip == "true" {
+			conf.InsecureSkipVerify = true
+		}
+	}
+
+	addr := "feedback.sandbox.push.apple.com:2196"
+	if psp.VolatileData["addr"] == "gateway.push.apple.com:2195" {
+		addr = "feedback.push.apple.com:2196"
+	} else if psp.VolatileData["addr"] == "gateway.sandbox.push.apple.com:2195" {
+		addr = "feedback.sandbox.push.apple.com:2196"
+	} else {
+		ae := strings.Split(psp.VolatileData["addr"], ":")
+		addr = fmt.Sprintf("%v:2196", ae[0])
+	}
+	tlsconn, err := tls.Dial("tcp", addr, conf)
+	if err != nil {
+		return nil, err
+	}
+	err = tlsconn.Handshake()
+	if err != nil {
+		return nil, err
+	}
+	return tlsconn, nil
+}
+
+// connect the feedback service with exp back off retry
+func (self *apnsPushService) connectFeedbackOrRetry(psp *PushServiceProvider) net.Conn {
+	retryAfter := 1 * time.Minute
+	for retryAfter <= 1*time.Hour {
+		conn, err := connectFeedback(psp)
+		if err == nil {
+			return conn
+		}
+		<-time.After(retryAfter)
+		retryAfter = retryAfter * 2
+	}
+	return nil
+}
+
+func (self *apnsPushService) feedbackReceiver(psp *PushServiceProvider) []string {
+	conn := self.connectFeedbackOrRetry(psp)
+	if conn == nil {
+		return nil
+	}
+	defer func() {
+		if conn != nil {
+			conn.Close()
+		}
+	}()
+
+	ret := make([]string, 0, 1)
+	for {
+		var unsubTime uint32
+		var tokenLen uint16
+
+		err := binary.Read(conn, binary.BigEndian, &unsubTime)
+		if err != nil {
+			return ret
+		}
+		err = binary.Read(conn, binary.BigEndian, &tokenLen)
+		if err != nil {
+			return ret
+		}
+		devtoken := make([]byte, int(tokenLen))
+
+		n, err := io.ReadFull(conn, devtoken)
+		if err != nil {
+			return ret
+		}
+		if n != int(tokenLen) {
+			return ret
+		}
+
+		devtokenstr := hex.EncodeToString(devtoken)
+		devtokenstr = strings.ToLower(devtokenstr)
+		ret = append(ret, devtokenstr)
+	}
+}
+
+func (self *apnsPushService) connectAPNS(psp *PushServiceProvider) (net.Conn, error) {
 	cert, err := tls.LoadX509KeyPair(psp.FixedData["cert"], psp.FixedData["key"])
 	if err != nil {
 		return nil, NewBadPushServiceProviderWithDetails(psp, err.Error())
@@ -432,12 +531,15 @@ func (self *apnsPushService) pushWorker(psp *PushServiceProvider, reqChan chan *
 
 	reqIdMap := make(map[uint32]*pushRequest)
 
+	dpCache := cache.New(1024, -1, 0*time.Second, nil)
+	//dropedDp := make([]string, 0, 1024)
+
 	var connErr error
 	connErr = nil
 
 	connErrReported := false
 
-	conn, err := connectAPNS(psp)
+	conn, err := self.connectAPNS(psp)
 	if err != nil {
 		connErr = err
 	} else {
@@ -468,12 +570,16 @@ func (self *apnsPushService) pushWorker(psp *PushServiceProvider, reqChan chan *
 			nextid++
 			messageId := fmt.Sprintf("apns:%v-%v", psp.Name(), mid)
 
+			if devtoken, ok := dp.FixedData["devtoken"]; ok {
+				dpCache.Set(devtoken, dp)
+			}
+
 			req.msgIdChan <- messageId
 
 			// Connection dropped by remote server.
 			// Reconnect it.
 			if connErr == tmpErrReconnect {
-				conn, err = connectAPNS(psp)
+				conn, err = self.connectAPNS(psp)
 				if err != nil {
 					connErr = err
 				} else {
@@ -490,7 +596,7 @@ func (self *apnsPushService) pushWorker(psp *PushServiceProvider, reqChan chan *
 					}
 
 					// try to recover by re-connecting the server
-					conn, err = connectAPNS(psp)
+					conn, err = self.connectAPNS(psp)
 					if err != nil {
 						// we failed again.
 						connErr = err
@@ -537,6 +643,19 @@ func (self *apnsPushService) pushWorker(psp *PushServiceProvider, reqChan chan *
 			} else {
 				// wait the result from APNs
 				reqIdMap[mid] = req
+			}
+			unsubed := self.feedbackReceiver(psp)
+			for _, unsubDev := range unsubed {
+				dpif := dpCache.Delete(unsubDev)
+				if dpif == nil {
+					continue
+				}
+				dp, ok := dpif.(*DeliveryPoint)
+				if !ok {
+					continue
+				}
+				err := NewUnsubscribeUpdate(psp, dp)
+				self.errChan <- err
 			}
 
 		case apnsres := <-resChan:
@@ -595,7 +714,9 @@ func (self *apnsPushService) pushWorker(psp *PushServiceProvider, reqChan chan *
 				case 7:
 					result.Err = NewBadNotificationWithDetails("Invalid payload size")
 				case 8:
-					result.Err = NewBadDeliveryPointWithDetails(req.dp, "Invalid Token")
+					// result.Err = NewBadDeliveryPointWithDetails(req.dp, "Invalid Token")
+					// This token is invalid, we should unsubscribe this device.
+					result.Err = NewUnsubscribeUpdate(psp, req.dp)
 				default:
 					result.Err = fmt.Errorf("Unknown Error: %d", apnsres.status)
 				}
@@ -614,6 +735,6 @@ func (self *apnsPushService) pushWorker(psp *PushServiceProvider, reqChan chan *
 }
 
 func (self *apnsPushService) SetErrorReportChan(errChan chan<- error) {
+	self.errChan = errChan
 	return
 }
-

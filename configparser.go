@@ -193,7 +193,6 @@ func LoadRestAddr(c *conf.ConfigFile) (string, error) {
 	return addr, err
 }
 
-
 func Run(conf, version string) error {
 	c, err := OpenConfig(conf)
 	if err != nil {
@@ -226,5 +225,3 @@ func Run(conf, version string) error {
 	<-stopChan
 	return nil
 }
-
-
