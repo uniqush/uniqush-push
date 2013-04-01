@@ -25,12 +25,12 @@ import (
 )
 
 type serviceType struct {
-	pst     PushServiceType
+	pst PushServiceType
 }
 
 type PushServiceManager struct {
 	serviceTypes map[string]*serviceType
-	errChan chan<- error
+	errChan      chan<- error
 }
 
 var (
@@ -145,9 +145,9 @@ func (m *PushServiceManager) BuildDeliveryPointFromMap(kv map[string]string) (dp
 			}
 			dp.pushServiceType = pst
 			if _, ok := dp.FixedData["subscriber"]; !ok {
-					err = fmt.Errorf("Bad Delivery Point Implementation: subscriber field is mandatory")
-					dp= nil
-					return
+				err = fmt.Errorf("Bad Delivery Point Implementation: subscriber field is mandatory")
+				dp = nil
+				return
 			}
 			return
 		}
