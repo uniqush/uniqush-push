@@ -216,6 +216,7 @@ func (self *gcmPushService) multicast(psp *PushServiceProvider, dpList []*Delive
 		}
 		return
 	}
+	defer r.Body.Close()
 	new_auth_token := r.Header.Get("Update-Client-Auth")
 	if new_auth_token != "" && apikey != new_auth_token {
 		psp.VolatileData["apikey"] = new_auth_token

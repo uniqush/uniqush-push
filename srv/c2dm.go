@@ -160,6 +160,7 @@ func (p *c2dmPushService) singlePush(psp *PushServiceProvider, dp *DeliveryPoint
 	if e20 != nil {
 		return "", e20
 	}
+	defer r.Body.Close()
 	new_auth_token := r.Header.Get("Update-Client-Auth")
 	if new_auth_token != "" && authtoken != new_auth_token {
 		psp.VolatileData["authtoken"] = new_auth_token
