@@ -58,6 +58,7 @@ const (
 	PUSH_NOTIFICATION_URL                       = "/push"
 	STOP_PROGRAM_URL                            = "/stop"
 	VERSION_INFO_URL                            = "/version"
+	QUERY_NUMBER_OF_DELIVERY_POINTS_URL         = "/nrdp"
 )
 
 var validServicePattern *regexp.Regexp
@@ -249,10 +250,37 @@ func (self *RestAPI) stop(w io.Writer, remoteAddr string) {
 	return
 }
 
+func (self *RestAPI) numberOfDeliveryPoints(kv map[string][]string, logger log.Logger, remoteAddr string) int {
+	ret := 0
+	ss, ok := kv["service"]
+	if !ok {
+		return ret
+	}
+	if len(ss) == 0 {
+		return ret
+	}
+	service := ss[0]
+	subs, ok := kv["subscriber"]
+	if !ok {
+		return ret
+	}
+	if len(subs) == 0 {
+		return ret
+	}
+	sub := subs[0]
+	ret = self.backend.NumberOfDeliveryPoints(service, sub, logger)
+	return ret
+}
+
 func (self *RestAPI) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	defer r.Body.Close()
 	remoteAddr := r.RemoteAddr
 	switch r.URL.Path {
+	case QUERY_NUMBER_OF_DELIVERY_POINTS_URL:
+		r.ParseForm()
+		n := self.numberOfDeliveryPoints(r.Form, self.loggers[LOGGER_WEB], remoteAddr)
+		fmt.Fprintf(w, "%v\r\n", n)
+		return
 	case VERSION_INFO_URL:
 		fmt.Fprintf(w, "%v\r\n", self.version)
 		self.loggers[LOGGER_WEB].Infof("Checked version from %v", remoteAddr)
@@ -309,6 +337,7 @@ func (self *RestAPI) Run(addr string, stopChan chan<- bool) {
 	http.Handle(REMOVE_DELIVERY_POINT_FROM_SERVICE_URL, self)
 	http.Handle(REMOVE_PUSH_SERVICE_PROVIDER_TO_SERVICE_URL, self)
 	http.Handle(PUSH_NOTIFICATION_URL, self)
+	http.Handle(QUERY_NUMBER_OF_DELIVERY_POINTS_URL, self)
 	self.stopChan = stopChan
 	err := http.ListenAndServe(addr, nil)
 	if err != nil {
