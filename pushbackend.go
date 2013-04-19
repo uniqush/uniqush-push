@@ -186,6 +186,15 @@ func (self *PushBackEnd) collectResult(reqId string, service string, resChan <-c
 	}
 }
 
+func (self *PushBackEnd) NumberOfDeliveryPoints(service, sub string, logger Logger) int {
+	pspDpList, err := self.db.GetPushServiceProviderDeliveryPointPairs(service, sub)
+	if err != nil {
+		logger.Errorf("Query=NumberOfDeliveryPoints Service=%v Subscriber=%v Failed: Database Error %v", service, sub, err)
+		return 0
+	}
+	return len(pspDpList)
+}
+
 func (self *PushBackEnd) Push(reqId string, service string, subs []string, notif *Notification, logger Logger) {
 	self.pushImpl(reqId, service, subs, notif, logger, nil, nil, 0*time.Second)
 }
