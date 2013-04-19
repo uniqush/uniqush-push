@@ -35,6 +35,15 @@ func NewEmptyNotification() *Notification {
 	return n
 }
 
+func (n *Notification) Clone() *Notification {
+	ret := new(Notification)
+	ret.Data = make(map[string]string, len(n.Data))
+	for k, v := range n.Data {
+		ret.Data[k] = v
+	}
+	return ret
+}
+
 func (n *Notification) IsEmpty() bool {
 	if len(n.Data) == 0 {
 		return true
