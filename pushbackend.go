@@ -113,7 +113,7 @@ func (self *PushBackEnd) fixError(reqId string, event error, logger Logger, afte
 			subs := make([]string, 1)
 			subs[0] = sub
 			after = 2 * after
-			self.pushImpl(reqId, service, subs, err.Content, self.loggers[LOGGER_PUSH], err.Provider, err.Destination, after)
+			self.pushImpl(reqId, service, subs, err.Content, nil, self.loggers[LOGGER_PUSH], err.Provider, err.Destination, after)
 		}()
 	case *PushServiceProviderUpdate:
 		if service, ok = err.Provider.FixedData["service"]; !ok {
@@ -195,14 +195,15 @@ func (self *PushBackEnd) NumberOfDeliveryPoints(service, sub string, logger Logg
 	return len(pspDpList)
 }
 
-func (self *PushBackEnd) Push(reqId string, service string, subs []string, notif *Notification, logger Logger) {
-	self.pushImpl(reqId, service, subs, notif, logger, nil, nil, 0*time.Second)
+func (self *PushBackEnd) Push(reqId string, service string, subs []string, notif *Notification, perdp map[string][]string, logger Logger) {
+	self.pushImpl(reqId, service, subs, notif, perdp, logger, nil, nil, 0*time.Second)
 }
 
-func (self *PushBackEnd) pushImpl(reqId string, service string, subs []string, notif *Notification, logger Logger, provider *PushServiceProvider, dest *DeliveryPoint, after time.Duration) {
+func (self *PushBackEnd) pushImpl(reqId string, service string, subs []string, notif *Notification, perdp map[string][]string, logger Logger, provider *PushServiceProvider, dest *DeliveryPoint, after time.Duration) {
 	dpChanMap := make(map[string]chan *DeliveryPoint)
 	wg := new(sync.WaitGroup)
 	for _, sub := range subs {
+		dpidx := 0
 		var pspDpList []PushServiceProviderDeliveryPointPair
 		if provider != nil && dest != nil {
 			pspDpList := make([]PushServiceProviderDeliveryPointPair, 1)
@@ -240,8 +241,17 @@ func (self *PushBackEnd) pushImpl(reqId string, service string, subs []string, n
 				dpChanMap[psp.Name()] = ch
 				resChan := make(chan *PushResult)
 				wg.Add(1)
+				note := notif
+				if len(perdp) > 0 {
+					note = notif.Clone()
+					for k, v := range perdp {
+						value := v[dpidx % len(v)]
+						note.Data[k] = value
+					}
+					dpidx++
+				}
 				go func() {
-					self.psm.Push(psp, ch, resChan, notif)
+					self.psm.Push(psp, ch, resChan, note)
 					wg.Done()
 				}()
 				wg.Add(1)

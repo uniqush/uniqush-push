@@ -190,7 +190,7 @@ func (self *RestAPI) changeSubscription(kv map[string]string, logger log.Logger,
 	}
 }
 
-func (self *RestAPI) pushNotification(reqId string, kv map[string]string, logger log.Logger, remoteAddr string) {
+func (self *RestAPI) pushNotification(reqId string, kv map[string]string, perdp map[string][]string, logger log.Logger, remoteAddr string) {
 	service, err := getServiceFromMap(kv, true)
 	if err != nil {
 		logger.Errorf("RequestId=%v From=%v Cannot get service name: %v; %v", reqId, remoteAddr, service, err)
@@ -235,7 +235,7 @@ func (self *RestAPI) pushNotification(reqId string, kv map[string]string, logger
 
 	logger.Infof("RequestId=%v From=%v Service=%v Subscribers=\"%v\"", reqId, remoteAddr, service, subs)
 
-	self.backend.Push(reqId, service, subs, notif, logger)
+	self.backend.Push(reqId, service, subs, notif, perdp, logger)
 	return
 }
 
@@ -292,7 +292,14 @@ func (self *RestAPI) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	r.ParseForm()
 	kv := make(map[string]string, len(r.Form))
+	perdp := make(map[string][]string, 3)
 	for k, v := range r.Form {
+		if len(k) > len("perdp.") {
+			if k[:len("perdp.")] == "perdp." {
+				perdp[k] = v
+				continue
+			}
+		}
 		if len(v) > 0 {
 			kv[k] = v[0]
 		}
@@ -323,7 +330,7 @@ func (self *RestAPI) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		weblogger := log.NewLogger(writer, "[Push]", logLevel)
 		logger := log.MultiLogger(weblogger, self.loggers[LOGGER_PUSH])
 		rid, _ := uuid.NewV4()
-		self.pushNotification(rid.String(), kv, logger, remoteAddr)
+		self.pushNotification(rid.String(), kv, perdp, logger, remoteAddr)
 	}
 }
 
