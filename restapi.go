@@ -292,10 +292,12 @@ func (self *RestAPI) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	r.ParseForm()
 	kv := make(map[string]string, len(r.Form))
 	perdp := make(map[string][]string, 3)
+	perdpPrefix := "uniqush.perdp."
 	for k, v := range r.Form {
-		if len(k) > len("perdp.") {
-			if k[:len("perdp.")] == "perdp." {
-				perdp[k] = v
+		if len(k) > len(perdpPrefix) {
+			if k[:len(perdpPrefix)] == perdpPrefix {
+				key := k[len(perdpPrefix):]
+				perdp[key] = v
 				continue
 			}
 		}
