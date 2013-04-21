@@ -339,10 +339,7 @@ func (self *gcmPushService) Push(psp *PushServiceProvider, dpQueue <-chan *Deliv
 
 	maxNrDst := 1000
 	dpList := make([]*DeliveryPoint, 0, maxNrDst)
-	fmt.Printf("Inside gcm push\n")
 	for dp := range dpQueue {
-
-		fmt.Printf("Inside delivery point: %v\n", dp.Name())
 		if psp.PushServiceName() != dp.PushServiceName() || psp.PushServiceName() != self.Name() {
 			res := new(PushResult)
 			res.Provider = psp

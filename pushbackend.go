@@ -245,7 +245,7 @@ func (self *PushBackEnd) pushImpl(reqId string, service string, subs []string, n
 				if len(perdp) > 0 {
 					note = notif.Clone()
 					for k, v := range perdp {
-						value := v[dpidx % len(v)]
+						value := v[dpidx%len(v)]
 						note.Data[k] = value
 					}
 					dpidx++
