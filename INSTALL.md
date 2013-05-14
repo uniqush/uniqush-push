@@ -1,1 +1,1 @@
-See [Install](http://uniqush.org/wiki/UniqushInstall)
+See [Install](http://uniqush.org/documentation/install.html)
