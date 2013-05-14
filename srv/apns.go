@@ -475,6 +475,7 @@ func (self *apnsPushService) feedbackReceiver(psp *PushServiceProvider) []string
 		devtokenstr = strings.ToLower(devtokenstr)
 		ret = append(ret, devtokenstr)
 	}
+	return ret
 }
 
 func (self *apnsPushService) connectAPNS(psp *PushServiceProvider) (net.Conn, error) {
