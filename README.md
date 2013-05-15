@@ -1,4 +1,5 @@
-[Homepage](http://uniqush.org)
+- [Homepage](http://uniqush.org)
+- [Download](http://uniqush.org/downloads.html)
 
 # Introduction #
 
