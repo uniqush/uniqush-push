@@ -16,7 +16,7 @@ platform.
 
 # FAQ #
 
-- Q: A general push notification platform for all systems? How does this differs
+- Q: A general push notification platform for all systems? How does this differ
   from services like [urbanairship](http://urbanairship.com)?
 - A: [urbanairship](http://urbanairship.com) is a great service, and there're
   other similar services available, like [openpush](http://openpush.im/),
