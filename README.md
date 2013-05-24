@@ -14,6 +14,46 @@ platform.
 - [APNS](http://developer.apple.com/library/mac/#documentation/NetworkingInternet/Conceptual/RemoteNotificationsPG/ApplePushService/ApplePushService.html) from apple for iOS platform
 - [C2DM](https://developers.google.com/android/c2dm/) from google for android platform (deprecated by google. using [GCM](http://developer.android.com/guide/google/gcm/index.html) instead.)
 
+# FAQ #
+
+- Q: A general push notification platform for all system? How does this differs
+  from services like [urbanairship](http://urbanairship.com)?
+- A: [urbanairship](http://urbanairship.com) is a great service, and there's
+  other similar service available, like [openpush](http://openpush.im/),
+[notifica](https://notifica.re/), etc. All of them are wonderful services.
+However, [uniqush](http://uniqush.org) is different from those services.
+[Uniqush](http://uniqush.org) is not a service. Instead,
+**[Uniqush](http://uniqush.org) is a system, which can running on your own
+server**. In fact, if you wish, you can use uniqush to setup a similar service like [urbanairship](http://urbanairship.com).
+
+- Q: OK. Then is it a library? Like
+  [java-apns](https://github.com/notnoop/java-apns)?
+- A: Well.. Not actuall. I mean, it is a program, like apache httpd. You
+  download it, you run it, that's it. You don't need to worry about which
+language to use, package dependency, etc. 
+
+- Q: But wait, how can I use it anyway? I mean, if my program wants to push something, I need to tell uniqush about this action. How can I communicate with uniqush-push? There must be some library so that I can use in my program to talk with uniqush, right?
+- A: We are trying to make it easier. *uniqush-push* provides RESTful APIs. In other words, you talk with *uniqush-push* through HTTP protocol. As long as there's an HTTP client library for your language, you can use it and talk with *uniqush-push*. For details about the our RESTful APIs, you may want to check out our [document](http://uniqush.org/documentation/index.html).
+
+- Q: Then that's cool. But I noticed that you are using [Go](http://golang.org) programming language. Do I need to install [Go](http://golang.org) compiler and other stuff to run *uniqush-push*?
+- A: No. There is **no** dependency. All you need to do is to download the
+  binary files from the [download page](http://uniqush.org/downloads.html) and
+install it. You only need to have a [redis](http://redis.io) database running
+somewhere so that *uniqush-push* can store the user data in
+[redis](http://redis.io).
+
+- Q: This is nice. I want to give it a try. But you are keep talking about *uniqush-push*, and I'm talking about *uniqush*, are they the same thing?
+- A: Thank you for your support! *Uniqush* is intended to be the name of a
+  system which provides a full stack solution for communication between mobile
+devices and the app's server. *uniqush-push* is one piece of the system.
+However, right now, *uniqush-push* is the only piece and others are under
+actively devlopment. If you want to know more details about the *uniqush*
+system's plan, you can read the [blog
+post](http://blog.uniqush.org/uniqush-after-go1.html). If you want to know the
+latest progress about *uniqush* system, please check [our
+blog](http://blog.uniqush.org/). And if you are really impatient, [our github
+account](http://github.com/uniqush) will always up-to-date.
+
 # Related Links #
 - [This story](http://uniqush.org/wiki/UniqushStory) may help you to understand
 the basic idea of *uniqush*.
