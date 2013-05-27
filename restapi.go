@@ -213,6 +213,10 @@ func (self *RestAPI) pushNotification(reqId string, kv map[string]string, perdp 
 			continue
 		}
 		switch k {
+		case "subscriber":
+		case "subscribers":
+		case "service":
+			// three keys need to be ignored
 		case "badge":
 			if v != "" {
 				var e error
