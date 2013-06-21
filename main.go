@@ -45,6 +45,6 @@ func main() {
 
 	err := Run(*uniqushPushConfFlags, uniqushPushVersion)
 	if err != nil {
-		fmt.Fprint(os.Stderr, "Cannot start: %v\n", err)
+		fmt.Fprintf(os.Stderr, "Cannot start: %v\n", err)
 	}
 }
