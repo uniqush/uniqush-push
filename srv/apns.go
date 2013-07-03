@@ -36,7 +36,7 @@ import (
 )
 
 const (
-	maxWaitTime    time.Duration = 5
+	maxWaitTime    time.Duration = 7
 	maxPayLoadSize int           = 256
 )
 
@@ -648,6 +648,20 @@ func (self *apnsPushService) pushWorker(psp *PushServiceProvider, reqChan chan *
 			} else {
 				// wait the result from APNs
 				reqIdMap[mid] = req
+
+				// If there is no response from APNS,
+				// then we have to have a way to clear the request
+				// in reqIdMap.
+				go func() {
+					time.Sleep(time.Duration(maxWaitTime-1) * time.Second)
+					apnsres := new(apnsResult)
+					apnsres.err = nil
+					apnsres.msgId = mid
+
+					// On time out, consider it as success.
+					apnsres.status = 0
+					resChan <- apnsres
+				}()
 			}
 			unsubed := self.feedbackReceiver(psp)
 			for _, unsubDev := range unsubed {
@@ -694,6 +708,7 @@ func (self *apnsPushService) pushWorker(psp *PushServiceProvider, reqChan chan *
 				result.Provider = psp
 				result.Destination = req.dp
 				result.MsgId = fmt.Sprintf("apns:%v-%v", psp.Name(), apnsres.msgId)
+				delete(reqIdMap, apnsres.msgId)
 				if apnsres.err != nil {
 					result.Err = apnsres.err
 					req.resChan <- result
@@ -726,7 +741,6 @@ func (self *apnsPushService) pushWorker(psp *PushServiceProvider, reqChan chan *
 					result.Err = fmt.Errorf("Unknown Error: %d", apnsres.status)
 				}
 
-				delete(reqIdMap, apnsres.msgId)
 				go func() {
 					select {
 					case req.resChan <- result:
