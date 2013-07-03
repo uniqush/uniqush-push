@@ -36,7 +36,8 @@ import (
 )
 
 const (
-	maxWaitTime time.Duration = 5
+	maxWaitTime    time.Duration = 5
+	maxPayLoadSize int           = 256
 )
 
 type pushRequest struct {
@@ -199,6 +200,9 @@ func toAPNSPayload(n *Notification) ([]byte, error) {
 	j, err := json.Marshal(payload)
 	if err != nil {
 		return nil, err
+	}
+	if len(j) > maxPayLoadSize {
+		return nil, NewBadNotificationWithDetails("payload is too large")
 	}
 	return j, nil
 }
