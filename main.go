@@ -22,6 +22,7 @@ import (
 	"fmt"
 	. "github.com/uniqush/uniqush-push/srv"
 	"os"
+	"runtime"
 )
 
 var uniqushPushConfFlags = flag.String("config", "/etc/uniqush/uniqush-push.conf", "Config file path")
@@ -36,6 +37,7 @@ func installPushSrvices() {
 }
 
 func main() {
+	runtime.GOMAXPROCS(runtime.NumCPU() + 1)
 	flag.Parse()
 	if *uniqushPushShowVersionFlag {
 		fmt.Printf("%v\n", uniqushPushVersion)

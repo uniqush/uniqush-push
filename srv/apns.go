@@ -36,8 +36,9 @@ import (
 )
 
 const (
-	maxWaitTime    time.Duration = 7
-	maxPayLoadSize int           = 256
+	maxWaitTime         time.Duration = 7
+	maxPayLoadSize      int           = 256
+	feedbackCheckPeriod time.Duration = 600
 )
 
 type pushRequest struct {
@@ -332,7 +333,6 @@ func (self *apnsPushService) resultCollector(psp *PushServiceProvider, resChan c
 		res := new(apnsResult)
 		res.msgId = msgid
 		res.status = status
-		fmt.Printf("MsgId=%v, status=%v\n", msgid, status)
 		resChan <- res
 	}
 }
@@ -555,11 +555,11 @@ func (self *apnsPushService) pushWorker(psp *PushServiceProvider, reqChan chan *
 	nextid = 5
 
 	tmpErrReconnect := fmt.Errorf("Reconnect")
+	lastFeedbackCheckTime := time.Now()
 
 	for {
 		select {
 		case req := <-reqChan:
-
 			// closed by another goroutine
 			// close the connection and exit
 			if req == nil {
@@ -663,18 +663,22 @@ func (self *apnsPushService) pushWorker(psp *PushServiceProvider, reqChan chan *
 					resChan <- apnsres
 				}()
 			}
-			unsubed := self.feedbackReceiver(psp)
-			for _, unsubDev := range unsubed {
-				dpif := dpCache.Delete(unsubDev)
-				if dpif == nil {
-					continue
+			elapsed := time.Since(lastFeedbackCheckTime)
+			if elapsed > feedbackCheckPeriod*time.Second {
+				lastFeedbackCheckTime = time.Now()
+				unsubed := self.feedbackReceiver(psp)
+				for _, unsubDev := range unsubed {
+					dpif := dpCache.Delete(unsubDev)
+					if dpif == nil {
+						continue
+					}
+					dp, ok := dpif.(*DeliveryPoint)
+					if !ok {
+						continue
+					}
+					err := NewUnsubscribeUpdate(psp, dp)
+					self.errChan <- err
 				}
-				dp, ok := dpif.(*DeliveryPoint)
-				if !ok {
-					continue
-				}
-				err := NewUnsubscribeUpdate(psp, dp)
-				self.errChan <- err
 			}
 
 		case apnsres := <-resChan:
