@@ -21,18 +21,23 @@ import (
 	"bytes"
 	"crypto/tls"
 	"encoding/binary"
+	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"github.com/uniqush/connpool"
 	. "github.com/uniqush/uniqush-push/push"
 	"io"
 	"net"
+	"strconv"
+	"sync"
+	"sync/atomic"
 	"time"
 )
 
 const (
 	maxWaitTime         time.Duration = 7
 	maxPayLoadSize      int           = 256
-	maxNrConn           int           = 15
+	maxNrConn           int           = 13
 	feedbackCheckPeriod time.Duration = 600
 )
 
@@ -47,9 +52,10 @@ type pushRequest struct {
 }
 
 type apnsPushService struct {
-	reqChan    chan *pushRequest
-	errChan    chan<- error
-	checkPoint time.Time
+	reqChan       chan *pushRequest
+	errChan       chan<- error
+	nextMessageId uint32
+	checkPoint    time.Time
 }
 
 func InstallAPNS() {
@@ -59,6 +65,7 @@ func InstallAPNS() {
 func newAPNSPushService() *apnsPushService {
 	ret := new(apnsPushService)
 	ret.reqChan = make(chan *pushRequest)
+	ret.nextMessageId = 0
 	go ret.pushMux()
 	return ret
 }
@@ -138,7 +145,75 @@ func (p *apnsPushService) BuildDeliveryPointFromMap(kv map[string]string, dp *De
 	return nil
 }
 
+func (self *apnsPushService) getMessageId() uint32 {
+	return atomic.AddUint32(&self.nextMessageId, uint32(1))
+}
+
 func (self *apnsPushService) Push(psp *PushServiceProvider, dpQueue <-chan *DeliveryPoint, resQueue chan<- *PushResult, notif *Notification) {
+	var err error
+	req := new(pushRequest)
+	req.psp = psp
+	req.payload, err = toAPNSPayload(notif)
+
+	if err != nil {
+		res := new(PushResult)
+		res.Provider = psp
+		res.Content = notif
+		res.Err = err
+		resQueue <- res
+		for _ = range dpQueue {
+		}
+		close(resQueue)
+		return
+	}
+
+	unixNow := uint32(time.Now().Unix())
+	expiry := unixNow + 60*60
+	if ttlstr, ok := notif.Data["ttl"]; ok {
+		ttl, err := strconv.ParseUint(ttlstr, 10, 32)
+		if err == nil {
+			expiry = unixNow + uint32(ttl)
+		}
+	}
+	req.expiry = expiry
+	req.msgIds = make([]uint32, 0, 10)
+	req.devtokens = make([][]byte, 0, 10)
+
+	for dp := range dpQueue {
+		res := new(PushResult)
+		res.Destination = dp
+		res.Provider = psp
+		res.Content = notif
+		devtoken, ok := dp.FixedData["devtoken"]
+		if !ok {
+			res.Err = NewBadDeliveryPointWithDetails(dp, "NoDevtoken")
+			resQueue <- res
+			continue
+		}
+		btoken, err := hex.DecodeString(devtoken)
+		if err != nil {
+			res.Err = NewBadDeliveryPointWithDetails(dp, err.Error())
+			resQueue <- res
+			continue
+		}
+
+		req.devtokens = append(req.devtokens, btoken)
+		req.msgIds = append(req.msgIds, self.getMessageId())
+	}
+
+	errChan := make(chan error)
+	req.errChan = errChan
+
+	self.reqChan <- req
+
+	for err := range errChan {
+		res := new(PushResult)
+		res.Provider = psp
+		res.Content = notif
+		res.Err = err
+		resQueue <- res
+	}
+	close(resQueue)
 }
 
 func (self *apnsPushService) pushMux() {
@@ -209,23 +284,13 @@ func (self *apnsConnManager) InitConn(conn net.Conn) error {
 	return nil
 }
 
-func (self *apnsPushService) multiPush(req *pushRequest, pool *connpool.Pool) {
-	if len(req.payload) > maxPayLoadSize {
-		req.errChan <- NewBadNotificationWithDetails("payload is too large")
-		return
-	}
-	if len(req.msgIds) != len(req.devtokens) {
-		req.errChan <- NewBadNotificationWithDetails("message ids cannot be matched")
-		return
-	}
+func (self *apnsPushService) singlePush(req *pushRequest, pool *connpool.Pool, i int) {
 	conn, err := pool.Get()
 	if err != nil {
 		req.errChan <- err
 		return
 	}
 	defer conn.Close()
-	defer close(req.errChan)
-
 	// Total size for each notification:
 	//
 	// - command: 1
@@ -240,33 +305,57 @@ func (self *apnsPushService) multiPush(req *pushRequest, pool *connpool.Pool) {
 	var dataBuffer [2048]byte
 
 	payload := req.payload
+	token := req.devtokens[i]
+	mid := req.msgIds[i]
 
-	for i, token := range req.devtokens {
-		buffer := bytes.NewBuffer(dataBuffer[:0])
-		mid := req.msgIds[i]
-		// command
-		binary.Write(buffer, binary.BigEndian, uint8(1))
-		// transaction id
-		binary.Write(buffer, binary.BigEndian, mid)
+	buffer := bytes.NewBuffer(dataBuffer[:0])
+	// command
+	binary.Write(buffer, binary.BigEndian, uint8(1))
+	// transaction id
+	binary.Write(buffer, binary.BigEndian, mid)
 
-		// Expiry
-		binary.Write(buffer, binary.BigEndian, req.expiry)
+	// Expiry
+	binary.Write(buffer, binary.BigEndian, req.expiry)
 
-		// device token
-		binary.Write(buffer, binary.BigEndian, uint16(len(token)))
-		buffer.Write(token)
+	// device token
+	binary.Write(buffer, binary.BigEndian, uint16(len(token)))
+	buffer.Write(token)
 
-		// payload
-		binary.Write(buffer, binary.BigEndian, uint16(len(payload)))
-		buffer.Write(payload)
+	// payload
+	binary.Write(buffer, binary.BigEndian, uint16(len(payload)))
+	buffer.Write(payload)
 
-		pdu := buffer.Bytes()
-		err := writen(conn, pdu)
-		if err != nil {
-			req.errChan <- err
-			return
-		}
+	pdu := buffer.Bytes()
+	err = writen(conn, pdu)
+	if err != nil {
+		req.errChan <- err
+		return
 	}
+
+}
+
+func (self *apnsPushService) multiPush(req *pushRequest, pool *connpool.Pool) {
+	if len(req.payload) > maxPayLoadSize {
+		req.errChan <- NewBadNotificationWithDetails("payload is too large")
+		return
+	}
+	if len(req.msgIds) != len(req.devtokens) {
+		req.errChan <- NewBadNotificationWithDetails("message ids cannot be matched")
+		return
+	}
+	defer close(req.errChan)
+
+	n := len(req.msgIds)
+	wg := new(sync.WaitGroup)
+	wg.Add(n)
+
+	for i := 0; i < n; i++ {
+		go func(idx int) {
+			self.singlePush(req, pool, idx)
+			wg.Done()
+		}(i)
+	}
+	wg.Wait()
 }
 
 func (self *apnsPushService) pushWorker(psp *PushServiceProvider, reqChan chan *pushRequest) {
@@ -297,4 +386,77 @@ func writen(w io.Writer, buf []byte) error {
 		buf = buf[l:]
 	}
 	return nil
+}
+
+func parseList(str string) []string {
+	ret := make([]string, 0, 10)
+	elem := make([]rune, 0, len(str))
+	escape := false
+	for _, r := range str {
+		if escape {
+			escape = false
+			elem = append(elem, r)
+		} else if r == '\\' {
+			escape = true
+		} else if r == ',' {
+			if len(elem) > 0 {
+				ret = append(ret, string(elem))
+			}
+			elem = elem[:0]
+		} else {
+			elem = append(elem, r)
+		}
+	}
+	if len(elem) > 0 {
+		ret = append(ret, string(elem))
+	}
+	return ret
+}
+
+func toAPNSPayload(n *Notification) ([]byte, error) {
+	payload := make(map[string]interface{})
+	aps := make(map[string]interface{})
+	alert := make(map[string]interface{})
+	for k, v := range n.Data {
+		switch k {
+		case "msg":
+			alert["body"] = v
+		case "action-loc-key":
+			alert[k] = v
+		case "loc-key":
+			alert[k] = v
+		case "loc-args":
+			alert[k] = parseList(v)
+		case "badge":
+			b, err := strconv.Atoi(v)
+			if err != nil {
+				continue
+			} else {
+				aps["badge"] = b
+			}
+		case "sound":
+			aps["sound"] = v
+		case "img":
+			alert["launch-image"] = v
+		case "id":
+			continue
+		case "expiry":
+			continue
+		case "ttl":
+			continue
+		default:
+			payload[k] = v
+		}
+	}
+
+	aps["alert"] = alert
+	payload["aps"] = aps
+	j, err := json.Marshal(payload)
+	if err != nil {
+		return nil, err
+	}
+	if len(j) > maxPayLoadSize {
+		return nil, NewBadNotificationWithDetails("payload is too large")
+	}
+	return j, nil
 }
