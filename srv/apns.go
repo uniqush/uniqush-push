@@ -24,6 +24,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"github.com/uniqush/connpool"
 	. "github.com/uniqush/uniqush-push/push"
 	"io"
@@ -335,6 +336,7 @@ func (self *apnsPushService) singlePush(req *pushRequest, pool *connpool.Pool, i
 }
 
 func (self *apnsPushService) multiPush(req *pushRequest, pool *connpool.Pool) {
+	self.updateCheckPoint("")
 	if len(req.payload) > maxPayLoadSize {
 		req.errChan <- NewBadNotificationWithDetails("payload is too large")
 		return
@@ -356,6 +358,7 @@ func (self *apnsPushService) multiPush(req *pushRequest, pool *connpool.Pool) {
 		}(i)
 	}
 	wg.Wait()
+	self.updateCheckPoint("multiPush-ed")
 }
 
 func (self *apnsPushService) pushWorker(psp *PushServiceProvider, reqChan chan *pushRequest) {
@@ -459,4 +462,12 @@ func toAPNSPayload(n *Notification) ([]byte, error) {
 		return nil, NewBadNotificationWithDetails("payload is too large")
 	}
 	return j, nil
+}
+
+func (self *apnsPushService) updateCheckPoint(prefix string) {
+	if len(prefix) > 0 {
+		duration := time.Since(self.checkPoint)
+		fmt.Printf("%v: %v\n", prefix, duration)
+	}
+	self.checkPoint = time.Now()
 }
