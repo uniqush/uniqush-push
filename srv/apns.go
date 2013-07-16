@@ -59,6 +59,14 @@ type pushRequest struct {
 	resChan chan *apnsResult
 }
 
+func (self *pushRequest) getId(idx int) uint32 {
+	if idx < 0 || idx >= len(self.devtokens) {
+		return 0
+	}
+	startId := self.maxMsgId - uint32(len(self.devtokens))
+	return startId + uint32(idx)
+}
+
 type apnsResult struct {
 	msgId  uint32
 	status uint8
@@ -202,8 +210,8 @@ receiving_APNS_status:
 	for {
 		select {
 		case res := <-resChan:
-			idx := lastId - res.msgId - 1
-			if idx >= uint32(len(dpList)) {
+			idx := res.msgId - lastId - uint32(n)
+			if idx >= uint32(len(dpList)) || idx < 0 {
 				continue
 			}
 			dpList[idx] = nil
@@ -242,7 +250,6 @@ func (self *apnsPushService) Push(psp *PushServiceProvider, dpQueue <-chan *Deli
 		resQueue <- res
 		for _ = range dpQueue {
 		}
-		close(resQueue)
 		return
 	}
 
@@ -283,7 +290,6 @@ func (self *apnsPushService) Push(psp *PushServiceProvider, dpQueue <-chan *Deli
 	n := len(req.devtokens)
 	lastId := self.getMessageIds(n)
 	req.maxMsgId = lastId
-	startId := lastId - uint32(n-1)
 	req.dpList = dpList
 
 	errChan := make(chan error)
@@ -313,7 +319,7 @@ func (self *apnsPushService) Push(psp *PushServiceProvider, dpQueue <-chan *Deli
 			r.Provider = psp
 			r.Content = notif
 			r.Destination = dp
-			mid := startId + uint32(i)
+			mid := req.getId(i)
 			r.MsgId = fmt.Sprintf("apns:%v-%v", psp.Name(), mid)
 			r.Err = nil
 			resQueue <- r
@@ -445,23 +451,22 @@ func (self *apnsPushService) singlePush(req *pushRequest, pool *connpool.Pool, m
 }
 
 func (self *apnsPushService) multiPush(req *pushRequest, pool *connpool.Pool) {
+	defer close(req.errChan)
 	if len(req.payload) > maxPayLoadSize {
 		req.errChan <- NewBadNotificationWithDetails("payload is too large")
 		return
 	}
-	defer close(req.errChan)
 
 	n := len(req.devtokens)
 	wg := new(sync.WaitGroup)
 	wg.Add(n)
 
-	mid := req.maxMsgId - uint32(n)
-	for _, token := range req.devtokens {
+	for i, token := range req.devtokens {
+		mid := req.getId(i)
 		go func(mid uint32, token []byte) {
 			self.singlePush(req, pool, mid, token)
 			wg.Done()
 		}(mid, token)
-		mid++
 	}
 	wg.Wait()
 }
@@ -469,10 +474,9 @@ func (self *apnsPushService) multiPush(req *pushRequest, pool *connpool.Pool) {
 func clearRequest(req *pushRequest, resChan chan *apnsResult) {
 	time.Sleep(time.Duration(maxWaitTime-1) * time.Second)
 
-	startId := req.maxMsgId - uint32(len(req.devtokens)-1)
 	for i, _ := range req.devtokens {
 		res := new(apnsResult)
-		res.msgId = startId + uint32(i)
+		res.msgId = req.getId(i)
 		res.status = uint8(0)
 		res.err = nil
 		req.resChan <- res
@@ -597,11 +601,9 @@ func (self *apnsPushService) pushWorker(psp *PushServiceProvider, reqChan chan *
 				return
 			}
 
-			mid := req.maxMsgId - 1
-
-			for _, _ = range req.devtokens {
+			for i, _ := range req.devtokens {
+				mid := req.getId(i)
 				reqMap[mid] = req
-				mid--
 			}
 
 			for _, dp := range req.dpList {
