@@ -210,7 +210,7 @@ receiving_APNS_status:
 	for {
 		select {
 		case res := <-resChan:
-			idx := res.msgId - lastId - uint32(n)
+			idx := res.msgId - lastId + uint32(n)
 			if idx >= uint32(len(dpList)) || idx < 0 {
 				continue
 			}
