@@ -186,6 +186,36 @@ func apnsresToError(apnsres *apnsResult, psp *PushServiceProvider, dp *DeliveryP
 	return err
 }
 
+func (self *apnsPushService) waitResults(psp *PushServiceProvider, dpList []*DeliveryPoint, lastId uint32, resChan chan *apnsResult) {
+	k := 0
+	n := len(dpList)
+	if n == 0 {
+		return
+	}
+receiving_APNS_status:
+	for {
+		select {
+		case res := <-resChan:
+			idx := lastId - res.msgId - 1
+			if idx >= uint32(len(dpList)) {
+				continue
+			}
+			dpList[idx] = nil
+			dp := dpList[idx]
+			err := apnsresToError(res, psp, dp)
+			if unsub, ok := err.(*UnsubscribeUpdate); ok {
+				self.errChan <- unsub
+			}
+			k++
+			if k >= n {
+				break receiving_APNS_status
+			}
+		case <-time.After(time.Duration(maxWaitTime) * time.Second):
+			break receiving_APNS_status
+		}
+	}
+}
+
 func (self *apnsPushService) Push(psp *PushServiceProvider, dpQueue <-chan *DeliveryPoint, resQueue chan<- *PushResult, notif *Notification) {
 	defer close(resQueue)
 	self.updateCheckPoint("")
@@ -193,6 +223,10 @@ func (self *apnsPushService) Push(psp *PushServiceProvider, dpQueue <-chan *Deli
 	req := new(pushRequest)
 	req.psp = psp
 	req.payload, err = toAPNSPayload(notif)
+
+	if err == nil && len(req.payload) > maxPayLoadSize {
+		err = NewBadNotificationWithDetails("Invalid payload size")
+	}
 
 	if err != nil {
 		res := new(PushResult)
@@ -252,7 +286,9 @@ func (self *apnsPushService) Push(psp *PushServiceProvider, dpQueue <-chan *Deli
 
 	self.reqChan <- req
 
-	for err := range errChan {
+	// errChan closed means the message(s) is/are sent
+	// to the APNS.
+	for err = range errChan {
 		res := new(PushResult)
 		res.Provider = psp
 		res.Content = notif
@@ -260,34 +296,10 @@ func (self *apnsPushService) Push(psp *PushServiceProvider, dpQueue <-chan *Deli
 		resQueue <- res
 	}
 	self.updateCheckPoint("sending the message takes")
-
-	k := 0
-
-receiving_APNS_status:
-	for {
-		select {
-		case res := <-resChan:
-			idx := lastId - res.msgId - 1
-			if idx >= uint32(len(dpList)) {
-				continue
-			}
-			dpList[idx] = nil
-			dp := dpList[idx]
-			r := new(PushResult)
-			r.Provider = psp
-			r.Content = notif
-			r.Destination = dp
-			r.MsgId = fmt.Sprintf("apns:%v-%v", psp.Name(), res.msgId)
-			r.Err = apnsresToError(res, psp, dp)
-			resQueue <- r
-			k++
-			if k >= n {
-				break receiving_APNS_status
-			}
-		case <-time.After(time.Duration(maxWaitTime) * time.Second):
-			break receiving_APNS_status
-		}
+	if err != nil {
+		return
 	}
+
 	for i, dp := range dpList {
 		if dp != nil {
 			r := new(PushResult)
@@ -300,7 +312,8 @@ receiving_APNS_status:
 			resQueue <- r
 		}
 	}
-	self.updateCheckPoint("waiting for the results takes")
+
+	go self.waitResults(psp, dpList, lastId, resChan)
 }
 
 func (self *apnsPushService) pushMux() {
@@ -444,6 +457,19 @@ func (self *apnsPushService) multiPush(req *pushRequest, pool *connpool.Pool) {
 	wg.Wait()
 }
 
+func clearRequest(req *pushRequest, resChan chan *apnsResult) {
+	time.Sleep(time.Duration(maxWaitTime-1) * time.Second)
+
+	startId := req.maxMsgId - uint32(len(req.devtokens)-1)
+	for i, _ := range req.devtokens {
+		res := new(apnsResult)
+		res.msgId = startId + uint32(i)
+		res.status = uint8(0)
+		res.err = nil
+		req.resChan <- res
+	}
+}
+
 func (self *apnsPushService) pushWorker(psp *PushServiceProvider, reqChan chan *pushRequest) {
 	resultChan := make(chan *apnsResult, 100)
 	manager := newAPNSConnManager(psp, resultChan)
@@ -465,6 +491,7 @@ func (self *apnsPushService) pushWorker(psp *PushServiceProvider, reqChan chan *
 				reqMap[mid] = req
 			}
 			go self.multiPush(req, pool)
+			go clearRequest(req, resultChan)
 		case res := <-resultChan:
 			if res == nil {
 				return
