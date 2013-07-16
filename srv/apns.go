@@ -25,6 +25,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/uniqush/cache"
 	"github.com/uniqush/connpool"
 	. "github.com/uniqush/uniqush-push/push"
 	"io"
@@ -37,10 +38,13 @@ import (
 )
 
 const (
-	maxWaitTime         time.Duration = 7
-	maxPayLoadSize      int           = 256
-	maxNrConn           int           = 13
-	feedbackCheckPeriod time.Duration = 600
+	maxPayLoadSize int = 256
+	maxNrConn      int = 13
+
+	// in Minutes
+	feedbackCheckPeriod int = 10
+	// in Seconds
+	maxWaitTime int = 7
 )
 
 type pushRequest struct {
@@ -50,6 +54,7 @@ type pushRequest struct {
 	maxMsgId  uint32
 	expiry    uint32
 
+	dpList  []*DeliveryPoint
 	errChan chan error
 	resChan chan *apnsResult
 }
@@ -279,6 +284,7 @@ func (self *apnsPushService) Push(psp *PushServiceProvider, dpQueue <-chan *Deli
 	lastId := self.getMessageIds(n)
 	req.maxMsgId = lastId
 	startId := lastId - uint32(n-1)
+	req.dpList = dpList
 
 	errChan := make(chan error)
 	resChan := make(chan *apnsResult, n)
@@ -510,7 +516,7 @@ func connectFeedback(psp *PushServiceProvider) (net.Conn, error) {
 	return tlsconn, nil
 }
 
-func (self *apnsPushService) feedbackReceiver(psp *PushServiceProvider) []string {
+func receiveFeedback(psp *PushServiceProvider) []string {
 	conn, err := connectFeedback(psp)
 	if conn == nil || err != nil {
 		return nil
@@ -551,11 +557,36 @@ func (self *apnsPushService) feedbackReceiver(psp *PushServiceProvider) []string
 	return ret
 }
 
+func processFeedback(psp *PushServiceProvider, dpCache *cache.Cache, errChan chan<- error) {
+	keys := receiveFeedback(psp)
+	for _, token := range keys {
+		dpif := dpCache.Delete(token)
+		if dpif == nil {
+			continue
+		}
+		if dp, ok := dpif.(*DeliveryPoint); ok {
+			err := NewUnsubscribeUpdate(psp, dp)
+			errChan <- err
+		}
+	}
+}
+
+func feedbackChecker(psp *PushServiceProvider, dpCache *cache.Cache, errChan chan<- error) {
+	for {
+		time.Sleep(time.Duration(feedbackCheckPeriod) * time.Minute)
+		processFeedback(psp, dpCache, errChan)
+	}
+}
+
 func (self *apnsPushService) pushWorker(psp *PushServiceProvider, reqChan chan *pushRequest) {
 	resultChan := make(chan *apnsResult, 100)
 	manager := newAPNSConnManager(psp, resultChan)
 	pool := connpool.NewPool(maxNrConn, maxNrConn, manager)
 	defer pool.Close()
+
+	dpCache := cache.New(256, -1, 0*time.Second, nil)
+
+	go feedbackChecker(psp, dpCache, self.errChan)
 
 	// XXX use a tree structure would be faster and more stable.
 	reqMap := make(map[uint32]*pushRequest, 1024)
@@ -566,10 +597,17 @@ func (self *apnsPushService) pushWorker(psp *PushServiceProvider, reqChan chan *
 				return
 			}
 
-			mid := req.maxMsgId
+			mid := req.maxMsgId - 1
 
 			for _, _ = range req.devtokens {
 				reqMap[mid] = req
+				mid--
+			}
+
+			for _, dp := range req.dpList {
+				if key, ok := dp.FixedData["devtoken"]; ok {
+					dpCache.Set(key, dp)
+				}
 			}
 			go self.multiPush(req, pool)
 			go clearRequest(req, resultChan)
