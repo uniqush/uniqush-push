@@ -259,7 +259,7 @@ func (self *apnsPushService) Push(psp *PushServiceProvider, dpQueue <-chan *Deli
 		res.Err = err
 		resQueue <- res
 	}
-	self.updateCheckPoint("push end")
+	self.updateCheckPoint("sending the message takes")
 
 	k := 0
 
@@ -300,6 +300,7 @@ receiving_APNS_status:
 			resQueue <- r
 		}
 	}
+	self.updateCheckPoint("waiting for the results takes")
 }
 
 func (self *apnsPushService) pushMux() {
