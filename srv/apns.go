@@ -30,6 +30,7 @@ import (
 	"io"
 	"net"
 	"strconv"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -379,11 +380,13 @@ func (self *apnsConnManager) NewConn() (conn net.Conn, err error) {
 	if err != nil {
 		return nil, err
 	}
-	go resultCollector(self.psp, self.resultChan, tlsconn)
 	return tlsconn, nil
 }
 
-func (self *apnsConnManager) InitConn(conn net.Conn) error {
+func (self *apnsConnManager) InitConn(conn net.Conn, n int) error {
+	if n == 0 {
+		go resultCollector(self.psp, self.resultChan, conn)
+	}
 	return nil
 }
 
@@ -468,6 +471,84 @@ func clearRequest(req *pushRequest, resChan chan *apnsResult) {
 		res.err = nil
 		req.resChan <- res
 	}
+}
+
+func connectFeedback(psp *PushServiceProvider) (net.Conn, error) {
+	cert, err := tls.LoadX509KeyPair(psp.FixedData["cert"], psp.FixedData["key"])
+	if err != nil {
+		return nil, NewBadPushServiceProviderWithDetails(psp, err.Error())
+	}
+
+	conf := &tls.Config{
+		Certificates:       []tls.Certificate{cert},
+		InsecureSkipVerify: false,
+	}
+
+	if skip, ok := psp.VolatileData["skipverify"]; ok {
+		if skip == "true" {
+			conf.InsecureSkipVerify = true
+		}
+	}
+
+	addr := "feedback.sandbox.push.apple.com:2196"
+	if psp.VolatileData["addr"] == "gateway.push.apple.com:2195" {
+		addr = "feedback.push.apple.com:2196"
+	} else if psp.VolatileData["addr"] == "gateway.sandbox.push.apple.com:2195" {
+		addr = "feedback.sandbox.push.apple.com:2196"
+	} else {
+		ae := strings.Split(psp.VolatileData["addr"], ":")
+		addr = fmt.Sprintf("%v:2196", ae[0])
+	}
+	tlsconn, err := tls.Dial("tcp", addr, conf)
+	if err != nil {
+		return nil, err
+	}
+	err = tlsconn.Handshake()
+	if err != nil {
+		return nil, err
+	}
+	return tlsconn, nil
+}
+
+func (self *apnsPushService) feedbackReceiver(psp *PushServiceProvider) []string {
+	conn, err := connectFeedback(psp)
+	if conn == nil || err != nil {
+		return nil
+	}
+	defer func() {
+		if conn != nil {
+			conn.Close()
+		}
+	}()
+
+	ret := make([]string, 0, 1)
+	for {
+		var unsubTime uint32
+		var tokenLen uint16
+
+		err := binary.Read(conn, binary.BigEndian, &unsubTime)
+		if err != nil {
+			return ret
+		}
+		err = binary.Read(conn, binary.BigEndian, &tokenLen)
+		if err != nil {
+			return ret
+		}
+		devtoken := make([]byte, int(tokenLen))
+
+		n, err := io.ReadFull(conn, devtoken)
+		if err != nil {
+			return ret
+		}
+		if n != int(tokenLen) {
+			return ret
+		}
+
+		devtokenstr := hex.EncodeToString(devtoken)
+		devtokenstr = strings.ToLower(devtokenstr)
+		ret = append(ret, devtokenstr)
+	}
+	return ret
 }
 
 func (self *apnsPushService) pushWorker(psp *PushServiceProvider, reqChan chan *pushRequest) {

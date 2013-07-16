@@ -10,14 +10,16 @@ mkdir -p $TEMP/pkg
 GOBIN=$TEMP/bin GOPATH=$TEMP go get github.com/uniqush/uniqush-push
 
 PWD=`pwd`
-cd $TEMP/src/github.com/uniqush/log/ && git checkout exp && go build
-cd $TEMP/src/github.com/uniqush/uniqush-push/ && git checkout exp && go build
+cd $TEMP/src/github.com/uniqush/log/ && git checkout exp
+cd $TEMP/src/github.com/uniqush/uniqush-push/ && git checkout exp
+GOBIN=$TEMP/bin GOPATH=$TEMP go get github.com/uniqush/uniqush-push
 cp $TEMP/src/github.com/uniqush/uniqush-push/uniqush-push $TEMP/bin/uniqush-push 
 cd $TEMP/
 cd ..
 
 
 VERSION=`$TEMP/bin/uniqush-push --version | sed 's/uniqush-push //'`
+echo "building version " $VERSION
 
 BUILD=`pwd`/uniqush-push-$VERSION
 mkdir -p $BUILD/usr/bin
