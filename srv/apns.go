@@ -188,6 +188,7 @@ func apnsresToError(apnsres *apnsResult, psp *PushServiceProvider, dp *DeliveryP
 
 func (self *apnsPushService) Push(psp *PushServiceProvider, dpQueue <-chan *DeliveryPoint, resQueue chan<- *PushResult, notif *Notification) {
 	defer close(resQueue)
+	self.updateCheckPoint("")
 	var err error
 	req := new(pushRequest)
 	req.psp = psp
@@ -258,6 +259,7 @@ func (self *apnsPushService) Push(psp *PushServiceProvider, dpQueue <-chan *Deli
 		res.Err = err
 		resQueue <- res
 	}
+	self.updateCheckPoint("push end")
 
 	k := 0
 
@@ -420,7 +422,6 @@ func (self *apnsPushService) singlePush(req *pushRequest, pool *connpool.Pool, m
 }
 
 func (self *apnsPushService) multiPush(req *pushRequest, pool *connpool.Pool) {
-	self.updateCheckPoint("")
 	if len(req.payload) > maxPayLoadSize {
 		req.errChan <- NewBadNotificationWithDetails("payload is too large")
 		return
@@ -440,7 +441,6 @@ func (self *apnsPushService) multiPush(req *pushRequest, pool *connpool.Pool) {
 		mid++
 	}
 	wg.Wait()
-	self.updateCheckPoint("multiPush-ed")
 }
 
 func (self *apnsPushService) pushWorker(psp *PushServiceProvider, reqChan chan *pushRequest) {
