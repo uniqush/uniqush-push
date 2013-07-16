@@ -23,7 +23,7 @@ platform.
 [notifica](https://notifica.re/), etc. All of them are wonderful services.
 However, [uniqush](http://uniqush.org) is different from them.
 [Uniqush](http://uniqush.org) is not a service. Instead,
-**[Uniqush](http://uniqush.org) is a system, which can run on your own
+**[Uniqush](http://uniqush.org) is a system, which runs on your own
 server**. In fact, if you wish, you can use uniqush to setup a similar service like [urbanairship](http://urbanairship.com).
 
 - Q: OK. Then is it a library? Like
