@@ -46,10 +46,17 @@ type pushRequest struct {
 	psp       *PushServiceProvider
 	devtokens [][]byte
 	payload   []byte
-	msgIds    []uint32
+	maxMsgId  uint32
 	expiry    uint32
 
 	errChan chan error
+	resChan chan *apnsResult
+}
+
+type apnsResult struct {
+	msgId  uint32
+	status uint8
+	err    error
 }
 
 type apnsPushService struct {
@@ -66,7 +73,7 @@ func InstallAPNS() {
 func newAPNSPushService() *apnsPushService {
 	ret := new(apnsPushService)
 	ret.reqChan = make(chan *pushRequest)
-	ret.nextMessageId = 0
+	ret.nextMessageId = 1
 	go ret.pushMux()
 	return ret
 }
@@ -146,11 +153,41 @@ func (p *apnsPushService) BuildDeliveryPointFromMap(kv map[string]string, dp *De
 	return nil
 }
 
-func (self *apnsPushService) getMessageId() uint32 {
-	return atomic.AddUint32(&self.nextMessageId, uint32(1))
+func (self *apnsPushService) getMessageIds(n int) uint32 {
+	return atomic.AddUint32(&self.nextMessageId, uint32(n))
+}
+
+func apnsresToError(apnsres *apnsResult, psp *PushServiceProvider, dp *DeliveryPoint) error {
+	var err error
+	switch apnsres.status {
+	case 0:
+		err = nil
+	case 1:
+		err = NewBadDeliveryPointWithDetails(dp, "Processing Error")
+	case 2:
+		err = NewBadDeliveryPointWithDetails(dp, "Missing Device Token")
+	case 3:
+		err = NewBadNotificationWithDetails("Missing topic")
+	case 4:
+		err = NewBadNotificationWithDetails("Missing payload")
+	case 5:
+		err = NewBadNotificationWithDetails("Invalid token size")
+	case 6:
+		err = NewBadNotificationWithDetails("Invalid topic size")
+	case 7:
+		err = NewBadNotificationWithDetails("Invalid payload size")
+	case 8:
+		// err = NewBadDeliveryPointWithDetails(req.dp, "Invalid Token")
+		// This token is invalid, we should unsubscribe this device.
+		err = NewUnsubscribeUpdate(psp, dp)
+	default:
+		err = fmt.Errorf("Unknown Error: %d", apnsres.status)
+	}
+	return err
 }
 
 func (self *apnsPushService) Push(psp *PushServiceProvider, dpQueue <-chan *DeliveryPoint, resQueue chan<- *PushResult, notif *Notification) {
+	defer close(resQueue)
 	var err error
 	req := new(pushRequest)
 	req.psp = psp
@@ -177,8 +214,8 @@ func (self *apnsPushService) Push(psp *PushServiceProvider, dpQueue <-chan *Deli
 		}
 	}
 	req.expiry = expiry
-	req.msgIds = make([]uint32, 0, 10)
 	req.devtokens = make([][]byte, 0, 10)
+	dpList := make([]*DeliveryPoint, 0, 10)
 
 	for dp := range dpQueue {
 		res := new(PushResult)
@@ -199,11 +236,18 @@ func (self *apnsPushService) Push(psp *PushServiceProvider, dpQueue <-chan *Deli
 		}
 
 		req.devtokens = append(req.devtokens, btoken)
-		req.msgIds = append(req.msgIds, self.getMessageId())
+		dpList = append(dpList, dp)
 	}
 
+	n := len(req.devtokens)
+	lastId := self.getMessageIds(n)
+	req.maxMsgId = lastId
+	startId := lastId - uint32(n-1)
+
 	errChan := make(chan error)
+	resChan := make(chan *apnsResult, n)
 	req.errChan = errChan
+	req.resChan = resChan
 
 	self.reqChan <- req
 
@@ -214,7 +258,46 @@ func (self *apnsPushService) Push(psp *PushServiceProvider, dpQueue <-chan *Deli
 		res.Err = err
 		resQueue <- res
 	}
-	close(resQueue)
+
+	k := 0
+
+receiving_APNS_status:
+	for {
+		select {
+		case res := <-resChan:
+			idx := lastId - res.msgId - 1
+			if idx >= uint32(len(dpList)) {
+				continue
+			}
+			dpList[idx] = nil
+			dp := dpList[idx]
+			r := new(PushResult)
+			r.Provider = psp
+			r.Content = notif
+			r.Destination = dp
+			r.MsgId = fmt.Sprintf("apns:%v-%v", psp.Name(), res.msgId)
+			r.Err = apnsresToError(res, psp, dp)
+			resQueue <- r
+			k++
+			if k >= n {
+				break receiving_APNS_status
+			}
+		case <-time.After(time.Duration(maxWaitTime) * time.Second):
+			break receiving_APNS_status
+		}
+	}
+	for i, dp := range dpList {
+		if dp != nil {
+			r := new(PushResult)
+			r.Provider = psp
+			r.Content = notif
+			r.Destination = dp
+			mid := startId + uint32(i)
+			r.MsgId = fmt.Sprintf("apns:%v-%v", psp.Name(), mid)
+			r.Err = nil
+			resQueue <- r
+		}
+	}
 }
 
 func (self *apnsPushService) pushMux() {
@@ -239,14 +322,15 @@ func (self *apnsPushService) pushMux() {
 }
 
 type apnsConnManager struct {
-	psp  *PushServiceProvider
-	cert tls.Certificate
-	conf *tls.Config
-	err  error
-	addr string
+	psp        *PushServiceProvider
+	cert       tls.Certificate
+	conf       *tls.Config
+	err        error
+	addr       string
+	resultChan chan *apnsResult
 }
 
-func newAPNSConnManager(psp *PushServiceProvider) *apnsConnManager {
+func newAPNSConnManager(psp *PushServiceProvider, resultChan chan *apnsResult) *apnsConnManager {
 	manager := new(apnsConnManager)
 	manager.cert, manager.err = tls.LoadX509KeyPair(psp.FixedData["cert"], psp.FixedData["key"])
 	if manager.err != nil {
@@ -263,6 +347,7 @@ func newAPNSConnManager(psp *PushServiceProvider) *apnsConnManager {
 		}
 	}
 	manager.addr = psp.VolatileData["addr"]
+	manager.resultChan = resultChan
 	return manager
 }
 
@@ -278,6 +363,7 @@ func (self *apnsConnManager) NewConn() (conn net.Conn, err error) {
 	if err != nil {
 		return nil, err
 	}
+	go resultCollector(self.psp, self.resultChan, tlsconn)
 	return tlsconn, nil
 }
 
@@ -285,7 +371,7 @@ func (self *apnsConnManager) InitConn(conn net.Conn) error {
 	return nil
 }
 
-func (self *apnsPushService) singlePush(req *pushRequest, pool *connpool.Pool, i int) {
+func (self *apnsPushService) singlePush(req *pushRequest, pool *connpool.Pool, mid uint32, token []byte) {
 	conn, err := pool.Get()
 	if err != nil {
 		req.errChan <- err
@@ -306,8 +392,6 @@ func (self *apnsPushService) singlePush(req *pushRequest, pool *connpool.Pool, i
 	var dataBuffer [2048]byte
 
 	payload := req.payload
-	token := req.devtokens[i]
-	mid := req.msgIds[i]
 
 	buffer := bytes.NewBuffer(dataBuffer[:0])
 	// command
@@ -341,33 +425,53 @@ func (self *apnsPushService) multiPush(req *pushRequest, pool *connpool.Pool) {
 		req.errChan <- NewBadNotificationWithDetails("payload is too large")
 		return
 	}
-	if len(req.msgIds) != len(req.devtokens) {
-		req.errChan <- NewBadNotificationWithDetails("message ids cannot be matched")
-		return
-	}
 	defer close(req.errChan)
 
-	n := len(req.msgIds)
+	n := len(req.devtokens)
 	wg := new(sync.WaitGroup)
 	wg.Add(n)
 
-	for i := 0; i < n; i++ {
-		go func(idx int) {
-			self.singlePush(req, pool, idx)
+	mid := req.maxMsgId - uint32(n)
+	for _, token := range req.devtokens {
+		go func(mid uint32, token []byte) {
+			self.singlePush(req, pool, mid, token)
 			wg.Done()
-		}(i)
+		}(mid, token)
+		mid++
 	}
 	wg.Wait()
 	self.updateCheckPoint("multiPush-ed")
 }
 
 func (self *apnsPushService) pushWorker(psp *PushServiceProvider, reqChan chan *pushRequest) {
-	manager := newAPNSConnManager(psp)
+	resultChan := make(chan *apnsResult, 100)
+	manager := newAPNSConnManager(psp, resultChan)
 	pool := connpool.NewPool(maxNrConn, maxNrConn, manager)
+	defer pool.Close()
+
+	// XXX use a tree structure would be faster and more stable.
+	reqMap := make(map[uint32]*pushRequest, 1024)
 	for {
 		select {
 		case req := <-reqChan:
+			if req == nil {
+				return
+			}
+
+			mid := req.maxMsgId
+
+			for _, _ = range req.devtokens {
+				reqMap[mid] = req
+			}
 			go self.multiPush(req, pool)
+		case res := <-resultChan:
+			if res == nil {
+				return
+			}
+			if req, ok := reqMap[res.msgId]; ok {
+				delete(reqMap, res.msgId)
+				req.resChan <- res
+			}
 		}
 	}
 }
@@ -470,4 +574,50 @@ func (self *apnsPushService) updateCheckPoint(prefix string) {
 		fmt.Printf("%v: %v\n", prefix, duration)
 	}
 	self.checkPoint = time.Now()
+}
+
+func resultCollector(psp *PushServiceProvider, resChan chan<- *apnsResult, c net.Conn) {
+	defer c.Close()
+	for {
+		var cmd uint8
+		var status uint8
+		var msgid uint32
+		buf := make([]byte, 6)
+
+		_, err := io.ReadFull(c, buf)
+		if err != nil {
+			return
+		}
+
+		byteBuffer := bytes.NewBuffer(buf)
+
+		err = binary.Read(byteBuffer, binary.BigEndian, &cmd)
+		if err != nil {
+			res := new(apnsResult)
+			res.err = err
+			resChan <- res
+			continue
+		}
+
+		err = binary.Read(byteBuffer, binary.BigEndian, &status)
+		if err != nil {
+			res := new(apnsResult)
+			res.err = err
+			resChan <- res
+			continue
+		}
+
+		err = binary.Read(byteBuffer, binary.BigEndian, &msgid)
+		if err != nil {
+			res := new(apnsResult)
+			res.err = err
+			resChan <- res
+			continue
+		}
+
+		res := new(apnsResult)
+		res.msgId = msgid
+		res.status = status
+		resChan <- res
+	}
 }
