@@ -21,9 +21,9 @@ platform.
 - A: [urbanairship](http://urbanairship.com) is a great service, and there're
   other similar services available, like [openpush](http://openpush.im/),
 [notifica](https://notifica.re/), etc. All of them are wonderful services.
-However, [uniqush](http://uniqush.org) is different from those services.
+However, [uniqush](http://uniqush.org) is different from them.
 [Uniqush](http://uniqush.org) is not a service. Instead,
-**[Uniqush](http://uniqush.org) is a system, which can running on your own
+**[Uniqush](http://uniqush.org) is a system, which can run on your own
 server**. In fact, if you wish, you can use uniqush to setup a similar service like [urbanairship](http://urbanairship.com).
 
 - Q: OK. Then is it a library? Like
@@ -34,7 +34,7 @@ language to use, package dependencies, etc.
 
 - Q: But wait, how can I use it anyway? I mean, if my program wants to push
   something, I need to tell uniqush about this action. How can I communicate
-with uniqush-push? There must be some library so that I can use it in my
+with uniqush? There must be some library so that I can use it in my
 program to talk with uniqush, right?
 - A: We are trying to make it easier. *uniqush-push* provides RESTful APIs. In
   other words, you talk with *uniqush-push* through HTTP protocol. As long as
