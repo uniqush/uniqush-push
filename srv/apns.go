@@ -232,7 +232,8 @@ receiving_APNS_status:
 
 func (self *apnsPushService) Push(psp *PushServiceProvider, dpQueue <-chan *DeliveryPoint, resQueue chan<- *PushResult, notif *Notification) {
 	defer close(resQueue)
-	self.updateCheckPoint("")
+	// Profiling
+	// self.updateCheckPoint("")
 	var err error
 	req := new(pushRequest)
 	req.psp = psp
@@ -308,7 +309,8 @@ func (self *apnsPushService) Push(psp *PushServiceProvider, dpQueue <-chan *Deli
 		res.Err = err
 		resQueue <- res
 	}
-	self.updateCheckPoint("sending the message takes")
+	// Profiling
+	// self.updateCheckPoint("sending the message takes")
 	if err != nil {
 		return
 	}
