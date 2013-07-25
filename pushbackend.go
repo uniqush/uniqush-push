@@ -94,6 +94,9 @@ func (self *PushBackEnd) fixError(reqId string, event error, logger Logger, afte
 	var ok bool
 	switch err := event.(type) {
 	case *RetryError:
+		if err.Provider == nil || err.Destination == nil || err.Content == nil {
+			return nil
+		}
 		if service, ok = err.Provider.FixedData["service"]; !ok {
 			return nil
 		}
@@ -116,6 +119,9 @@ func (self *PushBackEnd) fixError(reqId string, event error, logger Logger, afte
 			self.pushImpl(reqId, service, subs, err.Content, nil, self.loggers[LOGGER_PUSH], err.Provider, err.Destination, after)
 		}()
 	case *PushServiceProviderUpdate:
+		if err.Provider == nil {
+			return nil
+		}
 		if service, ok = err.Provider.FixedData["service"]; !ok {
 			return nil
 		}
@@ -127,6 +133,9 @@ func (self *PushBackEnd) fixError(reqId string, event error, logger Logger, afte
 			logger.Infof("RequestID=%v Service=%v PushServiceProvider=%v Update Success", reqId, service, psp.Name())
 		}
 	case *DeliveryPointUpdate:
+		if err.Destination == nil {
+			return nil
+		}
 		if sub, ok = err.Destination.FixedData["subscriber"]; !ok {
 			return nil
 		}
@@ -138,6 +147,9 @@ func (self *PushBackEnd) fixError(reqId string, event error, logger Logger, afte
 			logger.Infof("Service=%v Subscriber=%v DeliveryPoint=%v Update Success", service, sub, dp.Name())
 		}
 	case *UnsubscribeUpdate:
+		if err.Provider == nil || err.Destination == nil {
+			return nil
+		}
 		if service, ok = err.Provider.FixedData["service"]; !ok {
 			return nil
 		}
