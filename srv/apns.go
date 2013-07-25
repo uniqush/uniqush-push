@@ -215,7 +215,6 @@ receiving_APNS_status:
 				continue
 			}
 			dp := dpList[idx]
-			dpList[idx] = nil
 			err := apnsresToError(res, psp, dp)
 			if unsub, ok := err.(*UnsubscribeUpdate); ok {
 				self.errChan <- unsub
