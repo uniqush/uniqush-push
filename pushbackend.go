@@ -92,6 +92,9 @@ func (self *PushBackEnd) fixError(reqId string, event error, logger Logger, afte
 	var service string
 	var sub string
 	var ok bool
+	if event == nil {
+		return nil
+	}
 	switch err := event.(type) {
 	case *RetryError:
 		if err.Provider == nil || err.Destination == nil || err.Content == nil {
