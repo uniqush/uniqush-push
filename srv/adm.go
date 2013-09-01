@@ -267,7 +267,11 @@ func admNewRequest(psp *PushServiceProvider, dp *DeliveryPoint, data []byte) (re
 	return
 }
 
-func admSinglePush(psp *PushServiceProvider, dp *DeliveryPoint, data []byte) (string, error) {
+type admPushFailResponse struct {
+	Reason string `json:"reason"`
+}
+
+func admSinglePush(psp *PushServiceProvider, dp *DeliveryPoint, data []byte, notif *Notification) (string, error) {
 	client := &http.Client{}
 	req, err := admNewRequest(psp, dp, data)
 	if err != nil {
@@ -282,11 +286,47 @@ func admSinglePush(psp *PushServiceProvider, dp *DeliveryPoint, data []byte) (st
 
 	id := resp.Header.Get("x-amzn-RequestId")
 	if resp.StatusCode != 200 {
+		if resp.StatusCode == 503 || resp.StatusCode == 500 || resp.StatusCode == 429 {
+			// By default, we retry after one minute.
+			retryAfter := resp.Header.Get("Retry-After")
+			retrySecond := 60
+			if retryAfter != "" {
+				retrySecond, err = strconv.Atoi(retryAfter)
+				if err != nil {
+					retrySecond = 60
+				}
+			}
+			retryDuration := time.Duration(retrySecond) * time.Second
+			err = NewRetryError(psp, dp, notif, retryDuration)
+			return id, err
+		}
+
 		body, err := ioutil.ReadAll(resp.Body)
 		if err != nil {
 			return "", err
 		}
-		err = fmt.Errorf("%v: %v", resp.StatusCode, string(body))
+
+		var fail admPushFailResponse
+		err = json.Unmarshal(body, &fail)
+		if err != nil {
+			err = fmt.Errorf("%v: %v", resp.StatusCode, string(body))
+			return "", err
+		}
+
+		reason := strings.ToLower(fail.Reason)
+
+		switch reason {
+		case "messagetoolarge":
+			err = NewBadNotificationWithDetails("MessageTooLarge")
+		case "invalidregistrationid":
+			err = NewBadDeliveryPointWithDetails(dp, "InvalidRegistrationId")
+		case "accesstokenexpired":
+			// retry would fix it.
+			err = NewRetryError(psp, dp, notif, 10*time.Second)
+		default:
+			err = fmt.Errorf("%v: %v", resp.StatusCode, fail.Reason)
+		}
+
 		return "", err
 	}
 	return id, nil
@@ -297,6 +337,7 @@ func (self *admPushService) Push(psp *PushServiceProvider, dpQueue <-chan *Deliv
 	defer func() {
 		for _ = range dpQueue {
 		}
+		fmt.Printf("Done")
 	}()
 
 	err := requestToken(psp)
@@ -334,7 +375,7 @@ func (self *admPushService) Push(psp *PushServiceProvider, dpQueue <-chan *Deliv
 		res.Provider = psp
 		res.Destination = dp
 		go func() {
-			res.MsgId, res.Err = admSinglePush(psp, dp, data)
+			res.MsgId, res.Err = admSinglePush(psp, dp, data, notif)
 			resQueue <- res
 			wg.Done()
 		}()
