@@ -193,6 +193,7 @@ func (self *gcmPushService) multicast(psp *PushServiceProvider, dpList []*Delive
 		}
 		return
 	}
+	defer req.Body.Close()
 
 	apikey := psp.VolatileData["apikey"]
 

@@ -28,12 +28,13 @@ import (
 var uniqushPushConfFlags = flag.String("config", "/etc/uniqush/uniqush-push.conf", "Config file path")
 var uniqushPushShowVersionFlag = flag.Bool("version", false, "Version info")
 
-var uniqushPushVersion = "uniqush-push 1.4.5"
+var uniqushPushVersion = "uniqush-push 1.5.0a1"
 
 func installPushSrvices() {
 	InstallGCM()
 	InstallC2DM()
 	InstallAPNS()
+	InstallADM()
 }
 
 func main() {
