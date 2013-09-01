@@ -168,7 +168,7 @@ func requestToken(psp *PushServiceProvider) error {
 		reason := strings.ToUpper(fail.Reason)
 		switch reason {
 		case "INVALID_SCOPE":
-			reason := "ADM is not enabled. Enable it on the Amazon Mobile App Distribution Portal"
+			reason = "ADM is not enabled. Enable it on the Amazon Mobile App Distribution Portal"
 		}
 		return NewBadPushServiceProviderWithDetails(psp, fmt.Sprintf("%v:%v", resp.StatusCode, reason))
 	}
