@@ -37,11 +37,24 @@ const (
 	admServiceURL string = "https://api.amazon.com/messaging/registrations/"
 )
 
+type pspLockResponse struct {
+	err error
+	psp *PushServiceProvider
+}
+
+type pspLockRequest struct {
+	psp    *PushServiceProvider
+	respCh chan<- *pspLockResponse
+}
+
 type admPushService struct {
+	pspLock chan *pspLockRequest
 }
 
 func newADMPushService() *admPushService {
 	ret := new(admPushService)
+	ret.pspLock = make(chan *pspLockRequest)
+	go admPspLocker(ret.pspLock)
 	return ret
 }
 
@@ -100,6 +113,37 @@ func (self *admPushService) BuildDeliveryPointFromMap(kv map[string]string, dp *
 	return nil
 }
 
+func admPspLocker(lockChan <-chan *pspLockRequest) {
+	pspLockMap := make(map[string]*PushServiceProvider, 10)
+	for req := range lockChan {
+		var ok bool
+		var clientid string
+		psp := req.psp
+
+		resp := new(pspLockResponse)
+		if clientid, ok = psp.FixedData["clientid"]; !ok {
+			resp.err = NewBadPushServiceProviderWithDetails(psp, "NoClientID")
+			req.respCh <- resp
+			continue
+		}
+
+		if psp, ok = pspLockMap[clientid]; !ok {
+			psp = req.psp
+			pspLockMap[clientid] = psp
+		}
+		resp.err = requestToken(psp)
+		resp.psp = psp
+		if resp.err != nil {
+			if _, ok := resp.err.(*PushServiceProviderUpdate); ok {
+				pspLockMap[clientid] = psp
+			} else {
+				delete(pspLockMap, clientid)
+			}
+		}
+		req.respCh <- resp
+	}
+}
+
 type tokenSuccObj struct {
 	Token  string `json:"access_token"`
 	Expire int    `json:"expires_in"`
@@ -112,7 +156,6 @@ type tokenFailObj struct {
 	Description string `json:"error_description"`
 }
 
-// FIXME concurrency bug: lock the token for each psp.
 func requestToken(psp *PushServiceProvider) error {
 	var ok bool
 	var clientid string
@@ -181,8 +224,6 @@ func requestToken(psp *PushServiceProvider) error {
 	if err != nil {
 		return NewBadPushServiceProviderWithDetails(psp, err.Error())
 	}
-
-	fmt.Printf("Obtained the token: %+v\n", succ)
 
 	expire := time.Now().Add(time.Duration(succ.Expire-60) * time.Second)
 
@@ -332,19 +373,33 @@ func admSinglePush(psp *PushServiceProvider, dp *DeliveryPoint, data []byte, not
 	return id, nil
 }
 
+func (self *admPushService) lockPsp(psp *PushServiceProvider) (*PushServiceProvider, error) {
+	respCh := make(chan *pspLockResponse)
+	req := &pspLockRequest{
+		psp:    psp,
+		respCh: respCh,
+	}
+
+	self.pspLock <- req
+
+	resp := <-respCh
+
+	return resp.psp, resp.err
+}
+
 func (self *admPushService) Push(psp *PushServiceProvider, dpQueue <-chan *DeliveryPoint, resQueue chan<- *PushResult, notif *Notification) {
 	defer close(resQueue)
 	defer func() {
 		for _ = range dpQueue {
 		}
-		fmt.Printf("Done")
 	}()
 
-	err := requestToken(psp)
 	res := new(PushResult)
 	res.Content = notif
 	res.Provider = psp
 
+	var err error
+	psp, err = self.lockPsp(psp)
 	if err != nil {
 		res.Err = err
 		resQueue <- res
