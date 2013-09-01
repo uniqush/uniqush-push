@@ -28,6 +28,7 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -111,6 +112,7 @@ type tokenFailObj struct {
 	Description string `json:"error_description"`
 }
 
+// FIXME concurrency bug: lock the token for each psp.
 func requestToken(psp *PushServiceProvider) error {
 	var ok bool
 	var clientid string
@@ -122,7 +124,7 @@ func requestToken(psp *PushServiceProvider) error {
 			if err == nil {
 				deadline := time.Unix(unixsec, int64(0))
 				if deadline.After(time.Now()) {
-					fmt.Printf("We don't need to request another token")
+					fmt.Printf("We don't need to request another token\n")
 					return nil
 				}
 			}
@@ -190,8 +192,113 @@ func requestToken(psp *PushServiceProvider) error {
 	return NewPushServiceProviderUpdate(psp)
 }
 
+type admMessage struct {
+	Data     map[string]string `json:"data"`
+	MsgGroup string            `json:"consolidationKey,omitempty"`
+	TTL      int64             `json:"expiresAfter,omitempty"`
+	MD5      string            `json:"md5,omitempty"`
+}
+
+func notifToMessage(notif *Notification) (msg *admMessage, err error) {
+	if notif == nil || len(notif.Data) == 0 {
+		err = NewBadNotificationWithDetails("empty notification")
+		return
+	}
+
+	msg = new(admMessage)
+	msg.Data = make(map[string]string, len(notif.Data))
+	for k, v := range notif.Data {
+		switch k {
+		case "msggroup":
+			msg.MsgGroup = v
+		case "ttl":
+			ttl, err := strconv.ParseInt(v, 10, 64)
+			if err != nil {
+				continue
+			}
+			msg.TTL = ttl
+		default:
+			msg.Data[k] = v
+		}
+	}
+	if len(msg.Data) == 0 {
+		err = NewBadNotificationWithDetails("empty notification")
+		return
+	}
+	return
+}
+
+func admURL(dp *DeliveryPoint) (url string, err error) {
+	if dp == nil {
+		err = fmt.Errorf("nil dp")
+		return
+	}
+	if regid, ok := dp.FixedData["regid"]; ok {
+		url = fmt.Sprintf("%v%v/messages", admServiceURL, regid)
+	} else {
+		err = NewBadDeliveryPointWithDetails(dp, "empty delivery point")
+	}
+	return
+}
+
+func admNewRequest(psp *PushServiceProvider, dp *DeliveryPoint, data []byte) (req *http.Request, err error) {
+	var token string
+	var ok bool
+	if token, ok = psp.VolatileData["token"]; !ok {
+		err = NewBadPushServiceProviderWithDetails(psp, "NoToken")
+		return
+	}
+	url, err := admURL(dp)
+	if err != nil {
+		return
+	}
+
+	req, err = http.NewRequest("POST", url, bytes.NewBuffer(data))
+	if err != nil {
+		return
+	}
+
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Accept", "application/json")
+	req.Header.Set("x-amzn-type-version", "com.amazon.device.messaging.ADMMessage@1.0")
+	req.Header.Set("x-amzn-accept-type", "com.amazon.device.messaging.ADMSendResult@1.0")
+	req.Header.Set("Authorization", "Bearer "+token)
+
+	return
+}
+
+func admSinglePush(psp *PushServiceProvider, dp *DeliveryPoint, data []byte) (string, error) {
+	client := &http.Client{}
+	req, err := admNewRequest(psp, dp, data)
+	if err != nil {
+		return "", err
+	}
+	defer req.Body.Close()
+	resp, err := client.Do(req)
+	if err != nil {
+		return "", err
+	}
+	defer resp.Body.Close()
+
+	id := resp.Header.Get("x-amzn-RequestId")
+	if resp.StatusCode != 200 {
+		body, err := ioutil.ReadAll(resp.Body)
+		if err != nil {
+			return "", err
+		}
+		err = fmt.Errorf("%v: %v", resp.StatusCode, string(body))
+		return "", err
+	}
+	return id, nil
+}
+
 func (self *admPushService) Push(psp *PushServiceProvider, dpQueue <-chan *DeliveryPoint, resQueue chan<- *PushResult, notif *Notification) {
 	defer close(resQueue)
+	defer func() {
+		for _ = range dpQueue {
+		}
+	}()
+
 	err := requestToken(psp)
 	res := new(PushResult)
 	res.Content = notif
@@ -201,11 +308,36 @@ func (self *admPushService) Push(psp *PushServiceProvider, dpQueue <-chan *Deliv
 		res.Err = err
 		resQueue <- res
 		if _, ok := err.(*PushServiceProviderUpdate); !ok {
-			for _ = range dpQueue {
-			}
 			return
 		}
 	}
-	for _ = range dpQueue {
+	msg, err := notifToMessage(notif)
+	if err != nil {
+		res.Err = err
+		resQueue <- res
+		return
 	}
+
+	data, err := json.Marshal(msg)
+	if err != nil {
+		res.Err = err
+		resQueue <- res
+		return
+	}
+
+	wg := sync.WaitGroup{}
+
+	for dp := range dpQueue {
+		wg.Add(1)
+		res := new(PushResult)
+		res.Content = notif
+		res.Provider = psp
+		res.Destination = dp
+		go func() {
+			res.MsgId, res.Err = admSinglePush(psp, dp, data)
+			resQueue <- res
+			wg.Done()
+		}()
+	}
+	wg.Wait()
 }
