@@ -20,7 +20,6 @@ package main
 import (
 	"flag"
 	"fmt"
-	"github.com/VividCortex/godaemon"
 	. "github.com/uniqush/uniqush-push/srv"
 	"os"
 	"runtime"
@@ -28,7 +27,6 @@ import (
 
 var uniqushPushConfFlags = flag.String("config", "/etc/uniqush/uniqush-push.conf", "Config file path")
 var uniqushPushShowVersionFlag = flag.Bool("version", false, "Version info")
-var uniqushPushGoDaemon = flag.Bool("d", false, "daemon")
 
 var uniqushPushVersion = "uniqush-push 1.5.0"
 
@@ -44,9 +42,6 @@ func main() {
 	if *uniqushPushShowVersionFlag {
 		fmt.Printf("%v\n", uniqushPushVersion)
 		return
-	}
-	if *uniqushPushGoDaemon {
-		godaemon.Daemonize(true)
 	}
 	runtime.GOMAXPROCS(runtime.NumCPU() + 1)
 	installPushSrvices()
