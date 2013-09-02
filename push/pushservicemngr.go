@@ -37,10 +37,6 @@ var (
 	pushServiceManager *PushServiceManager
 )
 
-func init() {
-	//    pushServiceManager = newPushServiceManager()
-}
-
 /* This is a singleton */
 func newPushServiceManager() *PushServiceManager {
 	ret := new(PushServiceManager)
