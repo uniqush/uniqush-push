@@ -330,25 +330,85 @@ func (self *apnsPushService) Push(psp *PushServiceProvider, dpQueue <-chan *Deli
 	go self.waitResults(psp, dpList, lastId, resChan)
 }
 
+type pushWorkerInfo struct {
+	psp *PushServiceProvider
+	ch  chan *pushRequest
+}
+
+func samePsp(a *PushServiceProvider, b *PushServiceProvider) bool {
+	if a.Name() == b.Name() {
+		if len(a.VolatileData) != len(b.VolatileData) {
+			return false
+		}
+		for k, v := range a.VolatileData {
+			if b.VolatileData[k] != v {
+				return false
+			}
+		}
+	}
+	return false
+}
+
 func (self *apnsPushService) pushMux() {
-	connChan := make(map[string]chan *pushRequest, 10)
+	connMap := make(map[string]*pushWorkerInfo, 10)
 	for req := range self.reqChan {
 		if req == nil {
 			break
 		}
 		psp := req.psp
-		var ch chan *pushRequest
-		var ok bool
-		if ch, ok = connChan[psp.Name()]; !ok {
-			ch = make(chan *pushRequest)
-			connChan[psp.Name()] = ch
-			go self.pushWorker(psp, ch)
+		worker, ok := connMap[psp.Name()]
+
+		needAdd := false
+		if !ok {
+			needAdd = true
+		} else {
+			if !samePsp(worker.psp, psp) {
+				close(worker.ch)
+				needAdd = true
+			}
 		}
-		ch <- req
+
+		if needAdd {
+			worker = &pushWorkerInfo{
+				psp: psp,
+				ch:  make(chan *pushRequest),
+			}
+			connMap[psp.Name()] = worker
+			go self.pushWorker(psp, worker.ch)
+		}
+
+		if worker != nil {
+			worker.ch <- req
+		}
 	}
-	for _, c := range connChan {
-		close(c)
+	for _, worker := range connMap {
+		if worker == nil || worker.ch == nil {
+			continue
+		}
+		close(worker.ch)
 	}
+	/*
+		connChan := make(map[string]chan *pushRequest, 10)
+		for req := range self.reqChan {
+			if req == nil {
+				break
+			}
+			psp := req.psp
+			var ch chan *pushRequest
+			var ok bool
+
+			fmt.Printf("Received push request. using psp: %v %v\n", psp.FixedData, psp.VolatileData)
+			if ch, ok = connChan[psp.Name()]; !ok {
+				ch = make(chan *pushRequest)
+				connChan[psp.Name()] = ch
+				go self.pushWorker(psp, ch)
+			}
+			ch <- req
+		}
+		for _, c := range connChan {
+			close(c)
+		}
+	*/
 }
 
 type apnsConnManager struct {
