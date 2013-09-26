@@ -753,6 +753,8 @@ func toAPNSPayload(n *Notification) ([]byte, error) {
 			}
 		case "sound":
 			aps["sound"] = v
+		case "content-available":
+			aps["content-available"] = v
 		case "img":
 			alert["launch-image"] = v
 		case "id":
