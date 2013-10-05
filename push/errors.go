@@ -22,6 +22,24 @@ import (
 	"time"
 )
 
+// This is not an actual error.
+// But it is worthy to be reported to the user.
+type InfoReport struct {
+	info string
+}
+
+func (e *InfoReport) Error() string {
+	return e.info
+}
+
+func NewInfo(msg string) *InfoReport {
+	return &InfoReport{info: msg}
+}
+
+func NewInfof(f string, v ...interface{}) *InfoReport {
+	return &InfoReport{info: fmt.Sprintf(f, v...)}
+}
+
 /*********************/
 
 type RetryError struct {

@@ -84,7 +84,13 @@ func (self *PushBackEnd) Unsubscribe(service, sub string, dp *DeliveryPoint) err
 func (self *PushBackEnd) processError() {
 	for err := range self.errChan {
 		rid, _ := uuid.NewV4()
-		self.fixError(rid.String(), err, self.loggers[LOGGER_PUSH], 0*time.Second)
+		e := self.fixError(rid.String(), err, self.loggers[LOGGER_PUSH], 0*time.Second)
+		switch e0 := e.(type) {
+		case *InfoReport:
+			self.loggers[LOGGER_PUSH].Infof("%v", e0)
+		default:
+			self.loggers[LOGGER_PUSH].Errorf("Error: %v", e0)
+		}
 	}
 }
 
@@ -196,7 +202,7 @@ func (self *PushBackEnd) collectResult(reqId string, service string, resChan <-c
 			if res.Destination != nil {
 				dpName = res.Destination.Name()
 			}
-			logger.Infof("RequestID=%v Service=%v Subscriber=%v PushServiceProvider=%v DeliveryPoint=%v Failed: %v", reqId, service, sub, pspName, dpName, err)
+			logger.Errorf("RequestID=%v Service=%v Subscriber=%v PushServiceProvider=%v DeliveryPoint=%v Failed: %v", reqId, service, sub, pspName, dpName, err)
 		}
 	}
 }
