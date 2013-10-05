@@ -29,6 +29,7 @@ import (
 	"github.com/uniqush/connpool"
 	. "github.com/uniqush/uniqush-push/push"
 	"io"
+	"math/rand"
 	"net"
 	"strconv"
 	"strings"
@@ -206,25 +207,19 @@ func (self *apnsPushService) waitResults(psp *PushServiceProvider, dpList []*Del
 	if n == 0 {
 		return
 	}
-receiving_APNS_status:
-	for {
-		select {
-		case res := <-resChan:
-			idx := res.msgId - lastId + uint32(n)
-			if idx >= uint32(len(dpList)) || idx < 0 {
-				continue
-			}
-			dp := dpList[idx]
-			err := apnsresToError(res, psp, dp)
-			if unsub, ok := err.(*UnsubscribeUpdate); ok {
-				self.errChan <- unsub
-			}
-			k++
-			if k >= n {
-				break receiving_APNS_status
-			}
-		case <-time.After(time.Duration(maxWaitTime) * time.Second):
-			break receiving_APNS_status
+	for res := range resChan {
+		idx := res.msgId - lastId + uint32(n)
+		if idx >= uint32(len(dpList)) || idx < 0 {
+			continue
+		}
+		dp := dpList[idx]
+		err := apnsresToError(res, psp, dp)
+		if unsub, ok := err.(*UnsubscribeUpdate); ok {
+			self.errChan <- unsub
+		}
+		k++
+		if k >= n {
+			return
 		}
 	}
 }
@@ -345,6 +340,7 @@ func samePsp(a *PushServiceProvider, b *PushServiceProvider) bool {
 				return false
 			}
 		}
+		return true
 	}
 	return false
 }
@@ -387,28 +383,6 @@ func (self *apnsPushService) pushMux() {
 		}
 		close(worker.ch)
 	}
-	/*
-		connChan := make(map[string]chan *pushRequest, 10)
-		for req := range self.reqChan {
-			if req == nil {
-				break
-			}
-			psp := req.psp
-			var ch chan *pushRequest
-			var ok bool
-
-			fmt.Printf("Received push request. using psp: %v %v\n", psp.FixedData, psp.VolatileData)
-			if ch, ok = connChan[psp.Name()]; !ok {
-				ch = make(chan *pushRequest)
-				connChan[psp.Name()] = ch
-				go self.pushWorker(psp, ch)
-			}
-			ch <- req
-		}
-		for _, c := range connChan {
-			close(c)
-		}
-	*/
 }
 
 type apnsConnManager struct {
@@ -503,12 +477,15 @@ func (self *apnsPushService) singlePush(req *pushRequest, pool *connpool.Pool, m
 	buffer.Write(payload)
 
 	pdu := buffer.Bytes()
+
+	deadline := time.Now().Add(time.Duration(maxWaitTime) * time.Second)
+	conn.SetWriteDeadline(deadline)
 	err = writen(conn, pdu)
 	if err != nil {
 		req.errChan <- err
 		return
 	}
-
+	conn.SetWriteDeadline(time.Time{})
 }
 
 func (self *apnsPushService) multiPush(req *pushRequest, pool *connpool.Pool) {
@@ -533,7 +510,7 @@ func (self *apnsPushService) multiPush(req *pushRequest, pool *connpool.Pool) {
 }
 
 func clearRequest(req *pushRequest, resChan chan *apnsResult) {
-	time.Sleep(time.Duration(maxWaitTime-1) * time.Second)
+	time.Sleep(time.Duration(maxWaitTime+2) * time.Second)
 
 	for i, _ := range req.devtokens {
 		res := new(apnsResult)
@@ -649,6 +626,8 @@ func (self *apnsPushService) pushWorker(psp *PushServiceProvider, reqChan chan *
 	pool := connpool.NewPool(maxNrConn, maxNrConn, manager)
 	defer pool.Close()
 
+	workerid := fmt.Sprintf("workder-%v-%v", time.Now().Unix(), rand.Int63())
+
 	dpCache := cache.New(256, -1, 0*time.Second, nil)
 
 	go feedbackChecker(psp, dpCache, self.errChan)
@@ -659,6 +638,7 @@ func (self *apnsPushService) pushWorker(psp *PushServiceProvider, reqChan chan *
 		select {
 		case req := <-reqChan:
 			if req == nil {
+				fmt.Printf("[%v][%v] I was told to stop (req == nil)\n", time.Now(), workerid)
 				return
 			}
 
@@ -676,11 +656,14 @@ func (self *apnsPushService) pushWorker(psp *PushServiceProvider, reqChan chan *
 			go clearRequest(req, resultChan)
 		case res := <-resultChan:
 			if res == nil {
+				fmt.Printf("[%v][%v] I was told to stop (res == nil)\n", time.Now(), workerid)
 				return
 			}
 			if req, ok := reqMap[res.msgId]; ok {
 				delete(reqMap, res.msgId)
 				req.resChan <- res
+			} else if res.err != nil {
+				self.errChan <- res.err
 			}
 		}
 	}
@@ -691,7 +674,7 @@ func writen(w io.Writer, buf []byte) error {
 	for n >= 0 {
 		l, err := w.Write(buf)
 		if err != nil {
-			if nerr, ok := err.(net.Error); ok && nerr.Temporary() {
+			if nerr, ok := err.(net.Error); ok && nerr.Temporary() && !nerr.Timeout() {
 				continue
 			}
 			return err
@@ -796,8 +779,16 @@ func resultCollector(psp *PushServiceProvider, resChan chan<- *apnsResult, c net
 		var msgid uint32
 		buf := make([]byte, 6)
 
+		deadline := time.Now().Add(time.Duration(maxWaitTime) * time.Second)
+		c.SetReadDeadline(deadline)
 		_, err := io.ReadFull(c, buf)
 		if err != nil {
+			if nerr, ok := err.(net.Error); ok && nerr.Timeout() {
+				continue
+			}
+			res := new(apnsResult)
+			res.err = NewInfof("Connection closed by APNS: %v", err)
+			resChan <- res
 			return
 		}
 
