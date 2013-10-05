@@ -790,11 +790,8 @@ func resultCollector(psp *PushServiceProvider, resChan chan<- *apnsResult, c net
 			buf[i] = 0
 		}
 
-		deadline := time.Now().Add(time.Duration(maxWaitTime) * time.Second)
-		c.SetReadDeadline(deadline)
 		_, err := io.ReadFull(c, buf)
 		if err != nil {
-			fmt.Printf("ERROR: %v\n", err)
 			if nerr, ok := err.(net.Error); ok && nerr.Timeout() {
 				continue
 			}
