@@ -415,14 +415,20 @@ func newAPNSConnManager(psp *PushServiceProvider, resultChan chan *apnsResult) *
 	return manager
 }
 
-func (self *apnsConnManager) NewConn() (conn net.Conn, err error) {
+func (self *apnsConnManager) NewConn() (net.Conn, error) {
 	if self.err != nil {
-		return nil, err
+		return nil, self.err
 	}
-	tlsconn, err := tls.Dial("tcp", self.addr, self.conf)
+
+	conn, err := net.DialTimeout("tcp", self.addr, time.Duration(maxWaitTime)*time.Second)
 	if err != nil {
 		return nil, err
 	}
+
+	if c, ok := conn.(*net.TCPConn); ok {
+		c.SetKeepAlive(true)
+	}
+	tlsconn := tls.Client(conn, self.conf)
 	err = tlsconn.Handshake()
 	if err != nil {
 		return nil, err
@@ -773,16 +779,22 @@ func (self *apnsPushService) updateCheckPoint(prefix string) {
 
 func resultCollector(psp *PushServiceProvider, resChan chan<- *apnsResult, c net.Conn) {
 	defer c.Close()
+	var bufData [6]byte
 	for {
 		var cmd uint8
 		var status uint8
 		var msgid uint32
-		buf := make([]byte, 6)
+		buf := bufData[:]
+
+		for i, _ := range buf {
+			buf[i] = 0
+		}
 
 		deadline := time.Now().Add(time.Duration(maxWaitTime) * time.Second)
 		c.SetReadDeadline(deadline)
 		_, err := io.ReadFull(c, buf)
 		if err != nil {
+			fmt.Printf("ERROR: %v\n", err)
 			if nerr, ok := err.(net.Error); ok && nerr.Timeout() {
 				continue
 			}
