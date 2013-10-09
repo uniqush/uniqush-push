@@ -45,7 +45,7 @@ const (
 	// in Minutes
 	feedbackCheckPeriod int = 10
 	// in Seconds
-	maxWaitTime int = 7
+	maxWaitTime int = 20
 )
 
 type pushRequest struct {
@@ -433,23 +433,20 @@ func (self *apnsConnManager) NewConn() (net.Conn, error) {
 	if err != nil {
 		return nil, err
 	}
+	go resultCollector(self.psp, self.resultChan, tlsconn)
 	return tlsconn, nil
 }
 
 func (self *apnsConnManager) InitConn(conn net.Conn, n int) error {
-	if n == 0 {
-		go resultCollector(self.psp, self.resultChan, conn)
-	}
 	return nil
 }
 
-func (self *apnsPushService) singlePush(req *pushRequest, pool *connpool.Pool, mid uint32, token []byte) {
+func (self *apnsPushService) singlePush(payload, token []byte, expiry uint32, mid uint32, pool *connpool.Pool, errChan chan<- error) {
 	conn, err := pool.Get()
 	if err != nil {
-		req.errChan <- err
+		errChan <- err
 		return
 	}
-	defer conn.Close()
 	// Total size for each notification:
 	//
 	// - command: 1
@@ -463,8 +460,6 @@ func (self *apnsPushService) singlePush(req *pushRequest, pool *connpool.Pool, m
 	// In total, 301 bytes (max)
 	var dataBuffer [2048]byte
 
-	payload := req.payload
-
 	buffer := bytes.NewBuffer(dataBuffer[:0])
 	// command
 	binary.Write(buffer, binary.BigEndian, uint8(1))
@@ -472,7 +467,7 @@ func (self *apnsPushService) singlePush(req *pushRequest, pool *connpool.Pool, m
 	binary.Write(buffer, binary.BigEndian, mid)
 
 	// Expiry
-	binary.Write(buffer, binary.BigEndian, req.expiry)
+	binary.Write(buffer, binary.BigEndian, expiry)
 
 	// device token
 	binary.Write(buffer, binary.BigEndian, uint16(len(token)))
@@ -486,12 +481,28 @@ func (self *apnsPushService) singlePush(req *pushRequest, pool *connpool.Pool, m
 
 	deadline := time.Now().Add(time.Duration(maxWaitTime) * time.Second)
 	conn.SetWriteDeadline(deadline)
+
 	err = writen(conn, pdu)
-	if err != nil {
-		req.errChan <- err
-		return
+
+	sleepTime := 3 * time.Second
+	for nrRetries := 0; err != nil && nrRetries < 3; nrRetries++ {
+		errChan <- fmt.Errorf("error on connection with %v: %v. Will retry within %v", conn.RemoteAddr(), err, sleepTime)
+		errChan = self.errChan
+		conn.Close()
+
+		time.Sleep(sleepTime)
+		sleepTime *= sleepTime
+		// Let's try another connection to see if we can recover this error
+		conn, err = pool.Get()
+
+		if err != nil {
+			errChan <- fmt.Errorf("We are unable to get a connection: %v", err)
+			return
+		}
+		err = writen(conn, pdu)
 	}
 	conn.SetWriteDeadline(time.Time{})
+	conn.Close()
 }
 
 func (self *apnsPushService) multiPush(req *pushRequest, pool *connpool.Pool) {
@@ -508,7 +519,7 @@ func (self *apnsPushService) multiPush(req *pushRequest, pool *connpool.Pool) {
 	for i, token := range req.devtokens {
 		mid := req.getId(i)
 		go func(mid uint32, token []byte) {
-			self.singlePush(req, pool, mid, token)
+			self.singlePush(req.payload, token, req.expiry, mid, pool, req.errChan)
 			wg.Done()
 		}(mid, token)
 	}
