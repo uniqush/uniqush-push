@@ -19,7 +19,7 @@ package main
 
 import (
 	"fmt"
-	"github.com/nu7hatch/gouuid"
+
 	"github.com/uniqush/log"
 	. "github.com/uniqush/uniqush-push/push"
 	"io"
@@ -66,11 +66,11 @@ var validSubscriberPattern *regexp.Regexp
 
 func init() {
 	var err error
-	validServicePattern, err = regexp.Compile("^[a-zA-z\\.0-9-_]+$")
+	validServicePattern, err = regexp.Compile("^[a-zA-z\\.0-9-_@]+$")
 	if err != nil {
 		validServicePattern = nil
 	}
-	validSubscriberPattern, err = regexp.Compile("^[a-zA-z\\.0-9-_]+$")
+	validSubscriberPattern, err = regexp.Compile("^[a-zA-z\\.0-9-_@]+$")
 	if err != nil {
 		validSubscriberPattern = nil
 	}
@@ -80,7 +80,7 @@ func validateSubscribers(subs []string) error {
 	if validSubscriberPattern != nil {
 		for _, sub := range subs {
 			if !validSubscriberPattern.MatchString(sub) {
-				return fmt.Errorf("invalid subscriber name: %s. Accept charaters: a-z, A-Z, 0-9, -, _ or .", sub)
+				return fmt.Errorf("invalid subscriber name: %s. Accept charaters: a-z, A-Z, 0-9, -, _, @ or .", sub)
 			}
 		}
 	}
@@ -90,7 +90,7 @@ func validateSubscribers(subs []string) error {
 func validateService(service string) error {
 	if validServicePattern != nil {
 		if !validServicePattern.MatchString(service) {
-			return fmt.Errorf("invalid service name: %s. Accept charaters: a-z, A-Z, 0-9, -, _ or .", service)
+			return fmt.Errorf("invalid service name: %s. Accept charaters: a-z, A-Z, 0-9, -, _, @ or .", service)
 		}
 	}
 	return nil
