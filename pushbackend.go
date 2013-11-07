@@ -18,7 +18,6 @@
 package main
 
 import (
-	"github.com/nu7hatch/gouuid"
 	. "github.com/uniqush/log"
 	. "github.com/uniqush/uniqush-push/db"
 	. "github.com/uniqush/uniqush-push/push"
@@ -83,8 +82,8 @@ func (self *PushBackEnd) Unsubscribe(service, sub string, dp *DeliveryPoint) err
 
 func (self *PushBackEnd) processError() {
 	for err := range self.errChan {
-		rid, _ := uuid.NewV4()
-		e := self.fixError(rid.String(), err, self.loggers[LOGGER_PUSH], 0*time.Second)
+		rid := randomUniqId()
+		e := self.fixError(rid, err, self.loggers[LOGGER_PUSH], 0*time.Second)
 		switch e0 := e.(type) {
 		case *InfoReport:
 			self.loggers[LOGGER_PUSH].Infof("%v", e0)

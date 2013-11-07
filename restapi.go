@@ -18,6 +18,10 @@
 package main
 
 import (
+	"crypto/rand"
+	"encoding/base64"
+	"time"
+
 	"fmt"
 
 	"github.com/uniqush/log"
@@ -37,6 +41,12 @@ type RestAPI struct {
 	version   string
 	waitGroup *sync.WaitGroup
 	stopChan  chan<- bool
+}
+
+func randomUniqId() string {
+	var d [16]byte
+	io.ReadFull(rand.Reader, d[:])
+	return fmt.Sprintf("%x-%v", time.Now().Unix(), base64.URLEncoding.EncodeToString(d[:]))
 }
 
 // loggers: sequence is web, add
@@ -334,8 +344,8 @@ func (self *RestAPI) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	case PUSH_NOTIFICATION_URL:
 		weblogger := log.NewLogger(writer, "[Push]", logLevel)
 		logger := log.MultiLogger(weblogger, self.loggers[LOGGER_PUSH])
-		rid, _ := uuid.NewV4()
-		self.pushNotification(rid.String(), kv, perdp, logger, remoteAddr)
+		rid := randomUniqId()
+		self.pushNotification(rid, kv, perdp, logger, remoteAddr)
 	}
 }
 
