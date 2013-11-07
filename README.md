@@ -1,5 +1,7 @@
 - [Homepage](http://uniqush.org)
 - [Download](http://uniqush.org/downloads.html)
+- [Blog/News](http://blog.uniqush.org)
+- [@uniqush](http://twitter.com/uniqush)
 
 # Introduction #
 
