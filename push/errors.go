@@ -47,10 +47,24 @@ type RetryError struct {
 	Provider    *PushServiceProvider
 	Destination *DeliveryPoint
 	Content     *Notification
+	Reason      error
 }
 
 func (e *RetryError) Error() string {
+	if e.Reason != nil {
+		return fmt.Sprintf("Retry (%v)", e.Reason)
+	}
 	return fmt.Sprintf("Retry")
+}
+
+func NewRetryErrorWithReason(psp *PushServiceProvider, dp *DeliveryPoint, notif *Notification, after time.Duration, reason error) error {
+	return &RetryError{
+		After:       after,
+		Provider:    psp,
+		Destination: dp,
+		Content:     notif,
+		Reason:      reason,
+	}
 }
 
 func NewRetryError(psp *PushServiceProvider, dp *DeliveryPoint, notif *Notification, after time.Duration) error {

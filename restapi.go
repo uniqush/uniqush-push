@@ -20,10 +20,7 @@ package main
 import (
 	"crypto/rand"
 	"encoding/base64"
-	"time"
-
 	"fmt"
-
 	"github.com/uniqush/log"
 	. "github.com/uniqush/uniqush-push/push"
 	"io"
@@ -32,6 +29,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"time"
 )
 
 type RestAPI struct {

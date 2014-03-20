@@ -23,11 +23,12 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	. "github.com/uniqush/uniqush-push/push"
 	"io/ioutil"
+	"net"
 	"net/http"
 	"strconv"
 	"time"
+	. "github.com/uniqush/uniqush-push/push"
 )
 
 const (
@@ -211,8 +212,21 @@ func (self *gcmPushService) multicast(psp *PushServiceProvider, dpList []*Delive
 			res.Provider = psp
 			res.Content = notif
 
-			res.Err = e2
 			res.Destination = dp
+			if err, ok := e2.(net.Error); ok {
+				// Temporary error. Try to recover
+				if err.Temporary() {
+					after := 3 * time.Second
+					res.Err = NewRetryErrorWithReason(psp, dp, notif, after, err)
+				}
+			} else if err, ok := e2.(*net.DNSError); ok {
+				// DNS error, try to recover it by retry
+				after := 3 * time.Second
+				res.Err = NewRetryErrorWithReason(psp, dp, notif, after, err)
+
+			} else {
+				res.Err = e2
+			}
 			resQueue <- res
 		}
 		return
