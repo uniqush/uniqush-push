@@ -21,8 +21,6 @@ import (
 	"crypto/rand"
 	"encoding/base64"
 	"fmt"
-	"github.com/uniqush/log"
-	. "github.com/uniqush/uniqush-push/push"
 	"io"
 	"net/http"
 	"regexp"
@@ -30,6 +28,9 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/uniqush/log"
+	. "github.com/uniqush/uniqush-push/push"
 )
 
 type RestAPI struct {
@@ -113,7 +114,13 @@ func getSubscribersFromMap(kv map[string]string, validate bool) (subs []string, 
 			return
 		}
 	}
-	subs = strings.Split(v, ",")
+	s := strings.Split(v, ",")
+	subs = make([]string, 0, len(s))
+	for _, sub := range s {
+		if len(sub) > 0 {
+			subs = append(subs, sub)
+		}
+	}
 	if validate {
 		err = validateSubscribers(subs)
 		if err != nil {
@@ -245,7 +252,7 @@ func (self *RestAPI) pushNotification(reqId string, kv map[string]string, perdp 
 		return
 	}
 
-	logger.Infof("RequestId=%v From=%v Service=%v Subscribers=\"%v\"", reqId, remoteAddr, service, subs)
+	logger.Infof("RequestId=%v From=%v Service=%v NrSubscribers=%v Subscribers=\"%+v\"", reqId, remoteAddr, service, len(subs), subs)
 
 	self.backend.Push(reqId, service, subs, notif, perdp, logger)
 	return
