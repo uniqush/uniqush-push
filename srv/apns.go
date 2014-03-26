@@ -25,9 +25,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/uniqush/cache"
-	"github.com/uniqush/connpool"
-	. "github.com/uniqush/uniqush-push/push"
 	"io"
 	"math/rand"
 	"net"
@@ -36,6 +33,10 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
+
+	"github.com/uniqush/cache"
+	"github.com/uniqush/connpool"
+	. "github.com/uniqush/uniqush-push/push"
 )
 
 const (
@@ -161,6 +162,10 @@ func (p *apnsPushService) BuildDeliveryPointFromMap(kv map[string]string, dp *De
 		return errors.New("NoSubscriber")
 	}
 	if devtoken, ok := kv["devtoken"]; ok && len(devtoken) > 0 {
+		_, err := hex.DecodeString(devtoken)
+		if err != nil {
+			return fmt.Errorf("Invalid delivery point: bad device token. %v", err)
+		}
 		dp.FixedData["devtoken"] = devtoken
 	} else {
 		return errors.New("NoDevToken")

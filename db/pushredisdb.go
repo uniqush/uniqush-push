@@ -20,10 +20,11 @@ package db
 import (
 	"errors"
 	"fmt"
-	redis "github.com/monnand/goredis"
-	. "github.com/uniqush/uniqush-push/push"
 	"strconv"
 	"strings"
+
+	redis "github.com/monnand/goredis"
+	. "github.com/uniqush/uniqush-push/push"
 )
 
 type PushRedisDB struct {
@@ -75,22 +76,22 @@ func newPushRedisDB(c *DatabaseConfig) (*PushRedisDB, error) {
 	return ret, nil
 }
 
-func (r *PushRedisDB) keyValueToDeliveryPoint(name string, value []byte) *DeliveryPoint {
+func (r *PushRedisDB) keyValueToDeliveryPoint(name string, value []byte) (dp *DeliveryPoint, err error) {
 	psm := r.psm
-	dp, err := psm.BuildDeliveryPointFromBytes(value)
+	dp, err = psm.BuildDeliveryPointFromBytes(value)
 	if err != nil {
-		return nil
+		dp = nil
 	}
-	return dp
+	return
 }
 
-func (r *PushRedisDB) keyValueToPushServiceProvider(name string, value []byte) *PushServiceProvider {
+func (r *PushRedisDB) keyValueToPushServiceProvider(name string, value []byte) (psp *PushServiceProvider, err error) {
 	psm := r.psm
-	psp, err := psm.BuildPushServiceProviderFromBytes(value)
+	psp, err = psm.BuildPushServiceProviderFromBytes(value)
 	if err != nil {
-		return nil
+		psp = nil
 	}
-	return psp
+	return
 }
 
 func deliveryPointToValue(dp *DeliveryPoint) []byte {
@@ -109,7 +110,7 @@ func (r *PushRedisDB) GetDeliveryPoint(name string) (*DeliveryPoint, error) {
 	if b == nil {
 		return nil, nil
 	}
-	return r.keyValueToDeliveryPoint(name, b), nil
+	return r.keyValueToDeliveryPoint(name, b)
 }
 
 func (r *PushRedisDB) SetDeliveryPoint(dp *DeliveryPoint) error {
@@ -125,7 +126,7 @@ func (r *PushRedisDB) GetPushServiceProvider(name string) (*PushServiceProvider,
 	if b == nil {
 		return nil, nil
 	}
-	return r.keyValueToPushServiceProvider(name, b), nil
+	return r.keyValueToPushServiceProvider(name, b)
 }
 
 func (r *PushRedisDB) SetPushServiceProvider(psp *PushServiceProvider) error {
