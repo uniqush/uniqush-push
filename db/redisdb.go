@@ -116,12 +116,12 @@ func (self *redisPushDatabase) AddProvider(provider push.Provider) error {
 	if err != nil {
 		return err
 	}
-	n, err := redis.Int(reply, err)
+	n, err := redis.String(reply, err)
 	if err != nil {
 		return err
 	}
-	if n != 1 {
-		err = fmt.Errorf("Trying to add provider %v. But set %v values in redis", provider.UniqId(), n)
+	if n != "OK" {
+		err = fmt.Errorf("Trying to add provider %v. received message: %v", provider.UniqId(), n)
 		return err
 	}
 	return nil
