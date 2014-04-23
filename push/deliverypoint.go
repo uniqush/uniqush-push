@@ -1,6 +1,7 @@
 package push
 
 type DeliveryPoint interface {
+	// APNS, GCM, ect.
 	PushService() string
 	Provider() string
 	UniqId() string
