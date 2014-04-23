@@ -7,7 +7,7 @@ import (
 )
 
 type PushService interface {
-	Type() string
+	Name() string
 	MarshalDeliveryPoint(dp DeliveryPoint) (data []byte, err error)
 	UnmarshalDeliveryPoint(data []byte, dp DeliveryPoint) error
 	UnmarshalDeliveryPointFromMap(data map[string]string, dp DeliveryPoint) error

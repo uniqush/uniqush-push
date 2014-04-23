@@ -24,7 +24,7 @@ type simplePushService struct {
 	UnmarshalFromMapToStructPushService
 }
 
-func (self *simplePushService) Type() string {
+func (self *simplePushService) Name() string {
 	return "badfruit"
 }
 
