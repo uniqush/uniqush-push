@@ -5,6 +5,20 @@ import (
 	"testing"
 )
 
+type simpleProvider struct {
+	ApiKey    string `json:"apikey"`
+	OtherInfo string `json:"other"`
+	BasicProvider
+}
+
+func (self *simpleProvider) UniqId() string {
+	return self.ApiKey
+}
+
+func (self *simpleProvider) PushService() string {
+	return "gcm"
+}
+
 type simplePushService struct {
 	BasicPushService
 	UnmarshalFromMapToStructPushService
@@ -39,7 +53,7 @@ func TestPushServiceBuildDeliveryPoint(t *testing.T) {
 	}
 }
 
-func TestPushServiceBuildDeliveryPointBackwardCompatible(t *testing.T) {
+func TestPushServiceBuildDeliveryPointBackwardCompatibility(t *testing.T) {
 	var ps PushService
 	sps := &simplePushService{}
 	sps.This = sps
@@ -59,5 +73,52 @@ func TestPushServiceBuildDeliveryPointBackwardCompatible(t *testing.T) {
 	}
 	if !reflect.DeepEqual(&sdp2, sdp) {
 		t.Errorf("%+v != %+v", &sdp2, sdp)
+	}
+}
+
+func TestPushServiceBuildProvider(t *testing.T) {
+	var ps PushService
+	ps = &simplePushService{}
+	sp := &simpleProvider{
+		ApiKey: "apikey",
+	}
+	sp.ServiceName = "service"
+	var sp2 simpleProvider
+
+	data, err := ps.MarshalProvider(sp)
+
+	if err != nil {
+		t.Error(err)
+	}
+
+	err = ps.UnmarshalProvider(data, &sp2)
+	if err != nil {
+		t.Error(err)
+	}
+	if !reflect.DeepEqual(&sp2, sp) {
+		t.Errorf("%+v != %+v", &sp2, sp)
+	}
+}
+
+func TestPushServiceBuildProviderBackwardCompatibility(t *testing.T) {
+	var ps PushService
+	sps := &simplePushService{}
+	sps.This = sps
+	ps = sps
+	sp := &simpleProvider{
+		ApiKey: "apikey",
+	}
+	sp.ServiceName = "service"
+	sp.OtherInfo = "foobar"
+	var sp2 simpleProvider
+
+	data := []byte("[{\"apikey\":\"apikey\",\"service\":\"service\"},{\"other\":\"foobar\"}]")
+
+	err := ps.UnmarshalProvider(data, &sp2)
+	if err != nil {
+		t.Error(err)
+	}
+	if !reflect.DeepEqual(&sp2, sp) {
+		t.Errorf("%+v != %+v", &sp2, sp)
 	}
 }

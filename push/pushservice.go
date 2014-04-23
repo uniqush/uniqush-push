@@ -3,6 +3,7 @@ package push
 import (
 	"encoding/json"
 	"fmt"
+	"reflect"
 )
 
 type PushService interface {
@@ -10,9 +11,21 @@ type PushService interface {
 	MarshalDeliveryPoint(dp DeliveryPoint) (data []byte, err error)
 	UnmarshalDeliveryPoint(data []byte, dp DeliveryPoint) error
 	UnmarshalDeliveryPointFromMap(data map[string]string, dp DeliveryPoint) error
+
+	MarshalProvider(p Provider) (data []byte, err error)
+	UnmarshalProvider(data []byte, p Provider) error
+	UnmarshalProviderFromMap(data map[string]string, p Provider) error
 }
 
 type UnmarshalFromMapToStructPushService struct {
+}
+
+func (self *UnmarshalFromMapToStructPushService) UnmarshalProviderFromMap(data map[string]string, p Provider) error {
+	d, err := json.Marshal(data)
+	if err != nil {
+		return err
+	}
+	return json.Unmarshal(d, p)
 }
 
 func (self *UnmarshalFromMapToStructPushService) UnmarshalDeliveryPointFromMap(data map[string]string, dp DeliveryPoint) error {
@@ -25,6 +38,7 @@ func (self *UnmarshalFromMapToStructPushService) UnmarshalDeliveryPointFromMap(d
 
 type mapToPushPeer interface {
 	UnmarshalDeliveryPointFromMap(data map[string]string, dp DeliveryPoint) error
+	UnmarshalProviderFromMap(data map[string]string, p Provider) error
 }
 
 type BasicPushService struct {
@@ -33,6 +47,19 @@ type BasicPushService struct {
 
 func (self *BasicPushService) MarshalDeliveryPoint(dp DeliveryPoint) (data []byte, err error) {
 	data, err = json.Marshal(dp)
+	if err != nil {
+		err = fmt.Errorf("Unable to marshal data %+v: %v", dp, err)
+		data = nil
+	}
+	return
+}
+
+func (self *BasicPushService) MarshalProvider(dp Provider) (data []byte, err error) {
+	data, err = json.Marshal(dp)
+	if err != nil {
+		err = fmt.Errorf("Unable to marshal data %+v: %v", dp, err)
+		data = nil
+	}
 	return
 }
 
@@ -59,14 +86,33 @@ func (self *BasicPushService) oldDataToMap(data []byte) (m map[string]string, er
 	return
 }
 
-func (self *BasicPushService) UnmarshalDeliveryPoint(data []byte, dp DeliveryPoint) error {
+func (self *BasicPushService) unmarshal(data []byte, i interface{}) error {
 	// Backward compatible!
 	if self.This != nil && len(data) > 0 && data[0] != '{' {
 		m, err := self.oldDataToMap(data)
 		if err != nil {
+			err = fmt.Errorf("backward compatiblity issue: %v", err)
 			return err
 		}
-		return self.This.UnmarshalDeliveryPointFromMap(m, dp)
+		if dp, ok := i.(DeliveryPoint); ok {
+			return self.This.UnmarshalDeliveryPointFromMap(m, dp)
+		} else if p, ok := i.(Provider); ok {
+			return self.This.UnmarshalProviderFromMap(m, p)
+		}
+		return fmt.Errorf("Unknown type to unmarshal: %v", reflect.TypeOf(i))
 	}
-	return json.Unmarshal(data, dp)
+	err := json.Unmarshal(data, i)
+	if err != nil {
+		err = fmt.Errorf("Unable to marshal data %v: %v", string(data), err)
+		return err
+	}
+	return nil
+}
+
+func (self *BasicPushService) UnmarshalProvider(data []byte, dp Provider) error {
+	return self.unmarshal(data, dp)
+}
+
+func (self *BasicPushService) UnmarshalDeliveryPoint(data []byte, dp DeliveryPoint) error {
+	return self.unmarshal(data, dp)
 }
