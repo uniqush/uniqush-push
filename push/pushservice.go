@@ -6,6 +6,29 @@ import (
 	"reflect"
 )
 
+type PushResult struct {
+	Provider    Provider
+	Destination DeliveryPoint
+	Content     *Notification
+	MsgId       string
+	Err         error
+}
+
+func (self *PushResult) Error() string {
+	if self.Error != nil {
+		return fmt.Sprintf("Failed PushServiceProvider=%s DeliveryPoint=%s %v",
+			self.Provider.UniqId(), self.Destination.UniqId(), self.Err)
+	}
+	return fmt.Sprintf("Success PushServiceProvider=%s DeliveryPoint=%s Succsess!",
+		self.Provider.UniqId(), self.Destination.UniqId())
+}
+
+type PushRequest struct {
+	Provider     Provider
+	Destinations []DeliveryPoint
+	Content      *Notification
+}
+
 type PushService interface {
 	Name() string
 	MarshalDeliveryPoint(dp DeliveryPoint) (data []byte, err error)
@@ -15,6 +38,8 @@ type PushService interface {
 	MarshalProvider(p Provider) (data []byte, err error)
 	UnmarshalProvider(data []byte, p Provider) error
 	UnmarshalProviderFromMap(data map[string]string, p Provider) error
+
+	Push(req *PushRequest, resChan chan<- *PushResult)
 }
 
 type UnmarshalFromMapToStructPushService struct {

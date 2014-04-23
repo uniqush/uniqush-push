@@ -5,6 +5,13 @@ import (
 	"testing"
 )
 
+type nopPusher struct {
+}
+
+func (self *nopPusher) Push(req *PushRequest, resChan chan<- *PushResult) {
+	return
+}
+
 type simpleProvider struct {
 	ApiKey    string `json:"apikey"`
 	OtherInfo string `json:"other"`
@@ -22,6 +29,7 @@ func (self *simpleProvider) PushService() string {
 type simplePushService struct {
 	BasicPushService
 	UnmarshalFromMapToStructPushService
+	nopPusher
 }
 
 func (self *simplePushService) Name() string {
