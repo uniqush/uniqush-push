@@ -36,26 +36,37 @@ func (self *BasicPushService) MarshalDeliveryPoint(dp DeliveryPoint) (data []byt
 	return
 }
 
+func (self *BasicPushService) oldDataToMap(data []byte) (m map[string]string, err error) {
+	var mapslice []map[string]string
+	err = json.Unmarshal(data, &mapslice)
+	if err != nil {
+		err = fmt.Errorf("Unable to use old unmarshal technique. %v: %v", err, string(data))
+		return
+	}
+
+	// merge these data into one big map
+	if len(mapslice) > 1 {
+		for _, m := range mapslice[1:] {
+			for k, v := range m {
+				mapslice[0][k] = v
+			}
+		}
+	} else {
+		err = fmt.Errorf("Unable to use old unmarshal technique. Has to be a 2-element slice: %v", string(data))
+		return
+	}
+	m = mapslice[0]
+	return
+}
+
 func (self *BasicPushService) UnmarshalDeliveryPoint(data []byte, dp DeliveryPoint) error {
 	// Backward compatible!
 	if self.This != nil && len(data) > 0 && data[0] != '{' {
-		var mapslice []map[string]string
-		err := json.Unmarshal(data, &mapslice)
+		m, err := self.oldDataToMap(data)
 		if err != nil {
-			return fmt.Errorf("Unable to use old unmarshal technique. %v: %v", err, string(data))
+			return err
 		}
-
-		// merge these data into one big map
-		if len(mapslice) > 1 {
-			for _, m := range mapslice[1:] {
-				for k, v := range m {
-					mapslice[0][k] = v
-				}
-			}
-		} else {
-			return fmt.Errorf("Unable to use old unmarshal technique. Has to be a 2-element slice: %v", string(data))
-		}
-		return self.This.UnmarshalDeliveryPointFromMap(mapslice[0], dp)
+		return self.This.UnmarshalDeliveryPointFromMap(m, dp)
 	}
 	return json.Unmarshal(data, dp)
 }
