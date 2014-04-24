@@ -38,3 +38,121 @@ func TestPairSerialization(t *testing.T) {
 		t.Errorf("Not same!")
 	}
 }
+
+func TestPairSerializationNoEnoughData(t *testing.T) {
+	ps := &simplePushService{}
+	ps.This = ps
+	push.RegisterPushService(ps)
+
+	p := &simpleProvider{
+		ApiKey: "key",
+	}
+	dp := &simpleDeliveryPoint{
+		DevToken: "sometoken",
+	}
+
+	pair := &ProviderDeliveryPointPair{
+		Provider:      p,
+		DeliveryPoint: dp,
+	}
+
+	data, err := pair.Bytes()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	np := &ProviderDeliveryPointPair{}
+	err = np.Load(data[:len(data)/2])
+	if err == nil {
+		t.Fatal("Should fail")
+	}
+}
+
+func TestPairSerializationNoService(t *testing.T) {
+	ps := &simplePushService{}
+	ps.This = ps
+	push.RegisterPushService(ps)
+
+	p := &simpleProvider{
+		ApiKey: "key",
+	}
+	dp := &simpleDeliveryPoint{
+		DevToken: "sometoken",
+	}
+
+	pair := &ProviderDeliveryPointPair{
+		Provider:      p,
+		DeliveryPoint: dp,
+	}
+
+	data, err := pair.Bytes()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	np := &ProviderDeliveryPointPair{}
+	err = np.Load(data[:len(data)/2])
+	if err == nil {
+		t.Fatal("Should fail")
+	}
+}
+
+func TestPairSerializationInvalidPushServiceName(t *testing.T) {
+	ps := &simplePushService{}
+	ps.This = ps
+	push.RegisterPushService(ps)
+
+	p := &simpleProvider{
+		ApiKey: "key",
+	}
+	dp := &simpleDeliveryPoint{
+		DevToken: "sometoken",
+	}
+
+	pair := &ProviderDeliveryPointPair{
+		Provider:      p,
+		DeliveryPoint: dp,
+	}
+
+	data, err := pair.Bytes()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	np := &ProviderDeliveryPointPair{}
+	data[1] = byte('{')
+	err = np.Load(data)
+	if err == nil {
+		t.Fatal("Should fail")
+	}
+}
+
+func TestPairSerializationUnknownPushServiceName(t *testing.T) {
+	ps := &simplePushService{}
+	ps.This = ps
+	push.RegisterPushService(ps)
+
+	p := &simpleProvider{
+		ApiKey: "key",
+	}
+	dp := &simpleDeliveryPoint{
+		DevToken: "sometoken",
+	}
+
+	pair := &ProviderDeliveryPointPair{
+		Provider:      p,
+		DeliveryPoint: dp,
+	}
+
+	data, err := pair.Bytes()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	np := &ProviderDeliveryPointPair{}
+	data[1] = byte('0')
+	err = np.Load(data)
+	if err == nil {
+		t.Fatal("Should fail")
+	}
+}

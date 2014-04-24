@@ -16,7 +16,16 @@ func (self *PushServiceManager) RegisterPushService(ps PushService) error {
 	if self.psmap == nil {
 		self.psmap = make(map[string]PushService, 5)
 	}
-	self.psmap[ps.Name()] = ps
+	psname := ps.Name()
+	for _, ch := range psname {
+		if !((ch >= 'a' && ch <= 'z') ||
+			(ch >= 'A' && ch <= 'Z') ||
+			(ch >= '0' && ch <= '9') ||
+			ch == '_' || ch == '.') {
+			return fmt.Errorf("push service name contains invalid character: %v", psname)
+		}
+	}
+	self.psmap[psname] = ps
 	return nil
 }
 

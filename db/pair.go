@@ -58,6 +58,14 @@ func (self *ProviderDeliveryPointPair) Load(data []byte) error {
 			s = i
 			break
 		}
+		// a-zA-Z0-9_.
+		if !((ch >= byte('a') && ch <= byte('z')) ||
+			(ch >= byte('A') && ch <= byte('Z')) ||
+			(ch >= byte('0') && ch <= byte('9')) ||
+			ch == byte('_') || ch == byte('.')) {
+			return fmt.Errorf("the push service name has unexpected character: %v", string(data[:i+1]))
+		}
+
 	}
 	if s <= 0 {
 		return fmt.Errorf("corrupted data: no push service name in the pair. %v", data)
