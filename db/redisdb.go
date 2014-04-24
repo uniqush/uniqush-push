@@ -149,7 +149,7 @@ func (self *redisPushDatabase) DelProvider(provider push.Provider) error {
 		return err
 	}
 	if n != 1 {
-		err = fmt.Errorf("Trying to del provider %v. But set %v values in redis", provider.UniqId(), n)
+		err = fmt.Errorf("Trying to del provider %v. But deleted %v values in redis", provider.UniqId(), n)
 		return err
 	}
 	return nil

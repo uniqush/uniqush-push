@@ -2,11 +2,6 @@ package db
 
 import "github.com/uniqush/uniqush-push/push"
 
-type ProviderDeliveryPointPair struct {
-	Provider      push.Provider
-	DeliveryPoint push.DeliveryPoint
-}
-
 type DatabaseConfig struct {
 	Engine   string `toml:"engine"`
 	Host     string `toml:"host"`
@@ -20,6 +15,7 @@ type PushDatabase interface {
 	AddProvider(provider push.Provider) error
 	DelProvider(provider push.Provider) error
 	/*
+		AddPairs(service, subscriber string, pair ...*ProviderDeliveryPointPair) (newpairs []*ProviderDeliveryPointPair, err error)
 		UpdataProvider(provider push.Provider) error
 
 		AddDeliveryPoint(dp push.DeliveryPoint) error

@@ -36,6 +36,14 @@ func (self *simplePushService) Name() string {
 	return "badfruit"
 }
 
+func (self *simplePushService) EmptyProvider() Provider {
+	return &simpleProvider{}
+}
+
+func (self *simplePushService) EmptyDeliveryPoint() DeliveryPoint {
+	return &simpleDeliveryPoint{}
+}
+
 func TestPushServiceBuildDeliveryPoint(t *testing.T) {
 	var ps PushService
 	ps = &simplePushService{}

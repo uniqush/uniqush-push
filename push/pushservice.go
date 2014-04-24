@@ -39,6 +39,9 @@ type PushService interface {
 	UnmarshalProvider(data []byte, p Provider) error
 	UnmarshalProviderFromMap(data map[string]string, p Provider) error
 
+	EmptyProvider() Provider
+	EmptyDeliveryPoint() DeliveryPoint
+
 	Push(req *PushRequest, resChan chan<- *PushResult)
 }
 
