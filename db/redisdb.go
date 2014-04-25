@@ -213,24 +213,32 @@ func (self *redisPushDatabase) getProviderWithKey(pkey string, ps push.PushServi
 	return
 }
 
-func (self *redisPushDatabase) pairDp(dp push.DeliveryPoint) (p push.Provider, err error) {
-	lookupkey := buildProviderLoopUpKeyFromDeliveryPoint(dp)
+func (self *redisPushDatabase) lookupKeysUnderPattern(pattern string) (keys []interface{}, err error) {
 	// In redis 2.8, SCAN was introduced and is a better choice than KEYS.
 	// However, this version is currently not widely used.
 	// Once 2.8 is in most distro's repo, we should change to SCAN instead of KEYS
+	conn := self.pool.Get()
+	defer conn.Close()
+	reply, err := conn.Do("KEYS", pattern)
+	if err != nil {
+		return
+	}
+	values, err := redis.Values(reply, err)
+	if err != nil {
+		return
+	}
+	keys = values
+	return
+}
+
+func (self *redisPushDatabase) pairDp(dp push.DeliveryPoint) (p push.Provider, err error) {
+	lookupkey := buildProviderLoopUpKeyFromDeliveryPoint(dp)
 	ps, err := push.GetPushService(dp)
 	if err != nil {
 		return
 	}
 
-	conn := self.pool.Get()
-	defer conn.Close()
-
-	reply, err := conn.Do("KEYS", lookupkey)
-	if err != nil {
-		return
-	}
-	values, err := redis.Values(reply, err)
+	values, err := self.lookupKeysUnderPattern(lookupkey)
 	if err != nil {
 		return
 	}
@@ -239,6 +247,9 @@ func (self *redisPushDatabase) pairDp(dp push.DeliveryPoint) (p push.Provider, e
 			dp.PushService(), dp.UniqId(), dp.Service())
 		return
 	}
+
+	conn := self.pool.Get()
+	defer conn.Close()
 
 	pkey := ""
 	for _, v := range values {
@@ -416,24 +427,14 @@ func (self *redisPushDatabase) LoopUpPairs(service, subscriber string) (pairs []
 			return
 		}
 		lookupkey := buildPairLoopUpKey(service, subscriber)
-
-		conn := self.pool.Get()
-		defer conn.Close()
-
-		var reply interface{}
 		var values []interface{}
 
-		// XXX use SCAN when 2.8 is widely used
-		reply, err = conn.Do("KEYS", lookupkey)
-		if err != nil {
-			err = fmt.Errorf("unable to lookup pairs under pattern %v: %v", lookupkey, err)
-			return
-		}
-		values, err = redis.Values(reply, err)
+		values, err = self.lookupKeysUnderPattern(lookupkey)
 		if err != nil {
 			err = fmt.Errorf("unable to read pair keys under pattern %v: %v", lookupkey, err)
 			return
 		}
+
 		for _, v := range values {
 			var key string
 			key, err = redis.String(v, err)

@@ -20,6 +20,7 @@ type DatabaseConfig struct {
 }
 
 type PushDatabase interface {
+	// XXX Do we really need this func? Why not simply use UpdateProvider()?
 	AddProvider(provider push.Provider) error
 	// Update the provider with same uniqid
 	UpdateProvider(provider push.Provider) error
