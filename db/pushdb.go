@@ -23,6 +23,7 @@ type PushDatabase interface {
 	AddProvider(provider push.Provider) error
 	// Update the provider with same uniqid
 	UpdateProvider(provider push.Provider) error
+	UpdateDeliveryPoint(dp push.DeliveryPoint) error
 	DelProvider(provider push.Provider) error
 	AddPairs(pairs ...*ProviderDeliveryPointPair) (newpairs []*ProviderDeliveryPointPair, err error)
 	LoopUpPairs(service, subscriber string) (pairs []*ProviderDeliveryPointPair, err error)

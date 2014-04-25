@@ -553,23 +553,34 @@ func (self *redisPushDatabase) UpdateProvider(provider push.Provider) error {
 	if err != nil {
 		return err
 	}
-	// First, delete all keys related to this provider
-	for _, pair := range pairs {
-		pairkey := buildPairKey(pair)
-		err = conn.Send("DEL", pairkey)
-		if err != nil {
-			conn.Do("DISCARD")
-			return err
-		}
-	}
-	// Then, add these keys back
+	// Update keys related to this provider
 	for _, pair := range pairs {
 		pairkey := buildPairKey(pair)
 
 		if pair.Provider.UniqId() == provider.UniqId() {
+			data, err := pair.Bytes()
+			if err != nil {
+				conn.Do("DISCARD")
+				return err
+			}
+			err = conn.Send("SREM", pairkey, data)
+			if err != nil {
+				conn.Do("DISCARD")
+				return err
+			}
 			pair.Provider = provider
 			// The delivery point is changed.
 			// We need to update the database correspondingly.
+			data, err = pair.Bytes()
+			if err != nil {
+				conn.Do("DISCARD")
+				return err
+			}
+			err = conn.Send("SADD", pairkey, data)
+			if err != nil {
+				conn.Do("DISCARD")
+				return err
+			}
 			if !self.isCache && pair.DeliveryPoint.PairProvider(provider) {
 				var ps push.PushService
 				ps, err = push.GetPushService(pair)
@@ -591,17 +602,6 @@ func (self *redisPushDatabase) UpdateProvider(provider push.Provider) error {
 				}
 			}
 		}
-		var data []byte
-		data, err = pair.Bytes()
-		if err != nil {
-			conn.Do("DISCARD")
-			return err
-		}
-		err = conn.Send("SADD", pairkey, data)
-		if err != nil {
-			conn.Do("DISCARD")
-			return err
-		}
 	}
 
 	// Finally, update the provider
@@ -609,14 +609,17 @@ func (self *redisPushDatabase) UpdateProvider(provider push.Provider) error {
 		pkey := buildProviderKey(provider)
 		ps, err := push.GetPushService(provider)
 		if err != nil {
+			conn.Do("DISCARD")
 			return err
 		}
 		data, err := ps.MarshalProvider(provider)
 		if err != nil {
+			conn.Do("DISCARD")
 			return err
 		}
 		err = conn.Send("SET", pkey, data)
 		if err != nil {
+			conn.Do("DISCARD")
 			return err
 		}
 	}
@@ -625,4 +628,69 @@ func (self *redisPushDatabase) UpdateProvider(provider push.Provider) error {
 		return err
 	}
 	return nil
+}
+
+func (self *redisPushDatabase) UpdateDeliveryPoint(dp push.DeliveryPoint) error {
+	pairs, err := self.LoopUpPairs(dp.Service(), dp.Subscriber())
+	if err != nil {
+		return err
+	}
+	conn := self.pool.Get()
+	defer conn.Close()
+	err = conn.Send("MULTI")
+	if err != nil {
+		return err
+	}
+	// Update keys related to this delivery point
+	for _, pair := range pairs {
+		pairkey := buildPairKey(pair)
+		if pair.DeliveryPoint.UniqId() == dp.UniqId() {
+			data, err := pair.Bytes()
+			if err != nil {
+				conn.Do("DISCARD")
+				return err
+			}
+			err = conn.Send("SREM", pairkey, data)
+			if err != nil {
+				conn.Do("DISCARD")
+				return err
+			}
+			pair.DeliveryPoint = dp
+			data, err = pair.Bytes()
+			if err != nil {
+				conn.Do("DISCARD")
+				return err
+			}
+			err = conn.Send("SADD", pairkey, data)
+			if err != nil {
+				conn.Do("DISCARD")
+				return err
+			}
+			if !self.isCache {
+				dpkey := buildDeliveryPointKeyFromPair(pair)
+				ps, err := push.GetPushService(dp)
+				if err != nil {
+					conn.Do("DISCARD")
+					return err
+				}
+				data, err := ps.MarshalProvider(dp)
+				if err != nil {
+					conn.Do("DISCARD")
+					return err
+				}
+				err = conn.Send("SET", dpkey, data)
+				if err != nil {
+					conn.Do("DISCARD")
+					return err
+				}
+			}
+		}
+	}
+
+	_, err = conn.Do("EXEC")
+	if err != nil {
+		return err
+	}
+	return nil
+
 }

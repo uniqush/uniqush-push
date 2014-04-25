@@ -12,6 +12,7 @@ type simpleDeliveryPoint struct {
 	DevToken     string `json:"devtoken"`
 	ProviderName string `json:"provider,omitempty"`
 	SetProvider  bool   `json:"update,omitempty"`
+	SomeInfo     string `json:"someinfo,omitempty"`
 	push.BasicDeliveryPoint
 }
 
@@ -277,6 +278,75 @@ func testUpdateProvider(db PushDatabase, t *testing.T) {
 
 	p.OtherInfo = "someOtherInfo"
 	err = db.UpdateProvider(p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, pair := range newpairs {
+		if pair.Provider.UniqId() == p.UniqId() {
+			pair.Provider = p
+		}
+	}
+
+	foundpairs, err := db.LoopUpPairs("service", "sub")
+	if !pairsEq(foundpairs, newpairs) {
+		pretty.Printf("% #v\n", foundpairs)
+		pretty.Printf("% #v\n", newpairs)
+		t.Fatal("found different pairs")
+	}
+}
+
+func testUpdateDeliveryPoint(db PushDatabase, t *testing.T) {
+	ps := &simplePushService{}
+	ps.This = ps
+	push.RegisterPushService(ps)
+
+	p := &simpleProvider{
+		ApiKey: "key",
+	}
+	p.ServiceName = "service"
+	err := db.AddProvider(p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() {
+		err = db.DelProvider(p)
+		if err != nil {
+			t.Fatal(err)
+		}
+	}()
+
+	dp1 := &simpleDeliveryPoint{
+		DevToken:    "token1",
+		SetProvider: true,
+	}
+	dp1.ServiceName = "service"
+	dp1.SubscriberName = "sub"
+	dp2 := &simpleDeliveryPoint{
+		DevToken: "token2",
+	}
+	dp2.ServiceName = "service"
+	dp2.SubscriberName = "sub"
+
+	pairs := make([]*ProviderDeliveryPointPair, 2)
+	pairs[0] = &ProviderDeliveryPointPair{
+		DeliveryPoint: dp1,
+	}
+	pairs[1] = &ProviderDeliveryPointPair{
+		DeliveryPoint: dp2,
+	}
+
+	newpairs, err := db.AddPairs(pairs...)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	defer func() {
+		db.DelDeliveryPoint(nil, dp1)
+		db.DelDeliveryPoint(nil, dp2)
+	}()
+
+	dp1.SomeInfo = "other"
+	err = db.UpdateDeliveryPoint(dp1)
 	if err != nil {
 		t.Fatal(err)
 	}

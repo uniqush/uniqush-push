@@ -69,6 +69,10 @@ func TestRedis(t *testing.T) {
 	redisClearDatabase(redisTestConfig, t)
 	testUpdateProvider(db, t)
 	redisIntegrityTest(redisTestConfig, t)
+
+	redisClearDatabase(redisTestConfig, t)
+	testUpdateDeliveryPoint(db, t)
+	redisIntegrityTest(redisTestConfig, t)
 }
 
 func TestRedisPairDeliveryPoint(t *testing.T) {
