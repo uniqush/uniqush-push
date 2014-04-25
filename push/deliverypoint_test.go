@@ -23,6 +23,10 @@ func (self *simpleDeliveryPoint) UniqId() string {
 	return self.DevToken
 }
 
+func (self *simpleDeliveryPoint) PairProvider(p Provider) bool {
+	return false
+}
+
 func TestSimpleDeliveryPoint(t *testing.T) {
 	var dp DeliveryPoint
 	sdp := &simpleDeliveryPoint{

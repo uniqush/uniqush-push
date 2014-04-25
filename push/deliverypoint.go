@@ -7,6 +7,10 @@ type DeliveryPoint interface {
 	UniqId() string
 	Service() string
 	Subscriber() string
+
+	// Return true if the content of the delivery point is changed
+	// i.e. need to update in the database
+	PairProvider(p Provider) bool
 }
 
 type BasicDeliveryPoint struct {

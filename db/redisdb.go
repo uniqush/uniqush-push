@@ -318,6 +318,7 @@ func (self *redisPushDatabase) AddPairs(pairs ...*ProviderDeliveryPointPair) (ne
 			return
 		}
 
+		pair.DeliveryPoint.PairProvider(pair.Provider)
 		pairkey := buildPairKey(pair)
 		var data []byte
 		data, err = pair.Bytes()
@@ -357,6 +358,7 @@ func (self *redisPushDatabase) AddPairs(pairs ...*ProviderDeliveryPointPair) (ne
 		err = fmt.Errorf("unable to exec: %v", err)
 		return
 	}
+
 	newpairs = pairs
 	return
 }
@@ -533,6 +535,93 @@ func (self *redisPushDatabase) DelDeliveryPoint(provider push.Provider, dp push.
 	_, err = conn.Do("EXEC")
 	if err != nil {
 		err = fmt.Errorf("del dp %v error. unable to exec: %v", dp.UniqId(), err)
+		return err
+	}
+	return nil
+}
+
+func (self *redisPushDatabase) UpdateProvider(provider push.Provider) error {
+	// Update all pairs.
+	// XXX This is really time consuming.
+	pairs, err := self.LoopUpPairs(provider.Service(), "*")
+	if err != nil {
+		return err
+	}
+	conn := self.pool.Get()
+	defer conn.Close()
+	err = conn.Send("MULTI")
+	if err != nil {
+		return err
+	}
+	// First, delete all keys related to this provider
+	for _, pair := range pairs {
+		pairkey := buildPairKey(pair)
+		err = conn.Send("DEL", pairkey)
+		if err != nil {
+			conn.Do("DISCARD")
+			return err
+		}
+	}
+	// Then, add these keys back
+	for _, pair := range pairs {
+		pairkey := buildPairKey(pair)
+
+		if pair.Provider.UniqId() == provider.UniqId() {
+			pair.Provider = provider
+			// The delivery point is changed.
+			// We need to update the database correspondingly.
+			if !self.isCache && pair.DeliveryPoint.PairProvider(provider) {
+				var ps push.PushService
+				ps, err = push.GetPushService(pair)
+				if err != nil {
+					conn.Do("DISCARD")
+					return err
+				}
+				dpkey := buildDeliveryPointKeyFromPair(pair)
+				var ddata []byte
+				ddata, err = ps.MarshalDeliveryPoint(pair.DeliveryPoint)
+				if err != nil {
+					conn.Do("DISCARD")
+					return err
+				}
+				err = conn.Send("SET", dpkey, ddata)
+				if err != nil {
+					conn.Do("DISCARD")
+					return err
+				}
+			}
+		}
+		var data []byte
+		data, err = pair.Bytes()
+		if err != nil {
+			conn.Do("DISCARD")
+			return err
+		}
+		err = conn.Send("SADD", pairkey, data)
+		if err != nil {
+			conn.Do("DISCARD")
+			return err
+		}
+	}
+
+	// Finally, update the provider
+	if !self.isCache {
+		pkey := buildProviderKey(provider)
+		ps, err := push.GetPushService(provider)
+		if err != nil {
+			return err
+		}
+		data, err := ps.MarshalProvider(provider)
+		if err != nil {
+			return err
+		}
+		err = conn.Send("SET", pkey, data)
+		if err != nil {
+			return err
+		}
+	}
+	_, err = conn.Do("EXEC")
+	if err != nil {
 		return err
 	}
 	return nil
