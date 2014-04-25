@@ -356,6 +356,11 @@ func (self *redisPushDatabase) AddPairs(pairs ...*ProviderDeliveryPointPair) (ne
 			}
 		}
 	}
+	_, err = conn.Do("EXEC")
+	if err != nil {
+		err = fmt.Errorf("unable to exec: %v", err)
+		return
+	}
 	newpairs = pairs
 	return
 }
@@ -459,4 +464,72 @@ func (self *redisPushDatabase) LoopUpPairs(service, subscriber string) (pairs []
 		pairs = append(pairs, ps...)
 	}
 	return
+}
+
+func (self *redisPushDatabase) DelDeliveryPoint(dp push.DeliveryPoint) error {
+	pairkey := buildPairLoopUpKey(dp.Service(), dp.Subscriber())
+	if self.isCache && self.cacheType != CACHE_TYPE_ALWAYS_IN {
+		// In this case, we only need to remove all pairs in the cache
+		// and let the next read operation load the new pairs from the backend database.
+		conn := self.pool.Get()
+		defer conn.Close()
+		_, err := conn.Do("DEL", pairkey)
+		if err != nil {
+			return err
+		}
+		return nil
+	}
+
+	// In this case, redis should store all pairs.
+	pairs, err := self.getPairsByKey(pairkey)
+	if err != nil {
+		err = fmt.Errorf("unable to delete the delivery point %v: %v", dp.UniqId(), err)
+		return err
+	}
+
+	var pair *ProviderDeliveryPointPair
+
+	for _, p := range pairs {
+		if p.DeliveryPoint.UniqId() == dp.UniqId() {
+			pair = p
+		}
+	}
+	if pair == nil {
+		return nil
+	}
+
+	data, err := pair.Bytes()
+	if err != nil {
+		return err
+	}
+
+	conn := self.pool.Get()
+	defer conn.Close()
+
+	err = conn.Send("MULTI")
+	if err != nil {
+		err = fmt.Errorf("unable to del the delivery point %v. wrong with MULTI: %v", dp.UniqId(), err)
+		return err
+	}
+
+	err = conn.Send("SREM", pairkey, data)
+	if err != nil {
+		err = fmt.Errorf("unable to del the delivery point %v: %v", dp.UniqId(), err)
+		return err
+	}
+	if !self.isCache {
+		dpkey := buildDeliveryPointKey(dp)
+		err = conn.Send("DEL", dpkey)
+		if err != nil {
+			err = fmt.Errorf("unable to del the delivery point %v: %v", dp.UniqId(), err)
+			return err
+		}
+	}
+
+	_, err = conn.Do("EXEC")
+	if err != nil {
+		err = fmt.Errorf("del dp %v error. unable to exec: %v", dp.UniqId(), err)
+		return err
+	}
+	return nil
 }
