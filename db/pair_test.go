@@ -156,3 +156,29 @@ func TestPairSerializationUnknownPushServiceName(t *testing.T) {
 		t.Fatal("Should fail")
 	}
 }
+
+func TestPairSerializationInvalidData(t *testing.T) {
+	ps := &simplePushService{}
+	ps.This = ps
+	push.RegisterPushService(ps)
+
+	data := []byte("nonononono")
+	np := &ProviderDeliveryPointPair{}
+	err := np.Load(data)
+	if err == nil {
+		t.Fatal("Should fail")
+	}
+}
+
+func TestPairSerializationNoContent(t *testing.T) {
+	ps := &simplePushService{}
+	ps.This = ps
+	push.RegisterPushService(ps)
+
+	data := []byte("nonononono:")
+	np := &ProviderDeliveryPointPair{}
+	err := np.Load(data)
+	if err == nil {
+		t.Fatal("Should fail")
+	}
+}

@@ -7,7 +7,8 @@ import (
 )
 
 type simpleDeliveryPoint struct {
-	DevToken string `json:"devtoken"`
+	DevToken     string `json:"devtoken"`
+	ProviderName string `json:"provider,omitempty"`
 	push.BasicDeliveryPoint
 }
 
@@ -16,7 +17,7 @@ func (self *simpleDeliveryPoint) PushService() string {
 }
 
 func (self *simpleDeliveryPoint) Provider() string {
-	return ""
+	return self.ProviderName
 }
 
 func (self *simpleDeliveryPoint) UniqId() string {
