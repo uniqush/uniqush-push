@@ -466,7 +466,7 @@ func (self *redisPushDatabase) LoopUpPairs(service, subscriber string) (pairs []
 	return
 }
 
-func (self *redisPushDatabase) DelDeliveryPoint(dp push.DeliveryPoint) error {
+func (self *redisPushDatabase) DelDeliveryPoint(provider push.Provider, dp push.DeliveryPoint) error {
 	pairkey := buildPairLoopUpKey(dp.Service(), dp.Subscriber())
 	if self.isCache && self.cacheType != CACHE_TYPE_ALWAYS_IN {
 		// In this case, we only need to remove all pairs in the cache
@@ -480,22 +480,26 @@ func (self *redisPushDatabase) DelDeliveryPoint(dp push.DeliveryPoint) error {
 		return nil
 	}
 
-	// In this case, redis should store all pairs.
-	pairs, err := self.getPairsByKey(pairkey)
-	if err != nil {
-		err = fmt.Errorf("unable to delete the delivery point %v: %v", dp.UniqId(), err)
-		return err
-	}
-
 	var pair *ProviderDeliveryPointPair
 
-	for _, p := range pairs {
-		if p.DeliveryPoint.UniqId() == dp.UniqId() {
-			pair = p
+	pair.Provider = provider
+
+	if provider == nil {
+		// In this case, redis should store all pairs.
+		pairs, err := self.getPairsByKey(pairkey)
+		if err != nil {
+			err = fmt.Errorf("unable to delete the delivery point %v: %v", dp.UniqId(), err)
+			return err
 		}
-	}
-	if pair == nil {
-		return nil
+
+		for _, p := range pairs {
+			if p.DeliveryPoint.UniqId() == dp.UniqId() {
+				pair = p
+			}
+		}
+		if pair == nil {
+			return nil
+		}
 	}
 
 	data, err := pair.Bytes()

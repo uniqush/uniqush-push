@@ -24,9 +24,10 @@ type PushDatabase interface {
 	DelProvider(provider push.Provider) error
 	AddPairs(pairs ...*ProviderDeliveryPointPair) (newpairs []*ProviderDeliveryPointPair, err error)
 	LoopUpPairs(service, subscriber string) (pairs []*ProviderDeliveryPointPair, err error)
+	// provider could be nil, in which case the database should pair
+	// dp with a provider following the same rule as in AddPairs()
+	DelDeliveryPoint(provider push.Provider, dp push.DeliveryPoint) error
 	/*
-		LoopUpPairs(service, subscriber string) (pairs []*ProviderDeliveryPointPair, err error)
-		AddPairs(service, subscriber string, pairs ...*ProviderDeliveryPointPair) (newpairs []*ProviderDeliveryPointPair, err error)
 		UpdataProvider(provider push.Provider) error
 
 		AddDeliveryPoint(dp push.DeliveryPoint) error
