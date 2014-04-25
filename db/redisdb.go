@@ -118,10 +118,6 @@ func buildProviderLoopUpKeyFromDeliveryPoint(dp push.DeliveryPoint) string {
 	return fmt.Sprintf("provider:%v:%v:*", dp.PushService(), dp.Service())
 }
 
-func buildDeliveryPointKey(dp push.DeliveryPoint) string {
-	return fmt.Sprintf("dp:%v:%v:%v:%v:%v", dp.PushService(), dp.Service(), dp.Provider(), dp.Subscriber(), dp.UniqId())
-}
-
 func buildDeliveryPointKeyFromPair(pair *ProviderDeliveryPointPair) string {
 	return fmt.Sprintf("dp:%v:%v:%v:%v:%v",
 		pair.DeliveryPoint.PushService(),
@@ -373,7 +369,7 @@ func (self *redisPushDatabase) getPairsByKey(key string) (pairs []*ProviderDeliv
 	conn := self.pool.Get()
 	defer conn.Close()
 
-	reply, err := conn.Do("SMEMBER", key)
+	reply, err := conn.Do("SMEMBERS", key)
 	if err != nil {
 		err = fmt.Errorf("unable to get pair %v: %v", key, err)
 		return
@@ -480,9 +476,10 @@ func (self *redisPushDatabase) DelDeliveryPoint(provider push.Provider, dp push.
 		return nil
 	}
 
-	var pair *ProviderDeliveryPointPair
-
-	pair.Provider = provider
+	pair := &ProviderDeliveryPointPair{
+		Provider:      provider,
+		DeliveryPoint: dp,
+	}
 
 	if provider == nil {
 		// In this case, redis should store all pairs.
@@ -494,10 +491,13 @@ func (self *redisPushDatabase) DelDeliveryPoint(provider push.Provider, dp push.
 
 		for _, p := range pairs {
 			if p.DeliveryPoint.UniqId() == dp.UniqId() {
+				if p.Provider == nil {
+					panic("pair has a nil provider")
+				}
 				pair = p
 			}
 		}
-		if pair == nil {
+		if pair.Provider == nil {
 			return nil
 		}
 	}
@@ -522,7 +522,7 @@ func (self *redisPushDatabase) DelDeliveryPoint(provider push.Provider, dp push.
 		return err
 	}
 	if !self.isCache {
-		dpkey := buildDeliveryPointKey(dp)
+		dpkey := buildDeliveryPointKeyFromPair(pair)
 		err = conn.Send("DEL", dpkey)
 		if err != nil {
 			err = fmt.Errorf("unable to del the delivery point %v: %v", dp.UniqId(), err)

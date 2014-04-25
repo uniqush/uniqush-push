@@ -133,8 +133,12 @@ func testAddPairs(db PushDatabase, t *testing.T) {
 	dp2.SubscriberName = "sub"
 
 	pairs := make([]*ProviderDeliveryPointPair, 2)
-	pairs[0].DeliveryPoint = dp1
-	pairs[1].DeliveryPoint = dp2
+	pairs[0] = &ProviderDeliveryPointPair{
+		DeliveryPoint: dp1,
+	}
+	pairs[1] = &ProviderDeliveryPointPair{
+		DeliveryPoint: dp2,
+	}
 
 	newpairs, err := db.AddPairs(pairs...)
 	if err != nil {
@@ -172,6 +176,7 @@ func testAddPairs(db PushDatabase, t *testing.T) {
 	}
 
 	// Add again. should not change the database
+	pairs[0].Provider = nil
 	newpairs, err = db.AddPairs(pairs...)
 	if err != nil {
 		t.Fatal(err)
@@ -181,6 +186,18 @@ func testAddPairs(db PushDatabase, t *testing.T) {
 		t.Fatal(err)
 	}
 	if !pairsEq(foundpairs, newpairs) {
+		t.Fatal("found different pairs")
+	}
+
+	err = db.DelDeliveryPoint(nil, dp1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	foundpairs, err = db.LoopUpPairs("service", "sub")
+	pairs[0].Provider = p
+	pairs[0].DeliveryPoint = dp2
+	pairs = pairs[:1]
+	if !pairsEq(foundpairs, pairs) {
 		t.Fatal("found different pairs")
 	}
 }

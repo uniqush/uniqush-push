@@ -4,6 +4,7 @@ import (
 	"reflect"
 	"testing"
 
+	"github.com/garyburd/redigo/redis"
 	"github.com/uniqush/uniqush-push/push"
 )
 
@@ -13,15 +14,62 @@ var redisTestConfig = &DatabaseConfig{
 	Database: "1",
 }
 
+func redisClearDatabase(config *DatabaseConfig, t *testing.T) {
+	db, err := GetPushDatabase(redisTestConfig)
+	if err != nil {
+		t.Fatal(err)
+	}
+	redisdb := db.(*redisPushDatabase)
+	conn := redisdb.pool.Get()
+	defer conn.Close()
+
+	_, err = conn.Do("FLUSHDB")
+	if err != nil {
+		t.Fatal(err)
+	}
+	return
+}
+
+func redisIntegrityTest(config *DatabaseConfig, t *testing.T) {
+	db, err := GetPushDatabase(redisTestConfig)
+	if err != nil {
+		t.Fatal(err)
+	}
+	redisdb := db.(*redisPushDatabase)
+	conn := redisdb.pool.Get()
+	defer conn.Close()
+
+	reply, err := conn.Do("KEYS", "*")
+	if err != nil {
+		t.Fatal(err)
+	}
+	values, err := redis.Values(reply, err)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(values) > 0 {
+		t.Fatalf("%v values are still in the redis database %v",
+			len(values), config.Database)
+	}
+}
+
 func TestRedis(t *testing.T) {
 	db, err := GetPushDatabase(redisTestConfig)
 	if err != nil {
 		t.Fatal(err)
 	}
+	redisClearDatabase(redisTestConfig, t)
 	testAddDelProvider(db, t)
+	redisIntegrityTest(redisTestConfig, t)
+
+	redisClearDatabase(redisTestConfig, t)
+	testAddPairs(db, t)
+	redisIntegrityTest(redisTestConfig, t)
 }
 
 func TestRedisPairDeliveryPoint(t *testing.T) {
+	redisClearDatabase(redisTestConfig, t)
+	defer redisIntegrityTest(redisTestConfig, t)
 	db, err := GetPushDatabase(redisTestConfig)
 	if err != nil {
 		t.Fatal(err)
@@ -65,6 +113,8 @@ func TestRedisPairDeliveryPoint(t *testing.T) {
 }
 
 func TestRedisPairDeliveryPointWithNoProvider(t *testing.T) {
+	redisClearDatabase(redisTestConfig, t)
+	defer redisIntegrityTest(redisTestConfig, t)
 	db, err := GetPushDatabase(redisTestConfig)
 	if err != nil {
 		t.Fatal(err)
@@ -89,6 +139,8 @@ func TestRedisPairDeliveryPointWithNoProvider(t *testing.T) {
 }
 
 func TestRedisPairDeliveryPointWithSpecifiedProvider(t *testing.T) {
+	redisClearDatabase(redisTestConfig, t)
+	defer redisIntegrityTest(redisTestConfig, t)
 	db, err := GetPushDatabase(redisTestConfig)
 	if err != nil {
 		t.Fatal(err)
@@ -145,6 +197,8 @@ func TestRedisPairDeliveryPointWithSpecifiedProvider(t *testing.T) {
 }
 
 func TestPairDeliveryPointWithUnknownProvider(t *testing.T) {
+	redisClearDatabase(redisTestConfig, t)
+	defer redisIntegrityTest(redisTestConfig, t)
 	db, err := GetPushDatabase(redisTestConfig)
 	if err != nil {
 		t.Fatal(err)
