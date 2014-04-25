@@ -189,6 +189,14 @@ func testAddPairs(db PushDatabase, t *testing.T) {
 		t.Fatal("found different pairs")
 	}
 
+	foundpairs, err = db.LoopUpPairs("service", "s*")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !pairsEq(foundpairs, newpairs) {
+		t.Fatal("found different pairs")
+	}
+
 	err = db.DelDeliveryPoint(nil, dp1)
 	if err != nil {
 		t.Fatal(err)
