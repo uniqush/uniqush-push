@@ -2,20 +2,31 @@ package db
 
 import "github.com/uniqush/uniqush-push/push"
 
+const (
+	CACHE_TYPE_ALWAYS_IN = iota
+	CACHE_TYPE_LRU
+	CACHE_TYPE_RANDOM
+)
+
 type DatabaseConfig struct {
-	Engine   string `toml:"engine"`
-	Host     string `toml:"host"`
-	Port     int    `toml:"port"`
-	Username string `toml:"username"`
-	Password string `tomel:"password"`
-	Database string `toml:"database"`
+	Engine    string `toml:"engine"`
+	Host      string `toml:"host"`
+	Port      int    `toml:"port"`
+	Username  string `toml:"username"`
+	Password  string `tomel:"password"`
+	Database  string `toml:"database"`
+	IsCache   bool   `toml:"-"`
+	CacheType int    `toml:"-"`
 }
 
 type PushDatabase interface {
 	AddProvider(provider push.Provider) error
 	DelProvider(provider push.Provider) error
+	AddPairs(pairs ...*ProviderDeliveryPointPair) (newpairs []*ProviderDeliveryPointPair, err error)
+	LoopUpPairs(service, subscriber string) (pairs []*ProviderDeliveryPointPair, err error)
 	/*
-		AddPairs(service, subscriber string, pair ...*ProviderDeliveryPointPair) (newpairs []*ProviderDeliveryPointPair, err error)
+		LoopUpPairs(service, subscriber string) (pairs []*ProviderDeliveryPointPair, err error)
+		AddPairs(service, subscriber string, pairs ...*ProviderDeliveryPointPair) (newpairs []*ProviderDeliveryPointPair, err error)
 		UpdataProvider(provider push.Provider) error
 
 		AddDeliveryPoint(dp push.DeliveryPoint) error
