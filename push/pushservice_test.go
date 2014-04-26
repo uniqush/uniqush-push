@@ -32,7 +32,7 @@ type simplePushService struct {
 }
 
 func (self *simplePushService) Name() string {
-	return "badfruit"
+	return "gcm"
 }
 
 func (self *simplePushService) EmptyProvider() Provider {

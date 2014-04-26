@@ -12,7 +12,7 @@ type simpleDeliveryPoint struct {
 }
 
 func (self *simpleDeliveryPoint) PushService() string {
-	return "apns"
+	return "gcm"
 }
 
 func (self *simpleDeliveryPoint) Provider() string {
