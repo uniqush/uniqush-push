@@ -693,5 +693,58 @@ func (self *redisPushDatabase) UpdateDeliveryPoint(dp push.DeliveryPoint) error 
 		return err
 	}
 	return nil
+}
 
+func (self *redisPushDatabase) LookupDeliveryPointWithUniqId(provider push.Provider, uniqId string) (dps []push.DeliveryPoint, err error) {
+	if self.isCache {
+		err = fmt.Errorf("cache is not able to perform this operation")
+		return
+	}
+	lookupkey := buildDeliveryPointLookUpKey(provider, uniqId)
+	values, err := self.lookupKeysUnderPattern(lookupkey)
+	if err != nil {
+		return
+	}
+	ps, err := push.GetPushService(provider)
+	if err != nil {
+		return
+	}
+	ret := make([]push.DeliveryPoint, 0, len(values))
+	for _, v := range values {
+		var key string
+		key, err = redis.String(v, err)
+		if err != nil {
+			return
+		}
+
+		conn := self.pool.Get()
+		var reply interface{}
+		var data []byte
+		dp := ps.EmptyDeliveryPoint()
+		reply, err = conn.Do("GET", key)
+		if err != nil {
+			conn.Close()
+			return
+		}
+		data, err = redis.Bytes(reply, err)
+		if err != nil {
+			conn.Close()
+			return
+		}
+		// XXX data may change during this period.
+		if len(data) == 0 {
+			conn.Close()
+			continue
+		}
+		err = ps.UnmarshalDeliveryPoint(data, dp)
+		if err != nil {
+			conn.Close()
+			return
+		}
+		conn.Close()
+
+		ret = append(ret, dp)
+	}
+	dps = ret
+	return
 }

@@ -1,6 +1,7 @@
 package db
 
 import (
+	"fmt"
 	"reflect"
 	"testing"
 
@@ -361,5 +362,65 @@ func testUpdateDeliveryPoint(db PushDatabase, t *testing.T) {
 		pretty.Printf("% #v\n", foundpairs)
 		pretty.Printf("% #v\n", newpairs)
 		t.Fatal("found different pairs")
+	}
+}
+
+func testLookUpDeliveryPointWithUniqId(db PushDatabase, t *testing.T) {
+	ps := &simplePushService{}
+	ps.This = ps
+	push.RegisterPushService(ps)
+
+	p := &simpleProvider{
+		ApiKey: "key",
+	}
+	p.ServiceName = "service"
+	err := db.AddProvider(p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() {
+		err = db.DelProvider(p)
+		if err != nil {
+			t.Fatal(err)
+		}
+	}()
+
+	N := 10
+
+	pairs := make([]*ProviderDeliveryPointPair, 0, N)
+	uniqid := "token-xxx"
+	for i := 0; i < N; i++ {
+		dp := &simpleDeliveryPoint{
+			DevToken:    uniqid,
+			SetProvider: true,
+		}
+		dp.ServiceName = "service"
+		dp.SubscriberName = fmt.Sprintf("sub-%v", i)
+		pair := &ProviderDeliveryPointPair{
+			DeliveryPoint: dp,
+		}
+		pairs = append(pairs, pair)
+	}
+
+	pairs, err = db.AddPairs(pairs...)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() {
+		for _, pair := range pairs {
+			db.DelDeliveryPoint(pair.Provider, pair.DeliveryPoint)
+		}
+	}()
+	dps, err := db.LookupDeliveryPointWithUniqId(p, uniqid)
+	for _, pair := range pairs {
+		found := false
+		for _, dp := range dps {
+			if dp.UniqId() == pair.DeliveryPoint.UniqId() {
+				found = true
+			}
+		}
+		if !found {
+			t.Errorf("cannot find dp %v", pair.DeliveryPoint.UniqId())
+		}
 	}
 }
