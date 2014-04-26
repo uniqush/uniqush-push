@@ -70,7 +70,7 @@ func (self *LayeredPushDatabase) UpdateDeliveryPoint(dp push.DeliveryPoint) erro
 	})
 }
 
-func (self *LayeredPushDatabase) AddPairs(pairs ...*ProviderDeliveryPointPair) (newPairs []*ProviderDeliveryPointPair, err error) {
+func (self *LayeredPushDatabase) AddPairs(pairs ...*push.ProviderDeliveryPointPair) (newPairs []*push.ProviderDeliveryPointPair, err error) {
 	newPairs = pairs
 	err = self.reverseMapAllSuccess(func(db PushDatabase) error {
 		var e error
@@ -83,7 +83,7 @@ func (self *LayeredPushDatabase) AddPairs(pairs ...*ProviderDeliveryPointPair) (
 	return
 }
 
-func (self *LayeredPushDatabase) LoopUpPairs(service, subscriber string) (pairs []*ProviderDeliveryPointPair, err error) {
+func (self *LayeredPushDatabase) LoopUpPairs(service, subscriber string) (pairs []*push.ProviderDeliveryPointPair, err error) {
 	err = self.mapOneSuccess(func(db PushDatabase) error {
 		var e error
 		pairs, e = db.LoopUpPairs(service, subscriber)

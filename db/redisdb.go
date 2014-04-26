@@ -102,7 +102,7 @@ func buildPairLoopUpKey(service, subscriber string) string {
 	return fmt.Sprintf("pair:%v:%v", service, subscriber)
 }
 
-func buildPairKey(pair *ProviderDeliveryPointPair) string {
+func buildPairKey(pair *push.ProviderDeliveryPointPair) string {
 	return fmt.Sprintf("pair:%v:%v", pair.DeliveryPoint.Service(), pair.DeliveryPoint.Subscriber())
 }
 
@@ -118,7 +118,7 @@ func buildProviderLoopUpKeyFromDeliveryPoint(dp push.DeliveryPoint) string {
 	return fmt.Sprintf("provider:%v:%v:*", dp.PushService(), dp.Service())
 }
 
-func buildDeliveryPointKeyFromPair(pair *ProviderDeliveryPointPair) string {
+func buildDeliveryPointKeyFromPair(pair *push.ProviderDeliveryPointPair) string {
 	return fmt.Sprintf("dp:%v:%v:%v:%v:%v",
 		pair.DeliveryPoint.PushService(),
 		pair.DeliveryPoint.Service(),
@@ -270,7 +270,7 @@ func (self *redisPushDatabase) pairDp(dp push.DeliveryPoint) (p push.Provider, e
 	return
 }
 
-func (self *redisPushDatabase) pairDeliveryPoints(pairs ...*ProviderDeliveryPointPair) error {
+func (self *redisPushDatabase) pairDeliveryPoints(pairs ...*push.ProviderDeliveryPointPair) error {
 	for _, pair := range pairs {
 		if pair.Provider != nil {
 			continue
@@ -306,7 +306,7 @@ func (self *redisPushDatabase) pairDeliveryPoints(pairs ...*ProviderDeliveryPoin
 	return nil
 }
 
-func (self *redisPushDatabase) AddPairs(pairs ...*ProviderDeliveryPointPair) (newpairs []*ProviderDeliveryPointPair, err error) {
+func (self *redisPushDatabase) AddPairs(pairs ...*push.ProviderDeliveryPointPair) (newpairs []*push.ProviderDeliveryPointPair, err error) {
 	err = self.pairDeliveryPoints(pairs...)
 	if err != nil {
 		return
@@ -378,7 +378,7 @@ func hasWildcard(str string) bool {
 	return strings.Contains(str, "*") || strings.Contains(str, "?")
 }
 
-func (self *redisPushDatabase) getPairsByKey(key string) (pairs []*ProviderDeliveryPointPair, err error) {
+func (self *redisPushDatabase) getPairsByKey(key string) (pairs []*push.ProviderDeliveryPointPair, err error) {
 	conn := self.pool.Get()
 	defer conn.Close()
 
@@ -392,7 +392,7 @@ func (self *redisPushDatabase) getPairsByKey(key string) (pairs []*ProviderDeliv
 		err = fmt.Errorf("unable to read pair %v: %v", key, err)
 		return
 	}
-	ret := make([]*ProviderDeliveryPointPair, 0, len(values))
+	ret := make([]*push.ProviderDeliveryPointPair, 0, len(values))
 	var data []byte
 	for i, v := range values {
 		data, err = redis.Bytes(v, err)
@@ -400,7 +400,7 @@ func (self *redisPushDatabase) getPairsByKey(key string) (pairs []*ProviderDeliv
 			err = fmt.Errorf("unable to convert pair %v's %v data into bytes: %v", key, i, err)
 			return
 		}
-		pair := new(ProviderDeliveryPointPair)
+		pair := new(push.ProviderDeliveryPointPair)
 		err = pair.Load(data)
 		if err != nil {
 			err = fmt.Errorf("unable to load pair %v(%v): %v", key, i, err)
@@ -414,7 +414,7 @@ func (self *redisPushDatabase) getPairsByKey(key string) (pairs []*ProviderDeliv
 	return
 }
 
-func (self *redisPushDatabase) LoopUpPairs(service, subscriber string) (pairs []*ProviderDeliveryPointPair, err error) {
+func (self *redisPushDatabase) LoopUpPairs(service, subscriber string) (pairs []*push.ProviderDeliveryPointPair, err error) {
 	if hasWildcard(service) || hasWildcard(subscriber) {
 		// If redis is used as a cache, then it is not able to handle wild card.
 		// Because the cache may only contain partial data and may not be
@@ -428,7 +428,7 @@ func (self *redisPushDatabase) LoopUpPairs(service, subscriber string) (pairs []
 	return self.loopUpPairsInternal(service, subscriber)
 }
 
-func (self *redisPushDatabase) loopUpPairsInternal(service, subscriber string) (pairs []*ProviderDeliveryPointPair, err error) {
+func (self *redisPushDatabase) loopUpPairsInternal(service, subscriber string) (pairs []*push.ProviderDeliveryPointPair, err error) {
 	keys := make([]string, 0, 10)
 	// If it has wild card, we need to treat it differently.
 	if hasWildcard(service) || hasWildcard(subscriber) {
@@ -460,7 +460,7 @@ func (self *redisPushDatabase) loopUpPairsInternal(service, subscriber string) (
 		return
 	}
 
-	rets := make([][]*ProviderDeliveryPointPair, len(keys))
+	rets := make([][]*push.ProviderDeliveryPointPair, len(keys))
 	N := 0
 	for i, key := range keys {
 		rets[i], err = self.getPairsByKey(key)
@@ -470,7 +470,7 @@ func (self *redisPushDatabase) loopUpPairsInternal(service, subscriber string) (
 		N += len(rets[i])
 	}
 
-	pairs = make([]*ProviderDeliveryPointPair, 0, N)
+	pairs = make([]*push.ProviderDeliveryPointPair, 0, N)
 	for _, ps := range rets {
 		pairs = append(pairs, ps...)
 	}
@@ -480,7 +480,7 @@ func (self *redisPushDatabase) loopUpPairsInternal(service, subscriber string) (
 func (self *redisPushDatabase) DelDeliveryPoint(provider push.Provider, dp push.DeliveryPoint) error {
 	pairkey := buildPairLoopUpKey(dp.Service(), dp.Subscriber())
 
-	pair := &ProviderDeliveryPointPair{
+	pair := &push.ProviderDeliveryPointPair{
 		Provider:      provider,
 		DeliveryPoint: dp,
 	}

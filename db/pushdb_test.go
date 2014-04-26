@@ -118,7 +118,7 @@ func testAddDelProvider(db PushDatabase, t *testing.T) {
 	}
 }
 
-func pairsEq(p1, p2 []*ProviderDeliveryPointPair) bool {
+func pairsEq(p1, p2 []*push.ProviderDeliveryPointPair) bool {
 	if len(p1) != len(p2) {
 		return false
 	}
@@ -169,11 +169,11 @@ func testAddPairs(db PushDatabase, t *testing.T) {
 	dp2.ServiceName = "service"
 	dp2.SubscriberName = "sub"
 
-	pairs := make([]*ProviderDeliveryPointPair, 2)
-	pairs[0] = &ProviderDeliveryPointPair{
+	pairs := make([]*push.ProviderDeliveryPointPair, 2)
+	pairs[0] = &push.ProviderDeliveryPointPair{
 		DeliveryPoint: dp1,
 	}
-	pairs[1] = &ProviderDeliveryPointPair{
+	pairs[1] = &push.ProviderDeliveryPointPair{
 		DeliveryPoint: dp2,
 	}
 
@@ -282,11 +282,11 @@ func testUpdateProvider(db PushDatabase, t *testing.T) {
 	dp2.ServiceName = "service"
 	dp2.SubscriberName = "sub"
 
-	pairs := make([]*ProviderDeliveryPointPair, 2)
-	pairs[0] = &ProviderDeliveryPointPair{
+	pairs := make([]*push.ProviderDeliveryPointPair, 2)
+	pairs[0] = &push.ProviderDeliveryPointPair{
 		DeliveryPoint: dp1,
 	}
-	pairs[1] = &ProviderDeliveryPointPair{
+	pairs[1] = &push.ProviderDeliveryPointPair{
 		DeliveryPoint: dp2,
 	}
 
@@ -352,11 +352,11 @@ func testUpdateDeliveryPoint(db PushDatabase, t *testing.T) {
 	dp2.ServiceName = "service"
 	dp2.SubscriberName = "sub"
 
-	pairs := make([]*ProviderDeliveryPointPair, 2)
-	pairs[0] = &ProviderDeliveryPointPair{
+	pairs := make([]*push.ProviderDeliveryPointPair, 2)
+	pairs[0] = &push.ProviderDeliveryPointPair{
 		DeliveryPoint: dp1,
 	}
-	pairs[1] = &ProviderDeliveryPointPair{
+	pairs[1] = &push.ProviderDeliveryPointPair{
 		DeliveryPoint: dp2,
 	}
 
@@ -411,7 +411,7 @@ func testLookUpDeliveryPointWithUniqId(db PushDatabase, t *testing.T) {
 
 	N := 10
 
-	pairs := make([]*ProviderDeliveryPointPair, 0, N)
+	pairs := make([]*push.ProviderDeliveryPointPair, 0, N)
 	uniqid := "token-xxx"
 	for i := 0; i < N; i++ {
 		dp := &simpleDeliveryPoint{
@@ -420,7 +420,7 @@ func testLookUpDeliveryPointWithUniqId(db PushDatabase, t *testing.T) {
 		}
 		dp.ServiceName = "service"
 		dp.SubscriberName = fmt.Sprintf("sub-%v", i)
-		pair := &ProviderDeliveryPointPair{
+		pair := &push.ProviderDeliveryPointPair{
 			DeliveryPoint: dp,
 		}
 		pairs = append(pairs, pair)

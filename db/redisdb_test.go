@@ -150,7 +150,7 @@ func TestRedisPairDeliveryPoint(t *testing.T) {
 	dp.SubscriberName = "sub"
 	rdb := db.(*redisPushDatabase)
 
-	pair := &ProviderDeliveryPointPair{}
+	pair := &push.ProviderDeliveryPointPair{}
 	pair.DeliveryPoint = dp
 	err = rdb.pairDeliveryPoints(pair)
 
@@ -184,7 +184,7 @@ func TestRedisPairDeliveryPointWithNoProvider(t *testing.T) {
 	dp.SubscriberName = "sub"
 	rdb := db.(*redisPushDatabase)
 
-	pair := &ProviderDeliveryPointPair{}
+	pair := &push.ProviderDeliveryPointPair{}
 	pair.DeliveryPoint = dp
 	err = rdb.pairDeliveryPoints(pair)
 
@@ -243,7 +243,7 @@ func TestRedisPairDeliveryPointWithSpecifiedProvider(t *testing.T) {
 	dp.SubscriberName = "sub"
 	rdb := db.(*redisPushDatabase)
 
-	pair := &ProviderDeliveryPointPair{}
+	pair := &push.ProviderDeliveryPointPair{}
 	pair.DeliveryPoint = dp
 	err = rdb.pairDeliveryPoints(pair)
 
@@ -293,7 +293,7 @@ func TestPairDeliveryPointWithUnknownProvider(t *testing.T) {
 	dp.SubscriberName = "sub"
 	rdb := db.(*redisPushDatabase)
 
-	pair := &ProviderDeliveryPointPair{}
+	pair := &push.ProviderDeliveryPointPair{}
 	pair.DeliveryPoint = dp
 	err = rdb.pairDeliveryPoints(pair)
 
