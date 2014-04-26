@@ -113,3 +113,10 @@ func (self *LayeredPushDatabase) LookupDeliveryPointWithUniqId(provider push.Pro
 	}
 	return
 }
+
+func (self *LayeredPushDatabase) Close() error {
+	for _, db := range self.dbs {
+		db.Close()
+	}
+	return nil
+}

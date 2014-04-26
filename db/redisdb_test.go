@@ -58,6 +58,7 @@ func TestRedis(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	defer db.Close()
 	testPushDatabaseImpl(db, t,
 		func() {
 			redisClearDatabase(redisTestConfig, t)
@@ -85,6 +86,7 @@ func TestLayeredRedis(t *testing.T) {
 	}
 
 	db := NewLayeredPushDatabase(cache, database)
+	defer db.Close()
 
 	testPushDatabaseImpl(db, t,
 		func() {
@@ -119,6 +121,7 @@ func TestRedisPairDeliveryPoint(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	defer db.Close()
 
 	ps := &simplePushService{}
 	ps.This = ps
@@ -167,6 +170,7 @@ func TestRedisPairDeliveryPointWithNoProvider(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	defer db.Close()
 
 	ps := &simplePushService{}
 	ps.This = ps
@@ -196,6 +200,7 @@ func TestRedisPairDeliveryPointWithSpecifiedProvider(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	defer db.Close()
 
 	ps := &simplePushService{}
 	ps.This = ps
@@ -258,6 +263,7 @@ func TestPairDeliveryPointWithUnknownProvider(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	defer db.Close()
 
 	ps := &simplePushService{}
 	ps.This = ps

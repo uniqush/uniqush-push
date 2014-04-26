@@ -34,4 +34,5 @@ type PushDatabase interface {
 	// dp with a provider following the same rule as in AddPairs()
 	DelDeliveryPoint(provider push.Provider, dp push.DeliveryPoint) error
 	LookupDeliveryPointWithUniqId(provider push.Provider, uniqId string) (dps []push.DeliveryPoint, err error)
+	Close() error
 }

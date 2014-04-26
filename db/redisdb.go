@@ -748,3 +748,7 @@ func (self *redisPushDatabase) LookupDeliveryPointWithUniqId(provider push.Provi
 	dps = ret
 	return
 }
+
+func (self *redisPushDatabase) Close() error {
+	return self.pool.Close()
+}
