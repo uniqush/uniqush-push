@@ -43,6 +43,7 @@ type PushService interface {
 	EmptyDeliveryPoint() DeliveryPoint
 
 	Push(req *PushRequest, resChan chan<- *PushResult)
+	Close() error
 }
 
 /*
@@ -87,6 +88,10 @@ type Validator interface {
 type BasicPushService struct {
 	This      mapToPushPeer
 	Validator Validator
+}
+
+func (self *BasicPushService) Close() error {
+	return nil
 }
 
 func (self *BasicPushService) UnmarshalProviderFromMap(data map[string]string, p Provider) error {
