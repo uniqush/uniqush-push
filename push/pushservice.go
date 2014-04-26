@@ -53,7 +53,11 @@ func (self *UnmarshalFromMapToStructPushService) UnmarshalProviderFromMap(data m
 	if err != nil {
 		return err
 	}
-	return json.Unmarshal(d, p)
+	err = json.Unmarshal(d, p)
+	if err != nil {
+		return err
+	}
+	return ValidateProvider(p)
 }
 
 func (self *UnmarshalFromMapToStructPushService) UnmarshalDeliveryPointFromMap(data map[string]string, dp DeliveryPoint) error {
@@ -61,7 +65,11 @@ func (self *UnmarshalFromMapToStructPushService) UnmarshalDeliveryPointFromMap(d
 	if err != nil {
 		return err
 	}
-	return json.Unmarshal(d, dp)
+	err = json.Unmarshal(d, dp)
+	if err != nil {
+		return err
+	}
+	return ValidateDeliveryPoint(dp)
 }
 
 type mapToPushPeer interface {
@@ -137,12 +145,12 @@ func (self *BasicPushService) unmarshal(data []byte, i interface{}) error {
 	return nil
 }
 
-func (self *BasicPushService) UnmarshalProvider(data []byte, dp Provider) error {
-	err := self.unmarshal(data, dp)
+func (self *BasicPushService) UnmarshalProvider(data []byte, p Provider) error {
+	err := self.unmarshal(data, p)
 	if err != nil {
 		return err
 	}
-	return ValidateProvider(dp)
+	return ValidateProvider(p)
 }
 
 func (self *BasicPushService) UnmarshalDeliveryPoint(data []byte, dp DeliveryPoint) error {
