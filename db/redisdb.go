@@ -415,8 +415,6 @@ func (self *redisPushDatabase) getPairsByKey(key string) (pairs []*ProviderDeliv
 }
 
 func (self *redisPushDatabase) LoopUpPairs(service, subscriber string) (pairs []*ProviderDeliveryPointPair, err error) {
-	keys := make([]string, 0, 10)
-	// If it has wild card, we need to treat it differently.
 	if hasWildcard(service) || hasWildcard(subscriber) {
 		// If redis is used as a cache, then it is not able to handle wild card.
 		// Because the cache may only contain partial data and may not be
@@ -426,6 +424,14 @@ func (self *redisPushDatabase) LoopUpPairs(service, subscriber string) (pairs []
 			err = fmt.Errorf("cache is not able to handle wild card.")
 			return
 		}
+	}
+	return self.loopUpPairsInternal(service, subscriber)
+}
+
+func (self *redisPushDatabase) loopUpPairsInternal(service, subscriber string) (pairs []*ProviderDeliveryPointPair, err error) {
+	keys := make([]string, 0, 10)
+	// If it has wild card, we need to treat it differently.
+	if hasWildcard(service) || hasWildcard(subscriber) {
 		lookupkey := buildPairLoopUpKey(service, subscriber)
 		var values []interface{}
 
@@ -447,6 +453,12 @@ func (self *redisPushDatabase) LoopUpPairs(service, subscriber string) (pairs []
 	} else {
 		keys = append(keys, buildPairLoopUpKey(service, subscriber))
 	}
+	if self.isCache && self.cacheType != CACHE_TYPE_ALWAYS_IN && len(keys) == 0 {
+		// Partial cache may not contain all data.
+		// We need to look into the next layer.
+		err = fmt.Errorf("partial cache may contain partial data. move to next layer")
+		return
+	}
 
 	rets := make([][]*ProviderDeliveryPointPair, len(keys))
 	N := 0
@@ -467,17 +479,6 @@ func (self *redisPushDatabase) LoopUpPairs(service, subscriber string) (pairs []
 
 func (self *redisPushDatabase) DelDeliveryPoint(provider push.Provider, dp push.DeliveryPoint) error {
 	pairkey := buildPairLoopUpKey(dp.Service(), dp.Subscriber())
-	if self.isCache && self.cacheType != CACHE_TYPE_ALWAYS_IN {
-		// In this case, we only need to remove all pairs in the cache
-		// and let the next read operation load the new pairs from the backend database.
-		conn := self.pool.Get()
-		defer conn.Close()
-		_, err := conn.Do("DEL", pairkey)
-		if err != nil {
-			return err
-		}
-		return nil
-	}
 
 	pair := &ProviderDeliveryPointPair{
 		Provider:      provider,
@@ -543,8 +544,7 @@ func (self *redisPushDatabase) DelDeliveryPoint(provider push.Provider, dp push.
 
 func (self *redisPushDatabase) UpdateProvider(provider push.Provider) error {
 	// Update all pairs.
-	// XXX This is really time consuming.
-	pairs, err := self.LoopUpPairs(provider.Service(), "*")
+	pairs, err := self.loopUpPairsInternal(provider.Service(), "*")
 	if err != nil {
 		return err
 	}

@@ -13,7 +13,7 @@ type DatabaseConfig struct {
 	Host      string `toml:"host"`
 	Port      int    `toml:"port"`
 	Username  string `toml:"username"`
-	Password  string `tomel:"password"`
+	Password  string `toml:"password"`
 	Database  string `toml:"database"`
 	IsCache   bool   `toml:"-"`
 	CacheType int    `toml:"-"`

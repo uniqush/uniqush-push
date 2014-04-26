@@ -3,6 +3,7 @@ package db
 import (
 	"fmt"
 	"reflect"
+	"runtime/debug"
 	"testing"
 
 	"github.com/kr/pretty"
@@ -76,6 +77,28 @@ func (self *simplePushService) EmptyDeliveryPoint() push.DeliveryPoint {
 
 func (self *simplePushService) Name() string {
 	return "gcm"
+}
+
+func testPushDatabaseImpl(db PushDatabase, t *testing.T, prepare func(), clean func()) {
+	prepare()
+	testAddDelProvider(db, t)
+	clean()
+
+	prepare()
+	testAddPairs(db, t)
+	clean()
+
+	prepare()
+	testUpdateProvider(db, t)
+	clean()
+
+	prepare()
+	testUpdateDeliveryPoint(db, t)
+	clean()
+
+	prepare()
+	testLookUpDeliveryPointWithUniqId(db, t)
+	clean()
 }
 
 func testAddDelProvider(db PushDatabase, t *testing.T) {
@@ -223,6 +246,7 @@ func testAddPairs(db PushDatabase, t *testing.T) {
 	pairs[0].DeliveryPoint = dp2
 	pairs = pairs[:1]
 	if !pairsEq(foundpairs, pairs) {
+		debug.PrintStack()
 		t.Fatal("found different pairs")
 	}
 }
@@ -280,6 +304,7 @@ func testUpdateProvider(db PushDatabase, t *testing.T) {
 	p.OtherInfo = "someOtherInfo"
 	err = db.UpdateProvider(p)
 	if err != nil {
+		debug.PrintStack()
 		t.Fatal(err)
 	}
 	for _, pair := range newpairs {

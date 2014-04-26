@@ -58,25 +58,58 @@ func TestRedis(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	redisClearDatabase(redisTestConfig, t)
-	testAddDelProvider(db, t)
-	redisIntegrityTest(redisTestConfig, t)
+	testPushDatabaseImpl(db, t,
+		func() {
+			redisClearDatabase(redisTestConfig, t)
+		},
+		func() {
+			redisIntegrityTest(redisTestConfig, t)
+		})
+}
 
-	redisClearDatabase(redisTestConfig, t)
-	testAddPairs(db, t)
-	redisIntegrityTest(redisTestConfig, t)
+func TestLayeredRedis(t *testing.T) {
+	var cacheConfig DatabaseConfig
+	cacheConfig = *redisTestConfig
+	cacheConfig.Database = "2"
+	cacheConfig.IsCache = true
+	cache, err := GetPushDatabase(&cacheConfig)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var dbConfig DatabaseConfig
+	dbConfig = *redisTestConfig
+	dbConfig.Database = "1"
+	database, err := GetPushDatabase(&dbConfig)
+	if err != nil {
+		t.Fatal(err)
+	}
 
-	redisClearDatabase(redisTestConfig, t)
-	testUpdateProvider(db, t)
-	redisIntegrityTest(redisTestConfig, t)
+	db := NewLayeredPushDatabase(cache, database)
 
-	redisClearDatabase(redisTestConfig, t)
-	testUpdateDeliveryPoint(db, t)
-	redisIntegrityTest(redisTestConfig, t)
-
-	redisClearDatabase(redisTestConfig, t)
-	testLookUpDeliveryPointWithUniqId(db, t)
-	redisIntegrityTest(redisTestConfig, t)
+	testPushDatabaseImpl(db, t,
+		func() {
+			redisClearDatabase(&cacheConfig, t)
+			redisClearDatabase(&dbConfig, t)
+		},
+		func() {
+			redisIntegrityTest(&cacheConfig, t)
+			redisIntegrityTest(&dbConfig, t)
+		})
+	cacheConfig.CacheType = CACHE_TYPE_LRU
+	cache, err = GetPushDatabase(&cacheConfig)
+	if err != nil {
+		t.Fatal(err)
+	}
+	db = NewLayeredPushDatabase(cache, database)
+	testPushDatabaseImpl(db, t,
+		func() {
+			redisClearDatabase(&cacheConfig, t)
+			redisClearDatabase(&dbConfig, t)
+		},
+		func() {
+			redisIntegrityTest(&cacheConfig, t)
+			redisIntegrityTest(&dbConfig, t)
+		})
 }
 
 func TestRedisPairDeliveryPoint(t *testing.T) {
