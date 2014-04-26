@@ -94,7 +94,7 @@ func TestRedisPairDeliveryPoint(t *testing.T) {
 	p := &simpleProvider{
 		ApiKey: "key",
 	}
-	err = db.AddProvider(p)
+	err = db.UpdateProvider(p)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -165,7 +165,7 @@ func TestRedisPairDeliveryPointWithSpecifiedProvider(t *testing.T) {
 	p1 := &simpleProvider{
 		ApiKey: "key1",
 	}
-	err = db.AddProvider(p1)
+	err = db.UpdateProvider(p1)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -173,7 +173,7 @@ func TestRedisPairDeliveryPointWithSpecifiedProvider(t *testing.T) {
 	p2 := &simpleProvider{
 		ApiKey: "key2",
 	}
-	err = db.AddProvider(p2)
+	err = db.UpdateProvider(p2)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -223,7 +223,7 @@ func TestPairDeliveryPointWithUnknownProvider(t *testing.T) {
 	p := &simpleProvider{
 		ApiKey: "key",
 	}
-	err = db.AddProvider(p)
+	err = db.UpdateProvider(p)
 	if err != nil {
 		t.Fatal(err)
 	}

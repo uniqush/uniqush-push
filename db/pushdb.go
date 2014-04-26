@@ -20,12 +20,14 @@ type DatabaseConfig struct {
 }
 
 type PushDatabase interface {
-	// XXX Do we really need this func? Why not simply use UpdateProvider()?
 	AddProvider(provider push.Provider) error
-	// Update the provider with same uniqid
+	// Update the provider.
+	// If the provider exists in the database, the implementation MUST also
+	// update its corresponding data if necessary.
 	UpdateProvider(provider push.Provider) error
-	UpdateDeliveryPoint(dp push.DeliveryPoint) error
 	DelProvider(provider push.Provider) error
+
+	UpdateDeliveryPoint(dp push.DeliveryPoint) error
 	AddPairs(pairs ...*ProviderDeliveryPointPair) (newpairs []*ProviderDeliveryPointPair, err error)
 	LoopUpPairs(service, subscriber string) (pairs []*ProviderDeliveryPointPair, err error)
 	// provider could be nil, in which case the database should pair
