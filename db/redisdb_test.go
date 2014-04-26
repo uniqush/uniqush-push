@@ -127,6 +127,7 @@ func TestRedisPairDeliveryPoint(t *testing.T) {
 	p := &simpleProvider{
 		ApiKey: "key",
 	}
+	p.ServiceName = "service"
 	err = db.UpdateProvider(p)
 	if err != nil {
 		t.Fatal(err)
@@ -142,6 +143,8 @@ func TestRedisPairDeliveryPoint(t *testing.T) {
 	dp := &simpleDeliveryPoint{
 		DevToken: "tokentoken",
 	}
+	dp.ServiceName = "service"
+	dp.SubscriberName = "sub"
 	rdb := db.(*redisPushDatabase)
 
 	pair := &ProviderDeliveryPointPair{}
@@ -172,6 +175,9 @@ func TestRedisPairDeliveryPointWithNoProvider(t *testing.T) {
 	dp := &simpleDeliveryPoint{
 		DevToken: "tokentoken",
 	}
+	// p.ServiceName = "service"
+	dp.ServiceName = "service"
+	dp.SubscriberName = "sub"
 	rdb := db.(*redisPushDatabase)
 
 	pair := &ProviderDeliveryPointPair{}
@@ -198,6 +204,7 @@ func TestRedisPairDeliveryPointWithSpecifiedProvider(t *testing.T) {
 	p1 := &simpleProvider{
 		ApiKey: "key1",
 	}
+	p1.ServiceName = "service"
 	err = db.UpdateProvider(p1)
 	if err != nil {
 		t.Fatal(err)
@@ -206,6 +213,7 @@ func TestRedisPairDeliveryPointWithSpecifiedProvider(t *testing.T) {
 	p2 := &simpleProvider{
 		ApiKey: "key2",
 	}
+	p2.ServiceName = "service"
 	err = db.UpdateProvider(p2)
 	if err != nil {
 		t.Fatal(err)
@@ -226,6 +234,8 @@ func TestRedisPairDeliveryPointWithSpecifiedProvider(t *testing.T) {
 		DevToken:     "tokentoken",
 		ProviderName: p1.UniqId(),
 	}
+	dp.ServiceName = "service"
+	dp.SubscriberName = "sub"
 	rdb := db.(*redisPushDatabase)
 
 	pair := &ProviderDeliveryPointPair{}
@@ -256,6 +266,7 @@ func TestPairDeliveryPointWithUnknownProvider(t *testing.T) {
 	p := &simpleProvider{
 		ApiKey: "key",
 	}
+	p.ServiceName = "service"
 	err = db.UpdateProvider(p)
 	if err != nil {
 		t.Fatal(err)
@@ -272,6 +283,8 @@ func TestPairDeliveryPointWithUnknownProvider(t *testing.T) {
 		DevToken:     "tokentoken",
 		ProviderName: p.UniqId() + "notyou",
 	}
+	dp.ServiceName = "service"
+	dp.SubscriberName = "sub"
 	rdb := db.(*redisPushDatabase)
 
 	pair := &ProviderDeliveryPointPair{}

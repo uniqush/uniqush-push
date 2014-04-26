@@ -18,6 +18,9 @@ func TestPairSerialization(t *testing.T) {
 	dp := &simpleDeliveryPoint{
 		DevToken: "sometoken",
 	}
+	p.ServiceName = "service"
+	dp.ServiceName = "service"
+	dp.SubscriberName = "sub"
 
 	pair := &ProviderDeliveryPointPair{
 		Provider:      p,
@@ -50,6 +53,9 @@ func TestPairSerializationNoEnoughData(t *testing.T) {
 	dp := &simpleDeliveryPoint{
 		DevToken: "sometoken",
 	}
+	p.ServiceName = "service"
+	dp.ServiceName = "service"
+	dp.SubscriberName = "sub"
 
 	pair := &ProviderDeliveryPointPair{
 		Provider:      p,
@@ -79,6 +85,9 @@ func TestPairSerializationNoService(t *testing.T) {
 	dp := &simpleDeliveryPoint{
 		DevToken: "sometoken",
 	}
+	p.ServiceName = "service"
+	dp.ServiceName = "service"
+	dp.SubscriberName = "sub"
 
 	pair := &ProviderDeliveryPointPair{
 		Provider:      p,
@@ -108,6 +117,9 @@ func TestPairSerializationInvalidPushServiceName(t *testing.T) {
 	dp := &simpleDeliveryPoint{
 		DevToken: "sometoken",
 	}
+	p.ServiceName = "service"
+	dp.ServiceName = "service"
+	dp.SubscriberName = "sub"
 
 	pair := &ProviderDeliveryPointPair{
 		Provider:      p,
@@ -143,6 +155,9 @@ func TestPairSerializationUnknownPushServiceName(t *testing.T) {
 		Provider:      p,
 		DeliveryPoint: dp,
 	}
+	p.ServiceName = "service"
+	dp.ServiceName = "service"
+	dp.SubscriberName = "sub"
 
 	data, err := pair.Bytes()
 	if err != nil {

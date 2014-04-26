@@ -138,9 +138,17 @@ func (self *BasicPushService) unmarshal(data []byte, i interface{}) error {
 }
 
 func (self *BasicPushService) UnmarshalProvider(data []byte, dp Provider) error {
-	return self.unmarshal(data, dp)
+	err := self.unmarshal(data, dp)
+	if err != nil {
+		return err
+	}
+	return ValidateProvider(dp)
 }
 
 func (self *BasicPushService) UnmarshalDeliveryPoint(data []byte, dp DeliveryPoint) error {
-	return self.unmarshal(data, dp)
+	err := self.unmarshal(data, dp)
+	if err != nil {
+		return err
+	}
+	return ValidateDeliveryPoint(dp)
 }
