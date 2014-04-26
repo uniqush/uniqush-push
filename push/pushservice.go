@@ -45,6 +45,7 @@ type PushService interface {
 	Push(req *PushRequest, resChan chan<- *PushResult)
 }
 
+/*
 type UnmarshalFromMapToStructPushService struct {
 }
 
@@ -71,14 +72,45 @@ func (self *UnmarshalFromMapToStructPushService) UnmarshalDeliveryPointFromMap(d
 	}
 	return ValidateDeliveryPoint(dp)
 }
+*/
 
 type mapToPushPeer interface {
 	UnmarshalDeliveryPointFromMap(data map[string]string, dp DeliveryPoint) error
 	UnmarshalProviderFromMap(data map[string]string, p Provider) error
 }
 
+type Validator interface {
+	ValidateDeliveryPoint(dp DeliveryPoint) error
+	ValidateProvider(p Provider) error
+}
+
 type BasicPushService struct {
-	This mapToPushPeer
+	This      mapToPushPeer
+	Validator Validator
+}
+
+func (self *BasicPushService) UnmarshalProviderFromMap(data map[string]string, p Provider) error {
+	d, err := json.Marshal(data)
+	if err != nil {
+		return err
+	}
+	err = json.Unmarshal(d, p)
+	if err != nil {
+		return err
+	}
+	return self.UnmarshalProvider(d, p)
+}
+
+func (self *BasicPushService) UnmarshalDeliveryPointFromMap(data map[string]string, dp DeliveryPoint) error {
+	d, err := json.Marshal(data)
+	if err != nil {
+		return err
+	}
+	err = json.Unmarshal(d, dp)
+	if err != nil {
+		return err
+	}
+	return self.UnmarshalDeliveryPoint(d, dp)
 }
 
 func (self *BasicPushService) MarshalDeliveryPoint(dp DeliveryPoint) (data []byte, err error) {
@@ -150,7 +182,14 @@ func (self *BasicPushService) UnmarshalProvider(data []byte, p Provider) error {
 	if err != nil {
 		return err
 	}
-	return ValidateProvider(p)
+	err = ValidateProvider(p)
+	if err != nil {
+		return err
+	}
+	if self.Validator != nil {
+		err = self.Validator.ValidateProvider(p)
+	}
+	return err
 }
 
 func (self *BasicPushService) UnmarshalDeliveryPoint(data []byte, dp DeliveryPoint) error {
@@ -158,5 +197,12 @@ func (self *BasicPushService) UnmarshalDeliveryPoint(data []byte, dp DeliveryPoi
 	if err != nil {
 		return err
 	}
-	return ValidateDeliveryPoint(dp)
+	err = ValidateDeliveryPoint(dp)
+	if err != nil {
+		return err
+	}
+	if self.Validator != nil {
+		err = self.Validator.ValidateDeliveryPoint(dp)
+	}
+	return err
 }

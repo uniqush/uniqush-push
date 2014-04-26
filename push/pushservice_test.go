@@ -28,7 +28,6 @@ func (self *simpleProvider) PushService() string {
 
 type simplePushService struct {
 	BasicPushService
-	UnmarshalFromMapToStructPushService
 	nopPusher
 }
 

@@ -9,7 +9,6 @@ import (
 type namedPushService struct {
 	name string
 	BasicPushService
-	UnmarshalFromMapToStructPushService
 	nopPusher
 }
 

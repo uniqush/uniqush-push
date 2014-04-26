@@ -63,7 +63,6 @@ func (self *simpleProvider) PushService() string {
 
 type simplePushService struct {
 	push.BasicPushService
-	push.UnmarshalFromMapToStructPushService
 	nopPusher
 }
 
