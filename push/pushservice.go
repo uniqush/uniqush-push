@@ -4,28 +4,34 @@ import (
 	"encoding/json"
 	"fmt"
 	"reflect"
+	"time"
 )
 
 type PushResult struct {
-	Provider    Provider
-	Destination DeliveryPoint
-	Content     *Notification
-	MsgId       string
-	Err         error
+	Provider     Provider
+	Destinations []DeliveryPoint
+	Content      *Notification
+	MsgId        string
+	Err          error
 }
 
 func (self *PushResult) Error() string {
-	if self.Error != nil {
-		return fmt.Sprintf("Failed PushServiceProvider=%s DeliveryPoint=%s %v",
-			self.Provider.UniqId(), self.Destination.UniqId(), self.Err)
+	dps := make([]string, 0, len(self.Destinations))
+	for _, dp := range self.Destinations {
+		dps = append(dps, dp.UniqId())
 	}
-	return fmt.Sprintf("Success PushServiceProvider=%s DeliveryPoint=%s Succsess!",
-		self.Provider.UniqId(), self.Destination.UniqId())
+	if self.Error != nil {
+		return fmt.Sprintf("Failed PushServiceProvider=%s DeliveryPoints=%+v %v",
+			self.Provider.UniqId(), dps, self.Err)
+	}
+	return fmt.Sprintf("Success PushServiceProvider=%s DeliveryPoints=%+v Succsess!",
+		self.Provider.UniqId(), dps)
 }
 
 type PushRequest struct {
 	Provider     Provider
 	Destinations []DeliveryPoint
+	Wait         time.Duration
 	Content      *Notification
 }
 
