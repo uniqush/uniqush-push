@@ -133,37 +133,9 @@ type PushService interface {
 	EmptyDeliveryPoint() DeliveryPoint
 
 	Push(req *PushRequest, resChan chan<- *PushResult)
+	SetErrChan(errChan chan<- error)
 	Close() error
 }
-
-/*
-type UnmarshalFromMapToStructPushService struct {
-}
-
-func (self *UnmarshalFromMapToStructPushService) UnmarshalProviderFromMap(data map[string]string, p Provider) error {
-	d, err := json.Marshal(data)
-	if err != nil {
-		return err
-	}
-	err = json.Unmarshal(d, p)
-	if err != nil {
-		return err
-	}
-	return ValidateProvider(p)
-}
-
-func (self *UnmarshalFromMapToStructPushService) UnmarshalDeliveryPointFromMap(data map[string]string, dp DeliveryPoint) error {
-	d, err := json.Marshal(data)
-	if err != nil {
-		return err
-	}
-	err = json.Unmarshal(d, dp)
-	if err != nil {
-		return err
-	}
-	return ValidateDeliveryPoint(dp)
-}
-*/
 
 type mapToPushPeer interface {
 	UnmarshalDeliveryPointFromMap(data map[string]string, dp DeliveryPoint) error
@@ -178,6 +150,9 @@ type Validator interface {
 type BasicPushService struct {
 	This      mapToPushPeer
 	Validator Validator
+}
+
+func (self *BasicPushService) SetErrChan(errChan chan<- error) {
 }
 
 func (self *BasicPushService) Close() error {
