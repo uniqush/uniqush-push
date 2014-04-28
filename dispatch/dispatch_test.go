@@ -305,9 +305,9 @@ func randomString() string {
 
 func TestDispatcher(t *testing.T) {
 	exp := &expectedResults{}
-	N := 2
-	M := 10
-	P := 2
+	N := 5
+	M := 30
+	P := 10
 	pushServiceNames := seqStrings(N, "ps", "_")
 	devtokens := seqStrings(M, "dp", "_")
 	apikeys := seqStrings(P, "provider", "_")
