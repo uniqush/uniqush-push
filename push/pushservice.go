@@ -13,6 +13,45 @@ type PushResult struct {
 	Content      *Notification
 	MsgId        string
 	Err          error
+	NrRetries    int
+}
+
+func (self *PushResult) Wait() error {
+	if self == nil || self.Err == nil {
+		return nil
+	}
+	if retry, ok := self.Err.(*ErrorRetry); ok {
+		after := time.Duration(retry.RetryAfter)
+		if after == 0*time.Second {
+			pow := 1
+			if self.NrRetries > 0 {
+				pow = 1 << (uint(self.NrRetries))
+			}
+			after = time.Duration(2*pow) * time.Second
+		}
+		time.Sleep(after)
+		return nil
+	}
+	return nil
+}
+
+func (self *PushResult) Retry(resChan chan<- *PushResult) {
+	if _, ok := self.Err.(*ErrorRetry); !ok {
+		return
+	}
+	req := &PushRequest{
+		Provider:     self.Provider,
+		Destinations: self.Destinations,
+		Content:      self.Content,
+		NrRetries:    self.NrRetries + 1,
+	}
+	ps, err := GetPushService(self.Provider)
+	if err != nil {
+		res := *self
+		res.Err = err
+		resChan <- &res
+	}
+	ps.Push(req, resChan)
 }
 
 func (self *PushResult) Error() string {
@@ -31,8 +70,8 @@ func (self *PushResult) Error() string {
 type PushRequest struct {
 	Provider     Provider
 	Destinations []DeliveryPoint
-	Wait         time.Duration
 	Content      *Notification
+	NrRetries    int
 }
 
 type PushService interface {
