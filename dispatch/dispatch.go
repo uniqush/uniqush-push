@@ -37,6 +37,9 @@ func (self *Dispatcher) Push(
 
 	for _, req := range pmap {
 		ps, err := push.GetPushService(req.Provider)
+		if ps == nil && err == nil {
+			err = fmt.Errorf("unable to get push service", req.Provider.PushService())
+		}
 		if err != nil {
 			res := &push.PushResult{
 				Provider:     req.Provider,
@@ -44,6 +47,7 @@ func (self *Dispatcher) Push(
 				Err:          err,
 			}
 			resChan <- res
+			continue
 		}
 		go func(r *push.PushRequest) {
 			ps.Push(r, resChan)

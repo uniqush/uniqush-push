@@ -14,7 +14,6 @@ import (
 	"time"
 
 	"github.com/kr/pretty"
-	"github.com/stretchr/testify/mock"
 	"github.com/uniqush/uniqush-push/push"
 )
 
@@ -116,6 +115,15 @@ func (self *expectedResults) dispatch(dispacher *Dispatcher) {
 	}
 }
 
+func (self *expectedResults) nrExpectedResults() int {
+	ret := 0
+
+	for _, r := range self.res {
+		ret += len(r.Results)
+	}
+	return ret
+}
+
 func (self *expectedResults) appendResults(req *push.PushRequest, rs ...*push.PushResult) {
 	self.lock.Lock()
 	defer self.lock.Unlock()
@@ -130,6 +138,7 @@ func (self *expectedResults) appendResults(req *push.PushRequest, rs ...*push.Pu
 		res = &reqResPair{
 			Request: req,
 		}
+		self.res = append(self.res, res)
 	}
 	res.Results = append(res.Results, rs...)
 	return
@@ -169,7 +178,6 @@ func (self *expectedResults) isExpectedResult(res *push.PushResult) error {
 }
 
 type simplePushService struct {
-	mock.Mock
 	push.BasicPushService
 	PushServiceName string
 	ExpRes          *expectedResults
@@ -183,23 +191,35 @@ func testDispatcher(exp *expectedResults, t *testing.T) {
 		ResultChannel: resChan,
 	}
 
-	go func() {
-		for res := range resChan {
-			err := exp.isExpectedResult(res)
-			if err != nil {
-				t.Error(err)
+	N := exp.nrExpectedResults()
+
+	stop := make(chan bool)
+
+	go func(n int) {
+		for i := 0; i < n; i++ {
+			fmt.Printf("receiving %v/%v res\n", i, N)
+			select {
+			case res := <-resChan:
+				err := exp.isExpectedResult(res)
+				if err != nil {
+					t.Error(err)
+				}
+			case <-time.After(5 * time.Second):
+				t.Errorf("timeout: received %v results", i)
+				break
 			}
 		}
-	}()
+		stop <- true
+	}(N)
 
 	exp.dispatch(dispacher)
+	<-stop
 }
 
 func (self *simplePushService) Push(
 	req *push.PushRequest,
 	resChan chan<- *push.PushResult,
 ) {
-	self.Called(req, resChan)
 	res, err := self.ExpRes.getResults(req)
 	if err != nil {
 		panic(err)
@@ -330,22 +350,27 @@ func TestDispatcher(t *testing.T) {
 		}
 	}
 
+	N = 0
 	for _, req := range reqs {
 		if randBool() {
 			res := req.AllSuccess()
+			N++
 			exp.appendResults(req, res)
 		} else {
 			for _, dp := range req.Destinations {
 				if randBool() {
 					res := req.OneSuccess(dp, randomString())
+					N++
 					exp.appendResults(req, res)
 				} else {
 					err := errors.New(randomString())
 					res := req.OneError(dp, err)
+					N++
 					exp.appendResults(req, res)
 				}
 			}
 		}
 	}
+	fmt.Printf("waiting for %v results\n", N)
 	testDispatcher(exp, t)
 }
