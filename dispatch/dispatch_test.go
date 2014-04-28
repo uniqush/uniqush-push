@@ -196,8 +196,10 @@ func testDispatcher(exp *expectedResults, t *testing.T) {
 	stop := make(chan bool)
 
 	go func(n int) {
+		defer func() {
+			stop <- true
+		}()
 		for i := 0; i < n; i++ {
-			fmt.Printf("receiving %v/%v res\n", i, N)
 			select {
 			case res := <-resChan:
 				err := exp.isExpectedResult(res)
@@ -206,10 +208,9 @@ func testDispatcher(exp *expectedResults, t *testing.T) {
 				}
 			case <-time.After(5 * time.Second):
 				t.Errorf("timeout: received %v results", i)
-				break
+				return
 			}
 		}
-		stop <- true
 	}(N)
 
 	exp.dispatch(dispacher)
@@ -288,10 +289,10 @@ func randBool() bool {
 	return rand.Intn(2) == 0
 }
 
-func seqStrings(N int, prefix string) []string {
+func seqStrings(N int, prefix, sep string) []string {
 	ret := make([]string, 0, N)
 	for i := 0; i < N; i++ {
-		ret = append(ret, fmt.Sprintf("%v-%v", prefix, i))
+		ret = append(ret, fmt.Sprintf("%v%v%v", prefix, sep, i))
 	}
 	return ret
 }
@@ -304,12 +305,12 @@ func randomString() string {
 
 func TestDispatcher(t *testing.T) {
 	exp := &expectedResults{}
-	N := 5
-	M := 20
-	P := 10
-	pushServiceNames := seqStrings(N, "ps")
-	devtokens := seqStrings(M, "dp")
-	apikeys := seqStrings(P, "provider")
+	N := 2
+	M := 10
+	P := 2
+	pushServiceNames := seqStrings(N, "ps", "_")
+	devtokens := seqStrings(M, "dp", "_")
+	apikeys := seqStrings(P, "provider", "_")
 	seedMathRand()
 	reqs := make([]*push.PushRequest, 0, M*N*P)
 
@@ -371,6 +372,5 @@ func TestDispatcher(t *testing.T) {
 			}
 		}
 	}
-	fmt.Printf("waiting for %v results\n", N)
 	testDispatcher(exp, t)
 }
