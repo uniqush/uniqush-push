@@ -7,9 +7,14 @@ import (
 )
 
 type Dispatcher struct {
+	ResultChannel chan<- *push.PushResult
 }
 
-func (self *Dispatcher) Push(resChan chan<- *push.PushResult, notif *push.Notification, pairs ...*push.ProviderDeliveryPointPair) {
+func (self *Dispatcher) Push(
+	notif *push.Notification,
+	pairs ...*push.ProviderDeliveryPointPair,
+) {
+	resChan := self.ResultChannel
 	n := 1024
 	if len(pairs)/2 > n {
 		n = len(pairs) / 2

@@ -11,7 +11,7 @@ type PushResult struct {
 	Provider     Provider
 	Destinations []DeliveryPoint
 	Content      *Notification
-	MsgId        string
+	MsgIds       []string
 	Err          error
 	NrRetries    int
 }
@@ -72,6 +72,51 @@ type PushRequest struct {
 	Destinations []DeliveryPoint
 	Content      *Notification
 	NrRetries    int
+}
+
+func (self *PushRequest) AllSuccess(msgIds ...string) *PushResult {
+	res := &PushResult{
+		Provider:     self.Provider,
+		Destinations: self.Destinations,
+		Content:      self.Content,
+		MsgIds:       msgIds,
+		NrRetries:    self.NrRetries,
+	}
+	return res
+}
+
+func (self *PushRequest) OneSuccess(dst DeliveryPoint, msgId string) *PushResult {
+	res := &PushResult{
+		Provider:     self.Provider,
+		Destinations: []DeliveryPoint{dst},
+		Content:      self.Content,
+		MsgIds:       []string{msgId},
+		NrRetries:    self.NrRetries,
+	}
+	return res
+}
+
+func (self *PushRequest) AllError(err error) *PushResult {
+	res := &PushResult{
+		Provider:     self.Provider,
+		Destinations: self.Destinations,
+		Content:      self.Content,
+		NrRetries:    self.NrRetries,
+		Err:          err,
+	}
+	return res
+
+}
+
+func (self *PushRequest) OneError(dst DeliveryPoint, err error) *PushResult {
+	res := &PushResult{
+		Provider:     self.Provider,
+		Destinations: []DeliveryPoint{dst},
+		Content:      self.Content,
+		NrRetries:    self.NrRetries,
+		Err:          err,
+	}
+	return res
 }
 
 type PushService interface {
