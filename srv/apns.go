@@ -496,7 +496,7 @@ func (self *apnsPushService) singlePush(payload, token []byte, expiry uint32, mi
 		conn.Close()
 
 		time.Sleep(sleepTime)
-		sleepTime *= sleepTime
+		sleepTime = sleepTime * 2
 		// Let's try another connection to see if we can recover this error
 		conn, err = pool.Get()
 
