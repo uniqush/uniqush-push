@@ -410,12 +410,12 @@ func newAPNSConnManager(psp *PushServiceProvider, resultChan chan *apnsResult) *
 		InsecureSkipVerify: false,
 	}
 
+	manager.addr = psp.VolatileData["addr"]
 	if skip, ok := psp.VolatileData["skipverify"]; ok {
 		if skip == "true" {
 			manager.conf.InsecureSkipVerify = true
 		}
 	}
-	manager.addr = psp.VolatileData["addr"]
 	manager.resultChan = resultChan
 	return manager
 }
@@ -425,16 +425,23 @@ func (self *apnsConnManager) NewConn() (net.Conn, error) {
 		return nil, self.err
 	}
 
-	conn, err := net.DialTimeout("tcp", self.addr, time.Duration(maxWaitTime)*time.Second)
-	if err != nil {
-		return nil, err
-	}
+	/*
+		conn, err := net.DialTimeout("tcp", self.addr, time.Duration(maxWaitTime)*time.Second)
+		if err != nil {
+			return nil, err
+		}
 
-	if c, ok := conn.(*net.TCPConn); ok {
-		c.SetKeepAlive(true)
-	}
-	tlsconn := tls.Client(conn, self.conf)
-	err = tlsconn.Handshake()
+		if c, ok := conn.(*net.TCPConn); ok {
+			c.SetKeepAlive(true)
+		}
+		tlsconn := tls.Client(conn, self.conf)
+		err = tlsconn.Handshake()
+		if err != nil {
+			return nil, err
+		}
+	*/
+
+	tlsconn, err := tls.Dial("tcp", self.addr, self.conf)
 	if err != nil {
 		return nil, err
 	}
