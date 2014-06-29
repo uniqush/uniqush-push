@@ -18,11 +18,11 @@
 package main
 
 import (
+	"sync"
+	"time"
 	. "github.com/uniqush/log"
 	. "github.com/uniqush/uniqush-push/db"
 	. "github.com/uniqush/uniqush-push/push"
-	"sync"
-	"time"
 )
 
 type PushBackEnd struct {
@@ -111,7 +111,7 @@ func (self *PushBackEnd) fixError(reqId string, event error, logger Logger, afte
 		if sub, ok = err.Destination.FixedData["subscriber"]; !ok {
 			return nil
 		}
-		if after <= 0*time.Second {
+		if after <= 1*time.Second {
 			after = 5 * time.Second
 		}
 		if after > 1*time.Minute {
