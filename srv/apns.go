@@ -509,8 +509,11 @@ func (self *apnsPushService) singlePush(payload, token []byte, expiry uint32, mi
 		conn, err = pool.Get()
 
 		if err != nil {
+			// The pool may return nil for conn.
+			if conn != nil {
+				conn.Close()
+			}
 			errChan <- fmt.Errorf("We are unable to get a connection: %v", err)
-			conn.Close()
 			return
 		}
 		deadline := time.Now().Add(sleepTime)
