@@ -17,4 +17,4 @@ RUN cp /tmp/bin/uniqush-push /usr/bin \
 
 EXPOSE 9898
 
-CMD ["./bin/uniqush-push"]
+CMD ["/usr/bin/uniqush-push"]
