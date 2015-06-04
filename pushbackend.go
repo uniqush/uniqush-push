@@ -35,6 +35,7 @@ type PushBackEnd struct {
 func (self *PushBackEnd) Finalize() {
 	self.db.FlushCache()
 	close(self.errChan)
+	self.psm.Finalize()
 }
 
 func NewPushBackEnd(psm *PushServiceManager, database PushDatabase, loggers []Logger) *PushBackEnd {
