@@ -131,6 +131,27 @@ func getSubscribersFromMap(kv map[string]string, validate bool) (subs []string, 
 	return
 }
 
+func getPushTypeFromMap(kv map[string]string, validate bool) (pushtype string, err error) {
+	var v string
+	var ok bool
+	// Allow the param to be called type and pushtype.
+	if v, ok = kv["type"]; !ok {
+		if v, ok = kv["pushtype"]; !ok {
+			err = fmt.Errorf("NoPushType")
+			return
+		}
+	}
+	pushtype = v
+	if validate {
+		err = ValidatePushNotificationType(pushtype)
+		if err != nil {
+			pushtype = ""
+			return
+		}
+	}
+	return
+}
+
 func getServiceFromMap(kv map[string]string, validate bool) (service string, err error) {
 	var ok bool
 	if service, ok = kv["service"]; !ok {
@@ -206,11 +227,15 @@ func (self *RestAPI) changeSubscription(kv map[string]string, logger log.Logger,
 }
 
 func (self *RestAPI) pushNotification(reqId string, kv map[string]string, perdp map[string][]string, logger log.Logger, remoteAddr string) {
+
+	logger.Debugf("Parameters passed: %v", kv)
+
 	service, err := getServiceFromMap(kv, true)
 	if err != nil {
 		logger.Errorf("RequestId=%v From=%v Cannot get service name: %v; %v", reqId, remoteAddr, service, err)
 		return
 	}
+
 	subs, err := getSubscribersFromMap(kv, false)
 	if err != nil {
 		logger.Errorf("RequestId=%v From=%v Service=%v Cannot get subscriber: %v", reqId, remoteAddr, service, err)
@@ -221,50 +246,61 @@ func (self *RestAPI) pushNotification(reqId string, kv map[string]string, perdp 
 		return
 	}
 
-	notif := NewEmptyNotification()
+	pushtype, err := getPushTypeFromMap(kv, true)
+	if err != nil {
+		logger.Errorf("RequestId=%v From=%v Service=%v NrSubscribers=%v Subscribers=\"%+v\" NoPushType", reqId, remoteAddr, service, len(subs), subs, err)
+		return
+	}
+
+	notif := NewEmptyNotification(pushtype)
 
 	for k, v := range kv {
-		if len(v) <= 0 {
+		v = strings.Trim(v, " \n")
+		if v == "" {
 			continue
 		}
 		switch k {
 		case "subscriber":
 		case "subscribers":
 		case "service":
-			// three keys need to be ignored
+		case "type":
+		case "pushtype":
+			// 5 keys need to be ignored
 		case "badge":
-			if v != "" {
-				var e error
-				_, e = strconv.Atoi(v)
-				if e == nil {
-					notif.Data["badge"] = v
-				} else {
-					notif.Data["badge"] = "0"
-				}
+			if _, err := strconv.Atoi(v); err == nil {
+				notif.Data["badge"] = v
+			} else {
+				notif.Data["badge"] = "0"
 			}
 		default:
 			notif.Data[k] = v
 		}
 	}
 
+	logger.Debugf("Parameters accepted: %+v", notif)
+
 	if notif.IsEmpty() {
-		logger.Errorf("RequestId=%v From=%v Service=%v EmptyNotification", reqId, remoteAddr, service)
+		logger.Errorf("RequestId=%v From=%v Service=%v NrSubscribers=%v Subscribers=\"%+v\" PushType=%v.", reqId, remoteAddr, service, len(subs), subs, pushtype, err)
 		return
 	}
 
-	logger.Infof("RequestId=%v From=%v Service=%v NrSubscribers=%v Subscribers=\"%+v\"", reqId, remoteAddr, service, len(subs), subs)
+	logger.Infof("RequestId=%v From=%v Service=%v NrSubscribers=%v Subscribers=\"%+v\" PushType=%v.", reqId, remoteAddr, service, len(subs), subs, pushtype)
 
 	self.backend.Push(reqId, service, subs, notif, perdp, logger)
 	return
 }
 
-func (self *RestAPI) stop(w io.Writer, remoteAddr string) {
+func (self *RestAPI) stop(w http.ResponseWriter, remoteAddr string) {
 	self.waitGroup.Wait()
 	self.backend.Finalize()
 	self.loggers[LOGGER_WEB].Infof("stopped by %v", remoteAddr)
-	if w != nil {
-		fmt.Fprintf(w, "Stopped\r\n")
+
+	// Fix "Empty reply from server"
+	// Tell web server exactly how many bytes, so connection is closed.
+	if nil != w {
+		_, _ = w.Write([]byte("Stopped\r\n"))
 	}
+
 	self.stopChan <- true
 	return
 }
