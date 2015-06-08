@@ -454,11 +454,6 @@ func (self *apnsConnManager) InitConn(conn net.Conn, n int) error {
 }
 
 func (self *apnsPushService) singlePush(payload, token []byte, expiry uint32, mid uint32, pool *connpool.Pool, errChan chan<- error) {
-	conn, err := pool.Get()
-	if err != nil {
-		errChan <- err
-		return
-	}
 	// Total size for each notification:
 	//
 	// - command: 1
@@ -490,38 +485,39 @@ func (self *apnsPushService) singlePush(payload, token []byte, expiry uint32, mi
 	buffer.Write(payload)
 
 	pdu := buffer.Bytes()
-
-	deadline := time.Now().Add(time.Duration(maxWaitTime) * time.Second)
-	conn.SetWriteDeadline(deadline)
-
-	err = writen(conn, pdu)
-
 	sleepTime := time.Duration(maxWaitTime) * time.Second
-	for nrRetries := 0; err != nil && nrRetries < 3; nrRetries++ {
+	errChan = self.errChan
+
+	// 3 retries.
+	for tries := 0; tries < 4; tries++ {
+
+		// Get a connection.
+		conn, err := pool.Get()
+		if err != nil {
+			errChan <- err
+			return
+		}
+
+		conn.SetWriteDeadline(time.Now().Add(sleepTime))
+
+		// Try to write.
+		err = writen(conn, pdu)
+
+		if err == nil {
+			// Success
+			conn.SetWriteDeadline(time.Time{})
+			conn.Close()
+			return
+		}
+
 		errChan <- fmt.Errorf("error on connection with %v: %v. Will retry within %v", conn.RemoteAddr(), err, sleepTime)
-		errChan = self.errChan
 		conn.Close()
 
 		time.Sleep(sleepTime)
-		// randomly wait more time
-		sleepTime += time.Duration(rand.Int63n(int64(sleepTime)))
-		// Let's try another connection to see if we can recover this error
-		conn, err = pool.Get()
 
-		if err != nil {
-			// The pool may return nil for conn.
-			if conn != nil {
-				conn.Close()
-			}
-			errChan <- fmt.Errorf("We are unable to get a connection: %v", err)
-			return
-		}
-		deadline := time.Now().Add(sleepTime)
-		conn.SetWriteDeadline(deadline)
-		err = writen(conn, pdu)
+		// Next time we sleep a little longer.
+		sleepTime += time.Duration(rand.Int63n(int64(sleepTime)))
 	}
-	conn.SetWriteDeadline(time.Time{})
-	conn.Close()
 }
 
 func (self *apnsPushService) multiPush(req *pushRequest, pool *connpool.Pool) {
@@ -706,21 +702,33 @@ func (self *apnsPushService) pushWorker(psp *PushServiceProvider, reqChan chan *
 }
 
 func writen(w io.Writer, buf []byte) error {
+	// Write does not guarantee that all bytes are written at once, that's why we loop and write until the
+	// length of the buffer is 0. If write fails, for whatever reason, singlePush will wait for a while and
+	// try again.
+
 	n := len(buf)
 	for n >= 0 {
 		l, err := w.Write(buf)
+
 		if err != nil {
-			if nerr, ok := err.(net.Error); ok && nerr.Temporary() && !nerr.Timeout() {
+			nerr, ok := err.(net.Error)
+
+			// We continue to write only if we get a temporary network error...
+			if ok && nerr.Temporary() {
 				continue
 			}
+
 			return err
 		}
+
+		// ... and if there is anything left to write.
 		if l >= n {
 			return nil
 		}
 		n -= l
 		buf = buf[l:]
 	}
+
 	return nil
 }
 
