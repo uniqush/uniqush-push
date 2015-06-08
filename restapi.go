@@ -131,27 +131,6 @@ func getSubscribersFromMap(kv map[string]string, validate bool) (subs []string, 
 	return
 }
 
-func getPushTypeFromMap(kv map[string]string, validate bool) (pushtype string, err error) {
-	var v string
-	var ok bool
-	// Allow the param to be called type and pushtype.
-	if v, ok = kv["type"]; !ok {
-		if v, ok = kv["pushtype"]; !ok {
-			err = fmt.Errorf("NoPushType")
-			return
-		}
-	}
-	pushtype = v
-	if validate {
-		err = ValidatePushNotificationType(pushtype)
-		if err != nil {
-			pushtype = ""
-			return
-		}
-	}
-	return
-}
-
 func getServiceFromMap(kv map[string]string, validate bool) (service string, err error) {
 	var ok bool
 	if service, ok = kv["service"]; !ok {
@@ -227,15 +206,11 @@ func (self *RestAPI) changeSubscription(kv map[string]string, logger log.Logger,
 }
 
 func (self *RestAPI) pushNotification(reqId string, kv map[string]string, perdp map[string][]string, logger log.Logger, remoteAddr string) {
-
-	logger.Debugf("Parameters passed: %v", kv)
-
 	service, err := getServiceFromMap(kv, true)
 	if err != nil {
 		logger.Errorf("RequestId=%v From=%v Cannot get service name: %v; %v", reqId, remoteAddr, service, err)
 		return
 	}
-
 	subs, err := getSubscribersFromMap(kv, false)
 	if err != nil {
 		logger.Errorf("RequestId=%v From=%v Service=%v Cannot get subscriber: %v", reqId, remoteAddr, service, err)
@@ -246,27 +221,19 @@ func (self *RestAPI) pushNotification(reqId string, kv map[string]string, perdp 
 		return
 	}
 
-	pushtype, err := getPushTypeFromMap(kv, true)
-	if err != nil {
-		logger.Errorf("RequestId=%v From=%v Service=%v NrSubscribers=%v Subscribers=\"%+v\" NoPushType", reqId, remoteAddr, service, len(subs), subs, err)
-		return
-	}
-
-	notif := NewEmptyNotification(pushtype)
+	notif := NewEmptyNotification()
 
 	for k, v := range kv {
-		v = strings.Trim(v, " \n")
-		if v == "" {
+		if len(v) <= 0 {
 			continue
 		}
 		switch k {
 		case "subscriber":
 		case "subscribers":
 		case "service":
-		case "type":
-		case "pushtype":
-			// 5 keys need to be ignored
+			// three keys need to be ignored
 		case "badge":
+			// We already checked for empty values.
 			if _, err := strconv.Atoi(v); err == nil {
 				notif.Data["badge"] = v
 			} else {
@@ -277,14 +244,12 @@ func (self *RestAPI) pushNotification(reqId string, kv map[string]string, perdp 
 		}
 	}
 
-	logger.Debugf("Parameters accepted: %+v", notif)
-
 	if notif.IsEmpty() {
-		logger.Errorf("RequestId=%v From=%v Service=%v NrSubscribers=%v Subscribers=\"%+v\" PushType=%v.", reqId, remoteAddr, service, len(subs), subs, pushtype, err)
+		logger.Errorf("RequestId=%v From=%v Service=%v EmptyNotification", reqId, remoteAddr, service)
 		return
 	}
 
-	logger.Infof("RequestId=%v From=%v Service=%v NrSubscribers=%v Subscribers=\"%+v\" PushType=%v.", reqId, remoteAddr, service, len(subs), subs, pushtype)
+	logger.Infof("RequestId=%v From=%v Service=%v NrSubscribers=%v Subscribers=\"%+v\"", reqId, remoteAddr, service, len(subs), subs)
 
 	self.backend.Push(reqId, service, subs, notif, perdp, logger)
 	return
