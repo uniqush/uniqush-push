@@ -233,11 +233,14 @@ func (self *RestAPI) pushNotification(reqId string, kv map[string]string, perdp 
 		case "service":
 			// three keys need to be ignored
 		case "badge":
-			// We already checked for empty values.
-			if _, err := strconv.Atoi(v); err == nil {
-				notif.Data["badge"] = v
-			} else {
-				notif.Data["badge"] = "0"
+			if v != "" {
+				var e error
+				_, e = strconv.Atoi(v)
+				if e == nil {
+					notif.Data["badge"] = v
+				} else {
+					notif.Data["badge"] = "0"
+				}
 			}
 		default:
 			notif.Data[k] = v
