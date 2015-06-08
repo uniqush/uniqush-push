@@ -211,6 +211,7 @@ func (self *RestAPI) pushNotification(reqId string, kv map[string]string, perdp 
 		logger.Errorf("RequestId=%v From=%v Cannot get service name: %v; %v", reqId, remoteAddr, service, err)
 		return
 	}
+
 	subs, err := getSubscribersFromMap(kv, false)
 	if err != nil {
 		logger.Errorf("RequestId=%v From=%v Service=%v Cannot get subscriber: %v", reqId, remoteAddr, service, err)
@@ -224,7 +225,8 @@ func (self *RestAPI) pushNotification(reqId string, kv map[string]string, perdp 
 	notif := NewEmptyNotification()
 
 	for k, v := range kv {
-		if len(v) <= 0 {
+		v = strings.Trim(v, " \n")
+		if v == "" {
 			continue
 		}
 		switch k {
@@ -233,26 +235,24 @@ func (self *RestAPI) pushNotification(reqId string, kv map[string]string, perdp 
 		case "service":
 			// three keys need to be ignored
 		case "badge":
-			if v != "" {
-				var e error
-				_, e = strconv.Atoi(v)
-				if e == nil {
-					notif.Data["badge"] = v
-				} else {
-					notif.Data["badge"] = "0"
-				}
+			if _, err := strconv.Atoi(v); err == nil {
+				notif.Data["badge"] = v
+			} else {
+				notif.Data["badge"] = "0"
 			}
 		default:
 			notif.Data[k] = v
 		}
 	}
 
+	logger.Debugf("Parameters accepted: %+v", notif)
+
 	if notif.IsEmpty() {
-		logger.Errorf("RequestId=%v From=%v Service=%v EmptyNotification", reqId, remoteAddr, service)
+		logger.Errorf("RequestId=%v From=%v Service=%v NrSubscribers=%v Subscribers=\"%+v\".", reqId, remoteAddr, service, len(subs), subs, err)
 		return
 	}
 
-	logger.Infof("RequestId=%v From=%v Service=%v NrSubscribers=%v Subscribers=\"%+v\"", reqId, remoteAddr, service, len(subs), subs)
+	logger.Infof("RequestId=%v From=%v Service=%v NrSubscribers=%v Subscribers=\"%+v\".", reqId, remoteAddr, service, len(subs), subs)
 
 	self.backend.Push(reqId, service, subs, notif, perdp, logger)
 	return
