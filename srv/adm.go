@@ -429,11 +429,11 @@ func (self *admPushService) Push(psp *PushServiceProvider, dpQueue <-chan *Deliv
 		res.Content = notif
 		res.Provider = psp
 		res.Destination = dp
-		go func() {
+		go func(dp *DeliveryPoint) {
 			res.MsgId, res.Err = admSinglePush(psp, dp, data, notif)
 			resQueue <- res
 			wg.Done()
-		}()
+		}(dp)
 	}
 	wg.Wait()
 }

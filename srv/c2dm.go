@@ -215,7 +215,7 @@ func (self *c2dmPushService) Push(psp *PushServiceProvider, dpQueue <-chan *Deli
 	wg := new(sync.WaitGroup)
 	for dp := range dpQueue {
 		wg.Add(1)
-		go func() {
+		go func(dp *DeliveryPoint) {
 			res := new(PushResult)
 			res.Provider = psp
 			res.Destination = dp
@@ -228,7 +228,7 @@ func (self *c2dmPushService) Push(psp *PushServiceProvider, dpQueue <-chan *Deli
 			}
 			resQueue <- res
 			wg.Done()
-		}()
+		}(dp)
 	}
 
 	wg.Wait()
