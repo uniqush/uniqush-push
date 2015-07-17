@@ -809,7 +809,6 @@ func (self *apnsPushService) updateCheckPoint(prefix string) {
 
 func resultCollector(psp *PushServiceProvider, resChan chan<- *apnsResult, c net.Conn) {
 	defer c.Close()
-	defer close(resChan)
 	var bufData [6]byte
 	for {
 		var cmd uint8
