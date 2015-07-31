@@ -258,13 +258,17 @@ func (self *RestAPI) pushNotification(reqId string, kv map[string]string, perdp 
 	return
 }
 
-func (self *RestAPI) stop(w io.Writer, remoteAddr string) {
+func (self *RestAPI) stop(w http.ResponseWriter, remoteAddr string) {
 	self.waitGroup.Wait()
 	self.backend.Finalize()
 	self.loggers[LOGGER_WEB].Infof("stopped by %v", remoteAddr)
-	if w != nil {
-		fmt.Fprintf(w, "Stopped\r\n")
+
+	// Fix "Empty reply from server"
+	// Tell web server exactly how many bytes, so connection is closed.
+	if nil != w {
+		_, _ = w.Write([]byte("Stopped\r\n"))
 	}
+
 	self.stopChan <- true
 	return
 }
