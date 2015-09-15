@@ -202,6 +202,24 @@ func NewUnsubscribeUpdate(psp *PushServiceProvider, dp *DeliveryPoint) error {
 
 /*********************/
 
+type InvalidRegistrationUpdate struct {
+	Provider    *PushServiceProvider
+	Destination *DeliveryPoint
+}
+
+func (e *InvalidRegistrationUpdate) Error() string {
+	return fmt.Sprintf("InvalidRegistration dropping %v", e.Destination.Name())
+}
+
+func NewInvalidRegistrationUpdate(psp *PushServiceProvider, dp *DeliveryPoint) error {
+	return &InvalidRegistrationUpdate{
+		Provider:    psp,
+		Destination: dp,
+	}
+}
+
+/*********************/
+
 type ConnectionError struct {
 	Err error
 }

@@ -320,6 +320,12 @@ func (self *gcmPushService) multicast(psp *PushServiceProvider, dpList []*Delive
 				res.Content = notif
 				res.Destination = dp
 				resQueue <- res
+			case "InvalidRegistration":
+				res := new (PushResult)
+				res.Err = NewInvalidRegistrationUpdate(psp, dp)
+				res.Content = notif
+				res.Destination = dp
+				resQueue <- res
 			default:
 				res := new(PushResult)
 				res.Err = fmt.Errorf("GCMError: %v", errmsg)
