@@ -46,7 +46,7 @@ const (
 	// in Minutes
 	feedbackCheckPeriod int = 10
 	// in Seconds
-	maxWaitTime int = 20
+	maxWaitTime int = 60
 )
 
 type pushRequest struct {

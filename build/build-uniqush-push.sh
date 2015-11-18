@@ -7,7 +7,7 @@ mkdir -p $TEMP/bin
 mkdir -p $TEMP/src
 mkdir -p $TEMP/pkg
 
-GOBIN=$TEMP/bin GOPATH=$TEMP go get github.com/uniqush/uniqush-push
+GOBIN=$TEMP/bin GOPATH=$TEMP go get ../
 
 VERSION=`$TEMP/bin/uniqush-push --version | sed 's/uniqush-push //'`
 
