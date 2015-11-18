@@ -20,7 +20,7 @@ package main
 import (
 	"flag"
 	"fmt"
-	"os"
+  /*"os"*/
 	"runtime"
 	. "github.com/uniqush/uniqush-push/srv"
 )
@@ -39,15 +39,17 @@ func installPushSrvices() {
 
 func main() {
 	flag.Parse()
+  fmt.Println("log:", *uniqushPushConfFlags)
+  fmt.Printf("%v\n", uniqushPushVersion)
 	if *uniqushPushShowVersionFlag {
 		fmt.Printf("%v\n", uniqushPushVersion)
 		return
 	}
 	runtime.GOMAXPROCS(runtime.NumCPU() + 1)
-	installPushSrvices()
+  /*installPushSrvices()*/
 
-	err := Run(*uniqushPushConfFlags, uniqushPushVersion)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "Cannot start: %v\n", err)
-	}
+  /*err := os.Open(*uniqushPushConfFlags, uniqushPushVersion)*/
+  /*if err != nil {*/
+    /*fmt.Fprintf(os.Stderr, "Cannot start: %v\n", err)*/
+  /*}*/
 }
