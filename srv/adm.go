@@ -38,7 +38,7 @@ const (
 )
 
 type pspLockResponse struct {
-	err error
+	err PushError
 	psp *PushServiceProvider
 }
 
@@ -67,7 +67,7 @@ func (self *admPushService) Finalize() {}
 func (self *admPushService) Name() string {
 	return "adm"
 }
-func (self *admPushService) SetErrorReportChan(errChan chan<- error) {
+func (self *admPushService) SetErrorReportChan(errChan chan<- PushError) {
 	return
 }
 
@@ -156,7 +156,7 @@ type tokenFailObj struct {
 	Description string `json:"error_description"`
 }
 
-func requestToken(psp *PushServiceProvider) error {
+func requestToken(psp *PushServiceProvider) PushError {
 	var ok bool
 	var clientid string
 	var cserect string
@@ -187,7 +187,7 @@ func requestToken(psp *PushServiceProvider) error {
 	form.Set("client_secret", cserect)
 	req, err := http.NewRequest("POST", admTokenURL, bytes.NewBufferString(form.Encode()))
 	if err != nil {
-		return fmt.Errorf("NewRequest error: %v", err)
+		return NewErrorf("NewRequest error: %v", err)
 	}
 	defer req.Body.Close()
 	req.Header.Add("Content-Type", "application/x-www-form-urlencoded")
@@ -195,7 +195,7 @@ func requestToken(psp *PushServiceProvider) error {
 	client := &http.Client{}
 	resp, err := client.Do(req)
 	if err != nil {
-		return fmt.Errorf("Do error: %v", err)
+		return NewErrorf("Do error: %v", err)
 	}
 
 	defer resp.Body.Close()
@@ -240,7 +240,7 @@ type admMessage struct {
 	MD5      string            `json:"md5,omitempty"`
 }
 
-func notifToMessage(notif *Notification) (msg *admMessage, err error) {
+func notifToMessage(notif *Notification) (msg *admMessage, err PushError) {
 	if notif == nil || len(notif.Data) == 0 {
 		err = NewBadNotificationWithDetails("empty notification")
 		return
@@ -269,9 +269,9 @@ func notifToMessage(notif *Notification) (msg *admMessage, err error) {
 	return
 }
 
-func admURL(dp *DeliveryPoint) (url string, err error) {
+func admURL(dp *DeliveryPoint) (url string, err PushError) {
 	if dp == nil {
-		err = fmt.Errorf("nil dp")
+		err = NewError("nil dp")
 		return
 	}
 	if regid, ok := dp.FixedData["regid"]; ok {
@@ -282,7 +282,7 @@ func admURL(dp *DeliveryPoint) (url string, err error) {
 	return
 }
 
-func admNewRequest(psp *PushServiceProvider, dp *DeliveryPoint, data []byte) (req *http.Request, err error) {
+func admNewRequest(psp *PushServiceProvider, dp *DeliveryPoint, data []byte) (req *http.Request, err PushError) {
 	var token string
 	var ok bool
 	if token, ok = psp.VolatileData["token"]; !ok {
@@ -294,8 +294,8 @@ func admNewRequest(psp *PushServiceProvider, dp *DeliveryPoint, data []byte) (re
 		return
 	}
 
-	req, err = http.NewRequest("POST", url, bytes.NewBuffer(data))
-	if err != nil {
+	req, reqErr := http.NewRequest("POST", url, bytes.NewBuffer(data))
+	if reqErr != nil {
 		return
 	}
 
@@ -312,16 +312,16 @@ type admPushFailResponse struct {
 	Reason string `json:"reason"`
 }
 
-func admSinglePush(psp *PushServiceProvider, dp *DeliveryPoint, data []byte, notif *Notification) (string, error) {
+func admSinglePush(psp *PushServiceProvider, dp *DeliveryPoint, data []byte, notif *Notification) (string, PushError) {
 	client := &http.Client{}
 	req, err := admNewRequest(psp, dp, data)
 	if err != nil {
 		return "", err
 	}
 	defer req.Body.Close()
-	resp, err := client.Do(req)
-	if err != nil {
-		return "", err
+	resp, httpErr := client.Do(req)
+	if httpErr != nil {
+		return "", NewErrorf("Failed to send adm push: %v", httpErr.Error())
 	}
 	defer resp.Body.Close()
 
@@ -332,8 +332,9 @@ func admSinglePush(psp *PushServiceProvider, dp *DeliveryPoint, data []byte, not
 			retryAfter := resp.Header.Get("Retry-After")
 			retrySecond := 60
 			if retryAfter != "" {
-				retrySecond, err = strconv.Atoi(retryAfter)
-				if err != nil {
+				var retryErr error
+				retrySecond, retryErr = strconv.Atoi(retryAfter)
+				if retryErr != nil {
 					retrySecond = 60
 				}
 			}
@@ -342,16 +343,15 @@ func admSinglePush(psp *PushServiceProvider, dp *DeliveryPoint, data []byte, not
 			return id, err
 		}
 
-		body, err := ioutil.ReadAll(resp.Body)
-		if err != nil {
-			return "", err
+		body, ioErr := ioutil.ReadAll(resp.Body)
+		if ioErr != nil {
+			return "", NewErrorf("Failed to read adm response: %v", err)
 		}
 
 		var fail admPushFailResponse
-		err = json.Unmarshal(body, &fail)
-		if err != nil {
-			err = fmt.Errorf("%v: %v", resp.StatusCode, string(body))
-			return "", err
+		jsonErr := json.Unmarshal(body, &fail)
+		if jsonErr != nil {
+			return "", NewErrorf("%v: %v", resp.StatusCode, string(body))
 		}
 
 		reason := strings.ToLower(fail.Reason)
@@ -365,7 +365,7 @@ func admSinglePush(psp *PushServiceProvider, dp *DeliveryPoint, data []byte, not
 			// retry would fix it.
 			err = NewRetryError(psp, dp, notif, 10*time.Second)
 		default:
-			err = fmt.Errorf("%v: %v", resp.StatusCode, fail.Reason)
+			err = NewErrorf("%v: %v", resp.StatusCode, fail.Reason)
 		}
 
 		return "", err
@@ -373,7 +373,7 @@ func admSinglePush(psp *PushServiceProvider, dp *DeliveryPoint, data []byte, not
 	return id, nil
 }
 
-func (self *admPushService) lockPsp(psp *PushServiceProvider) (*PushServiceProvider, error) {
+func (self *admPushService) lockPsp(psp *PushServiceProvider) (*PushServiceProvider, PushError) {
 	respCh := make(chan *pspLockResponse)
 	req := &pspLockRequest{
 		psp:    psp,
@@ -398,7 +398,7 @@ func (self *admPushService) Push(psp *PushServiceProvider, dpQueue <-chan *Deliv
 	res.Content = notif
 	res.Provider = psp
 
-	var err error
+	var err PushError
 	psp, err = self.lockPsp(psp)
 	if err != nil {
 		res.Err = err
@@ -414,9 +414,9 @@ func (self *admPushService) Push(psp *PushServiceProvider, dpQueue <-chan *Deliv
 		return
 	}
 
-	data, err := json.Marshal(msg)
-	if err != nil {
-		res.Err = err
+	data, jsonErr := json.Marshal(msg)
+	if jsonErr != nil {
+		res.Err = NewErrorf("Failed to marshal message: %v", jsonErr)
 		resQueue <- res
 		return
 	}

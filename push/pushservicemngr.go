@@ -30,7 +30,7 @@ type serviceType struct {
 
 type PushServiceManager struct {
 	serviceTypes map[string]*serviceType
-	errChan      chan<- error
+	errChan      chan<- PushError
 }
 
 var (
@@ -192,14 +192,14 @@ func (m *PushServiceManager) Push(psp *PushServiceProvider, dpQueue <-chan *Deli
 		r.Destination = nil
 		r.MsgId = ""
 		r.Content = notif
-		r.Err = fmt.Errorf("InvalidPushServiceProvider")
+		r.Err = NewError("InvalidPushServiceProvider")
 		resQueue <- r
 	}
 
 	wg.Wait()
 }
 
-func (m *PushServiceManager) SetErrorReportChan(errChan chan<- error) {
+func (m *PushServiceManager) SetErrorReportChan(errChan chan<- PushError) {
 	m.errChan = errChan
 	for _, t := range m.serviceTypes {
 		t.pst.SetErrorReportChan(errChan)

@@ -174,7 +174,7 @@ func (self *gcmPushService) multicast(psp *PushServiceProvider, dpList []*Delive
 			res.Provider = psp
 			res.Content = notif
 
-			res.Err = e0
+			res.Err = NewErrorf("Error converting payload to JSON: %v", e0)
 			res.Destination = dp
 			resQueue <- res
 		}
@@ -188,7 +188,7 @@ func (self *gcmPushService) multicast(psp *PushServiceProvider, dpList []*Delive
 			res.Provider = psp
 			res.Content = notif
 
-			res.Err = e1
+			res.Err = NewErrorf("Error constructing HTTP request: %v", e1)
 			res.Destination = dp
 			resQueue <- res
 		}
@@ -225,7 +225,7 @@ func (self *gcmPushService) multicast(psp *PushServiceProvider, dpList []*Delive
 				res.Err = NewRetryErrorWithReason(psp, dp, notif, after, err)
 
 			} else {
-				res.Err = e2
+				res.Err = NewErrorf("Unrecoverable HTTP error sending to GCM: %v", e2)
 			}
 			resQueue <- res
 		}
@@ -281,7 +281,7 @@ func (self *gcmPushService) multicast(psp *PushServiceProvider, dpList []*Delive
 		res := new(PushResult)
 		res.Provider = psp
 		res.Content = notif
-		res.Err = err
+		res.Err = NewErrorf("Failed to read GCM response: %v", err)
 		resQueue <- res
 		return
 	}
@@ -293,7 +293,7 @@ func (self *gcmPushService) multicast(psp *PushServiceProvider, dpList []*Delive
 		res := new(PushResult)
 		res.Provider = psp
 		res.Content = notif
-		res.Err = err
+		res.Err = NewErrorf("Failed to decode GCM response: %v", err)
 		resQueue <- res
 		return
 	}
@@ -328,7 +328,7 @@ func (self *gcmPushService) multicast(psp *PushServiceProvider, dpList []*Delive
 				resQueue <- res
 			default:
 				res := new(PushResult)
-				res.Err = fmt.Errorf("GCMError: %v", errmsg)
+				res.Err = NewErrorf("GCMError: %v", errmsg)
 				res.Provider = psp
 				res.Content = notif
 				res.Destination = dp
@@ -397,6 +397,6 @@ func (self *gcmPushService) Push(psp *PushServiceProvider, dpQueue <-chan *Deliv
 	close(resQueue)
 }
 
-func (self *gcmPushService) SetErrorReportChan(errChan chan<- error) {
+func (self *gcmPushService) SetErrorReportChan(errChan chan<- PushError) {
 	return
 }

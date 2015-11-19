@@ -38,6 +38,12 @@ type ApiResponseDetails struct {
 	DeliveryPoint       *string `json:"deliveryPoint"`
 	MessageId           *string `json:"messageId"`
 	Code                string  `json:"code"`
+	ErrorMsg            *string `json:"errorMsg"`
+}
+
+func strPtrOfErr(e error) *string {
+	s := e.Error()
+	return &s
 }
 
 type ApiResponseHandler interface {

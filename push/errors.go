@@ -22,9 +22,32 @@ import (
 	"time"
 )
 
+// PushError is a specialized error. It is used for errors which cause the push backend to take actions.
+type PushError interface {
+	error
+	isPushError() // Placeholder function to distinguish these from error class
+}
+
+type implementsPushError struct{}
+
+func (*implementsPushError) isPushError() {}
+
+var _ PushError = &InfoReport{}
+var _ PushError = &ErrorReport{}
+var _ PushError = &RetryError{}
+var _ PushError = &PushServiceProviderUpdate{}
+var _ PushError = &DeliveryPointUpdate{}
+var _ PushError = &IncompatibleError{}
+var _ PushError = &BadDeliveryPoint{}
+var _ PushError = &BadPushServiceProvider{}
+var _ PushError = &UnsubscribeUpdate{}
+var _ PushError = &InvalidRegistrationUpdate{}
+var _ PushError = &ConnectionError{}
+
 // This is not an actual error.
 // But it is worthy to be reported to the user.
 type InfoReport struct {
+	implementsPushError
 	info string
 }
 
@@ -40,9 +63,28 @@ func NewInfof(f string, v ...interface{}) *InfoReport {
 	return &InfoReport{info: fmt.Sprintf(f, v...)}
 }
 
+// ErrorReport is like InfoReport, but has a higher severity.
+type ErrorReport struct {
+	implementsPushError
+	msg string
+}
+
+func (e *ErrorReport) Error() string {
+	return e.msg
+}
+
+func NewError(msg string) *ErrorReport {
+	return &ErrorReport{msg: msg}
+}
+
+func NewErrorf(f string, v ...interface{}) *ErrorReport {
+	return &ErrorReport{msg: fmt.Sprintf(f, v...)}
+}
+
 /*********************/
 
 type RetryError struct {
+	implementsPushError
 	After       time.Duration
 	Provider    *PushServiceProvider
 	Destination *DeliveryPoint
@@ -57,7 +99,7 @@ func (e *RetryError) Error() string {
 	return fmt.Sprintf("Retry")
 }
 
-func NewRetryErrorWithReason(psp *PushServiceProvider, dp *DeliveryPoint, notif *Notification, after time.Duration, reason error) error {
+func NewRetryErrorWithReason(psp *PushServiceProvider, dp *DeliveryPoint, notif *Notification, after time.Duration, reason error) *RetryError {
 	return &RetryError{
 		After:       after,
 		Provider:    psp,
@@ -67,7 +109,7 @@ func NewRetryErrorWithReason(psp *PushServiceProvider, dp *DeliveryPoint, notif 
 	}
 }
 
-func NewRetryError(psp *PushServiceProvider, dp *DeliveryPoint, notif *Notification, after time.Duration) error {
+func NewRetryError(psp *PushServiceProvider, dp *DeliveryPoint, notif *Notification, after time.Duration) *RetryError {
 	return &RetryError{
 		After:       after,
 		Provider:    psp,
@@ -79,6 +121,7 @@ func NewRetryError(psp *PushServiceProvider, dp *DeliveryPoint, notif *Notificat
 /*********************/
 
 type PushServiceProviderUpdate struct {
+	implementsPushError
 	Provider *PushServiceProvider
 }
 
@@ -86,13 +129,14 @@ func (e *PushServiceProviderUpdate) Error() string {
 	return fmt.Sprintf("PushServiceProvider=%v Update", e.Provider.Name())
 }
 
-func NewPushServiceProviderUpdate(psp *PushServiceProvider) error {
+func NewPushServiceProviderUpdate(psp *PushServiceProvider) *PushServiceProviderUpdate {
 	return &PushServiceProviderUpdate{Provider: psp}
 }
 
 /*********************/
 
 type DeliveryPointUpdate struct {
+	implementsPushError
 	Destination *DeliveryPoint
 }
 
@@ -100,26 +144,28 @@ func (e *DeliveryPointUpdate) Error() string {
 	return fmt.Sprintf("DeliveryPoint=%v Update", e.Destination.Name())
 }
 
-func NewDeliveryPointUpdate(dp *DeliveryPoint) error {
+func NewDeliveryPointUpdate(dp *DeliveryPoint) *DeliveryPointUpdate {
 	return &DeliveryPointUpdate{Destination: dp}
 }
 
 /*********************/
 
 type IncompatibleError struct {
+	implementsPushError
 }
 
 func (e *IncompatibleError) Error() string {
 	return fmt.Sprintf("Incompatible")
 }
 
-func NewIncompatibleError() error {
+func NewIncompatibleError() *IncompatibleError {
 	return &IncompatibleError{}
 }
 
 /*********************/
 
 type BadDeliveryPoint struct {
+	implementsPushError
 	Destination *DeliveryPoint
 	Details     string
 }
@@ -131,17 +177,18 @@ func (e *BadDeliveryPoint) Error() string {
 	return fmt.Sprintf("BadDeliveryPoint %v", e.Destination.Name())
 }
 
-func NewBadDeliveryPoint(dp *DeliveryPoint) error {
+func NewBadDeliveryPoint(dp *DeliveryPoint) *BadDeliveryPoint {
 	return &BadDeliveryPoint{Destination: dp, Details: ""}
 }
 
-func NewBadDeliveryPointWithDetails(dp *DeliveryPoint, details string) error {
+func NewBadDeliveryPointWithDetails(dp *DeliveryPoint, details string) *BadDeliveryPoint {
 	return &BadDeliveryPoint{Destination: dp, Details: details}
 }
 
 /*********************/
 
 type BadPushServiceProvider struct {
+	implementsPushError
 	Provider *PushServiceProvider
 	Details  string
 }
@@ -153,17 +200,18 @@ func (e *BadPushServiceProvider) Error() string {
 	return fmt.Sprintf("BadPushServiceProvider %v", e.Provider.Name())
 }
 
-func NewBadPushServiceProvider(psp *PushServiceProvider) error {
+func NewBadPushServiceProvider(psp *PushServiceProvider) *BadPushServiceProvider {
 	return &BadPushServiceProvider{Provider: psp, Details: ""}
 }
 
-func NewBadPushServiceProviderWithDetails(psp *PushServiceProvider, details string) error {
+func NewBadPushServiceProviderWithDetails(psp *PushServiceProvider, details string) *BadPushServiceProvider {
 	return &BadPushServiceProvider{Provider: psp, Details: details}
 }
 
 /*********************/
 
 type BadNotification struct {
+	implementsPushError
 	Details string
 }
 
@@ -174,17 +222,18 @@ func (e *BadNotification) Error() string {
 	return fmt.Sprintf("Bad Notification")
 }
 
-func NewBadNotification() error {
-	return &BadNotification{""}
+func NewBadNotification() *BadNotification {
+	return &BadNotification{Details: ""}
 }
 
-func NewBadNotificationWithDetails(details string) error {
-	return &BadNotification{details}
+func NewBadNotificationWithDetails(details string) *BadNotification {
+	return &BadNotification{Details: details}
 }
 
 /*********************/
 
 type UnsubscribeUpdate struct {
+	implementsPushError
 	Provider    *PushServiceProvider
 	Destination *DeliveryPoint
 }
@@ -193,7 +242,7 @@ func (e *UnsubscribeUpdate) Error() string {
 	return fmt.Sprintf("RequestUnsubscribe %v", e.Destination.Name())
 }
 
-func NewUnsubscribeUpdate(psp *PushServiceProvider, dp *DeliveryPoint) error {
+func NewUnsubscribeUpdate(psp *PushServiceProvider, dp *DeliveryPoint) *UnsubscribeUpdate {
 	return &UnsubscribeUpdate{
 		Provider:    psp,
 		Destination: dp,
@@ -203,6 +252,7 @@ func NewUnsubscribeUpdate(psp *PushServiceProvider, dp *DeliveryPoint) error {
 /*********************/
 
 type InvalidRegistrationUpdate struct {
+	implementsPushError
 	Provider    *PushServiceProvider
 	Destination *DeliveryPoint
 }
@@ -211,7 +261,7 @@ func (e *InvalidRegistrationUpdate) Error() string {
 	return fmt.Sprintf("InvalidRegistration dropping %v", e.Destination.Name())
 }
 
-func NewInvalidRegistrationUpdate(psp *PushServiceProvider, dp *DeliveryPoint) error {
+func NewInvalidRegistrationUpdate(psp *PushServiceProvider, dp *DeliveryPoint) *InvalidRegistrationUpdate {
 	return &InvalidRegistrationUpdate{
 		Provider:    psp,
 		Destination: dp,
@@ -221,6 +271,7 @@ func NewInvalidRegistrationUpdate(psp *PushServiceProvider, dp *DeliveryPoint) e
 /*********************/
 
 type ConnectionError struct {
+	implementsPushError
 	Err error
 }
 
@@ -228,6 +279,6 @@ func (e *ConnectionError) Error() string {
 	return fmt.Sprintf("ConnectionError %v", e)
 }
 
-func NewConnectionError(err error) error {
+func NewConnectionError(err error) *ConnectionError {
 	return &ConnectionError{Err: err}
 }
