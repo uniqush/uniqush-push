@@ -15,7 +15,6 @@ platform.
 - [GCM](http://developer.android.com/guide/google/gcm/index.html) from google for android platform
 - [APNS](http://developer.apple.com/library/mac/#documentation/NetworkingInternet/Conceptual/RemoteNotificationsPG/ApplePushService/ApplePushService.html) from apple for iOS platform
 - [ADM](https://developer.amazon.com/sdk/adm.html) from amazon for Kindle tables
-- [C2DM](https://developers.google.com/android/c2dm/) from google for android platform (deprecated by google. using [GCM](http://developer.android.com/guide/google/gcm/index.html) instead.)
 
 # FAQ #
 
