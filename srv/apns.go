@@ -40,7 +40,7 @@ import (
 )
 
 const (
-	maxPayLoadSize int = 256
+	maxPayLoadSize int = 2048
 	maxNrConn      int = 13
 
 	// in Minutes
