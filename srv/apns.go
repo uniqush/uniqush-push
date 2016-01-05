@@ -465,12 +465,12 @@ func (self *apnsPushService) singlePush(payload, token []byte, expiry uint32, mi
 	// - identifier: 4
 	// - expiry: 4
 	// - device token length: 2
-	// - device token: 32 (vary)
+	// - device token: variable (100 max) - apple announced that we might have 100-byte device tokens in the future, in WWDC 2015. Previously 32.
 	// - payload length: 2
-	// - payload: vary (256 max)
+	// - payload: variable (2048 max)
 	//
-	// In total, 301 bytes (max)
-	var dataBuffer [2048]byte
+	// In total, 2161 bytes (max)
+	var dataBuffer [2180]byte
 
 	buffer := bytes.NewBuffer(dataBuffer[:0])
 	// command
