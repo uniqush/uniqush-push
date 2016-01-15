@@ -155,6 +155,23 @@ func (self *PushBackEnd) fixError(reqId string, event error, logger Logger, afte
 		} else {
 			logger.Infof("Service=%v Subscriber=%v DeliveryPoint=%v Update Success", service, sub, dp.Name())
 		}
+	case *InvalidRegistrationUpdate:
+		if err.Provider == nil || err.Destination == nil {
+			return nil
+		}
+		if service, ok = err.Provider.FixedData["service"]; !ok {
+			return nil
+		}
+		if sub, ok = err.Destination.FixedData["subscriber"]; !ok {
+			return nil
+		}
+		dp := err.Destination
+		e := self.Unsubscribe(service, sub, dp)
+		if e != nil {
+			logger.Errorf("Service=%v Subscriber=%v DeliveryPoint=%v Removing invalid reg failed: %v", service, sub, dp.Name(), e)
+		} else {
+			logger.Infof("Service=%v Subscriber=%v DeliveryPoint=%v Invalid registration removed", service, sub, dp.Name())
+		}
 	case *UnsubscribeUpdate:
 		if err.Provider == nil || err.Destination == nil {
 			return nil
