@@ -56,7 +56,7 @@ somewhere so that *uniqush-push* can store the user data in
   system which provides a full stack solution for communication between mobile
 devices and the app's server. *uniqush-push* is one piece of the system.
 However, right now, *uniqush-push* is the only piece and others are under
-actively devlopment. If you want to know more details about the *uniqush*
+active devlopment. If you want to know more details about the *uniqush*
 system's plan, you can read the [blog
 post](http://blog.uniqush.org/uniqush-after-go1.html). If you want to know the
 latest progress about *uniqush* system, please check [our
