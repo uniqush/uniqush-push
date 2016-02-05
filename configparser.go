@@ -18,7 +18,7 @@
 package main
 
 import (
-	"code.google.com/p/goconf/conf"
+	"github.com/ifwe/goconf/conf"
 	. "github.com/uniqush/log"
 	. "github.com/uniqush/uniqush-push/db"
 	. "github.com/uniqush/uniqush-push/push"
