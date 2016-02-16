@@ -20,13 +20,14 @@ package db
 import (
 	"errors"
 	"fmt"
-	. "github.com/uniqush/uniqush-push/push"
 	"sync"
+
+	"github.com/uniqush/uniqush-push/push"
 )
 
 type PushServiceProviderDeliveryPointPair struct {
-	PushServiceProvider *PushServiceProvider
-	DeliveryPoint       *DeliveryPoint
+	PushServiceProvider *push.PushServiceProvider
+	DeliveryPoint       *push.DeliveryPoint
 }
 
 // You may always want to use a front desk to get data from db
@@ -35,31 +36,31 @@ type PushDatabase interface {
 	// The push service provider may by anonymous whose Name is empty string
 	// For anonymous push service provider, it will be added to database
 	// and its Name will be set
-	RemovePushServiceProviderFromService(service string, push_service_provider *PushServiceProvider) error
+	RemovePushServiceProviderFromService(service string, push_service_provider *push.PushServiceProvider) error
 
 	// The push service provider may by anonymous whose Name is empty string
 	// For anonymous push service provider, it will be added to database
 	// and its Name will be set
 	AddPushServiceProviderToService(service string,
-		push_service_provider *PushServiceProvider) error
+		push_service_provider *push.PushServiceProvider) error
 
-	ModifyPushServiceProvider(psp *PushServiceProvider) error
+	ModifyPushServiceProvider(psp *push.PushServiceProvider) error
 
 	// The delivery point may be anonymous whose Name is empty string
 	// For anonymous delivery point, it will be added to database and its Name will be set
 	// Return value: selected push service provider, error
 	AddDeliveryPointToService(service string,
 		subscriber string,
-		delivery_point *DeliveryPoint) (*PushServiceProvider, error)
+		delivery_point *push.DeliveryPoint) (*push.PushServiceProvider, error)
 
 	// The delivery point may be anonymous whose Name is empty string
 	// For anonymous delivery point, it will be added to database and its Name will be set
 	// Return value: selected push service provider, error
 	RemoveDeliveryPointFromService(service string,
 		subscriber string,
-		delivery_point *DeliveryPoint) error
+		delivery_point *push.DeliveryPoint) error
 
-	ModifyDeliveryPoint(dp *DeliveryPoint) error
+	ModifyDeliveryPoint(dp *push.DeliveryPoint) error
 
 	GetPushServiceProviderDeliveryPointPairs(service string,
 		subscriber string) ([]PushServiceProviderDeliveryPointPair, error)
@@ -94,7 +95,7 @@ func NewPushDatabaseWithoutCache(conf *DatabaseConfig) (PushDatabase, error) {
 	f := new(pushDatabaseOpts)
 	f.db, err = newPushRedisDB(conf)
 	if f.db == nil || err != nil {
-		return nil, err
+		return nil, fmt.Errorf("Failed to create database: %v", err)
 	}
 	return f, nil
 }
@@ -105,7 +106,7 @@ func (f *pushDatabaseOpts) FlushCache() error {
 	return f.db.FlushCache()
 }
 
-func (f *pushDatabaseOpts) RemovePushServiceProviderFromService(service string, push_service_provider *PushServiceProvider) error {
+func (f *pushDatabaseOpts) RemovePushServiceProviderFromService(service string, push_service_provider *push.PushServiceProvider) error {
 	name := push_service_provider.Name()
 	if name == "" {
 		return errors.New("InvalidPushServiceProvider")
@@ -115,17 +116,17 @@ func (f *pushDatabaseOpts) RemovePushServiceProviderFromService(service string, 
 	defer f.dblock.Unlock()
 	err := db.RemovePushServiceProviderFromService(service, name)
 	if err != nil {
-		return err
+		return fmt.Errorf("Error removing the psp: %v", err)
 	}
 	err = db.RemovePushServiceProvider(name)
 	if err != nil {
-		return err
+		return fmt.Errorf("Error removing the psp label: %v", err)
 	}
 	return nil
 }
 
 func (f *pushDatabaseOpts) AddPushServiceProviderToService(service string,
-	push_service_provider *PushServiceProvider) error {
+	push_service_provider *push.PushServiceProvider) error {
 	if push_service_provider == nil {
 		return nil
 	}
@@ -137,34 +138,34 @@ func (f *pushDatabaseOpts) AddPushServiceProviderToService(service string,
 	defer f.dblock.Unlock()
 	e := f.db.SetPushServiceProvider(push_service_provider)
 	if e != nil {
-		return e
+		return fmt.Errorf("Error associating psp with name: %v", e)
 	}
 	return f.db.AddPushServiceProviderToService(service, push_service_provider.Name())
 }
 
 func (f *pushDatabaseOpts) AddDeliveryPointToService(service string,
 	subscriber string,
-	delivery_point *DeliveryPoint) (*PushServiceProvider, error) {
+	delivery_point *push.DeliveryPoint) (*push.PushServiceProvider, error) {
 	if delivery_point == nil {
 		return nil, nil
+	}
+	if len(delivery_point.Name()) == 0 {
+		return nil, errors.New("InvalidDeliveryPoint")
 	}
 	f.dblock.Lock()
 	defer f.dblock.Unlock()
 	pspnames, err := f.db.GetPushServiceProvidersByService(service)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("Cannot list services for %s: %v", service, err)
 	}
 	if pspnames == nil {
 		return nil, errors.New(fmt.Sprintf("Cannot Find Service %s", service))
-	}
-	if len(delivery_point.Name()) == 0 {
-		return nil, errors.New("InvalidDeliveryPoint")
 	}
 
 	for _, pspname := range pspnames {
 		psp, e := f.db.GetPushServiceProvider(pspname)
 		if e != nil {
-			return nil, e
+			return nil, fmt.Errorf("Failed to get information for psp %s: %v", pspname, e)
 		}
 		if psp == nil {
 			continue
@@ -172,15 +173,15 @@ func (f *pushDatabaseOpts) AddDeliveryPointToService(service string,
 		if psp.PushServiceName() == delivery_point.PushServiceName() {
 			err = f.db.SetDeliveryPoint(delivery_point)
 			if err != nil {
-				return nil, err
+				return nil, fmt.Errorf("Failed to save new info for delivery point: %v", err)
 			}
 			err = f.db.AddDeliveryPointToServiceSubscriber(service, subscriber, delivery_point.Name())
 			if err != nil {
-				return nil, err
+				return nil, fmt.Errorf("Failed to add delivery point to subscriber: %v", err)
 			}
 			err = f.db.SetPushServiceProviderOfServiceDeliveryPoint(service, delivery_point.Name(), psp.Name())
 			if err != nil {
-				return nil, err
+				return nil, fmt.Errorf("Failed to set psp of delivery point: %v", err)
 			}
 			return psp, nil
 		}
@@ -190,7 +191,7 @@ func (f *pushDatabaseOpts) AddDeliveryPointToService(service string,
 
 func (f *pushDatabaseOpts) RemoveDeliveryPointFromService(service string,
 	subscriber string,
-	delivery_point *DeliveryPoint) error {
+	delivery_point *push.DeliveryPoint) error {
 	if delivery_point.Name() == "" {
 		return errors.New("InvalidDeliveryPoint")
 	}
@@ -198,10 +199,13 @@ func (f *pushDatabaseOpts) RemoveDeliveryPointFromService(service string,
 	defer f.dblock.Unlock()
 	err := f.db.RemoveDeliveryPointFromServiceSubscriber(service, subscriber, delivery_point.Name())
 	if err != nil {
-		return err
+		return fmt.Errorf("Failed to remove delivery point: %v", err)
 	}
 	err = f.db.RemovePushServiceProviderOfServiceDeliveryPoint(service, delivery_point.Name())
-	return err
+	if err != nil {
+		return fmt.Errorf("Failed to remove psp info for delivery point: %v", err)
+	}
+	return nil
 }
 
 func (f *pushDatabaseOpts) GetPushServiceProviderDeliveryPointPairs(service string,
@@ -210,26 +214,26 @@ func (f *pushDatabaseOpts) GetPushServiceProviderDeliveryPointPairs(service stri
 	defer f.dblock.RUnlock()
 	dpnames, err := f.db.GetDeliveryPointsNameByServiceSubscriber(service, subscriber)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("Could not list delivery points for service %s, subscriber %s: %v", service, subscriber, err)
 	}
 	if dpnames == nil {
 		return nil, nil
 	}
 	ret := make([]PushServiceProviderDeliveryPointPair, 0, len(dpnames))
 
-	for srv, dpl := range dpnames {
-		for _, d := range dpl {
-			dp, e0 := f.db.GetDeliveryPoint(d)
+	for srv, dpList := range dpnames {
+		for _, dpName := range dpList {
+			dp, e0 := f.db.GetDeliveryPoint(dpName)
 			if e0 != nil {
-				return nil, e0
+				return nil, fmt.Errorf("Failed to get delivery point info for %s: %v", dpName, e0)
 			}
 			if dp == nil {
 				continue
 			}
 
-			pspname, e := f.db.GetPushServiceProviderNameByServiceDeliveryPoint(srv, d)
+			pspname, e := f.db.GetPushServiceProviderNameByServiceDeliveryPoint(srv, dpName)
 			if e != nil {
-				return nil, e
+				return nil, fmt.Errorf("Failed to get psp name for dp %s: %v", dpName, e)
 			}
 
 			if len(pspname) == 0 {
@@ -238,7 +242,7 @@ func (f *pushDatabaseOpts) GetPushServiceProviderDeliveryPointPairs(service stri
 
 			psp, e1 := f.db.GetPushServiceProvider(pspname)
 			if e1 != nil {
-				return nil, e1
+				return nil, fmt.Errorf("Failed to get information about psp %s: %v", pspname, e1)
 			}
 			if psp == nil {
 				continue
@@ -251,20 +255,27 @@ func (f *pushDatabaseOpts) GetPushServiceProviderDeliveryPointPairs(service stri
 	return ret, nil
 }
 
-func (f *pushDatabaseOpts) ModifyPushServiceProvider(psp *PushServiceProvider) error {
+func (f *pushDatabaseOpts) ModifyPushServiceProvider(psp *push.PushServiceProvider) error {
 	if len(psp.Name()) == 0 {
 		return nil
 	}
 	f.dblock.Lock()
 	defer f.dblock.Unlock()
-	return f.db.SetPushServiceProvider(psp)
+	return addErrorSource("ModifyPushServiceProvider", f.db.SetPushServiceProvider(psp))
 }
 
-func (f *pushDatabaseOpts) ModifyDeliveryPoint(dp *DeliveryPoint) error {
+func (f *pushDatabaseOpts) ModifyDeliveryPoint(dp *push.DeliveryPoint) error {
 	if len(dp.Name()) == 0 {
 		return nil
 	}
 	f.dblock.Lock()
 	defer f.dblock.Unlock()
-	return f.db.SetDeliveryPoint(dp)
+	return addErrorSource("ModifyDeliveryPoint", f.db.SetDeliveryPoint(dp))
+}
+
+func addErrorSource(fnName string, err error) error {
+	if err == nil {
+		return nil
+	}
+	return fmt.Errorf("%s: %v", fnName, err)
 }
