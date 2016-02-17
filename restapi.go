@@ -147,16 +147,16 @@ func getServiceFromMap(kv map[string]string, validate bool) (service string, err
 	return
 }
 
-func (self *RestAPI) changePushServiceProvider(kv map[string]string, logger log.Logger, remoteAddr string, add bool) {
+func (self *RestAPI) changePushServiceProvider(kv map[string]string, logger log.Logger, remoteAddr string, add bool) ApiResponseDetails {
 	psp, err := self.psm.BuildPushServiceProviderFromMap(kv)
 	if err != nil {
 		logger.Errorf("From=%v Cannot build push service provider: %v", remoteAddr, err)
-		return
+		return ApiResponseDetails{From: &remoteAddr, Code: UNIQUSH_ERROR_BUILD_PUSH_SERVICE_PROVIDER}
 	}
 	service, err := getServiceFromMap(kv, true)
 	if err != nil {
 		logger.Errorf("From=%v Cannot get service name: %v; %v", remoteAddr, service, err)
-		return
+		return ApiResponseDetails{From: &remoteAddr, Service: &service, Code: UNIQUSH_ERROR_CANNOT_GET_SERVICE}
 	}
 	if add {
 		err = self.backend.AddPushServiceProvider(service, psp)
@@ -165,27 +165,28 @@ func (self *RestAPI) changePushServiceProvider(kv map[string]string, logger log.
 	}
 	if err != nil {
 		logger.Errorf("From=%v Failed: %v", remoteAddr, err)
-		return
+		return ApiResponseDetails{From: &remoteAddr, Code: UNIQUSH_ERROR_GENERIC}
 	}
-	logger.Infof("From=%v Service=%v PushServiceProvider=%v Success!", remoteAddr, service, psp.Name())
-	return
+	pspName := psp.Name()
+	logger.Infof("From=%v Service=%v PushServiceProvider=%v Success!", remoteAddr, service, pspName)
+	return ApiResponseDetails{From: &remoteAddr, Service: &service, PushServiceProvider: &pspName, Code: UNIQUSH_SUCCESS}
 }
 
-func (self *RestAPI) changeSubscription(kv map[string]string, logger log.Logger, remoteAddr string, issub bool) {
+func (self *RestAPI) changeSubscription(kv map[string]string, logger log.Logger, remoteAddr string, issub bool) ApiResponseDetails {
 	dp, err := self.psm.BuildDeliveryPointFromMap(kv)
 	if err != nil {
 		logger.Errorf("Cannot build delivery point: %v", err)
-		return
+		return ApiResponseDetails{From: &remoteAddr, Code: UNIQUSH_ERROR_BUILD_DELIVERY_POINT}
 	}
 	service, err := getServiceFromMap(kv, true)
 	if err != nil {
 		logger.Errorf("From=%v Cannot get service name: %v; %v", remoteAddr, service, err)
-		return
+		return ApiResponseDetails{From: &remoteAddr, Service: &service, Code: UNIQUSH_ERROR_CANNOT_GET_SERVICE}
 	}
 	subs, err := getSubscribersFromMap(kv, true)
 	if err != nil {
 		logger.Errorf("From=%v Service=%v Cannot get subscriber: %v", remoteAddr, service, err)
-		return
+		return ApiResponseDetails{From: &remoteAddr, Service: &service, Code: UNIQUSH_ERROR_CANNOT_GET_SUBSCRIBER}
 	}
 
 	var psp *PushServiceProvider
@@ -196,28 +197,35 @@ func (self *RestAPI) changeSubscription(kv map[string]string, logger log.Logger,
 	}
 	if err != nil {
 		logger.Errorf("From=%v Failed: %v", remoteAddr, err)
-		return
+		return ApiResponseDetails{From: &remoteAddr, Code: UNIQUSH_ERROR_GENERIC}
 	}
+	dpName := dp.Name()
 	if psp == nil {
-		logger.Infof("From=%v Service=%v Subscriber=%v DeliveryPoint=%v Success!", remoteAddr, service, subs[0], dp.Name())
+		logger.Infof("From=%v Service=%v Subscriber=%v DeliveryPoint=%v Success!", remoteAddr, service, subs[0], dpName)
+		return ApiResponseDetails{From: &remoteAddr, Service: &service, Subscriber: &subs[0], DeliveryPoint: &dpName, Code: UNIQUSH_SUCCESS}
 	} else {
-		logger.Infof("From=%v Service=%v Subscriber=%v PushServiceProvider=%v DeliveryPoint=%v Success!", remoteAddr, service, subs[0], psp.Name(), dp.Name())
+		pspName := psp.Name()
+		logger.Infof("From=%v Service=%v Subscriber=%v PushServiceProvider=%v DeliveryPoint=%v Success!", remoteAddr, service, subs[0], pspName, dpName)
+		return ApiResponseDetails{From: &remoteAddr, Service: &service, Subscriber: &subs[0], DeliveryPoint: &dpName, PushServiceProvider: &pspName, Code: UNIQUSH_SUCCESS}
 	}
 }
 
-func (self *RestAPI) pushNotification(reqId string, kv map[string]string, perdp map[string][]string, logger log.Logger, remoteAddr string) {
+func (self *RestAPI) pushNotification(reqId string, kv map[string]string, perdp map[string][]string, logger log.Logger, remoteAddr string, handler ApiResponseHandler) {
 	service, err := getServiceFromMap(kv, true)
 	if err != nil {
 		logger.Errorf("RequestId=%v From=%v Cannot get service name: %v; %v", reqId, remoteAddr, service, err)
+		handler.AddDetailsToHandler(ApiResponseDetails{RequestId: &reqId, From: &remoteAddr, Service: &service, Code: UNIQUSH_ERROR_CANNOT_GET_SERVICE})
 		return
 	}
 	subs, err := getSubscribersFromMap(kv, false)
 	if err != nil {
 		logger.Errorf("RequestId=%v From=%v Service=%v Cannot get subscriber: %v", reqId, remoteAddr, service, err)
+		handler.AddDetailsToHandler(ApiResponseDetails{RequestId: &reqId, From: &remoteAddr, Service: &service, Code: UNIQUSH_ERROR_CANNOT_GET_SUBSCRIBER})
 		return
 	}
 	if len(subs) == 0 {
 		logger.Errorf("RequestId=%v From=%v Service=%v NoSubscriber", reqId, remoteAddr, service)
+		handler.AddDetailsToHandler(ApiResponseDetails{RequestId: &reqId, From: &remoteAddr, Service: &service, Code: UNIQUSH_ERROR_NO_SUBSCRIBER})
 		return
 	}
 
@@ -248,14 +256,14 @@ func (self *RestAPI) pushNotification(reqId string, kv map[string]string, perdp 
 	}
 
 	if notif.IsEmpty() {
-		logger.Errorf("RequestId=%v From=%v Service=%v EmptyNotification", reqId, remoteAddr, service)
+		logger.Errorf("RequestId=%v From=%v Service=%v NrSubscribers=%v Subscribers=\"%+v\" EmptyNotification", reqId, remoteAddr, service, len(subs), subs)
+		handler.AddDetailsToHandler(ApiResponseDetails{RequestId: &reqId, From: &remoteAddr, Service: &service, Code: UNIQUSH_ERROR_EMPTY_NOTIFICATION})
 		return
 	}
 
 	logger.Infof("RequestId=%v From=%v Service=%v NrSubscribers=%v Subscribers=\"%+v\"", reqId, remoteAddr, service, len(subs), subs)
 
-	self.backend.Push(reqId, service, subs, notif, perdp, logger)
-	return
+	self.backend.Push(reqId, remoteAddr, service, subs, notif, perdp, logger, handler)
 }
 
 func (self *RestAPI) stop(w io.Writer, remoteAddr string) {
@@ -294,6 +302,7 @@ func (self *RestAPI) numberOfDeliveryPoints(kv map[string][]string, logger log.L
 func (self *RestAPI) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	defer r.Body.Close()
 	remoteAddr := r.RemoteAddr
+
 	switch r.URL.Path {
 	case QUERY_NUMBER_OF_DELIVERY_POINTS_URL:
 		r.ParseForm()
@@ -324,33 +333,38 @@ func (self *RestAPI) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			kv[k] = v[0]
 		}
 	}
-	writer := w
-	logLevel := log.LOGLEVEL_INFO
 
 	self.waitGroup.Add(1)
 	defer self.waitGroup.Done()
+	var handler ApiResponseHandler = nil
+	var details ApiResponseDetails
 	switch r.URL.Path {
 	case ADD_PUSH_SERVICE_PROVIDER_TO_SERVICE_URL:
-		weblogger := log.NewLogger(writer, "[AddPushServiceProvider]", logLevel)
-		logger := log.MultiLogger(weblogger, self.loggers[LOGGER_ADDPSP])
-		self.changePushServiceProvider(kv, logger, remoteAddr, true)
+		handler = newSimpleResponseHandler(self.loggers[LOGGER_ADDPSP], "AddPushServiceProvider")
+		details = self.changePushServiceProvider(kv, self.loggers[LOGGER_ADDPSP], remoteAddr, true)
+		handler.AddDetailsToHandler(details)
 	case REMOVE_PUSH_SERVICE_PROVIDER_TO_SERVICE_URL:
-		weblogger := log.NewLogger(writer, "[RemovePushServiceProvider]", logLevel)
-		logger := log.MultiLogger(weblogger, self.loggers[LOGGER_RMPSP])
-		self.changePushServiceProvider(kv, logger, remoteAddr, false)
+		handler = newSimpleResponseHandler(self.loggers[LOGGER_RMPSP], "RemovePushServiceProvider")
+		details = self.changePushServiceProvider(kv, self.loggers[LOGGER_RMPSP], remoteAddr, false)
+		handler.AddDetailsToHandler(details)
 	case ADD_DELIVERY_POINT_TO_SERVICE_URL:
-		weblogger := log.NewLogger(writer, "[Subscribe]", logLevel)
-		logger := log.MultiLogger(weblogger, self.loggers[LOGGER_SUB])
-		self.changeSubscription(kv, logger, remoteAddr, true)
+		handler = newSimpleResponseHandler(self.loggers[LOGGER_SUB], "Subscribe")
+		details = self.changeSubscription(kv, self.loggers[LOGGER_SUB], remoteAddr, true)
+		handler.AddDetailsToHandler(details)
 	case REMOVE_DELIVERY_POINT_FROM_SERVICE_URL:
-		weblogger := log.NewLogger(writer, "[Unsubscribe]", logLevel)
-		logger := log.MultiLogger(weblogger, self.loggers[LOGGER_UNSUB])
-		self.changeSubscription(kv, logger, remoteAddr, false)
+		handler = newSimpleResponseHandler(self.loggers[LOGGER_UNSUB], "Unsubscribe")
+		details = self.changeSubscription(kv, self.loggers[LOGGER_UNSUB], remoteAddr, false)
+		handler.AddDetailsToHandler(details)
 	case PUSH_NOTIFICATION_URL:
-		weblogger := log.NewLogger(writer, "[Push]", logLevel)
-		logger := log.MultiLogger(weblogger, self.loggers[LOGGER_PUSH])
+		handler = newPushResponseHandler(self.loggers[LOGGER_PUSH])
 		rid := randomUniqId()
-		self.pushNotification(rid, kv, perdp, logger, remoteAddr)
+		self.pushNotification(rid, kv, perdp, self.loggers[LOGGER_PUSH], remoteAddr, handler)
+	}
+	if handler != nil {
+		_, err := w.Write(handler.ToJSON())
+		if err != nil {
+			self.loggers[LOGGER_WEB].Errorf("Failed to write http response: %v", err)
+		}
 	}
 }
 
