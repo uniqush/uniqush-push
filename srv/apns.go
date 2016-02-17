@@ -57,8 +57,8 @@ type pushRequest struct {
 	expiry    uint32
 
 	dpList  []*DeliveryPoint
-	errChan chan error
-	resChan chan *apnsResult
+	errChan chan<- PushError
+	resChan chan<- *apnsResult
 }
 
 func (self *pushRequest) getId(idx int) uint32 {
@@ -72,12 +72,12 @@ func (self *pushRequest) getId(idx int) uint32 {
 type apnsResult struct {
 	msgId  uint32
 	status uint8
-	err    error
+	err    PushError
 }
 
 type apnsPushService struct {
 	reqChan       chan *pushRequest
-	errChan       chan<- error
+	errChan       chan<- PushError
 	nextMessageId uint32
 	checkPoint    time.Time
 }
@@ -102,7 +102,7 @@ func (p *apnsPushService) Finalize() {
 	close(p.reqChan)
 }
 
-func (self *apnsPushService) SetErrorReportChan(errChan chan<- error) {
+func (self *apnsPushService) SetErrorReportChan(errChan chan<- PushError) {
 	self.errChan = errChan
 	return
 }
@@ -177,8 +177,8 @@ func (self *apnsPushService) getMessageIds(n int) uint32 {
 	return atomic.AddUint32(&self.nextMessageId, uint32(n))
 }
 
-func apnsresToError(apnsres *apnsResult, psp *PushServiceProvider, dp *DeliveryPoint) error {
-	var err error
+func apnsresToError(apnsres *apnsResult, psp *PushServiceProvider, dp *DeliveryPoint) PushError {
+	var err PushError
 	switch apnsres.status {
 	case 0:
 		err = nil
@@ -201,7 +201,7 @@ func apnsresToError(apnsres *apnsResult, psp *PushServiceProvider, dp *DeliveryP
 		// This token is invalid, we should unsubscribe this device.
 		err = NewUnsubscribeUpdate(psp, dp)
 	default:
-		err = fmt.Errorf("Unknown Error: %d", apnsres.status)
+		err = NewErrorf("Unknown Error: %d", apnsres.status)
 	}
 	return err
 }
@@ -233,7 +233,7 @@ func (self *apnsPushService) Push(psp *PushServiceProvider, dpQueue <-chan *Deli
 	defer close(resQueue)
 	// Profiling
 	// self.updateCheckPoint("")
-	var err error
+	var err PushError
 	req := new(pushRequest)
 	req.psp = psp
 	req.payload, err = toAPNSPayload(notif)
@@ -246,7 +246,7 @@ func (self *apnsPushService) Push(psp *PushServiceProvider, dpQueue <-chan *Deli
 		res := new(PushResult)
 		res.Provider = psp
 		res.Content = notif
-		res.Err = err
+		res.Err = NewErrorf("Failed to create push: %v", err)
 		resQueue <- res
 		for _ = range dpQueue {
 		}
@@ -292,7 +292,8 @@ func (self *apnsPushService) Push(psp *PushServiceProvider, dpQueue <-chan *Deli
 	req.maxMsgId = lastId
 	req.dpList = dpList
 
-	errChan := make(chan error)
+	// We send this request object to be processed by pushMux goroutine, to send responses/errors back.
+	errChan := make(chan PushError)
 	resChan := make(chan *apnsResult, n)
 	req.errChan = errChan
 	req.resChan = resChan
@@ -305,7 +306,11 @@ func (self *apnsPushService) Push(psp *PushServiceProvider, dpQueue <-chan *Deli
 		res := new(PushResult)
 		res.Provider = psp
 		res.Content = notif
-		res.Err = err
+		if _, ok := err.(*ErrorReport); ok {
+			res.Err = NewErrorf("Failed to send payload to APNS: %v", err)
+		} else {
+			res.Err = err
+		}
 		resQueue <- res
 	}
 	// Profiling
@@ -453,10 +458,10 @@ func (self *apnsConnManager) InitConn(conn net.Conn, n int) error {
 	return nil
 }
 
-func (self *apnsPushService) singlePush(payload, token []byte, expiry uint32, mid uint32, pool *connpool.Pool, errChan chan<- error) {
+func (self *apnsPushService) singlePush(payload, token []byte, expiry uint32, mid uint32, pool *connpool.Pool, errChan chan<- PushError) {
 	conn, err := pool.Get()
 	if err != nil {
-		errChan <- err
+		errChan <- NewConnectionError(err)
 		return
 	}
 	// Total size for each notification:
@@ -498,7 +503,8 @@ func (self *apnsPushService) singlePush(payload, token []byte, expiry uint32, mi
 
 	sleepTime := time.Duration(maxWaitTime) * time.Second
 	for nrRetries := 0; err != nil && nrRetries < 3; nrRetries++ {
-		errChan <- fmt.Errorf("error on connection with %v: %v. Will retry within %v", conn.RemoteAddr(), err, sleepTime)
+		errChan <- NewErrorf("error on connection with %v: %v. Will retry within %v", conn.RemoteAddr(), err, sleepTime)
+		// Switch error channels after the first error - only return the first error to clients, log the remainder.
 		errChan = self.errChan
 		conn.Close()
 
@@ -513,7 +519,7 @@ func (self *apnsPushService) singlePush(payload, token []byte, expiry uint32, mi
 			if conn != nil {
 				conn.Close()
 			}
-			errChan <- fmt.Errorf("We are unable to get a connection: %v", err)
+			errChan <- NewErrorf("We are unable to get a connection: %v", err)
 			return
 		}
 		deadline := time.Now().Add(sleepTime)
@@ -635,7 +641,7 @@ func receiveFeedback(psp *PushServiceProvider) []string {
 	return ret
 }
 
-func processFeedback(psp *PushServiceProvider, dpCache *cache.Cache, errChan chan<- error) {
+func processFeedback(psp *PushServiceProvider, dpCache *cache.Cache, errChan chan<- PushError) {
 	keys := receiveFeedback(psp)
 	for _, token := range keys {
 		dpif := dpCache.Delete(token)
@@ -649,7 +655,8 @@ func processFeedback(psp *PushServiceProvider, dpCache *cache.Cache, errChan cha
 	}
 }
 
-func feedbackChecker(psp *PushServiceProvider, dpCache *cache.Cache, errChan chan<- error) {
+// feedbackChecker periodically connects to the APNS feedback servers to get a list of unsubscriptions.
+func feedbackChecker(psp *PushServiceProvider, dpCache *cache.Cache, errChan chan<- PushError) {
 	for {
 		time.Sleep(time.Duration(feedbackCheckPeriod) * time.Minute)
 		processFeedback(psp, dpCache, errChan)
@@ -749,7 +756,7 @@ func parseList(str string) []string {
 	return ret
 }
 
-func toAPNSPayload(n *Notification) ([]byte, error) {
+func toAPNSPayload(n *Notification) ([]byte, PushError) {
 	payload := make(map[string]interface{})
 	aps := make(map[string]interface{})
 	alert := make(map[string]interface{})
@@ -791,7 +798,7 @@ func toAPNSPayload(n *Notification) ([]byte, error) {
 	payload["aps"] = aps
 	j, err := json.Marshal(payload)
 	if err != nil {
-		return nil, err
+		return nil, NewErrorf("Failed to convert notification data to JSON: %v", err)
 	}
 	if len(j) > maxPayLoadSize {
 		return nil, NewBadNotificationWithDetails("payload is too large")
@@ -836,7 +843,7 @@ func resultCollector(psp *PushServiceProvider, resChan chan<- *apnsResult, c net
 		err = binary.Read(byteBuffer, binary.BigEndian, &cmd)
 		if err != nil {
 			res := new(apnsResult)
-			res.err = err
+			res.err = NewErrorf("Failed to read cmd: %v", err)
 			resChan <- res
 			continue
 		}
@@ -844,7 +851,7 @@ func resultCollector(psp *PushServiceProvider, resChan chan<- *apnsResult, c net
 		err = binary.Read(byteBuffer, binary.BigEndian, &status)
 		if err != nil {
 			res := new(apnsResult)
-			res.err = err
+			res.err = NewErrorf("Failed to read status: %v", err)
 			resChan <- res
 			continue
 		}
@@ -852,7 +859,7 @@ func resultCollector(psp *PushServiceProvider, resChan chan<- *apnsResult, c net
 		err = binary.Read(byteBuffer, binary.BigEndian, &msgid)
 		if err != nil {
 			res := new(apnsResult)
-			res.err = err
+			res.err = NewErrorf("Failed to read msgid: %v", err)
 			resChan <- res
 			continue
 		}

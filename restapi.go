@@ -151,12 +151,12 @@ func (self *RestAPI) changePushServiceProvider(kv map[string]string, logger log.
 	psp, err := self.psm.BuildPushServiceProviderFromMap(kv)
 	if err != nil {
 		logger.Errorf("From=%v Cannot build push service provider: %v", remoteAddr, err)
-		return ApiResponseDetails{From: &remoteAddr, Code: UNIQUSH_ERROR_BUILD_PUSH_SERVICE_PROVIDER}
+		return ApiResponseDetails{From: &remoteAddr, Code: UNIQUSH_ERROR_BUILD_PUSH_SERVICE_PROVIDER, ErrorMsg: strPtrOfErr(err)}
 	}
 	service, err := getServiceFromMap(kv, true)
 	if err != nil {
 		logger.Errorf("From=%v Cannot get service name: %v; %v", remoteAddr, service, err)
-		return ApiResponseDetails{From: &remoteAddr, Service: &service, Code: UNIQUSH_ERROR_CANNOT_GET_SERVICE}
+		return ApiResponseDetails{From: &remoteAddr, Service: &service, Code: UNIQUSH_ERROR_CANNOT_GET_SERVICE, ErrorMsg: strPtrOfErr(err)}
 	}
 	if add {
 		err = self.backend.AddPushServiceProvider(service, psp)
@@ -165,7 +165,7 @@ func (self *RestAPI) changePushServiceProvider(kv map[string]string, logger log.
 	}
 	if err != nil {
 		logger.Errorf("From=%v Failed: %v", remoteAddr, err)
-		return ApiResponseDetails{From: &remoteAddr, Code: UNIQUSH_ERROR_GENERIC}
+		return ApiResponseDetails{From: &remoteAddr, Code: UNIQUSH_ERROR_GENERIC, ErrorMsg: strPtrOfErr(err)}
 	}
 	pspName := psp.Name()
 	logger.Infof("From=%v Service=%v PushServiceProvider=%v Success!", remoteAddr, service, pspName)
@@ -176,17 +176,17 @@ func (self *RestAPI) changeSubscription(kv map[string]string, logger log.Logger,
 	dp, err := self.psm.BuildDeliveryPointFromMap(kv)
 	if err != nil {
 		logger.Errorf("Cannot build delivery point: %v", err)
-		return ApiResponseDetails{From: &remoteAddr, Code: UNIQUSH_ERROR_BUILD_DELIVERY_POINT}
+		return ApiResponseDetails{From: &remoteAddr, Code: UNIQUSH_ERROR_BUILD_DELIVERY_POINT, ErrorMsg: strPtrOfErr(err)}
 	}
 	service, err := getServiceFromMap(kv, true)
 	if err != nil {
 		logger.Errorf("From=%v Cannot get service name: %v; %v", remoteAddr, service, err)
-		return ApiResponseDetails{From: &remoteAddr, Service: &service, Code: UNIQUSH_ERROR_CANNOT_GET_SERVICE}
+		return ApiResponseDetails{From: &remoteAddr, Service: &service, Code: UNIQUSH_ERROR_CANNOT_GET_SERVICE, ErrorMsg: strPtrOfErr(err)}
 	}
 	subs, err := getSubscribersFromMap(kv, true)
 	if err != nil {
 		logger.Errorf("From=%v Service=%v Cannot get subscriber: %v", remoteAddr, service, err)
-		return ApiResponseDetails{From: &remoteAddr, Service: &service, Code: UNIQUSH_ERROR_CANNOT_GET_SUBSCRIBER}
+		return ApiResponseDetails{From: &remoteAddr, Service: &service, Code: UNIQUSH_ERROR_CANNOT_GET_SUBSCRIBER, ErrorMsg: strPtrOfErr(err)}
 	}
 
 	var psp *PushServiceProvider
@@ -197,7 +197,7 @@ func (self *RestAPI) changeSubscription(kv map[string]string, logger log.Logger,
 	}
 	if err != nil {
 		logger.Errorf("From=%v Failed: %v", remoteAddr, err)
-		return ApiResponseDetails{From: &remoteAddr, Code: UNIQUSH_ERROR_GENERIC}
+		return ApiResponseDetails{From: &remoteAddr, Code: UNIQUSH_ERROR_GENERIC, ErrorMsg: strPtrOfErr(err)}
 	}
 	dpName := dp.Name()
 	if psp == nil {
