@@ -20,7 +20,6 @@ package db
 import (
 	"fmt"
 	redis "github.com/monnand/goredis"
-	. "github.com/uniqush/uniqush-push/push"
 	"strconv"
 	"testing"
 )
