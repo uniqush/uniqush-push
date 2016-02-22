@@ -18,13 +18,13 @@
 package main
 
 import (
-    "github.com/ifwe/goconf/conf"
-    . "github.com/orsonwang/uniqush-push/db"
-    . "github.com/orsonwang/uniqush-push/push"
-    . "github.com/uniqush/log"
-    "io"
-    "os"
-    "strings"
+	"github.com/ifwe/goconf/conf"
+	. "github.com/orsonwang/uniqush-push/db"
+	. "github.com/orsonwang/uniqush-push/push"
+	. "github.com/uniqush/log"
+	"io"
+	"os"
+	"strings"
 )
 
 const (

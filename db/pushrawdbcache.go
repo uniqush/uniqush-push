@@ -18,8 +18,8 @@
 package db
 
 import (
+	. "github.com/orsonwang/uniqush-push/push"
 	"github.com/uniqush/cache"
-	. "github.com/uniqush/uniqush-push/push"
 	"time"
 )
 

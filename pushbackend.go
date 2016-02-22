@@ -18,19 +18,19 @@
 package main
 
 import (
-    "sync"
-    "time"
+	"sync"
+	"time"
 
-    . "github.com/uniqush/log"
-    . "github.com/orsonwang/uniqush-push/db"
-    . "github.com/orsonwang/uniqush-push/push"
+	. "github.com/orsonwang/uniqush-push/db"
+	. "github.com/orsonwang/uniqush-push/push"
+	. "github.com/uniqush/log"
 )
 
 type PushBackEnd struct {
-    psm     *PushServiceManager
-    db      PushDatabase
-    loggers []Logger
-    errChan chan PushError
+	psm     *PushServiceManager
+	db      PushDatabase
+	loggers []Logger
+	errChan chan PushError
 }
 
 func (self *PushBackEnd) Finalize() {

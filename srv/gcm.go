@@ -23,12 +23,12 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	. "github.com/orsonwang/uniqush-push/push"
 	"io/ioutil"
 	"net"
 	"net/http"
 	"strconv"
 	"time"
-	. "github.com/orsonwang/uniqush-push/push"
 )
 
 const (
@@ -321,7 +321,7 @@ func (self *gcmPushService) multicast(psp *PushServiceProvider, dpList []*Delive
 				res.Destination = dp
 				resQueue <- res
 			case "InvalidRegistration":
-				res := new (PushResult)
+				res := new(PushResult)
 				res.Err = NewInvalidRegistrationUpdate(psp, dp)
 				res.Content = notif
 				res.Destination = dp
