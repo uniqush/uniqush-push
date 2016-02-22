@@ -1,1 +1,2 @@
-See [issues](https://github.com/uniqush/uniqush-push/issues)
+Use NSQ to send push messages
+Use SQLite, MySQL or MSSQL as database backend
