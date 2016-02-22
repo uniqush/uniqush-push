@@ -22,7 +22,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	. "github.com/orsonwang/uniqush-push/push"
+	"github.com/orsonwang/uniqush-push/push"
 	"io/ioutil"
 	"net/http"
 	"net/url"
@@ -38,12 +38,12 @@ const (
 )
 
 type pspLockResponse struct {
-	err PushError
-	psp *PushServiceProvider
+	err push.PushError
+	psp *push.PushServiceProvider
 }
 
 type pspLockRequest struct {
-	psp    *PushServiceProvider
+	psp    *push.PushServiceProvider
 	respCh chan<- *pspLockResponse
 }
 
@@ -59,7 +59,7 @@ func newADMPushService() *admPushService {
 }
 
 func InstallADM() {
-	psm := GetPushServiceManager()
+	psm := push.GetPushServiceManager()
 	psm.RegisterPushServiceType(newADMPushService())
 }
 
@@ -67,11 +67,11 @@ func (self *admPushService) Finalize() {}
 func (self *admPushService) Name() string {
 	return "adm"
 }
-func (self *admPushService) SetErrorReportChan(errChan chan<- PushError) {
+func (self *admPushService) SetErrorReportChan(errChan chan<- push.PushError) {
 	return
 }
 
-func (self *admPushService) BuildPushServiceProviderFromMap(kv map[string]string, psp *PushServiceProvider) error {
+func (self *admPushService) BuildPushServiceProviderFromMap(kv map[string]string, psp *push.PushServiceProvider) error {
 	if service, ok := kv["service"]; ok && len(service) > 0 {
 		psp.FixedData["service"] = service
 	} else {
@@ -93,7 +93,7 @@ func (self *admPushService) BuildPushServiceProviderFromMap(kv map[string]string
 	return nil
 }
 
-func (self *admPushService) BuildDeliveryPointFromMap(kv map[string]string, dp *DeliveryPoint) error {
+func (self *admPushService) BuildDeliveryPointFromMap(kv map[string]string, dp *push.DeliveryPoint) error {
 	if service, ok := kv["service"]; ok && len(service) > 0 {
 		dp.FixedData["service"] = service
 	} else {
@@ -114,7 +114,7 @@ func (self *admPushService) BuildDeliveryPointFromMap(kv map[string]string, dp *
 }
 
 func admPspLocker(lockChan <-chan *pspLockRequest) {
-	pspLockMap := make(map[string]*PushServiceProvider, 10)
+	pspLockMap := make(map[string]*push.PushServiceProvider, 10)
 	for req := range lockChan {
 		var ok bool
 		var clientid string
@@ -122,7 +122,7 @@ func admPspLocker(lockChan <-chan *pspLockRequest) {
 
 		resp := new(pspLockResponse)
 		if clientid, ok = psp.FixedData["clientid"]; !ok {
-			resp.err = NewBadPushServiceProviderWithDetails(psp, "NoClientID")
+			resp.err = push.NewBadPushServiceProviderWithDetails(psp, "NoClientID")
 			req.respCh <- resp
 			continue
 		}
@@ -134,7 +134,7 @@ func admPspLocker(lockChan <-chan *pspLockRequest) {
 		resp.err = requestToken(psp)
 		resp.psp = psp
 		if resp.err != nil {
-			if _, ok := resp.err.(*PushServiceProviderUpdate); ok {
+			if _, ok := resp.err.(*push.PushServiceProviderUpdate); ok {
 				pspLockMap[clientid] = psp
 			} else {
 				delete(pspLockMap, clientid)
@@ -156,7 +156,7 @@ type tokenFailObj struct {
 	Description string `json:"error_description"`
 }
 
-func requestToken(psp *PushServiceProvider) PushError {
+func requestToken(psp *push.PushServiceProvider) push.PushError {
 	var ok bool
 	var clientid string
 	var cserect string
@@ -175,10 +175,10 @@ func requestToken(psp *PushServiceProvider) PushError {
 	}
 
 	if clientid, ok = psp.FixedData["clientid"]; !ok {
-		return NewBadPushServiceProviderWithDetails(psp, "NoClientID")
+		return push.NewBadPushServiceProviderWithDetails(psp, "NoClientID")
 	}
 	if cserect, ok = psp.FixedData["clientsecret"]; !ok {
-		return NewBadPushServiceProviderWithDetails(psp, "NoClientSecrete")
+		return push.NewBadPushServiceProviderWithDetails(psp, "NoClientSecrete")
 	}
 	form := url.Values{}
 	form.Set("grant_type", "client_credentials")
@@ -187,7 +187,7 @@ func requestToken(psp *PushServiceProvider) PushError {
 	form.Set("client_secret", cserect)
 	req, err := http.NewRequest("POST", admTokenURL, bytes.NewBufferString(form.Encode()))
 	if err != nil {
-		return NewErrorf("NewRequest error: %v", err)
+		return push.NewErrorf("NewRequest error: %v", err)
 	}
 	defer req.Body.Close()
 	req.Header.Add("Content-Type", "application/x-www-form-urlencoded")
@@ -195,34 +195,34 @@ func requestToken(psp *PushServiceProvider) PushError {
 	client := &http.Client{}
 	resp, err := client.Do(req)
 	if err != nil {
-		return NewErrorf("Do error: %v", err)
+		return push.NewErrorf("Do error: %v", err)
 	}
 
 	defer resp.Body.Close()
 
 	content, err := ioutil.ReadAll(resp.Body)
 	if err != nil {
-		return NewBadPushServiceProviderWithDetails(psp, err.Error())
+		return push.NewBadPushServiceProviderWithDetails(psp, err.Error())
 	}
 	if resp.StatusCode != 200 {
 		var fail tokenFailObj
 		err = json.Unmarshal(content, &fail)
 		if err != nil {
-			return NewBadPushServiceProviderWithDetails(psp, err.Error())
+			return push.NewBadPushServiceProviderWithDetails(psp, err.Error())
 		}
 		reason := strings.ToUpper(fail.Reason)
 		switch reason {
 		case "INVALID_SCOPE":
 			reason = "ADM is not enabled. Enable it on the Amazon Mobile App Distribution Portal"
 		}
-		return NewBadPushServiceProviderWithDetails(psp, fmt.Sprintf("%v:%v (%v)", resp.StatusCode, reason, fail.Description))
+		return push.NewBadPushServiceProviderWithDetails(psp, fmt.Sprintf("%v:%v (%v)", resp.StatusCode, reason, fail.Description))
 	}
 
 	var succ tokenSuccObj
 	err = json.Unmarshal(content, &succ)
 
 	if err != nil {
-		return NewBadPushServiceProviderWithDetails(psp, err.Error())
+		return push.NewBadPushServiceProviderWithDetails(psp, err.Error())
 	}
 
 	expire := time.Now().Add(time.Duration(succ.Expire-60) * time.Second)
@@ -230,7 +230,7 @@ func requestToken(psp *PushServiceProvider) PushError {
 	psp.VolatileData["expire"] = fmt.Sprintf("%v", expire.Unix())
 	psp.VolatileData["token"] = succ.Token
 	psp.VolatileData["type"] = succ.Type
-	return NewPushServiceProviderUpdate(psp)
+	return push.NewPushServiceProviderUpdate(psp)
 }
 
 type admMessage struct {
@@ -240,9 +240,9 @@ type admMessage struct {
 	MD5      string            `json:"md5,omitempty"`
 }
 
-func notifToMessage(notif *Notification) (msg *admMessage, err PushError) {
+func notifToMessage(notif *push.Notification) (msg *admMessage, err push.PushError) {
 	if notif == nil || len(notif.Data) == 0 {
-		err = NewBadNotificationWithDetails("empty notification")
+		err = push.NewBadNotificationWithDetails("empty notification")
 		return
 	}
 
@@ -263,30 +263,30 @@ func notifToMessage(notif *Notification) (msg *admMessage, err PushError) {
 		}
 	}
 	if len(msg.Data) == 0 {
-		err = NewBadNotificationWithDetails("empty notification")
+		err = push.NewBadNotificationWithDetails("empty notification")
 		return
 	}
 	return
 }
 
-func admURL(dp *DeliveryPoint) (url string, err PushError) {
+func admURL(dp *push.DeliveryPoint) (url string, err push.PushError) {
 	if dp == nil {
-		err = NewError("nil dp")
+		err = push.NewError("nil dp")
 		return
 	}
 	if regid, ok := dp.FixedData["regid"]; ok {
 		url = fmt.Sprintf("%v%v/messages", admServiceURL, regid)
 	} else {
-		err = NewBadDeliveryPointWithDetails(dp, "empty delivery point")
+		err = push.NewBadDeliveryPointWithDetails(dp, "empty delivery point")
 	}
 	return
 }
 
-func admNewRequest(psp *PushServiceProvider, dp *DeliveryPoint, data []byte) (req *http.Request, err PushError) {
+func admNewRequest(psp *push.PushServiceProvider, dp *push.DeliveryPoint, data []byte) (req *http.Request, err push.PushError) {
 	var token string
 	var ok bool
 	if token, ok = psp.VolatileData["token"]; !ok {
-		err = NewBadPushServiceProviderWithDetails(psp, "NoToken")
+		err = push.NewBadPushServiceProviderWithDetails(psp, "NoToken")
 		return
 	}
 	url, err := admURL(dp)
@@ -312,7 +312,7 @@ type admPushFailResponse struct {
 	Reason string `json:"reason"`
 }
 
-func admSinglePush(psp *PushServiceProvider, dp *DeliveryPoint, data []byte, notif *Notification) (string, PushError) {
+func admSinglePush(psp *push.PushServiceProvider, dp *push.DeliveryPoint, data []byte, notif *push.Notification) (string, push.PushError) {
 	client := &http.Client{}
 	req, err := admNewRequest(psp, dp, data)
 	if err != nil {
@@ -321,7 +321,7 @@ func admSinglePush(psp *PushServiceProvider, dp *DeliveryPoint, data []byte, not
 	defer req.Body.Close()
 	resp, httpErr := client.Do(req)
 	if httpErr != nil {
-		return "", NewErrorf("Failed to send adm push: %v", httpErr.Error())
+		return "", push.NewErrorf("Failed to send adm push: %v", httpErr.Error())
 	}
 	defer resp.Body.Close()
 
@@ -339,33 +339,33 @@ func admSinglePush(psp *PushServiceProvider, dp *DeliveryPoint, data []byte, not
 				}
 			}
 			retryDuration := time.Duration(retrySecond) * time.Second
-			err = NewRetryError(psp, dp, notif, retryDuration)
+			err = push.NewRetryError(psp, dp, notif, retryDuration)
 			return id, err
 		}
 
 		body, ioErr := ioutil.ReadAll(resp.Body)
 		if ioErr != nil {
-			return "", NewErrorf("Failed to read adm response: %v", err)
+			return "", push.NewErrorf("Failed to read adm response: %v", err)
 		}
 
 		var fail admPushFailResponse
 		jsonErr := json.Unmarshal(body, &fail)
 		if jsonErr != nil {
-			return "", NewErrorf("%v: %v", resp.StatusCode, string(body))
+			return "", push.NewErrorf("%v: %v", resp.StatusCode, string(body))
 		}
 
 		reason := strings.ToLower(fail.Reason)
 
 		switch reason {
 		case "messagetoolarge":
-			err = NewBadNotificationWithDetails("MessageTooLarge")
+			err = push.NewBadNotificationWithDetails("MessageTooLarge")
 		case "invalidregistrationid":
-			err = NewBadDeliveryPointWithDetails(dp, "InvalidRegistrationId")
+			err = push.NewBadDeliveryPointWithDetails(dp, "InvalidRegistrationId")
 		case "accesstokenexpired":
 			// retry would fix it.
-			err = NewRetryError(psp, dp, notif, 10*time.Second)
+			err = push.NewRetryError(psp, dp, notif, 10*time.Second)
 		default:
-			err = NewErrorf("%v: %v", resp.StatusCode, fail.Reason)
+			err = push.NewErrorf("%v: %v", resp.StatusCode, fail.Reason)
 		}
 
 		return "", err
@@ -373,7 +373,7 @@ func admSinglePush(psp *PushServiceProvider, dp *DeliveryPoint, data []byte, not
 	return id, nil
 }
 
-func (self *admPushService) lockPsp(psp *PushServiceProvider) (*PushServiceProvider, PushError) {
+func (self *admPushService) lockPsp(psp *push.PushServiceProvider) (*push.PushServiceProvider, push.PushError) {
 	respCh := make(chan *pspLockResponse)
 	req := &pspLockRequest{
 		psp:    psp,
@@ -387,23 +387,23 @@ func (self *admPushService) lockPsp(psp *PushServiceProvider) (*PushServiceProvi
 	return resp.psp, resp.err
 }
 
-func (self *admPushService) Push(psp *PushServiceProvider, dpQueue <-chan *DeliveryPoint, resQueue chan<- *PushResult, notif *Notification) {
+func (self *admPushService) Push(psp *push.PushServiceProvider, dpQueue <-chan *push.DeliveryPoint, resQueue chan<- *push.PushResult, notif *push.Notification) {
 	defer close(resQueue)
 	defer func() {
 		for _ = range dpQueue {
 		}
 	}()
 
-	res := new(PushResult)
+	res := new(push.PushResult)
 	res.Content = notif
 	res.Provider = psp
 
-	var err PushError
+	var err push.PushError
 	psp, err = self.lockPsp(psp)
 	if err != nil {
 		res.Err = err
 		resQueue <- res
-		if _, ok := err.(*PushServiceProviderUpdate); !ok {
+		if _, ok := err.(*push.PushServiceProviderUpdate); !ok {
 			return
 		}
 	}
@@ -416,7 +416,7 @@ func (self *admPushService) Push(psp *PushServiceProvider, dpQueue <-chan *Deliv
 
 	data, jsonErr := json.Marshal(msg)
 	if jsonErr != nil {
-		res.Err = NewErrorf("Failed to marshal message: %v", jsonErr)
+		res.Err = push.NewErrorf("Failed to marshal message: %v", jsonErr)
 		resQueue <- res
 		return
 	}
@@ -425,11 +425,11 @@ func (self *admPushService) Push(psp *PushServiceProvider, dpQueue <-chan *Deliv
 
 	for dp := range dpQueue {
 		wg.Add(1)
-		res := new(PushResult)
+		res := new(push.PushResult)
 		res.Content = notif
 		res.Provider = psp
 		res.Destination = dp
-		go func(dp *DeliveryPoint) {
+		go func(dp *push.DeliveryPoint) {
 			res.MsgId, res.Err = admSinglePush(psp, dp, data, notif)
 			resQueue <- res
 			wg.Done()

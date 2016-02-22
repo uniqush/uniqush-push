@@ -19,9 +19,9 @@ package main
 
 import (
 	"github.com/ifwe/goconf/conf"
-	. "github.com/orsonwang/uniqush-push/db"
-	. "github.com/orsonwang/uniqush-push/push"
-	. "github.com/uniqush/log"
+	"github.com/orsonwang/uniqush-push/db"
+	"github.com/orsonwang/uniqush-push/push"
+    "github.com/uniqush/log"
 	"io"
 	"os"
 	"strings"
@@ -37,7 +37,7 @@ const (
 	LOGGER_NR_LOGGERS
 )
 
-func loadLogger(writer io.Writer, c *conf.ConfigFile, field string, prefix string) (Logger, error) {
+func loadLogger(writer io.Writer, c *conf.ConfigFile, field string, prefix string) (log.Logger, error) {
 	var loglevel string
 	var logswitch bool
 	var err error
@@ -60,26 +60,26 @@ func loadLogger(writer io.Writer, c *conf.ConfigFile, field string, prefix strin
 	if logswitch {
 		switch strings.ToLower(loglevel) {
 		case "standard":
-			level = LOGLEVEL_INFO
+			level = log.LOGLEVEL_INFO
 		case "verbose":
-			level = LOGLEVEL_INFO
+			level = log.LOGLEVEL_INFO
 		case "debug":
-			level = LOGLEVEL_DEBUG
+			level = log.LOGLEVEL_DEBUG
 		default:
-			level = LOGLEVEL_INFO
+			level = log.LOGLEVEL_INFO
 		}
 	} else {
-		level = LOGLEVEL_SILENT
+		level = log.LOGLEVEL_SILENT
 	}
 
-	logger := NewLogger(writer, prefix, level)
+	logger := log.NewLogger(writer, prefix, level)
 	return logger, nil
 }
 
-func LoadDatabaseConfig(cf *conf.ConfigFile) (*DatabaseConfig, error) {
+func LoadDatabaseConfig(cf *conf.ConfigFile) (*db.DatabaseConfig, error) {
 	var err error
-	c := new(DatabaseConfig)
-	c.PushServiceManager = GetPushServiceManager()
+	c := new(db.DatabaseConfig)
+	c.PushServiceManager = push.GetPushServiceManager()
 	c.Engine, err = cf.GetString("Database", "engine")
 	if err != nil || c.Engine == "" {
 		c.Engine = "redis"
@@ -132,7 +132,7 @@ func OpenConfig(filename string) (c *conf.ConfigFile, err error) {
 	return
 }
 
-func LoadLoggers(c *conf.ConfigFile) (loggers []Logger, err error) {
+func LoadLoggers(c *conf.ConfigFile) (loggers []log.Logger, err error) {
 	var logfile io.Writer
 
 	logfilename, err := c.GetString("default", "logfile")
@@ -145,7 +145,7 @@ func LoadLoggers(c *conf.ConfigFile) (loggers []Logger, err error) {
 		logfile = os.Stderr
 	}
 
-	loggers = make([]Logger, LOGGER_NR_LOGGERS)
+	loggers = make([]log.Logger, LOGGER_NR_LOGGERS)
 	loggers[LOGGER_WEB], err = loadLogger(logfile, c, "WebFrontend", "[WebFrontend]")
 	if err != nil {
 		loggers = nil
@@ -210,9 +210,9 @@ func Run(conf, version string) error {
 	if err != nil {
 		return err
 	}
-	psm := GetPushServiceManager()
+	psm := push.GetPushServiceManager()
 
-	db, err := NewPushDatabaseWithoutCache(dbconf)
+	db, err := db.NewPushDatabaseWithoutCache(dbconf)
 	if err != nil {
 		return err
 	}
