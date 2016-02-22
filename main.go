@@ -23,7 +23,7 @@ import (
 	"os"
 	"runtime"
 
-	"github.com/uniqush/uniqush-push/srv"
+	"github.com/orsonwang/uniqush-push/srv"
 )
 
 var uniqushPushConfFlags = flag.String("config", "/etc/uniqush/uniqush-push.conf", "Config file path")

@@ -28,7 +28,7 @@ import (
 	"net/http"
 	"strconv"
 	"time"
-	. "github.com/uniqush/uniqush-push/push"
+	. "github.com/orsonwang/uniqush-push/push"
 )
 
 const (

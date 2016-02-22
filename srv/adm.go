@@ -22,7 +22,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	. "github.com/uniqush/uniqush-push/push"
+	. "github.com/orsonwang/uniqush-push/push"
 	"io/ioutil"
 	"net/http"
 	"net/url"
