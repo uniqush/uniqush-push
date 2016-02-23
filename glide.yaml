@@ -1,0 +1,7 @@
+package: github.com/orsonwang/uniqush-push
+import:
+- package: github.com/monnand/goredis
+- package: github.com/uniqush/cache
+- package: github.com/uniqush/connpool
+- package: github.com/uniqush/log
+- package: github.com/pelletier/go-toml

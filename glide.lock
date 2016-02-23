@@ -1,0 +1,26 @@
+hash: 72d6a6d967bee3627e993fdf65d01c85412e56b6b86d90bb597679be0e654446
+updated: 2016-02-23T13:07:03.314726847+08:00
+imports:
+- name: github.com/monnand/goredis
+  version: a3cb3e5e62812b0f0f4806f6b3a29f0db7556ab2
+- name: github.com/orsonwang/uniqush-push
+  version: 357cf5b56b24b0d5710f7d9a3644548051084c49
+  subpackages:
+  - push
+- name: github.com/pelletier/go-buffruneio
+  version: df1e16fde7fc330a0ca68167c23bf7ed6ac31d6d
+- name: github.com/pelletier/go-toml
+  version: fe63e9f76da815a9fe36e4b0644abb27fa86d81f
+- name: github.com/uniqush/cache
+  version: df3169e8610b6c62758afe3a95d9cf377b771015
+- name: github.com/uniqush/connpool
+  version: da8876156335ffda480ba6be1b5d3d76683c23eb
+- name: github.com/uniqush/log
+  version: 01934f3e10e00991bf3d1bba40c4d82a5aaef32a
+- name: github.com/uniqush/uniqush-push
+  version: 9bc72a9386076385540b610220b49589358fceba
+  subpackages:
+  - db
+  - push
+  - srv
+devImports: []
