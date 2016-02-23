@@ -22,7 +22,6 @@ import (
 	"crypto/tls"
 	"encoding/binary"
 	"encoding/hex"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -37,6 +36,7 @@ import (
 	"github.com/uniqush/cache"
 	"github.com/uniqush/connpool"
 	"github.com/uniqush/uniqush-push/push"
+	"github.com/uniqush/uniqush-push/srv/apns/common"
 )
 
 const (
@@ -796,7 +796,7 @@ func toAPNSPayload(n *push.Notification) ([]byte, push.PushError) {
 
 	aps["alert"] = alert
 	payload["aps"] = aps
-	j, err := json.Marshal(payload)
+	j, err := common.MarshalJSONUnescaped(payload)
 	if err != nil {
 		return nil, push.NewErrorf("Failed to convert notification data to JSON: %v", err)
 	}
