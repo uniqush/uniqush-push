@@ -23,12 +23,13 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/orsonwang/uniqush-push/push"
 	"io/ioutil"
 	"net"
 	"net/http"
 	"strconv"
 	"time"
+
+	"github.com/uniqush/uniqush-push/push"
 )
 
 const (

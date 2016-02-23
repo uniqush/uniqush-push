@@ -21,9 +21,9 @@ import (
 	"sync"
 	"time"
 
-	"github.com/orsonwang/uniqush-push/db"
-	"github.com/orsonwang/uniqush-push/push"
 	"github.com/uniqush/log"
+	"github.com/uniqush/uniqush-push/db"
+	"github.com/uniqush/uniqush-push/push"
 )
 
 type PushBackEnd struct {

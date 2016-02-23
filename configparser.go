@@ -18,13 +18,14 @@
 package main
 
 import (
-	"github.com/orsonwang/uniqush-push/db"
-	"github.com/orsonwang/uniqush-push/push"
-	conf "github.com/pelletier/go-toml"
-	"github.com/uniqush/log"
 	"io"
 	"os"
 	"strings"
+
+	conf "github.com/pelletier/go-toml"
+	"github.com/uniqush/log"
+	"github.com/uniqush/uniqush-push/db"
+	"github.com/uniqush/uniqush-push/push"
 )
 
 const (

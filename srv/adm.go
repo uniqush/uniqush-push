@@ -22,7 +22,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/orsonwang/uniqush-push/push"
 	"io/ioutil"
 	"net/http"
 	"net/url"
@@ -30,6 +29,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/uniqush/uniqush-push/push"
 )
 
 const (

@@ -34,9 +34,9 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/orsonwang/uniqush-push/push"
 	"github.com/uniqush/cache"
 	"github.com/uniqush/connpool"
+	"github.com/uniqush/uniqush-push/push"
 )
 
 const (
