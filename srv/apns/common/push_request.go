@@ -21,6 +21,22 @@ import (
 	"github.com/uniqush/uniqush-push/push"
 )
 
+// PushRequestProcessor abstracts the different network protocols Apple has for sending push notifications.
+type PushRequestProcessor interface {
+	// AddRequest adds a push request, and asyncronously processes it.
+	// The APNSRequestProcessor will first add errors it encountered sending to add responses and errors to the respective channels and close channels.
+	AddRequest(request *PushRequest)
+
+	// GetMaxPayloadSize returns the maximum JSON payload for this protocol.
+	GetMaxPayloadSize() int
+
+	// Finalize() will close any connections, waiting for them to finish closing before returning.
+	Finalize()
+
+	// SetErrorReportChan sets the error reporting channel (shared with the apnsPushService)
+	SetErrorReportChan(errChan chan<- push.PushError)
+}
+
 type PushRequest struct {
 	PSP       *push.PushServiceProvider
 	Devtokens [][]byte
