@@ -30,11 +30,11 @@ import (
 	"time"
 
 	"github.com/uniqush/log"
-	. "github.com/uniqush/uniqush-push/push"
+	"github.com/uniqush/uniqush-push/push"
 )
 
 type RestAPI struct {
-	psm       *PushServiceManager
+	psm       *push.PushServiceManager
 	loggers   []log.Logger
 	backend   *PushBackEnd
 	version   string
@@ -49,7 +49,7 @@ func randomUniqId() string {
 }
 
 // loggers: sequence is web, add
-func NewRestAPI(psm *PushServiceManager, loggers []log.Logger, version string, backend *PushBackEnd) *RestAPI {
+func NewRestAPI(psm *push.PushServiceManager, loggers []log.Logger, version string, backend *PushBackEnd) *RestAPI {
 	ret := new(RestAPI)
 	ret.psm = psm
 	ret.loggers = loggers
@@ -189,7 +189,7 @@ func (self *RestAPI) changeSubscription(kv map[string]string, logger log.Logger,
 		return ApiResponseDetails{From: &remoteAddr, Service: &service, Code: UNIQUSH_ERROR_CANNOT_GET_SUBSCRIBER, ErrorMsg: strPtrOfErr(err)}
 	}
 
-	var psp *PushServiceProvider
+	var psp *push.PushServiceProvider
 	if issub {
 		psp, err = self.backend.Subscribe(service, subs[0], dp)
 	} else {
@@ -229,7 +229,7 @@ func (self *RestAPI) pushNotification(reqId string, kv map[string]string, perdp 
 		return
 	}
 
-	notif := NewEmptyNotification()
+	notif := push.NewEmptyNotification()
 
 	for k, v := range kv {
 		if len(v) <= 0 {
