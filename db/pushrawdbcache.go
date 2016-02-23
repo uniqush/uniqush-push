@@ -18,9 +18,10 @@
 package db
 
 import (
-	"github.com/uniqush/cache"
-	. "github.com/uniqush/uniqush-push/push"
 	"time"
+
+	"github.com/uniqush/cache"
+	"github.com/uniqush/uniqush-push/push"
 )
 
 type pushRawDatabaseCache struct {
@@ -37,7 +38,7 @@ type pspFlusher struct {
 }
 
 func (self *pspFlusher) Add(key string, value interface{}) {
-	if psp, ok := value.(*PushServiceProvider); ok {
+	if psp, ok := value.(*push.PushServiceProvider); ok {
 		self.cdb.dbwriter.SetPushServiceProvider(psp)
 	}
 }
@@ -51,7 +52,7 @@ type dpFlusher struct {
 }
 
 func (self *dpFlusher) Add(key string, value interface{}) {
-	if psp, ok := value.(*DeliveryPoint); ok {
+	if psp, ok := value.(*push.DeliveryPoint); ok {
 		self.cdb.dbwriter.SetDeliveryPoint(psp)
 	}
 }
@@ -86,7 +87,7 @@ func NewpushRawDatabaseCache(c *DatabaseConfig,
 	return cdb, nil
 }
 
-func (cdb *pushRawDatabaseCache) GetDeliveryPoint(dp string) (ret *DeliveryPoint, err error) {
+func (cdb *pushRawDatabaseCache) GetDeliveryPoint(dp string) (ret *push.DeliveryPoint, err error) {
 	if dpi := cdb.dpCache.Get(dp); dpi == nil {
 		ret, err = cdb.dbreader.GetDeliveryPoint(dp)
 		if err != nil {
@@ -94,12 +95,12 @@ func (cdb *pushRawDatabaseCache) GetDeliveryPoint(dp string) (ret *DeliveryPoint
 		}
 		cdb.dpCache.Set(dp, ret.Name())
 	} else {
-		ret = dpi.(*DeliveryPoint)
+		ret = dpi.(*push.DeliveryPoint)
 	}
 	return ret, nil
 }
 
-func (cdb *pushRawDatabaseCache) GetPushServiceProvider(psp string) (ret *PushServiceProvider, err error) {
+func (cdb *pushRawDatabaseCache) GetPushServiceProvider(psp string) (ret *push.PushServiceProvider, err error) {
 	if pspi := cdb.pspCache.Get(psp); pspi == nil {
 		ret, err = cdb.dbreader.GetPushServiceProvider(psp)
 		if err != nil {
@@ -107,17 +108,17 @@ func (cdb *pushRawDatabaseCache) GetPushServiceProvider(psp string) (ret *PushSe
 		}
 		cdb.dpCache.Set(psp, ret.Name())
 	} else {
-		ret = pspi.(*PushServiceProvider)
+		ret = pspi.(*push.PushServiceProvider)
 	}
 	return ret, nil
 }
 
-func (cdb *pushRawDatabaseCache) SetDeliveryPoint(dp *DeliveryPoint) error {
+func (cdb *pushRawDatabaseCache) SetDeliveryPoint(dp *push.DeliveryPoint) error {
 	cdb.dpCache.Set(dp.Name(), dp)
 	return nil
 }
 
-func (cdb *pushRawDatabaseCache) SetPushServiceProvider(psp *PushServiceProvider) error {
+func (cdb *pushRawDatabaseCache) SetPushServiceProvider(psp *push.PushServiceProvider) error {
 	cdb.pspCache.Set(psp.Name(), psp)
 	return nil
 }

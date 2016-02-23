@@ -19,7 +19,8 @@ package db
 
 import (
 	"fmt"
-	. "github.com/uniqush/uniqush-push/push"
+
+	"github.com/uniqush/uniqush-push/push"
 )
 
 type DatabaseConfig struct {
@@ -37,7 +38,7 @@ type DatabaseConfig struct {
 	EverySec   int64
 	LeastDirty int
 
-	PushServiceManager *PushServiceManager
+	PushServiceManager *push.PushServiceManager
 }
 
 /*
