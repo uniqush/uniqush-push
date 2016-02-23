@@ -18,10 +18,10 @@
 package main
 
 import (
-	"github.com/ifwe/goconf/conf"
 	"github.com/orsonwang/uniqush-push/db"
 	"github.com/orsonwang/uniqush-push/push"
-    "github.com/uniqush/log"
+	conf "github.com/pelletier/go-toml"
+	"github.com/uniqush/log"
 	"io"
 	"os"
 	"strings"
@@ -37,22 +37,19 @@ const (
 	LOGGER_NR_LOGGERS
 )
 
-func loadLogger(writer io.Writer, c *conf.ConfigFile, field string, prefix string) (log.Logger, error) {
+func loadLogger(writer io.Writer, c *conf.TomlTree, field string, prefix string) log.Logger {
 	var loglevel string
 	var logswitch bool
-	var err error
 
-	logswitch, err = c.GetBool(field, "log")
-	if err != nil {
-		logswitch = true
-	}
+	logswitch = true
+	logswitch = c.Get(field + "." + "log").(bool)
 
 	if writer == nil {
 		writer = os.Stderr
 	}
 
-	loglevel, err = c.GetString(field, "loglevel")
-	if err != nil {
+	loglevel = c.Get(field + "." + "loglevel").(string)
+	if loglevel == "" {
 		loglevel = "standard"
 	}
 	var level int
@@ -73,70 +70,67 @@ func loadLogger(writer io.Writer, c *conf.ConfigFile, field string, prefix strin
 	}
 
 	logger := log.NewLogger(writer, prefix, level)
-	return logger, nil
+	return logger
 }
 
-func LoadDatabaseConfig(cf *conf.ConfigFile) (*db.DatabaseConfig, error) {
-	var err error
+func LoadDatabaseConfig(cf *conf.TomlTree) *db.DatabaseConfig {
 	c := new(db.DatabaseConfig)
 	c.PushServiceManager = push.GetPushServiceManager()
-	c.Engine, err = cf.GetString("Database", "engine")
-	if err != nil || c.Engine == "" {
+	c.Engine = cf.Get("Database" + "." + "engine").(string)
+	if c.Engine == "" {
 		c.Engine = "redis"
 	}
-	c.Name, err = cf.GetString("Database", "name")
-	if err != nil || c.Name == "" {
+	c.Name = cf.Get("Database" + "." + "name").(string)
+	if c.Name == "" {
 		c.Name = "0"
 	}
-	c.Port, err = cf.GetInt("Database", "port")
-	if err != nil || c.Port <= 0 {
+	c.Port = cf.Get("Database" + "." + "port").(int)
+	if c.Port == 0 {
 		c.Port = -1
 	}
-	c.Host, err = cf.GetString("Database", "host")
-	if err != nil || c.Host == "" {
+	c.Host = cf.Get("Database" + "." + "host").(string)
+	if c.Host == "" {
 		c.Host = "localhost"
 	}
-	c.Password, err = cf.GetString("Database", "password")
-	if err != nil {
-		c.Password = ""
-	}
-	i, e := cf.GetInt("Database", "everysec")
+	c.Password = cf.Get("Database" + "." + "password").(string)
+
+	i := cf.Get("Database" + "." + "everysec").(int)
 	c.EverySec = int64(i)
-	if e != nil || c.EverySec <= 60 {
+	if c.EverySec <= 60 {
 		c.EverySec = 600
 	}
-	c.LeastDirty, err = cf.GetInt("Database", "leastdirty")
-	if err != nil || c.LeastDirty < 0 {
+	c.LeastDirty = cf.Get("Database" + "." + "leastdirty").(int)
+	if c.LeastDirty == 0 {
 		c.LeastDirty = 10
 	}
-	c.CacheSize, err = cf.GetInt("Database", "cachesize")
-	if err != nil || c.CacheSize < 0 {
+	c.CacheSize = cf.Get("Database" + "." + "cachesize").(int)
+	if c.CacheSize == 0 {
 		c.CacheSize = 1024
 	}
 
-	return c, nil
+	return c
 }
 
 var (
 	defaultConfigFilePath string = "/etc/uniqush/uniqush.conf"
 )
 
-func OpenConfig(filename string) (c *conf.ConfigFile, err error) {
+func OpenConfig(filename string) (c *conf.TomlTree, err error) {
 	if filename == "" {
 		filename = defaultConfigFilePath
 	}
-	c, err = conf.ReadConfigFile(filename)
+	c, err = conf.LoadFile(filename)
 	if err != nil {
 		return nil, err
 	}
 	return
 }
 
-func LoadLoggers(c *conf.ConfigFile) (loggers []log.Logger, err error) {
+func LoadLoggers(c *conf.TomlTree) (loggers []log.Logger, err error) {
 	var logfile io.Writer
 
-	logfilename, err := c.GetString("default", "logfile")
-	if err == nil && logfilename != "" {
+	logfilename := c.Get("default" + "." + "logfile").(string)
+	if logfilename != "" {
 		logfile, err = os.OpenFile(logfilename, os.O_WRONLY|os.O_APPEND|os.O_CREATE, 0600)
 		if err != nil {
 			logfile = os.Stderr
@@ -146,51 +140,21 @@ func LoadLoggers(c *conf.ConfigFile) (loggers []log.Logger, err error) {
 	}
 
 	loggers = make([]log.Logger, LOGGER_NR_LOGGERS)
-	loggers[LOGGER_WEB], err = loadLogger(logfile, c, "WebFrontend", "[WebFrontend]")
-	if err != nil {
-		loggers = nil
-		return
-	}
-
-	loggers[LOGGER_ADDPSP], err = loadLogger(logfile, c, "AddPushServiceProvider", "[AddPushServiceProvider]")
-	if err != nil {
-		loggers = nil
-		return
-	}
-
-	loggers[LOGGER_RMPSP], err = loadLogger(logfile, c, "RemovePushServiceProvider", "[RemovePushServiceProvider]")
-	if err != nil {
-		loggers = nil
-		return
-	}
-
-	loggers[LOGGER_SUB], err = loadLogger(logfile, c, "Subscribe", "[Subscribe]")
-	if err != nil {
-		loggers = nil
-		return
-	}
-
-	loggers[LOGGER_UNSUB], err = loadLogger(logfile, c, "Unsubscribe", "[Unsubscribe]")
-	if err != nil {
-		loggers = nil
-		return
-	}
-
-	loggers[LOGGER_PUSH], err = loadLogger(logfile, c, "Push", "[Push]")
-	if err != nil {
-		loggers = nil
-		return
-	}
+	loggers[LOGGER_WEB] = loadLogger(logfile, c, "WebFrontend", "[WebFrontend]")
+	loggers[LOGGER_ADDPSP] = loadLogger(logfile, c, "AddPushServiceProvider", "[AddPushServiceProvider]")
+	loggers[LOGGER_RMPSP] = loadLogger(logfile, c, "RemovePushServiceProvider", "[RemovePushServiceProvider]")
+	loggers[LOGGER_SUB] = loadLogger(logfile, c, "Subscribe", "[Subscribe]")
+	loggers[LOGGER_UNSUB] = loadLogger(logfile, c, "Unsubscribe", "[Unsubscribe]")
+	loggers[LOGGER_PUSH] = loadLogger(logfile, c, "Push", "[Push]")
 	return
 }
 
-func LoadRestAddr(c *conf.ConfigFile) (string, error) {
-	addr, err := c.GetString("WebFrontend", "addr")
-	if err != nil || addr == "" {
+func LoadRestAddr(c *conf.TomlTree) string {
+	addr := c.Get("WebFrontend" + "." + "addr").(string)
+	if addr == "" {
 		addr = "localhost:9898"
-		err = nil
 	}
-	return addr, err
+	return addr
 }
 
 func Run(conf, version string) error {
@@ -202,14 +166,10 @@ func Run(conf, version string) error {
 	if err != nil {
 		return err
 	}
-	dbconf, err := LoadDatabaseConfig(c)
-	if err != nil {
-		return err
-	}
-	addr, err := LoadRestAddr(c)
-	if err != nil {
-		return err
-	}
+
+	dbconf := LoadDatabaseConfig(c)
+
+	addr := LoadRestAddr(c)
 	psm := push.GetPushServiceManager()
 
 	db, err := db.NewPushDatabaseWithoutCache(dbconf)
