@@ -22,7 +22,7 @@ import (
 	"fmt"
 	"sync"
 
-	"github.com/uniqush/uniqush-push/push"
+	"github.com/orsonwang/uniqush-push/push"
 )
 
 type PushServiceProviderDeliveryPointPair struct {
