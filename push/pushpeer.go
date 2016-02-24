@@ -153,3 +153,18 @@ func NewEmptyPushServiceProvider() *PushServiceProvider {
 	psp.InitPushPeer()
 	return psp
 }
+
+func IsSamePSP(a *PushServiceProvider, b *PushServiceProvider) bool {
+	if a.Name() == b.Name() {
+		if len(a.VolatileData) != len(b.VolatileData) {
+			return false
+		}
+		for k, v := range a.VolatileData {
+			if b.VolatileData[k] != v {
+				return false
+			}
+		}
+		return true
+	}
+	return false
+}
