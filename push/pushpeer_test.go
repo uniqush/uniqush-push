@@ -58,6 +58,8 @@ func (t *testPushServiceType) Push(*PushServiceProvider, <-chan *DeliveryPoint, 
 	fmt.Print("Push!\n")
 }
 
+func (t *testPushServiceType) SetErrorReportChan(chan<- PushError) {}
+
 func TestPushPeer(t *testing.T) {
 	pp := new(PushPeer)
 	tpst := newTestPushServiceType()
@@ -65,6 +67,7 @@ func TestPushPeer(t *testing.T) {
 	pp.FixedData = make(map[string]string, 2)
 	pp.FixedData["senderid"] = "uniqush.go@gmail.com"
 	pp.FixedData["authtoken"] = "fasdf"
+	pp.FixedData["service"] = "servicenameHavingTestService"
 
 	pp.VolatileData = make(map[string]string, 1)
 	pp.VolatileData["realauthtoken"] = "fsfad"
@@ -80,7 +83,7 @@ func TestPushPeer(t *testing.T) {
 
 	psp, err := psm.BuildPushServiceProviderFromBytes(str)
 	if err != nil {
-		t.Errorf("%v\n", err)
+		t.Errorf("BuildPushServiceProviderFromBytes failed: %v\n", err)
 		return
 	}
 	fmt.Printf("Push Service: %s", psp.String())
@@ -94,19 +97,29 @@ func TestCompatability(t *testing.T) {
 	pspm["pushservicetype"] = "testService"
 	pspm["senderid"] = "uniqush.go@gmail.com"
 	pspm["authtoken"] = "fsafds"
+	pspm["service"] = "servicenameHavingTestService"
 
 	dpm := make(map[string]string, 2)
 	dpm["pushservicetype"] = "testService"
 	dpm["regid"] = "fdsafas"
+	dpm["subscriber"] = "subscriber.1234"
 
 	tpst := newTestPushServiceType()
 	psm := GetPushServiceManager()
 	psm.RegisterPushServiceType(tpst)
 
-	psp, _ := psm.BuildPushServiceProviderFromMap(pspm)
-	dp, _ := psm.BuildDeliveryPointFromMap(dpm)
+	psp, err := psm.BuildPushServiceProviderFromMap(pspm)
+	if err != nil {
+		t.Fatalf("BuildPushServiceProviderFromMap failed: %v", err)
+	}
+	dp, err := psm.BuildDeliveryPointFromMap(dpm)
+	if err != nil {
+		t.Fatalf("BuildDeliveryPointFromMap failed: %v", err)
+	}
 
-	if psp.PushServiceName() != dp.PushServiceName() {
-		t.Errorf("Should be compatible\n")
+	serviceNamePSP := psp.PushServiceName()
+	serviceNameDP := dp.PushServiceName()
+	if serviceNamePSP != serviceNameDP {
+		t.Errorf("Should be compatible, but %q != %q\n", serviceNamePSP, serviceNameDP)
 	}
 }
