@@ -276,7 +276,7 @@ type ConnectionError struct {
 }
 
 func (e *ConnectionError) Error() string {
-	return fmt.Sprintf("ConnectionError %v", e)
+	return fmt.Sprintf("ConnectionError %v", e.Err)
 }
 
 func NewConnectionError(err error) *ConnectionError {
