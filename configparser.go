@@ -32,9 +32,12 @@ const (
 	LOGGER_WEB = iota
 	LOGGER_ADDPSP
 	LOGGER_RMPSP
+	LOGGER_PSPS
 	LOGGER_SUB
 	LOGGER_UNSUB
 	LOGGER_PUSH
+	LOGGER_SUBSCRIPTIONS
+	LOGGER_SERVICES
 	LOGGER_NR_LOGGERS
 )
 
@@ -165,6 +168,12 @@ func LoadLoggers(c *conf.ConfigFile) (loggers []log.Logger, err error) {
 		return
 	}
 
+	loggers[LOGGER_PSPS], err = loadLogger(logfile, c, "PSPs", "[PSPs]")
+	if err != nil {
+		loggers = nil
+		return
+	}
+
 	loggers[LOGGER_SUB], err = loadLogger(logfile, c, "Subscribe", "[Subscribe]")
 	if err != nil {
 		loggers = nil
@@ -178,6 +187,17 @@ func LoadLoggers(c *conf.ConfigFile) (loggers []log.Logger, err error) {
 	}
 
 	loggers[LOGGER_PUSH], err = loadLogger(logfile, c, "Push", "[Push]")
+	if err != nil {
+		loggers = nil
+		return
+	}
+
+	loggers[LOGGER_SUBSCRIPTIONS], err = loadLogger(logfile, c, "Subscriptions", "[Subscriptions]")
+	if err != nil {
+		loggers = nil
+		return
+	}
+	loggers[LOGGER_SERVICES], err = loadLogger(logfile, c, "Services", "[Services]")
 	if err != nil {
 		loggers = nil
 		return
