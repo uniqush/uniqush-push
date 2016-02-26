@@ -30,13 +30,13 @@ const (
 )
 
 type ApiResponseDetails struct {
-	RequestId           *string `json:"requestId"`
-	Service             *string `json:"service"`
-	From                *string `json:"from"`
-	Subscriber          *string `json:"subscriber"`
-	PushServiceProvider *string `json:"pushServiceProvider"`
-	DeliveryPoint       *string `json:"deliveryPoint"`
-	MessageId           *string `json:"messageId"`
+	RequestId           *string `json:"requestId,omitempty"`
+	Service             *string `json:"service,omitempty"`
+	From                *string `json:"from,omitempty"`
+	Subscriber          *string `json:"subscriber,omitempty"`
+	PushServiceProvider *string `json:"pushServiceProvider,omitempty"`
+	DeliveryPoint       *string `json:"deliveryPoint,omitempty"`
+	MessageId           *string `json:"messageId,omitempty"`
 	Code                string  `json:"code"`
 	ErrorMsg            *string `json:"errorMsg,omitempty"`
 }
