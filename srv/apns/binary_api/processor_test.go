@@ -16,11 +16,12 @@ const APNS_UNSUBSCRIBE uint8 = 8
 
 const MOCK_NR_CONN = 2
 
-type mockAPNSServiceType struct{}
+// MockAPNSPushServiceType replaces apnsPushService. It is registered so that tested functions using the global push registry work properly.
+type MockAPNSPushServiceType struct{}
 
-var _ push.PushServiceType = &mockAPNSServiceType{}
+var _ push.PushServiceType = &MockAPNSPushServiceType{}
 
-func (self *mockAPNSServiceType) BuildPushServiceProviderFromMap(kv map[string]string, psp *push.PushServiceProvider) error {
+func (self *MockAPNSPushServiceType) BuildPushServiceProviderFromMap(kv map[string]string, psp *push.PushServiceProvider) error {
 	for key, value := range kv {
 		switch key {
 		case "addr":
@@ -31,19 +32,19 @@ func (self *mockAPNSServiceType) BuildPushServiceProviderFromMap(kv map[string]s
 	}
 	return nil
 }
-func (self *mockAPNSServiceType) BuildDeliveryPointFromMap(map[string]string, *push.DeliveryPoint) error {
+func (self *MockAPNSPushServiceType) BuildDeliveryPointFromMap(map[string]string, *push.DeliveryPoint) error {
 	panic("Not implemented")
 }
-func (self *mockAPNSServiceType) Name() string {
+func (self *MockAPNSPushServiceType) Name() string {
 	return "apns"
 }
-func (self *mockAPNSServiceType) Push(*push.PushServiceProvider, <-chan *push.DeliveryPoint, chan<- *push.PushResult, *push.Notification) {
+func (self *MockAPNSPushServiceType) Push(*push.PushServiceProvider, <-chan *push.DeliveryPoint, chan<- *push.PushResult, *push.Notification) {
 	panic("Not implemented")
 }
-func (self *mockAPNSServiceType) SetErrorReportChan(errChan chan<- push.PushError) {
+func (self *MockAPNSPushServiceType) SetErrorReportChan(errChan chan<- push.PushError) {
 	panic("Not implemented")
 }
-func (self *mockAPNSServiceType) Finalize() {}
+func (self *MockAPNSPushServiceType) Finalize() {}
 
 type MockConnManager struct {
 	mockedConns []*mocks.MockNetConn
@@ -66,7 +67,7 @@ func mockEmptyFeedbackChecker(psp *push.PushServiceProvider, dpCache *cache.Cach
 
 func mockPSPData(serviceName string) *push.PushServiceProvider {
 	psm := push.GetPushServiceManager()
-	psm.RegisterPushServiceType(&mockAPNSServiceType{})
+	psm.RegisterPushServiceType(&MockAPNSPushServiceType{})
 	psp, err := psm.BuildPushServiceProviderFromMap(map[string]string{
 		"service":         serviceName,
 		"pushservicetype": "apns",
@@ -81,6 +82,7 @@ func mockPSPData(serviceName string) *push.PushServiceProvider {
 	return psp
 }
 
+// commonBinaryMocks mocks the PSP, connection manager and a feedback checker, etc, returning the mocks. This is needed for virtually every test.
 func commonBinaryMocks(requestProcessor *BinaryPushRequestProcessor, status uint8, serviceName string) (*push.PushServiceProvider, *MockConnManager, chan push.PushError) {
 	mockAPNSConnectionManager := newMockConnManager(status)
 	requestProcessor.overrideAPNSConnManagerMaker(mockConnManagerMaker(mockAPNSConnectionManager))
@@ -92,6 +94,7 @@ func commonBinaryMocks(requestProcessor *BinaryPushRequestProcessor, status uint
 	return psp, mockAPNSConnectionManager, errChan
 }
 
+// NewConn creates a mock connection which responds with a hardcoded status result for each push.
 func (self *MockConnManager) NewConn() (net.Conn, <-chan bool, error) {
 	mockedConn := mocks.NewMockNetConn()
 	go mocks.SimulateStableAPNSServer(mockedConn, self.status)
@@ -123,6 +126,7 @@ func mockConnManagerMaker(connManager *MockConnManager) func(psp *push.PushServi
 	}
 }
 
+// TestPoolSize verifies that poolSize is initialized properly.
 func TestPoolSize(t *testing.T) {
 	nrConn := 4
 	requestProcessor := NewRequestProcessor(nrConn)
@@ -160,10 +164,12 @@ func createSinglePushRequest(psp *push.PushServiceProvider) (*common.PushRequest
 	return req, errChan, resChan
 }
 
+// TestPushSuccess checks that the user of this RequestProcessor is forwarded the correct status code for successes.
 func TestPushSuccess(t *testing.T) {
 	testPushForwardsErrorCode(t, APNS_SUCCESS)
 }
 
+// TestPushSuccess checks that the user of this RequestProcessor is forwarded the correct status code for unsubscribe operations..
 func TestPushUnsubscribe(t *testing.T) {
 	testPushForwardsErrorCode(t, APNS_UNSUBSCRIBE)
 }
