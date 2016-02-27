@@ -1,3 +1,5 @@
+// Package mocks implements a mock APNS server, for unit tests.
+// Instead of a TCP socket, the mock connection uses a golang chan of bytes.
 package mocks
 
 import (
@@ -9,6 +11,7 @@ import (
 	"net"
 	"strings"
 	"sync"
+	_ "testing"
 	"time"
 )
 
