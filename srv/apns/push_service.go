@@ -15,9 +15,6 @@
  *
  */
 
-// It's just here as an intermediate step, to rearrange the code without introduce any new code.
-// The old code is tightly coupled with the connection pool usage, and will be switched to a worker pool.
-
 package apns
 
 import (
@@ -29,7 +26,10 @@ import (
 	"sync/atomic"
 	"time"
 
+	// There will be two different protocols we may use to connect to APNS: binary and HTTP2.
+	// TODO: Implement HTTP2 in a separate PR. (This may end up requiring go 1.6, I'm not sure yet)
 	"github.com/uniqush/uniqush-push/push"
+	"github.com/uniqush/uniqush-push/srv/apns/binary_api"
 	"github.com/uniqush/uniqush-push/srv/apns/common"
 )
 
@@ -42,10 +42,11 @@ const (
 )
 
 type pushService struct {
-	reqChan       chan *common.PushRequest
-	errChan       chan<- push.PushError
-	nextMessageId uint32
-	checkPoint    time.Time
+	// Implements one of the network protocols for sending requests to APNS and getting the corresponding response.
+	requestProcessor common.PushRequestProcessor
+	errChan          chan<- push.PushError
+	nextMessageId    uint32
+	checkPoint       time.Time
 }
 
 var _ push.PushServiceType = &pushService{}
@@ -55,11 +56,12 @@ func (p *pushService) Name() string {
 }
 
 func (p *pushService) Finalize() {
-	close(p.reqChan)
+	p.requestProcessor.Finalize()
 }
 
 func (self *pushService) SetErrorReportChan(errChan chan<- push.PushError) {
 	self.errChan = errChan
+	self.requestProcessor.SetErrorReportChan(errChan)
 	return
 }
 
@@ -129,12 +131,15 @@ func (p *pushService) BuildDeliveryPointFromMap(kv map[string]string, dp *push.D
 	return nil
 }
 
-func NewPushService() *pushService {
-	ret := new(pushService)
-	ret.reqChan = make(chan *common.PushRequest)
-	ret.nextMessageId = 1
-	go ret.pushMux()
-	return ret
+func NewBinaryPushService() *pushService {
+	return newPushService(binary_api.NewRequestProcessor(maxNrConn))
+}
+
+func newPushService(requestProcessor common.PushRequestProcessor) *pushService {
+	return &pushService{
+		requestProcessor: requestProcessor,
+		nextMessageId:    1,
+	}
 }
 
 func (self *pushService) getMessageIds(n int) uint32 {
@@ -202,8 +207,8 @@ func (self *pushService) Push(psp *push.PushServiceProvider, dpQueue <-chan *pus
 	req.PSP = psp
 	req.Payload, err = toAPNSPayload(notif)
 
-	if err == nil && len(req.Payload) > maxPayLoadSize {
-		err = push.NewBadNotificationWithDetails("Invalid payload size")
+	if err == nil && len(req.Payload) > self.requestProcessor.GetMaxPayloadSize() {
+		err = push.NewBadNotificationWithDetails(fmt.Sprintf("payload is too large: %d > %d", len(req.Payload), self.requestProcessor.GetMaxPayloadSize()))
 	}
 
 	if err != nil {
@@ -262,10 +267,10 @@ func (self *pushService) Push(psp *push.PushServiceProvider, dpQueue <-chan *pus
 	req.ErrChan = errChan
 	req.ResChan = resChan
 
-	self.reqChan <- req
+	self.requestProcessor.AddRequest(req)
 
-	// errChan closed means the message(s) is/are sent
-	// to the APNS.
+	// errChan closed means the message(s) is/are sent successfully to the APNs.
+	// However, we may have not yet receieved responses from APNS - those are sent on resChan
 	for err = range errChan {
 		res := new(push.PushResult)
 		res.Provider = psp
@@ -296,6 +301,7 @@ func (self *pushService) Push(psp *push.PushServiceProvider, dpQueue <-chan *pus
 		}
 	}
 
+	// Wait for the unserialized responses from APNS asynchronously - these will not affect what we send our clients for this request, but will affect subsequent requests.
 	go self.waitResults(psp, dpList, lastId, resChan)
 }
 

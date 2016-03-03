@@ -23,5 +23,5 @@ import (
 )
 
 func InstallAPNS() {
-	push.GetPushServiceManager().RegisterPushServiceType(apns.NewPushService())
+	push.GetPushServiceManager().RegisterPushServiceType(apns.NewBinaryPushService())
 }

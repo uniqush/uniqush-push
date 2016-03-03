@@ -23,27 +23,59 @@ import (
 	"bytes"
 	"crypto/tls"
 	"encoding/binary"
+	"fmt"
 	"io"
 	"net"
 
-	"github.com/uniqush/connpool"
 	"github.com/uniqush/uniqush-push/push"
 	"github.com/uniqush/uniqush-push/srv/apns/common"
 )
 
-type apnsConnManager struct {
+// ConnManager abstracts creating TLS sockets to send push payloads to APNS.
+type ConnManager interface {
+	// Used to create a new connection.
+	// It will be called if a worker needs to open a different connection
+	// or if a new connection is being created.
+	// The uint32 will be set to non-zero if the connection is closed
+	NewConn() (net.Conn, <-chan bool, error)
+}
+
+// loggingConnManager decorates a ConnManager and logs opened connections.
+type loggingConnManager struct {
+	manager ConnManager
+	errChan chan<- push.PushError
+}
+
+var _ ConnManager = &loggingConnManager{}
+
+func (self *loggingConnManager) NewConn() (conn net.Conn, closed <-chan bool, err error) {
+	conn, closed, err = self.manager.NewConn()
+	if conn != nil {
+		self.errChan <- push.NewInfof("Connection to APNS opened: %v to %v", conn.LocalAddr(), conn.RemoteAddr())
+	}
+	return
+}
+
+func newLoggingConnManager(manager ConnManager, errChan chan<- push.PushError) *loggingConnManager {
+	return &loggingConnManager{
+		manager: manager,
+		errChan: errChan,
+	}
+}
+
+type connManagerImpl struct {
 	psp        *push.PushServiceProvider
 	cert       tls.Certificate
 	conf       *tls.Config
 	err        error
 	addr       string
-	resultChan chan *common.APNSResult
+	resultChan chan<- *common.APNSResult
 }
 
-var _ connpool.ConnManager = &apnsConnManager{}
+var _ ConnManager = &connManagerImpl{}
 
-func NewAPNSConnManager(psp *push.PushServiceProvider, resultChan chan *common.APNSResult) connpool.ConnManager {
-	manager := new(apnsConnManager)
+func newAPNSConnManager(psp *push.PushServiceProvider, resultChan chan<- *common.APNSResult) ConnManager {
+	manager := new(connManagerImpl)
 	manager.cert, manager.err = tls.LoadX509KeyPair(psp.FixedData["cert"], psp.FixedData["key"])
 	if manager.err != nil {
 		return manager
@@ -63,41 +95,34 @@ func NewAPNSConnManager(psp *push.PushServiceProvider, resultChan chan *common.A
 	return manager
 }
 
-func (self *apnsConnManager) NewConn() (net.Conn, error) {
+// NewConn returns either a connection and a channel to signal when the receiver detects a closed connection,
+// or an error.
+func (self *connManagerImpl) NewConn() (net.Conn, <-chan bool, error) {
 	if self.err != nil {
-		return nil, self.err
+		return nil, nil, fmt.Errorf("Error initializing apnsConnManager: %v", self.err)
 	}
-
-	/*
-		conn, err := net.DialTimeout("tcp", self.addr, time.Duration(maxWaitTime)*time.Second)
-		if err != nil {
-			return nil, err
-		}
-
-		if c, ok := conn.(*net.TCPConn); ok {
-			c.SetKeepAlive(true)
-		}
-		tlsconn := tls.Client(conn, self.conf)
-		err = tlsconn.Handshake()
-		if err != nil {
-			return nil, err
-		}
-	*/
 
 	tlsconn, err := tls.Dial("tcp", self.addr, self.conf)
 	if err != nil {
-		return nil, err
+		if err.Error() == "EOF" {
+			err = fmt.Errorf("Certificate is probably invalid/expired: %v", err)
+		}
+		return nil, nil, err
 	}
-	go resultCollector(self.psp, self.resultChan, tlsconn)
-	return tlsconn, nil
+	closed := make(chan bool, 1) // notifies worker when reader detects socket closed. Has a buffer so adding one element is non-blocking
+	go resultCollector(self.psp, self.resultChan, tlsconn, closed)
+	return tlsconn, closed, nil
 }
 
-func (self *apnsConnManager) InitConn(conn net.Conn, n int) error {
-	return nil
-}
-
-func resultCollector(psp *push.PushServiceProvider, resChan chan<- *common.APNSResult, c net.Conn) {
-	defer c.Close()
+// resultCollector processes the 6-byte APNS responses for each of our push notifications.
+// One resultCollector goroutine is automatically created for each connection established by NewConn (used by worker pools)
+// Visible for testing.
+func resultCollector(psp *push.PushServiceProvider, resChan chan<- *common.APNSResult, c net.Conn, closed chan<- bool) {
+	defer func() {
+		// Optimization: If listening socket notices that the channel is closed, notify the sending socket so that it can reopen it.
+		closed <- true
+		c.Close()
+	}()
 	var bufData [6]byte
 	for {
 		var cmd uint8
@@ -109,6 +134,7 @@ func resultCollector(psp *push.PushServiceProvider, resChan chan<- *common.APNSR
 			buf[i] = 0
 		}
 
+		// Read 6 bytes of data from APNS response.
 		_, err := io.ReadFull(c, buf)
 		if err != nil {
 			if nerr, ok := err.(net.Error); ok && nerr.Timeout() {
@@ -120,6 +146,7 @@ func resultCollector(psp *push.PushServiceProvider, resChan chan<- *common.APNSR
 			return
 		}
 
+		// Create an common.APNSResult structure from those 6 bytes.
 		byteBuffer := bytes.NewBuffer(buf)
 
 		err = binary.Read(byteBuffer, binary.BigEndian, &cmd)
@@ -149,6 +176,15 @@ func resultCollector(psp *push.PushServiceProvider, resChan chan<- *common.APNSR
 		res := new(common.APNSResult)
 		res.MsgId = msgid
 		res.Status = status
+		// Send this response to the connection manager, which will translate it to a result/error structure associated with the Push,
+		// and send that to the pushbackend.
+		// Because APNS pushes don't wait for APNS to respond with bytes, this won't be part of the uniqush response, but will be used to update the DB.
 		resChan <- res
+
+		// A status code of 10 indicates that the APNs server closed the connection. Close this connection.
+		// See https://developer.apple.com/library/ios/documentation/NetworkingInternet/Conceptual/RemoteNotificationsPG/Appendixes/BinaryProviderAPI.html#//apple_ref/doc/uid/TP40008194-CH106-SW8 Table A-1
+		if status == 10 {
+			return
+		}
 	}
 }

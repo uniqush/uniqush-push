@@ -154,17 +154,18 @@ func NewEmptyPushServiceProvider() *PushServiceProvider {
 	return psp
 }
 
+// IsSamePSP returns whether or not the name, FixedData, and VolatileData of two PSPs are identical.
 func IsSamePSP(a *PushServiceProvider, b *PushServiceProvider) bool {
-	if a.Name() == b.Name() {
-		if len(a.VolatileData) != len(b.VolatileData) {
+	if a.Name() != b.Name() {
+		return false
+	}
+	if len(a.VolatileData) != len(b.VolatileData) {
+		return false
+	}
+	for k, v := range a.VolatileData {
+		if b.VolatileData[k] != v {
 			return false
 		}
-		for k, v := range a.VolatileData {
-			if b.VolatileData[k] != v {
-				return false
-			}
-		}
-		return true
 	}
-	return false
+	return true
 }
