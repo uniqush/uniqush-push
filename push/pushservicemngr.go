@@ -37,17 +37,14 @@ var (
 	pushServiceManager *PushServiceManager
 )
 
-/* This is a singleton */
-func newPushServiceManager() *PushServiceManager {
-	ret := new(PushServiceManager)
-	ret.serviceTypes = make(map[string]*serviceType, 5)
-	return ret
-}
+var once sync.Once
 
+/* This is a singleton */
 func GetPushServiceManager() *PushServiceManager {
-	if pushServiceManager == nil {
-		pushServiceManager = newPushServiceManager()
-	}
+	once.Do(func() { // Use standard library sync.Once to make singleton
+		pushServiceManager = new(PushServiceManager)
+		pushServiceManager.serviceTypes = make(map[string]*serviceType, 5) // Currently we have only 3 service types, allocate 5 for the future
+	})
 	return pushServiceManager
 }
 
