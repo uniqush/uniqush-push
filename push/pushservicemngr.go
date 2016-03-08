@@ -41,9 +41,9 @@ var once sync.Once
 
 /* This is a singleton */
 func GetPushServiceManager() *PushServiceManager {
-	once.Do(func() { // Use standard library sync.Once to make singleton
+	once.Do(func() {
 		pushServiceManager = new(PushServiceManager)
-		pushServiceManager.serviceTypes = make(map[string]*serviceType, 5) // Currently we have only 3 service types, allocate 5 for the future
+		pushServiceManager.serviceTypes = make(map[string]*serviceType, 5)
 	})
 	return pushServiceManager
 }
