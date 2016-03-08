@@ -46,7 +46,7 @@ func main() {
 	runtime.GOMAXPROCS(runtime.NumCPU() + 1)
 	installPushServices()
 
-	err := Run(*uniqushPushConfFlags, uniqushPushVersion)
+	err := Run(*uniqushPushConfFlags, uniqushPushVersion) // Refer to configparser.go
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Cannot start: %v\n", err)
 	}
