@@ -35,6 +35,7 @@ type PushServiceManager struct {
 
 var (
 	pushServiceManager *PushServiceManager
+	once               sync.Once
 )
 
 /* This is a singleton */
