@@ -22,6 +22,7 @@ import (
 	"fmt"
 	"sync"
 
+	"github.com/uniqush/log"
 	"github.com/uniqush/uniqush-push/push"
 )
 
@@ -46,6 +47,12 @@ type PushDatabase interface {
 
 	ModifyPushServiceProvider(psp *push.PushServiceProvider) error
 
+	// Get a set of all push service providers
+	GetPushServiceProviderConfigs() ([]*push.PushServiceProvider, error)
+
+	// RebuildServiceSet() ensures that a set of all PSPs exists. After FixServiceSet is called on a pre-existing uniqush setup, the set of all PSPs will be accurate (Even after calls to AddPushServiceProvider/RemovePushServiceProvider)
+	RebuildServiceSet() error
+
 	// The delivery point may be anonymous whose Name is empty string
 	// For anonymous delivery point, it will be added to database and its Name will be set
 	// Return value: selected push service provider, error
@@ -64,6 +71,8 @@ type PushDatabase interface {
 
 	GetPushServiceProviderDeliveryPointPairs(service string,
 		subscriber string) ([]PushServiceProviderDeliveryPointPair, error)
+
+	GetSubscriptions(services []string, user string, logger log.Logger) ([]map[string]string, error)
 
 	FlushCache() error
 }
@@ -264,6 +273,38 @@ func (f *pushDatabaseOpts) ModifyPushServiceProvider(psp *push.PushServiceProvid
 	return addErrorSource("ModifyPushServiceProvider", f.db.SetPushServiceProvider(psp))
 }
 
+func (f *pushDatabaseOpts) GetServiceNames() ([]string, error) {
+	f.dblock.RLock()
+	defer f.dblock.RUnlock()
+	psps, err := f.db.GetServiceNames()
+	if err != nil {
+		return nil, fmt.Errorf("GetServiceNames: %v", err)
+	}
+	return psps, nil
+}
+
+func (f *pushDatabaseOpts) GetPushServiceProviderConfigs() ([]*push.PushServiceProvider, error) {
+	serviceNames, err := f.GetServiceNames()
+	if err != nil {
+		return nil, err
+	}
+	f.dblock.RLock()
+	defer f.dblock.RUnlock()
+	var pspNames []string
+	for _, serviceName := range serviceNames {
+		pspsForService, err := f.db.GetPushServiceProvidersByService(serviceName)
+		if err != nil {
+			return nil, fmt.Errorf("GetPushServiceProvidersByService couldn't get psps for service %q: %v", serviceName, err)
+		}
+		pspNames = append(pspNames, pspsForService...)
+	}
+	psps, errs := f.db.GetPushServiceProviderConfigs(pspNames)
+	if len(errs) > 0 {
+		return nil, fmt.Errorf("GetServiceNames has invalid configs: %v", errs)
+	}
+	return psps, nil
+}
+
 func (f *pushDatabaseOpts) ModifyDeliveryPoint(dp *push.DeliveryPoint) error {
 	if len(dp.Name()) == 0 {
 		return nil
@@ -271,6 +312,22 @@ func (f *pushDatabaseOpts) ModifyDeliveryPoint(dp *push.DeliveryPoint) error {
 	f.dblock.Lock()
 	defer f.dblock.Unlock()
 	return addErrorSource("ModifyDeliveryPoint", f.db.SetDeliveryPoint(dp))
+}
+
+func (f *pushDatabaseOpts) GetSubscriptions(services []string, user string, logger log.Logger) ([]map[string]string, error) {
+	f.dblock.RLock()
+	defer f.dblock.RUnlock()
+	subs, err := f.db.GetSubscriptions(services, user, logger)
+	if err != nil {
+		return nil, fmt.Errorf("GetSubscriptions: %v", err)
+	}
+	return subs, nil
+}
+
+func (f *pushDatabaseOpts) RebuildServiceSet() error {
+	f.dblock.Lock()
+	defer f.dblock.Unlock()
+	return f.db.RebuildServiceSet()
 }
 
 func addErrorSource(fnName string, err error) error {

@@ -18,6 +18,7 @@
 package db
 
 import (
+	"github.com/uniqush/log"
 	"github.com/uniqush/uniqush-push/push"
 )
 
@@ -50,6 +51,7 @@ type pushRawDatabaseWriter interface {
 	SetPushServiceProvider(psp *push.PushServiceProvider) error
 	RemoveDeliveryPoint(dp string) error
 	RemovePushServiceProvider(psp string) error
+	RebuildServiceSet() error
 
 	AddDeliveryPointToServiceSubscriber(srv, sub, dp string) error
 	RemoveDeliveryPointFromServiceSubscriber(srv, sub, dp string) error
@@ -66,6 +68,9 @@ type pushRawDatabaseWriter interface {
 type pushRawDatabaseReader interface {
 	GetDeliveryPoint(name string) (*push.DeliveryPoint, error)
 	GetPushServiceProvider(name string) (*push.PushServiceProvider, error)
+	GetServiceNames() ([]string, error)
+	GetPushServiceProviderConfigs([]string) ([]*push.PushServiceProvider, []error)
+	GetSubscriptions(queryServices []string, subscriber string, logger log.Logger) ([]map[string]string, error)
 
 	GetDeliveryPointsNameByServiceSubscriber(srv, sub string) (map[string][]string, error)
 	GetPushServiceProviderNameByServiceDeliveryPoint(srv, dp string) (string, error)

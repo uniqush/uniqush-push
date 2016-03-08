@@ -12,5 +12,11 @@ echo
 curl http://127.0.0.1:9898/subscribe -d service=myservice -d subscriber=uniqush.client -d pushservicetype=apns -d devtoken=3df3e210e7adf35f840f45b269b760d9d51081569dc4509ee98bb4d4c92a828e
 echo
 
+# Test subscriptions, with and without a list of services.
+curl http://127.0.0.1:9898/subscriptions -d subscriber=uniqush.client -d service=myservice
+curl http://127.0.0.1:9898/rebuildserviceset; echo
+curl http://127.0.0.1:9898/subscriptions -d subscriber=uniqush.client
+curl http://127.0.0.1:9898/psps
+
 curl http://127.0.0.1:9898/push -d service=myservice -d subscriber=uniqush.client -d msg="Hello World"
 echo

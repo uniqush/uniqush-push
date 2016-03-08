@@ -22,6 +22,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
 )
 
 type PushPeer struct {
@@ -168,4 +169,31 @@ func IsSamePSP(a *PushServiceProvider, b *PushServiceProvider) bool {
 		}
 	}
 	return true
+}
+
+// UnserializeSubscription unserializes the data (of the form "<pushservicetype>:{...}") about a user's subscription, to be returned to uniqush's clients.
+func UnserializeSubscription(data []byte) (map[string]string, error) {
+	parts := strings.SplitN(string(data), ":", 2)
+
+	if len(parts) != 2 {
+		return nil, fmt.Errorf("UnserializeSubscription() Bad data, no ':' to split on.")
+	}
+
+	var f []map[string]string
+	err := json.Unmarshal([]byte(parts[1]), &f)
+	if err != nil {
+		return nil, err
+	}
+
+	if len(f) > 0 {
+		sub := f[0]
+		sub["pushservicetype"] = parts[0]
+		delete(sub, "subscriber")
+		// TODO: Return any data useful to uniqush users from VolatileData (in a separate PR). It will be in f[1] if it exists.
+		// (E.g. if version of the app, device id for a device token (e.g. for checking if two device tokens in different pushservicetypes belong to the same device))
+
+		return sub, nil
+	}
+
+	return nil, fmt.Errorf("UnserializeSubscription() Invalid data")
 }

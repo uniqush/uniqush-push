@@ -18,6 +18,8 @@
 package main
 
 import (
+	"encoding/json"
+	"errors"
 	"sync"
 	"time"
 
@@ -64,6 +66,11 @@ func (self *PushBackEnd) RemovePushServiceProvider(service string, psp *push.Pus
 		return err
 	}
 	return nil
+}
+
+func (self *PushBackEnd) GetPushServiceProviderConfigs() ([]*push.PushServiceProvider, error) {
+	data, err := self.db.GetPushServiceProviderConfigs()
+	return data, err
 }
 
 func (self *PushBackEnd) Subscribe(service, sub string, dp *push.DeliveryPoint) (*push.PushServiceProvider, error) {
@@ -259,6 +266,45 @@ func (self *PushBackEnd) NumberOfDeliveryPoints(service, sub string, logger log.
 
 func (self *PushBackEnd) Push(reqId string, remoteAddr string, service string, subs []string, notif *push.Notification, perdp map[string][]string, logger log.Logger, handler ApiResponseHandler) {
 	self.pushImpl(reqId, remoteAddr, service, subs, notif, perdp, logger, nil, nil, 0*time.Second, handler)
+}
+
+func (self *PushBackEnd) Subscriptions(services []string, subscriber string, logger log.Logger) []byte {
+	emptyResult := []byte("[]")
+
+	log := func(msg string, err error) {
+		if nil == err {
+			logger.Infof("Service=%v Subscriber=%v %s", services, subscriber, msg)
+		} else {
+			logger.Errorf("Service=%v Subscriber=%v %s %v", services, subscriber, msg, err)
+		}
+	}
+
+	if len(subscriber) == 0 {
+		log("", errors.New("NoSubscriber"))
+		return emptyResult
+	}
+
+	subscriptions, err := self.db.GetSubscriptions(services, subscriber, logger)
+	if err != nil {
+		log("", err)
+		return emptyResult
+	}
+
+	if len(subscriptions) == 0 {
+		return emptyResult
+	}
+
+	json, err := json.Marshal(subscriptions)
+	if err != nil {
+		log("", err)
+		return emptyResult
+	}
+
+	return json
+}
+
+func (self *PushBackEnd) RebuildServiceSet() error {
+	return self.db.RebuildServiceSet()
 }
 
 func (self *PushBackEnd) pushImpl(reqId string, remoteAddr string, service string, subs []string, notif *push.Notification, perdp map[string][]string, logger log.Logger, provider *push.PushServiceProvider, dest *push.DeliveryPoint, after time.Duration, handler ApiResponseHandler) {

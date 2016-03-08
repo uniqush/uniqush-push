@@ -20,6 +20,7 @@ package main
 import (
 	"crypto/rand"
 	"encoding/base64"
+	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
@@ -68,6 +69,9 @@ const (
 	STOP_PROGRAM_URL                            = "/stop"
 	VERSION_INFO_URL                            = "/version"
 	QUERY_NUMBER_OF_DELIVERY_POINTS_URL         = "/nrdp"
+	QUERY_SUBSCRIPTIONS_URL                     = "/subscriptions"
+	QUERY_PUSH_SERVICE_PROVIDERS                = "/psps"
+	REBUILD_SERVICE_SET_URL                     = "/rebuildserviceset"
 )
 
 var validServicePattern *regexp.Regexp
@@ -299,11 +303,101 @@ func (self *RestAPI) numberOfDeliveryPoints(kv map[string][]string, logger log.L
 	return ret
 }
 
+func (self *RestAPI) querySubscriptions(kv map[string][]string, logger log.Logger) []byte {
+	// "subscriber" is a required parameter
+	subscriberParam, ok := kv["subscriber"]
+	if !ok || len(subscriberParam) == 0 {
+		logger.Errorf("Query=Subscriptions NoSubscriber %v", kv)
+		return []byte("[]")
+	}
+	var services []string
+	// "services" is an optional parameter that can have one or more services passed in the form of a CSV
+	servicesParam, ok := kv["services"]
+	if ok && len(servicesParam) > 0 {
+		services = strings.Split(servicesParam[0], ",")
+	}
+	return self.backend.Subscriptions(services, subscriberParam[0], logger)
+}
+
+func encodePSPForAPI(psp *push.PushServiceProvider) map[string]string {
+	result := make(map[string]string)
+	for key, value := range psp.VolatileData {
+		result[key] = value
+	}
+	for key, value := range psp.FixedData {
+		result[key] = value
+	}
+	return result
+}
+
+// queryPSPs returns JSON describing the set of all PSPs stored in Uniqush. This API is intended for debugging/verifying that uniqush is set up properly.
+func (self *RestAPI) queryPSPs(logger log.Logger) []byte {
+	psps, err := self.backend.GetPushServiceProviderConfigs()
+	type responseType struct {
+		Services     map[string][]map[string]string `json:"services"`
+		ErrorMessage *string                        `json:"errorMsg,omitempty"`
+		Code         string                         `json:"code"`
+	}
+	var r responseType
+	r.Services = make(map[string][]map[string]string)
+	for _, psp := range psps {
+		data := encodePSPForAPI(psp)
+		service := data["service"]
+		r.Services[service] = append(r.Services[service], data)
+	}
+	if err != nil {
+		errorMsg := err.Error()
+		r.Code = UNIQUSH_ERROR_DATABASE
+		r.ErrorMessage = &errorMsg
+	} else {
+		r.Code = UNIQUSH_SUCCESS
+	}
+	json, err := json.Marshal(r)
+	if err != nil {
+		return []byte("Failed to serialize response")
+	}
+	return json
+}
+
+// rebuildServiceSet is used to make sure that the /subscriptions and /psps APIs work properly, on uniqush setups created before those APIs existed.
+func (self *RestAPI) rebuildServiceSet(logger log.Logger) []byte {
+	err := self.backend.RebuildServiceSet()
+	var details ApiResponseDetails
+	if err != nil {
+		logger.Errorf("Error in /rebuildserviceset: %v", err)
+		errorMsg := err.Error()
+		details = ApiResponseDetails{
+			Code:     UNIQUSH_ERROR_GENERIC,
+			ErrorMsg: &errorMsg,
+		}
+	} else {
+		details = ApiResponseDetails{Code: UNIQUSH_SUCCESS}
+	}
+	json, err := json.Marshal(details)
+	if err != nil {
+		return []byte("Failed to encode response")
+	}
+	return json
+}
+
 func (self *RestAPI) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	defer r.Body.Close()
 	remoteAddr := r.RemoteAddr
 
 	switch r.URL.Path {
+	case QUERY_SUBSCRIPTIONS_URL:
+		r.ParseForm()
+		n := self.querySubscriptions(r.Form, self.loggers[LOGGER_SUBSCRIPTIONS])
+		fmt.Fprintf(w, "%s\r\n", n)
+		return
+	case QUERY_PUSH_SERVICE_PROVIDERS:
+		n := self.queryPSPs(self.loggers[LOGGER_PSPS])
+		fmt.Fprintf(w, "%s\r\n", n)
+		return
+	case REBUILD_SERVICE_SET_URL:
+		n := self.rebuildServiceSet(self.loggers[LOGGER_SERVICES])
+		fmt.Fprintf(w, "%s\r\n", n)
+		return
 	case QUERY_NUMBER_OF_DELIVERY_POINTS_URL:
 		r.ParseForm()
 		n := self.numberOfDeliveryPoints(r.Form, self.loggers[LOGGER_WEB], remoteAddr)
@@ -379,6 +473,9 @@ func (self *RestAPI) Run(addr string, stopChan chan<- bool) {
 	http.Handle(REMOVE_PUSH_SERVICE_PROVIDER_TO_SERVICE_URL, self)
 	http.Handle(PUSH_NOTIFICATION_URL, self)
 	http.Handle(QUERY_NUMBER_OF_DELIVERY_POINTS_URL, self)
+	http.Handle(QUERY_SUBSCRIPTIONS_URL, self)
+	http.Handle(QUERY_PUSH_SERVICE_PROVIDERS, self)
+	http.Handle(REBUILD_SERVICE_SET_URL, self)
 	self.stopChan = stopChan
 	err := http.ListenAndServe(addr, nil)
 	if err != nil {
