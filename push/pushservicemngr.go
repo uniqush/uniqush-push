@@ -38,16 +38,11 @@ var (
 )
 
 /* This is a singleton */
-func newPushServiceManager() *PushServiceManager {
-	ret := new(PushServiceManager)
-	ret.serviceTypes = make(map[string]*serviceType, 5)
-	return ret
-}
-
 func GetPushServiceManager() *PushServiceManager {
-	if pushServiceManager == nil {
-		pushServiceManager = newPushServiceManager()
-	}
+	once.Do(func() {
+		pushServiceManager = new(PushServiceManager)
+		pushServiceManager.serviceTypes = make(map[string]*serviceType, 5)
+	})
 	return pushServiceManager
 }
 
