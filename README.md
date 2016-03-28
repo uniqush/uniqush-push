@@ -66,11 +66,11 @@ about the latest progress with *Uniqush*, please check out [our
 
 # Setting Up Redis #
 
-[Redis persistence] describes the details of how redis saves data on shutdown,
-as well as how one might back up that data. Make sure that the Redis server
-you use has persistence enabled - your redis.conf should have contents
-similar to the section `**PERSISTENCE**` of redis.conf in the example config
-files linked in http://redis.io/topics/config
+[Redis persistence](http://redis.io/topics/persistence) describes the details
+of how Redis saves data on shutdown, as well as how one might back up that
+data. Make sure that the Redis server you use has persistence enabled - your
+redis.conf should have contents similar to the section `**PERSISTENCE**` of
+redis.conf in the example config files linked in http://redis.io/topics/config
 
 # Related Links #
 - [This story](http://uniqush.org/documentation/intro.html) may help you to understand
