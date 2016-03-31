@@ -5,8 +5,8 @@
 
 # Introduction #
 
-*Uniqush* is a _free_ and _open source_ software system which provides a
-unified push service for server side notification to apps on mobile devices.
+*Uniqush* (pronounced: YOU-ni-kush) is a _free_ and _open source_ software system
+which provides a unified push service for server side notification to apps on mobile devices.
 The `uniqush-push` API abstracts the APIs of the various push services used
 to send push notifications to those devices. By running `uniqush-push` on the
 server side, you can send push notifications to any supported mobile platform.
