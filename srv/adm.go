@@ -52,6 +52,8 @@ type admPushService struct {
 	pspLock chan *pspLockRequest
 }
 
+var _ push.PushServiceType = &admPushService{}
+
 func newADMPushService() *admPushService {
 	ret := new(admPushService)
 	ret.pspLock = make(chan *pspLockRequest)
@@ -249,17 +251,29 @@ func notifToMessage(notif *push.Notification) (msg *admMessage, err push.PushErr
 
 	msg = new(admMessage)
 	msg.Data = make(map[string]string, len(notif.Data))
-	for k, v := range notif.Data {
-		switch k {
-		case "msggroup":
-			msg.MsgGroup = v
-		case "ttl":
-			ttl, err := strconv.ParseInt(v, 10, 64)
-			if err != nil {
+	if msggroup, ok := notif.Data["msggroup"]; ok {
+		msg.MsgGroup = msggroup
+	}
+	if rawTTL, ok := notif.Data["ttl"]; ok {
+		ttl, err := strconv.ParseInt(rawTTL, 10, 64)
+		if err == nil {
+			msg.TTL = ttl
+		}
+	}
+	if rawPayload, ok := notif.Data["uniqush.payload.adm"]; ok {
+		jsonErr := json.Unmarshal([]byte(rawPayload), &(msg.Data))
+		if jsonErr != nil {
+			err = push.NewBadNotificationWithDetails(fmt.Sprintf("invalid uniqush.payload.adm: %v", jsonErr))
+			return
+		}
+	} else {
+		for k, v := range notif.Data {
+			if k == "msggroup" || k == "ttl" {
 				continue
 			}
-			msg.TTL = ttl
-		default:
+			if strings.HasPrefix(k, "uniqush.") { // keys beginning with "uniqush." are reserved by Uniqush.
+				continue
+			}
 			msg.Data[k] = v
 		}
 	}
