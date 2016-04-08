@@ -17,7 +17,7 @@ func testADMNotifToMessage(t *testing.T, postData map[string]string, expectedPay
 	}
 	payload, jsonErr := json.Marshal(msg)
 	if jsonErr != nil {
-		t.Fatalf("Encountered error decoding json: %v\n", err)
+		t.Fatalf("Encountered error decoding json: %v\n", jsonErr)
 	}
 	if string(payload) != expectedPayload {
 		t.Errorf("Expected %s, got %s", expectedPayload, string(payload))
