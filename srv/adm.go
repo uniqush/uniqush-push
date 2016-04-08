@@ -90,7 +90,7 @@ func (self *admPushService) BuildPushServiceProviderFromMap(kv map[string]string
 	if clientsecret, ok := kv["clientsecret"]; ok && len(clientsecret) > 0 {
 		psp.FixedData["clientsecret"] = clientsecret
 	} else {
-		return errors.New("NoClientSecrete")
+		return errors.New("NoClientSecret")
 	}
 
 	return nil
@@ -181,7 +181,7 @@ func requestToken(psp *push.PushServiceProvider) push.PushError {
 		return push.NewBadPushServiceProviderWithDetails(psp, "NoClientID")
 	}
 	if cserect, ok = psp.FixedData["clientsecret"]; !ok {
-		return push.NewBadPushServiceProviderWithDetails(psp, "NoClientSecrete")
+		return push.NewBadPushServiceProviderWithDetails(psp, "NoClientSecret")
 	}
 	form := url.Values{}
 	form.Set("grant_type", "client_credentials")
