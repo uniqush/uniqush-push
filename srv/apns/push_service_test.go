@@ -256,6 +256,57 @@ func TestPushUnsubscribe(t *testing.T) {
 	}
 }
 
+func TestValidateRawAPNSPayload(t *testing.T) {
+	json := `{"aps":{"alert":"an alert message"}, "type": "foo", "foo": {}}`
+	payload, err := validateRawAPNSPayload(json)
+	if err != nil {
+		t.Fatalf("Error decoding payload: %v", err)
+	}
+	if string(payload) != json {
+		t.Errorf("Unexpected payload: want %s, got %s", json, string(payload))
+	}
+}
+
+func TestValidateSilentPayload(t *testing.T) {
+	json := `{"aps":{"content-available":"1"},"type":"foo","foo": {}}`
+	payload, err := validateRawAPNSPayload(json)
+	if err != nil {
+		t.Fatalf("Error decoding payload: %v", err)
+	}
+	if string(payload) != json {
+		t.Errorf("Unexpected payload: want %s, got %s", json, string(payload))
+	}
+}
+
+func TestRejectInvalidAPNSPayload(t *testing.T) {
+	invalidPayloads := []string{
+		`{"aps":42, "type": "foo", "foo": {}}`,
+		`{"aps":null, "type": "foo", "foo": {}}`,
+		`{"aps":{}, "type": "foo", "foo": {}}`, // no alert
+		`not JSON`,
+	}
+	for _, json := range invalidPayloads {
+		_, err := validateRawAPNSPayload(json)
+		if err == nil {
+			t.Errorf("Expected error for payload %s", json)
+		}
+	}
+}
+
+func TestToAPNSPayloadWithKey(t *testing.T) {
+	json := `{"aps":{"alert":"an alert message"}}`
+	notification := &push.Notification{
+		Data: map[string]string{"uniqush.payload.apns": json},
+	}
+	payload, err := toAPNSPayload(notification)
+	if err != nil {
+		t.Fatalf("Got error decoding payload: %v", err)
+	}
+	if string(payload) != json {
+		t.Errorf("Unexpected payload contents: want %s, got %s", json, string(payload))
+	}
+}
+
 func TestToAPNSPayload(t *testing.T) {
 	expectedJson := `{"aps":{"alert":{"body":"hello world <&>"}}}`
 	notification := &push.Notification{
@@ -267,6 +318,35 @@ func TestToAPNSPayload(t *testing.T) {
 	}
 	if !bytes.Equal([]byte(expectedJson), payload) {
 		t.Errorf("Expected %v(%s), Got %v(%s)", []byte(expectedJson), expectedJson, payload, string(payload))
+	}
+}
+
+func TestToAPNSPayloadAllParams(t *testing.T) {
+	expectedJSON := `{"aps":{"alert":{"action-loc-key":"foo","body":"hello world","launch-image":"Default2.png","loc-args":["one","two"],"loc-key":"bar"},"badge":777,"content-available":1,"sound":"hi.wav"},"myKey":"myValue"}`
+	notification := &push.Notification{
+		Data: map[string]string{
+			"msg":               "hello world",
+			"action-loc-key":    "foo",
+			"loc-key":           "bar",
+			"loc-args":          "one,two",
+			"badge":             "777",
+			"sound":             "hi.wav",
+			"content-available": "1",
+			"img":               "Default2.png",
+			"id":                "unused",
+			"expiry":            "unused",
+			"ttl":               "42",
+			"myKey":             "myValue",
+			// Keys beginning with "uniqush." are reserved by uniqush.
+			"uniqush.foo": "ignored",
+		},
+	}
+	payload, err := toAPNSPayload(notification)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !bytes.Equal([]byte(expectedJSON), payload) {
+		t.Errorf("Expected %s, Got %s", expectedJSON, string(payload))
 	}
 }
 

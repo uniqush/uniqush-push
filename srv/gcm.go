@@ -27,6 +27,7 @@ import (
 	"net"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/uniqush/uniqush-push/push"
@@ -38,6 +39,8 @@ const (
 
 type gcmPushService struct {
 }
+
+var _ push.PushServiceType = &gcmPushService{}
 
 func newGCMPushService() *gcmPushService {
 	ret := new(gcmPushService)
@@ -103,11 +106,11 @@ func (p *gcmPushService) Name() string {
 }
 
 type gcmData struct {
-	RegIDs         []string          `json:"registration_ids"`
-	CollapseKey    string            `json:"collapse_key,omitempty"`
-	Data           map[string]string `json:"data"`
-	DelayWhileIdle bool              `json:"delay_while_idle,omitempty"`
-	TimeToLive     uint              `json:"time_to_live,omitempty"`
+	RegIDs         []string               `json:"registration_ids"`
+	CollapseKey    string                 `json:"collapse_key,omitempty"`
+	Data           map[string]interface{} `json:"data"` // For compatibility with other GCM platforms(e.g. iOS), should always be a map[string]string
+	DelayWhileIdle bool                   `json:"delay_while_idle,omitempty"`
+	TimeToLive     uint                   `json:"time_to_live,omitempty"`
 }
 
 func (d *gcmData) String() string {
@@ -126,6 +129,71 @@ type gcmResult struct {
 	Results      []map[string]string `json:"results"`
 }
 
+// validateRawGCMData verifies that the user-provided JSON payload is a valid JSON object.
+func validateRawGCMData(payload string) (map[string]interface{}, push.PushError) {
+	var data map[string]interface{}
+	err := json.Unmarshal([]byte(payload), &data)
+	if data == nil {
+		return nil, push.NewBadNotificationWithDetails(fmt.Sprintf("Could not parse GCM data: %v", err))
+	}
+	return data, nil
+}
+
+// toGCMPayload converts the notification data to a JSON-encoded string to POST to GCM.
+func toGCMPayload(notif *push.Notification, regIds []string) ([]byte, push.PushError) {
+	postData := notif.Data
+	payload := new(gcmData)
+	payload.RegIDs = regIds
+
+	// TTL: default is one hour
+	payload.TimeToLive = 60 * 60
+	payload.DelayWhileIdle = false
+
+	if mgroup, ok := postData["msggroup"]; ok {
+		payload.CollapseKey = mgroup
+	} else {
+		payload.CollapseKey = ""
+	}
+
+	if ttlStr, ok := postData["ttl"]; ok {
+		ttl, err := strconv.ParseUint(ttlStr, 10, 32)
+		if err == nil {
+			payload.TimeToLive = uint(ttl)
+		}
+	}
+
+	if rawData, ok := postData["uniqush.payload.gcm"]; ok {
+		// Could add uniqush.notification.gcm as another optional payload, to conform to GCM spec: https://developers.google.com/cloud-messaging/http-server-ref#send-downstream
+		data, err := validateRawGCMData(rawData)
+		if err != nil {
+			return nil, err
+		}
+		payload.Data = data
+	} else {
+		nr_elem := len(postData)
+		payload.Data = make(map[string]interface{}, nr_elem)
+
+		for k, v := range postData {
+			if strings.HasPrefix(k, "uniqush.") { // The "uniqush." keys are reserved for uniqush use.
+				continue
+			}
+			switch k {
+			case "msggroup", "ttl":
+				continue
+			default:
+				payload.Data[k] = v
+			}
+		}
+	}
+
+	jpayload, e0 := json.Marshal(payload)
+	if e0 != nil {
+		return nil, push.NewErrorf("Error converting payload to JSON: %v", e0)
+	}
+	return jpayload, nil
+
+}
+
 func (self *gcmPushService) multicast(psp *push.PushServiceProvider, dpList []*push.DeliveryPoint, resQueue chan<- *push.PushResult, notif *push.Notification) {
 	if len(dpList) == 0 {
 		return
@@ -136,53 +204,23 @@ func (self *gcmPushService) multicast(psp *push.PushServiceProvider, dpList []*p
 	for _, dp := range dpList {
 		regIds = append(regIds, dp.VolatileData["regid"])
 	}
-	msg := notif.Data
-	data := new(gcmData)
-	data.RegIDs = regIds
 
-	// TTL: default is one hour
-	data.TimeToLive = 60 * 60
-	data.DelayWhileIdle = false
+	jpayload, e0 := toGCMPayload(notif, regIds)
 
-	if mgroup, ok := msg["msggroup"]; ok {
-		data.CollapseKey = mgroup
-	} else {
-		data.CollapseKey = ""
-	}
-
-	nr_elem := len(msg)
-	data.Data = make(map[string]string, nr_elem)
-
-	for k, v := range msg {
-		switch k {
-		case "msggroup":
-			continue
-		case "ttl":
-			ttl, err := strconv.ParseUint(v, 10, 32)
-			if err != nil {
-				continue
-			}
-			data.TimeToLive = uint(ttl)
-		default:
-			data.Data[k] = v
-		}
-	}
-
-	jdata, e0 := json.Marshal(data)
 	if e0 != nil {
 		for _, dp := range dpList {
 			res := new(push.PushResult)
 			res.Provider = psp
 			res.Content = notif
 
-			res.Err = push.NewErrorf("Error converting payload to JSON: %v", e0)
+			res.Err = e0
 			res.Destination = dp
 			resQueue <- res
 		}
 		return
 	}
 
-	req, e1 := http.NewRequest("POST", gcmServiceURL, bytes.NewReader(jdata))
+	req, e1 := http.NewRequest("POST", gcmServiceURL, bytes.NewReader(jpayload))
 	if e1 != nil {
 		for _, dp := range dpList {
 			res := new(push.PushResult)
