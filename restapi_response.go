@@ -39,6 +39,7 @@ type ApiResponseDetails struct {
 	MessageId           *string `json:"messageId,omitempty"`
 	Code                string  `json:"code"`
 	ErrorMsg            *string `json:"errorMsg,omitempty"`
+	ModifiedDp          bool    `json:"modifiedDp,omitempty"`
 }
 
 func strPtrOfErr(e error) *string {
