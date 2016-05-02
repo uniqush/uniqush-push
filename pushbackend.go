@@ -171,7 +171,7 @@ func (self *PushBackEnd) fixError(reqId string, remoteAddr string, event error, 
 			handler.AddDetailsToHandler(ApiResponseDetails{RequestId: &reqId, From: &remoteAddr, Subscriber: &sub, Service: &service, DeliveryPoint: &dpName, Code: UNIQUSH_ERROR_UPDATE_DELIVERY_POINT, ErrorMsg: strPtrOfErr(e)})
 		} else {
 			logger.Infof("Service=%v Subscriber=%v DeliveryPoint=%v Update Success", service, sub, dpName)
-			handler.AddDetailsToHandler(ApiResponseDetails{RequestId: &reqId, From: &remoteAddr, Subscriber: &sub, Service: &service, DeliveryPoint: &dpName, Code: UNIQUSH_SUCCESS})
+			handler.AddDetailsToHandler(ApiResponseDetails{RequestId: &reqId, From: &remoteAddr, Subscriber: &sub, Service: &service, DeliveryPoint: &dpName, Code: UNIQUSH_SUCCESS, ModifiedDp: true})
 		}
 	case *push.InvalidRegistrationUpdate:
 		if err.Provider == nil || err.Destination == nil {
