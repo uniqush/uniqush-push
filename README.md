@@ -3,7 +3,7 @@
 - [Blog/News](http://blog.uniqush.org)
 - [@uniqush](http://twitter.com/uniqush)
 
-# Introduction #
+## Introduction ##
 
 *Uniqush* (\ˈyü-nə-ku̇sh\ "uni" pronounced as in "unified", and "qush" pronounced as
 in "cushion") is a _free_ and _open source_ software system which provides
@@ -12,13 +12,13 @@ The `uniqush-push` API abstracts the APIs of the various push services used
 to send push notifications to those devices. By running `uniqush-push` on the
 server side, you can send push notifications to any supported mobile platform.
 
-# Supported Platforms #
+## Supported Platforms ##
 
 - [GCM](http://developer.android.com/guide/google/gcm/index.html) from Google for the Android platform
 - [APNS](http://developer.apple.com/library/mac/#documentation/NetworkingInternet/Conceptual/RemoteNotificationsPG/ApplePushService/ApplePushService.html) from Apple for the iOS platform
 - [ADM](https://developer.amazon.com/sdk/adm.html) from Amazon for Kindle tablets
 
-# FAQ #
+## FAQ ##
 
 - Q: Is this a general push notification platform for all types of devices? How does this differ
   from services such as [Urban Airship](http://urbanairship.com)?
@@ -65,7 +65,7 @@ about the latest progress with *Uniqush*, please check out [our
  always our [our GitHub account](http://github.com/uniqush) which could have
  brand new stuff that hasn't been released yet.
 
-# Setting Up Redis #
+## Setting Up Redis ##
 
 [Redis persistence](http://redis.io/topics/persistence) describes the details
 of how Redis saves data on shutdown, as well as how one might back up that
@@ -73,7 +73,23 @@ data. Make sure that the Redis server you use has persistence enabled - your
 redis.conf should have contents similar to the section `**PERSISTENCE**` of
 redis.conf in the example config files linked in http://redis.io/topics/config
 
-# Related Links #
+## Contributing ##
+
+You're encouraged to contribute to the `uniqush-push` project. There are two ways you can contribute.
+
+### Issues ###
+
+If you encounter an issue while using `uniqush-push`, please report it at the project's [issues tracker](https://github.com/uniqush/uniqush-push/issues). Feature suggestions are also welcome.
+
+### Pull request ###
+
+Code contributions to `uniqush-push` can be made using pull requests. To submit a pull request:
+
+1. Fork this project.
+2. Make and commit your changes.
+3. Submit your changes as a pull request.
+
+## Related Links ##
 - [This story](http://uniqush.org/documentation/intro.html) may help you to understand
 the basic idea of *Uniqush*.
 - [Documentation](http://uniqush.org/documentation/index.html)
