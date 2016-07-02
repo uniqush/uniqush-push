@@ -37,14 +37,26 @@ const (
 	gcmServiceURL string = "https://android.googleapis.com/gcm/send"
 )
 
+// HTTPClient is a mockable interface for the parts of http.Client used by the GCM module.
+type HTTPClient interface {
+	Do(*http.Request) (*http.Response, error)
+}
+
+var _ HTTPClient = &http.Client{}
+
 type gcmPushService struct {
+	client HTTPClient
 }
 
 var _ push.PushServiceType = &gcmPushService{}
 
 func newGCMPushService() *gcmPushService {
-	ret := new(gcmPushService)
-	return ret
+	conf := &tls.Config{InsecureSkipVerify: false}
+	tr := &http.Transport{TLSClientConfig: conf}
+	client := &http.Client{Transport: tr}
+	return &gcmPushService{
+		client: client,
+	}
 }
 
 func InstallGCM() {
@@ -52,7 +64,17 @@ func InstallGCM() {
 	psm.RegisterPushServiceType(newGCMPushService())
 }
 
-func (p *gcmPushService) Finalize() {}
+func (g *gcmPushService) OverrideClient(client HTTPClient) {
+	g.client = client
+}
+
+func (p *gcmPushService) Finalize() {
+	if client, isClient := p.client.(*http.Client); isClient {
+		if transport, ok := client.Transport.(*http.Transport); ok {
+			transport.CloseIdleConnections()
+		}
+	}
+}
 
 func (p *gcmPushService) BuildPushServiceProviderFromMap(kv map[string]string,
 	psp *push.PushServiceProvider) error {
@@ -221,6 +243,9 @@ func (self *gcmPushService) multicast(psp *push.PushServiceProvider, dpList []*p
 	}
 
 	req, e1 := http.NewRequest("POST", gcmServiceURL, bytes.NewReader(jpayload))
+	if req != nil {
+		defer req.Body.Close()
+	}
 	if e1 != nil {
 		for _, dp := range dpList {
 			res := new(push.PushResult)
@@ -233,18 +258,16 @@ func (self *gcmPushService) multicast(psp *push.PushServiceProvider, dpList []*p
 		}
 		return
 	}
-	defer req.Body.Close()
 
 	apikey := psp.VolatileData["apikey"]
 
 	req.Header.Set("Authorization", "key="+apikey)
 	req.Header.Set("Content-Type", "application/json")
 
-	conf := &tls.Config{InsecureSkipVerify: false}
-	tr := &http.Transport{TLSClientConfig: conf}
-	client := &http.Client{Transport: tr}
-
-	r, e2 := client.Do(req)
+	r, e2 := self.client.Do(req)
+	if r != nil {
+		defer r.Body.Close()
+	}
 	if e2 != nil {
 		for _, dp := range dpList {
 			res := new(push.PushResult)
@@ -270,7 +293,6 @@ func (self *gcmPushService) multicast(psp *push.PushServiceProvider, dpList []*p
 		}
 		return
 	}
-	defer r.Body.Close()
 	new_auth_token := r.Header.Get("Update-Client-Auth")
 	if new_auth_token != "" && apikey != new_auth_token {
 		psp.VolatileData["apikey"] = new_auth_token
