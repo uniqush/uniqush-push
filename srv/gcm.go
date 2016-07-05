@@ -45,6 +45,7 @@ type HTTPClient interface {
 var _ HTTPClient = &http.Client{}
 
 type gcmPushService struct {
+	// There is only one Transport and one Client for connecting to gcm, shared by the set of PSPs with pushservicetype=gcm (whether or not this is using a sandbox)
 	client HTTPClient
 }
 
@@ -52,8 +53,17 @@ var _ push.PushServiceType = &gcmPushService{}
 
 func newGCMPushService() *gcmPushService {
 	conf := &tls.Config{InsecureSkipVerify: false}
-	tr := &http.Transport{TLSClientConfig: conf}
-	client := &http.Client{Transport: tr}
+	tr := &http.Transport{
+		TLSClientConfig:     conf,
+		TLSHandshakeTimeout: time.Second * 5,
+		// TODO: Make this configurable later on. The default of 2 is too low.
+		// goals: (1) new connections should not be opened and closed frequently, (2) we should not run out of sockets.
+		MaxIdleConnsPerHost: 500,
+	}
+	client := &http.Client{
+		Transport: tr,
+		Timeout:   time.Second * 10,
+	}
 	return &gcmPushService{
 		client: client,
 	}
