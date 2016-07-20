@@ -56,13 +56,14 @@ func newGCMPushService() *gcmPushService {
 	tr := &http.Transport{
 		TLSClientConfig:     conf,
 		TLSHandshakeTimeout: time.Second * 5,
-		// TODO: Make this configurable later on. The default of 2 is too low.
+		// TODO: Make this configurable later on? The default of 2 is too low.
 		// goals: (1) new connections should not be opened and closed frequently, (2) we should not run out of sockets.
+		// This doesn't seem to need much tuning. The number of connections open at a given time seems to be less than 500, even when sending hundreds of pushes per second.
 		MaxIdleConnsPerHost: 500,
 	}
 	client := &http.Client{
 		Transport: tr,
-		Timeout:   time.Second * 10,
+		Timeout:   time.Second * 10, // Add a timeout for all requests, in case of network issues.
 	}
 	return &gcmPushService{
 		client: client,
@@ -274,6 +275,7 @@ func (self *gcmPushService) multicast(psp *push.PushServiceProvider, dpList []*p
 	req.Header.Set("Authorization", "key="+apikey)
 	req.Header.Set("Content-Type", "application/json")
 
+	// Perform a request, using a connection from the connection pool of a shared http.Client instance.
 	r, e2 := self.client.Do(req)
 	if r != nil {
 		defer r.Body.Close()
