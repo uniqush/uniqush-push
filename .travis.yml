@@ -1,0 +1,9 @@
+language: go
+
+# Compile with the latest version of go.
+go:
+  - tip
+
+# install step default is `go get ./...`
+# script default is `go test ./...`
+# (Could include apns-test.sh, but that doesn't have expected output written yet)
