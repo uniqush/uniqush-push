@@ -12,6 +12,8 @@ The `uniqush-push` API abstracts the APIs of the various push services used
 to send push notifications to those devices. By running `uniqush-push` on the
 server side, you can send push notifications to any supported mobile platform.
 
+[![Build Status](https://travis-ci.org/uniqush/uniqush-push.svg?branch=master)](https://travis-ci.org/uniqush/uniqush-push)
+
 ## Supported Platforms ##
 
 - [GCM](http://developer.android.com/guide/google/gcm/index.html) from Google for the Android platform
@@ -32,7 +34,7 @@ server**. In fact, if you wish, you can use Uniqush to setup a service similar t
 
 - Q: OK. Then is it a library? Like
   [java-apns](https://github.com/notnoop/java-apns)?
-- A: Well.. Not actually. I mean, it is a program, like Apache HTTP Server. You download it, you run it. It does require a [Redis](http://redis.io/) server, but, other than that, you don't need to worry about which language to use, package dependencies, etc. 
+- A: Well.. Not actually. I mean, it is a program, like Apache HTTP Server. You download it, you run it. It does require a [Redis](http://redis.io/) server, but, other than that, you don't need to worry about which language to use, package dependencies, etc.
 
 - Q: But wait, how can I use it anyway? I mean, if my program wants to send
   a push notification, I need to tell Uniqush about this action. How can I
