@@ -19,9 +19,10 @@ package db
 
 import (
 	"fmt"
-	redis "github.com/monnand/goredis"
 	"strconv"
 	"testing"
+
+	redis3 "gopkg.in/redis.v3"
 )
 
 var dbconf *DatabaseConfig
@@ -40,7 +41,6 @@ func connectDatabase() (db PushDatabase, err error) {
 }
 
 func clearData() {
-	var client redis.Client
 	c := dbconf
 	if c.Host == "" {
 		c.Host = "localhost"
@@ -51,14 +51,17 @@ func clearData() {
 	if c.Name == "" {
 		c.Name = "0"
 	}
-	client.Addr = fmt.Sprintf("%s:%d", c.Host, c.Port)
-	client.Password = c.Password
-	var err error
-	client.Db, err = strconv.Atoi(c.Name)
+	db, err := strconv.ParseInt(c.Name, 10, 64)
 	if err != nil {
-		client.Db = 0
+		db = 0
 	}
-	client.Flush(true)
+	client := redis3.NewClient(&redis3.Options{
+		Addr:     fmt.Sprintf("%s:%d", c.Host, c.Port),
+		Password: c.Password,
+		DB:       db,
+	})
+
+	client.FlushDb() // Flush the database which pushredisdb.go used.
 }
 
 func TestConnectAndDelete(t *testing.T) {
