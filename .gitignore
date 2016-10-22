@@ -9,3 +9,6 @@ _testmain.go
 _cgo_*
 _obj
 _test
+
+/conf/*.custom
+/docker/*

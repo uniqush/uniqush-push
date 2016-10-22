@@ -1,0 +1,10 @@
+FROM golang:alpine
+MAINTAINER Arnaud de Mouhy <arnaud.demouhy@akerbis.com>
+
+ENV GOBIN /tmp/bin
+ENV GOPATH /tmp
+
+RUN apk add --update git
+
+COPY . /tmp/src/github.com/uniqush/uniqush-push
+RUN CGO_ENABLED=0 GOOS=linux go get github.com/uniqush/uniqush-push

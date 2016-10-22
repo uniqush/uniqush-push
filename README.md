@@ -75,6 +75,16 @@ data. Make sure that the Redis server you use has persistence enabled - your
 redis.conf should have contents similar to the section `**PERSISTENCE**` of
 redis.conf in the example config files linked in http://redis.io/topics/config
 
+## Docker image ##
+
+You can build a [Docker](https://www.docker.com) image with the `scripts/build-docker-image.sh` script.
+After building it, you can get a fully working uniqush instance with:
+
+    $ docker run -d --name uniqush-redis redis:alpine
+    $ docker run --publish 9898:9898 --link uniqush-redis:redis --volume /path/to/apns/certificates:/data uniqush-build:$TAG
+    $ curl http://localhost:9898/version
+    uniqush-push 2.2.0
+
 ## Contributing ##
 
 You're encouraged to contribute to the `uniqush-push` project. There are two ways you can contribute.
