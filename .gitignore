@@ -11,4 +11,4 @@ _obj
 _test
 
 /conf/*.custom
-/docker/*
+/docker/rootfs/*

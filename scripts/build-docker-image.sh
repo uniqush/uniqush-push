@@ -23,6 +23,10 @@ if [ -f "${CONFIG_FILE}.custom" ]; then
 fi
 cp "${CONFIG_FILE}" "${ROOTFS_DIR}/etc/uniqush/uniqush-push.conf"
 
+# Copying CA certificates
+mkdir -p "${ROOTFS_DIR}/etc/ssl/certs"
+cp "${DOCKER_DIR}/certificates/"* "${ROOTFS_DIR}/etc/ssl/certs/"
+
 # Updating conf to be Docker-friendly
 sed -i '' \
     -e 's!^\(addr\)=.*:\(.*\)$!\1=0.0.0.0:\2!' \
@@ -34,7 +38,7 @@ sed -i '' \
 docker build --tag uniqush-build:$TAG --file Dockerfile .
 
 docker rmi uniqush-push-builder:$TAG
-rm -rf "${DOCKER_DIR}"
+rm -rf "${ROOTFS_DIR}"
 
 echo
 echo ">> Successfully built docker image 'uniqush-build:$TAG'"
