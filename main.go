@@ -33,6 +33,7 @@ var uniqushPushVersion = "uniqush-push 2.2.0"
 
 func installPushServices() {
 	srv.InstallGCM()
+	srv.InstallFCM()
 	srv.InstallAPNS()
 	srv.InstallADM()
 }
