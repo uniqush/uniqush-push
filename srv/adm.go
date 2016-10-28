@@ -402,6 +402,23 @@ func (self *admPushService) lockPsp(psp *push.PushServiceProvider) (*push.PushSe
 	return resp.psp, resp.err
 }
 
+func (self *admPushService) notifToJSON(notif *push.Notification) ([]byte, push.PushError) {
+	msg, err := notifToMessage(notif)
+	if err != nil {
+		return nil, err
+	}
+
+	data, jsonErr := json.Marshal(msg)
+	if jsonErr != nil {
+		return nil, push.NewErrorf("Failed to marshal message: %v", jsonErr)
+	}
+	return data, nil
+}
+
+func (self *admPushService) Preview(notif *push.Notification) ([]byte, push.PushError) {
+	return self.notifToJSON(notif)
+}
+
 func (self *admPushService) Push(psp *push.PushServiceProvider, dpQueue <-chan *push.DeliveryPoint, resQueue chan<- *push.PushResult, notif *push.Notification) {
 	defer close(resQueue)
 	defer func() {
@@ -422,16 +439,10 @@ func (self *admPushService) Push(psp *push.PushServiceProvider, dpQueue <-chan *
 			return
 		}
 	}
-	msg, err := notifToMessage(notif)
+	data, err := self.notifToJSON(notif)
+
 	if err != nil {
 		res.Err = err
-		resQueue <- res
-		return
-	}
-
-	data, jsonErr := json.Marshal(msg)
-	if jsonErr != nil {
-		res.Err = push.NewErrorf("Failed to marshal message: %v", jsonErr)
 		resQueue <- res
 		return
 	}

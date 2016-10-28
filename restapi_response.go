@@ -27,6 +27,7 @@ const (
 	UNIQUSH_ERROR_NO_PUSH_SERVICE_PROVIDER = "UNIQUSH_ERROR_NO_PUSH_SERVICE_PROVIDER"
 	UNIQUSH_ERROR_NO_SERVICE               = "UNIQUSH_ERROR_NO_SERVICE"
 	UNIQUSH_ERROR_NO_SUBSCRIBER            = "UNIQUSH_ERROR_NO_SUBSCRIBER"
+	UNIQUSH_ERROR_NO_PUSH_SERVICE_TYPE     = "UNIQUSH_ERROR_NO_PUSH_SERVICE_TYPE"
 )
 
 type ApiResponseDetails struct {
@@ -40,6 +41,12 @@ type ApiResponseDetails struct {
 	Code                string  `json:"code"`
 	ErrorMsg            *string `json:"errorMsg,omitempty"`
 	ModifiedDp          bool    `json:"modifiedDp,omitempty"`
+}
+
+type PreviewApiResponseDetails struct {
+	Code     string      `json:"code"`
+	Payload  interface{} `json:"payload,omitempty"`
+	ErrorMsg *string     `json:"errorMsg,omitempty"`
 }
 
 func strPtrOfErr(e error) *string {

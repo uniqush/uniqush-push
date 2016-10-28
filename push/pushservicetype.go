@@ -70,6 +70,9 @@ type PushServiceType interface {
 	// once the works done.
 	Push(*PushServiceProvider, <-chan *DeliveryPoint, chan<- *PushResult, *Notification)
 
+	// Preview the bytes of a notification, for placeholder subscriber data. This makes no service/database calls.
+	Preview(*Notification) ([]byte, PushError)
+
 	// Set a channel for the push service provider so that it can report error even if
 	// there is no method call on it.
 	// The type of the errors sent may cause the push service manager to take various actions.
