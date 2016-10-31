@@ -38,6 +38,7 @@ const (
 	LOGGER_PUSH
 	LOGGER_SUBSCRIPTIONS
 	LOGGER_SERVICES
+	LOGGER_PREVIEW
 	LOGGER_NR_LOGGERS
 )
 
@@ -198,6 +199,12 @@ func LoadLoggers(c *conf.ConfigFile) (loggers []log.Logger, err error) {
 		return
 	}
 	loggers[LOGGER_SERVICES], err = loadLogger(logfile, c, "Services", "[Services]")
+	if err != nil {
+		loggers = nil
+		return
+	}
+
+	loggers[LOGGER_PREVIEW], err = loadLogger(logfile, c, "Preview", "[Preview]")
 	if err != nil {
 		loggers = nil
 		return

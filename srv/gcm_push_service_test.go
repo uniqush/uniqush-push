@@ -2,10 +2,12 @@ package srv
 
 import (
 	"bytes"
+	"encoding/json"
 	"fmt"
 	"io"
 	"io/ioutil"
 	"net/http"
+	"reflect"
 	"sync"
 	"testing"
 
@@ -197,7 +199,7 @@ func TestPushSingleError(t *testing.T) {
 		}
 		err, ok := res.Err.(*push.BadPushServiceProvider)
 		if !ok {
-			t.Fatal("Expected type BadPushServiceProvider, got %t", err)
+			t.Fatalf("Expected type BadPushServiceProvider, got %t", err)
 		}
 		if res.Provider != psp {
 			t.Errorf("Unexpected psp %v in BadPushServiceProvider result", err.Provider)
@@ -227,6 +229,22 @@ func TestPushSingleError(t *testing.T) {
 	assertExpectedGCMRequest(t, mockResponse.request, expectedRegId, expectedPayload)
 }
 
+// Helper function, because golang json serialization has an unpredictable order.
+// Uses reflect.DeepEqual.
+func expectJSONIsEquivalent(t *testing.T, expected []byte, actual []byte) {
+	var expectedObj map[string]interface{}
+	var actualObj map[string]interface{}
+	if err := json.Unmarshal(expected, &expectedObj); err != nil {
+		t.Fatalf("Invalid test expectation of JSON %s: %v", string(expected), err.Error())
+	}
+	if err := json.Unmarshal(actual, &actualObj); err != nil {
+		t.Fatalf("Invalid JSON %s: %v", string(actual), err.Error())
+	}
+	if !reflect.DeepEqual(actualObj, expectedObj) {
+		t.Errorf("%s is not equivalent to %s", actual, expected)
+	}
+}
+
 func assertExpectedGCMRequest(t *testing.T, request *http.Request, expectedRegId, expectedPayload string) {
 	actualURL := request.URL.String()
 	if actualURL != gcmServiceURL {
@@ -248,9 +266,34 @@ func assertExpectedGCMRequest(t *testing.T, request *http.Request, expectedRegId
 	if err != nil {
 		t.Fatalf("Unexpected error reading body: %v", err)
 	}
-	actualBody := string(actualBodyBytes)
 	expectedBody := fmt.Sprintf(`{"registration_ids":[%q],"data":%s,"time_to_live":3600}`, expectedRegId, expectedPayload)
-	if expectedBody != actualBody {
-		t.Errorf("Expected a request body of %q, got %q", expectedBody, actualBody)
+	expectJSONIsEquivalent(t, []byte(expectedBody), actualBodyBytes)
+}
+
+// Overlaps with TestToGCMPayload, since Preview just calls toGCMPayload.
+func TestPreviewWithCommonParameters(t *testing.T) {
+	postData := map[string]string{
+		"msggroup":  "somegroup",
+		"other":     "value",
+		"other.foo": "bar",
+		"ttl":       "5",
+		// GCM module should ignore anything it doesn't recognize begining with "uniqush.", those are reserved.
+		"uniqush.payload.apns": "{}",
+		"uniqush.foo":          "foo",
+	}
+	expectedPayload := `{"registration_ids":["placeholderRegId"],"collapse_key":"somegroup","data":{"other":"value","other.foo":"bar"},"time_to_live":5}`
+
+	notif := push.NewEmptyNotification()
+	notif.Data = postData
+
+	_, _, service, _ := commonGCMMocks(200, []byte("unused"), map[string]string{}, nil)
+	defer service.Finalize()
+
+	payload, err := service.Preview(notif)
+	if err != nil {
+		t.Fatalf("Encountered error %v\n", err)
+	}
+	if string(payload) != expectedPayload {
+		t.Errorf("Expected %s, got %s", expectedPayload, string(payload))
 	}
 }
