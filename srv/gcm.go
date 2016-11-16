@@ -470,6 +470,10 @@ func (self *gcmPushService) Push(psp *push.PushServiceProvider, dpQueue <-chan *
 	close(resQueue)
 }
 
+func (self *gcmPushService) Preview(notif *push.Notification) ([]byte, push.PushError) {
+	return toGCMPayload(notif, []string{"placeholderRegId"})
+}
+
 func (self *gcmPushService) SetErrorReportChan(errChan chan<- push.PushError) {
 	return
 }

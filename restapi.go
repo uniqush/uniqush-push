@@ -21,9 +21,11 @@ import (
 	"crypto/rand"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"regexp"
 	"strconv"
 	"strings"
@@ -66,6 +68,7 @@ const (
 	ADD_DELIVERY_POINT_TO_SERVICE_URL           = "/subscribe"
 	REMOVE_DELIVERY_POINT_FROM_SERVICE_URL      = "/unsubscribe"
 	PUSH_NOTIFICATION_URL                       = "/push"
+	PREVIEW_PUSH_NOTIFICATION_URL               = "/previewpush"
 	STOP_PROGRAM_URL                            = "/stop"
 	VERSION_INFO_URL                            = "/version"
 	QUERY_NUMBER_OF_DELIVERY_POINTS_URL         = "/nrdp"
@@ -214,26 +217,8 @@ func (self *RestAPI) changeSubscription(kv map[string]string, logger log.Logger,
 	}
 }
 
-func (self *RestAPI) pushNotification(reqId string, kv map[string]string, perdp map[string][]string, logger log.Logger, remoteAddr string, handler ApiResponseHandler) {
-	service, err := getServiceFromMap(kv, true)
-	if err != nil {
-		logger.Errorf("RequestId=%v From=%v Cannot get service name: %v; %v", reqId, remoteAddr, service, err)
-		handler.AddDetailsToHandler(ApiResponseDetails{RequestId: &reqId, From: &remoteAddr, Service: &service, Code: UNIQUSH_ERROR_CANNOT_GET_SERVICE})
-		return
-	}
-	subs, err := getSubscribersFromMap(kv, false)
-	if err != nil {
-		logger.Errorf("RequestId=%v From=%v Service=%v Cannot get subscriber: %v", reqId, remoteAddr, service, err)
-		handler.AddDetailsToHandler(ApiResponseDetails{RequestId: &reqId, From: &remoteAddr, Service: &service, Code: UNIQUSH_ERROR_CANNOT_GET_SUBSCRIBER})
-		return
-	}
-	if len(subs) == 0 {
-		logger.Errorf("RequestId=%v From=%v Service=%v NoSubscriber", reqId, remoteAddr, service)
-		handler.AddDetailsToHandler(ApiResponseDetails{RequestId: &reqId, From: &remoteAddr, Service: &service, Code: UNIQUSH_ERROR_NO_SUBSCRIBER})
-		return
-	}
-
-	notif := push.NewEmptyNotification()
+func (self *RestAPI) buildNotificationFromKV(reqId string, kv map[string]string, logger log.Logger, remoteAddr string, service string, subs []string) (notif *push.Notification, details *ApiResponseDetails, err error) {
+	notif = push.NewEmptyNotification()
 
 	for k, v := range kv {
 		if len(v) <= 0 {
@@ -261,13 +246,76 @@ func (self *RestAPI) pushNotification(reqId string, kv map[string]string, perdp 
 
 	if notif.IsEmpty() {
 		logger.Errorf("RequestId=%v From=%v Service=%v NrSubscribers=%v Subscribers=\"%+v\" EmptyNotification", reqId, remoteAddr, service, len(subs), subs)
-		handler.AddDetailsToHandler(ApiResponseDetails{RequestId: &reqId, From: &remoteAddr, Service: &service, Code: UNIQUSH_ERROR_EMPTY_NOTIFICATION})
+		details = &ApiResponseDetails{RequestId: &reqId, From: &remoteAddr, Service: &service, Code: UNIQUSH_ERROR_EMPTY_NOTIFICATION}
+		return nil, details, errors.New("empty notification")
+	}
+	return notif, nil, nil
+}
+
+func (self *RestAPI) pushNotification(reqId string, kv map[string]string, perdp map[string][]string, logger log.Logger, remoteAddr string, handler ApiResponseHandler) {
+	service, err := getServiceFromMap(kv, true)
+	if err != nil {
+		logger.Errorf("RequestId=%v From=%v Cannot get service name: %v; %v", reqId, remoteAddr, service, err)
+		handler.AddDetailsToHandler(ApiResponseDetails{RequestId: &reqId, From: &remoteAddr, Service: &service, Code: UNIQUSH_ERROR_CANNOT_GET_SERVICE})
+		return
+	}
+	subs, err := getSubscribersFromMap(kv, false)
+	if err != nil {
+		logger.Errorf("RequestId=%v From=%v Service=%v Cannot get subscriber: %v", reqId, remoteAddr, service, err)
+		handler.AddDetailsToHandler(ApiResponseDetails{RequestId: &reqId, From: &remoteAddr, Service: &service, Code: UNIQUSH_ERROR_CANNOT_GET_SUBSCRIBER})
+		return
+	}
+	if len(subs) == 0 {
+		logger.Errorf("RequestId=%v From=%v Service=%v NoSubscriber", reqId, remoteAddr, service)
+		handler.AddDetailsToHandler(ApiResponseDetails{RequestId: &reqId, From: &remoteAddr, Service: &service, Code: UNIQUSH_ERROR_NO_SUBSCRIBER})
+		return
+	}
+
+	notif, details, err := self.buildNotificationFromKV(reqId, kv, logger, remoteAddr, service, subs)
+	if err != nil {
+		handler.AddDetailsToHandler(*details)
 		return
 	}
 
 	logger.Infof("RequestId=%v From=%v Service=%v NrSubscribers=%v Subscribers=\"%+v\"", reqId, remoteAddr, service, len(subs), subs)
 
 	self.backend.Push(reqId, remoteAddr, service, subs, notif, perdp, logger, handler)
+}
+
+// preview takes key-value pairs (pushservicetype, plus data for building the payload), a logger, and logging data.
+func (self *RestAPI) preview(reqId string, kv map[string]string, logger log.Logger, remoteAddr string) PreviewApiResponseDetails {
+	ptname, ok := kv["pushservicetype"]
+	if !ok || ptname == "" {
+		msg := "Must specify a known pushservicetype"
+		return PreviewApiResponseDetails{Code: UNIQUSH_ERROR_NO_PUSH_SERVICE_TYPE, ErrorMsg: &msg}
+	}
+	delete(kv, "pushservicetype")
+	notif, details, err := self.buildNotificationFromKV(reqId, kv, logger, remoteAddr, "placeholderservice", []string{})
+	if err != nil {
+		return PreviewApiResponseDetails{
+			Code:     details.Code,
+			ErrorMsg: details.ErrorMsg,
+		}
+	}
+
+	data, err := self.backend.Preview(ptname, notif)
+	if err != nil {
+		errmsg := err.Error()
+		return PreviewApiResponseDetails{Code: UNIQUSH_ERROR_GENERIC, ErrorMsg: &errmsg}
+	}
+	return PreviewApiResponseDetails{Code: UNIQUSH_SUCCESS, Payload: apiBytesToObject(data)}
+}
+
+func apiBytesToObject(data []byte) interface{} {
+	// currently, all types are JSON. In the future, there may be non-JSON payloads in a protocol.
+	// Either return a string or an object (to be converted to JSON again by the API)
+	var obj interface{}
+	obj = nil
+	err := json.Unmarshal(data, &obj)
+	if err != nil || obj == nil {
+		return string(data)
+	}
+	return obj
 }
 
 func (self *RestAPI) stop(w io.Writer, remoteAddr string) {
@@ -380,6 +428,25 @@ func (self *RestAPI) rebuildServiceSet(logger log.Logger) []byte {
 	return json
 }
 
+func parseKV(form url.Values) (kv map[string]string, perdp map[string][]string) {
+	kv = make(map[string]string, len(form))
+	perdp = make(map[string][]string, 3)
+	perdpPrefix := "uniqush.perdp."
+	for k, v := range form {
+		if len(k) > len(perdpPrefix) {
+			if k[:len(perdpPrefix)] == perdpPrefix {
+				key := k[len(perdpPrefix):]
+				perdp[key] = v
+				continue
+			}
+		}
+		if len(v) > 0 {
+			kv[k] = v[0]
+		}
+	}
+	return kv, perdp
+}
+
 func (self *RestAPI) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	defer r.Body.Close()
 	remoteAddr := r.RemoteAddr
@@ -404,6 +471,18 @@ func (self *RestAPI) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		n := self.numberOfDeliveryPoints(r.Form, self.loggers[LOGGER_WEB], remoteAddr)
 		fmt.Fprintf(w, "%v\r\n", n)
 		return
+	case PREVIEW_PUSH_NOTIFICATION_URL:
+		r.ParseForm()
+		kv, _ := parseKV(r.Form)
+		rid := randomUniqId()
+		details := self.preview(rid, kv, self.loggers[LOGGER_PREVIEW], remoteAddr)
+		bytes, err := json.Marshal(details)
+		if err != nil {
+			fmt.Fprintf(w, "%s\r\n", string(err.Error()))
+			return
+		}
+		fmt.Fprintf(w, "%s\r\n", string(bytes))
+		return
 	case VERSION_INFO_URL:
 		fmt.Fprintf(w, "%v\r\n", self.version)
 		self.loggers[LOGGER_WEB].Infof("Checked version from %v", remoteAddr)
@@ -413,21 +492,7 @@ func (self *RestAPI) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	r.ParseForm()
-	kv := make(map[string]string, len(r.Form))
-	perdp := make(map[string][]string, 3)
-	perdpPrefix := "uniqush.perdp."
-	for k, v := range r.Form {
-		if len(k) > len(perdpPrefix) {
-			if k[:len(perdpPrefix)] == perdpPrefix {
-				key := k[len(perdpPrefix):]
-				perdp[key] = v
-				continue
-			}
-		}
-		if len(v) > 0 {
-			kv[k] = v[0]
-		}
-	}
+	kv, perdp := parseKV(r.Form)
 
 	self.waitGroup.Add(1)
 	defer self.waitGroup.Done()
@@ -473,6 +538,7 @@ func (self *RestAPI) Run(addr string, stopChan chan<- bool) {
 	http.Handle(REMOVE_DELIVERY_POINT_FROM_SERVICE_URL, self)
 	http.Handle(REMOVE_PUSH_SERVICE_PROVIDER_TO_SERVICE_URL, self)
 	http.Handle(PUSH_NOTIFICATION_URL, self)
+	http.Handle(PREVIEW_PUSH_NOTIFICATION_URL, self)
 	http.Handle(QUERY_NUMBER_OF_DELIVERY_POINTS_URL, self)
 	http.Handle(QUERY_SUBSCRIPTIONS_URL, self)
 	http.Handle(QUERY_PUSH_SERVICE_PROVIDERS, self)

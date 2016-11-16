@@ -41,6 +41,9 @@ func (self *MockAPNSPushServiceType) Name() string {
 func (self *MockAPNSPushServiceType) Push(*push.PushServiceProvider, <-chan *push.DeliveryPoint, chan<- *push.PushResult, *push.Notification) {
 	panic("Not implemented")
 }
+func (self *MockAPNSPushServiceType) Preview(*push.Notification) ([]byte, push.PushError) {
+	panic("Not implemented")
+}
 func (self *MockAPNSPushServiceType) SetErrorReportChan(errChan chan<- push.PushError) {
 	panic("Not implemented")
 }

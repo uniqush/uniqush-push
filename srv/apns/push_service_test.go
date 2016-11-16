@@ -350,6 +350,37 @@ func TestToAPNSPayloadAllParams(t *testing.T) {
 	}
 }
 
+func TestPreview(t *testing.T) {
+	expectedJSON := `{"aps":{"alert":{"action-loc-key":"foo","body":"hello world","launch-image":"Default2.png","loc-args":["one","two"],"loc-key":"bar"},"badge":777,"content-available":1,"sound":"hi.wav"},"myKey":"myValue"}`
+	notification := &push.Notification{
+		Data: map[string]string{
+			"msg":               "hello world",
+			"action-loc-key":    "foo",
+			"loc-key":           "bar",
+			"loc-args":          "one,two",
+			"badge":             "777",
+			"sound":             "hi.wav",
+			"content-available": "1",
+			"img":               "Default2.png",
+			"id":                "unused",
+			"expiry":            "unused",
+			"ttl":               "42",
+			"myKey":             "myValue",
+			// Keys beginning with "uniqush." are reserved by uniqush.
+			"uniqush.foo": "ignored",
+		},
+	}
+	_, _, service, _ := commonAPNSMocks(APNS_UNSUBSCRIBE)
+	defer service.Finalize()
+	payload, err := service.Preview(notification)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !bytes.Equal([]byte(expectedJSON), payload) {
+		t.Errorf("Expected %s, Got %s", expectedJSON, string(payload))
+	}
+}
+
 func expectMapEquals(t *testing.T, expected map[string]string, actual map[string]string, description string) {
 	for k, v := range expected {
 		actualV, ok := actual[k]

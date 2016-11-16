@@ -198,6 +198,13 @@ func (self *pushService) waitResults(psp *push.PushServiceProvider, dpList []*pu
 	}
 }
 
+// Returns a JSON APNS payload, for a dummy device token
+func (self *pushService) Preview(notif *push.Notification) ([]byte, push.PushError) {
+	return toAPNSPayload(notif)
+}
+
+// Push will read all of the delivery points to send to from dpQueue and send responses on resQueue before closing the channel. If the notification data is invalid,
+// it will send only one response.
 func (self *pushService) Push(psp *push.PushServiceProvider, dpQueue <-chan *push.DeliveryPoint, resQueue chan<- *push.PushResult, notif *push.Notification) {
 	defer close(resQueue)
 	// Profiling

@@ -58,6 +58,11 @@ func (t *testPushServiceType) Push(*PushServiceProvider, <-chan *DeliveryPoint, 
 	fmt.Print("Push!\n")
 }
 
+func (t *testPushServiceType) Preview(*Notification) ([]byte, PushError) {
+	fmt.Print("Preview!\n")
+	return []byte("{}"), nil
+}
+
 func (t *testPushServiceType) SetErrorReportChan(chan<- PushError) {}
 
 func TestPushPeer(t *testing.T) {
