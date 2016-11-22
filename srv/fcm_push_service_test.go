@@ -231,7 +231,7 @@ func fcmTestPushSingleError(t *testing.T) {
 
 // Helper function, because golang json serialization has an unpredictable order.
 // Uses reflect.DeepEqual.
-func expectJSONIsEquivalent(t *testing.T, expected []byte, actual []byte) {
+func fcmExpectJSONIsEquivalent(t *testing.T, expected []byte, actual []byte) {
 	var expectedObj map[string]interface{}
 	var actualObj map[string]interface{}
 	if err := json.Unmarshal(expected, &expectedObj); err != nil {
@@ -267,11 +267,11 @@ func assertExpectedFCMRequest(t *testing.T, request *http.Request, expectedRegId
 		t.Fatalf("Unexpected error reading body: %v", err)
 	}
 	expectedBody := fmt.Sprintf(`{"registration_ids":[%q],"data":%s,"time_to_live":3600}`, expectedRegId, expectedPayload)
-	expectJSONIsEquivalent(t, []byte(expectedBody), actualBodyBytes)
+	fcmExpectJSONIsEquivalent(t, []byte(expectedBody), actualBodyBytes)
 }
 
 // Overlaps with TestToFCMPayload, since Preview just calls toFCMPayload.
-func TestPreviewWithCommonParameters(t *testing.T) {
+func FcmTestPreviewWithCommonParameters(t *testing.T) {
 	postData := map[string]string{
 		"msggroup":  "somegroup",
 		"other":     "value",
