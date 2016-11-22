@@ -15,52 +15,52 @@ import (
 )
 
 const (
-	MOCK_API_KEY    = "mockapikey"
-	MOCK_PROJECT_ID = "mockprojectid"
-	MOCK_SERVICE    = "mockservice"
+	FCM_MOCK_API_KEY    = "mockapikey"
+	FCM_MOCK_PROJECT_ID = "mockprojectid"
+	FCM_MOCK_SERVICE    = "mockservice"
 )
 
-type mockHTTPClient struct {
+type fcmMockHTTPClient struct {
 	status       int
 	responseBody []byte
 	headers      map[string]string
 	requestError error
 	// Mocks for responses given json encoded request, TODO write expectations.
-	// mockResponses map[string]string
-	performed []*mockResponse
+	// fcmMockResponses map[string]string
+	performed []*fcmMockResponse
 }
 
-type mockResponse struct {
+type fcmMockResponse struct {
 	impl    *bytes.Reader
 	closed  bool
 	request *http.Request
 }
 
-var _ io.ReadCloser = &mockResponse{}
+var _ io.ReadCloser = &fcmMockResponse{}
 
-func newMockResponse(contents []byte, request *http.Request) *mockResponse {
-	return &mockResponse{
+func fcmNewMockResponse(contents []byte, request *http.Request) *fcmMockResponse {
+	return &fcmMockResponse{
 		impl:    bytes.NewReader(contents),
 		closed:  false,
 		request: request,
 	}
 }
 
-func (r *mockResponse) Read(p []byte) (n int, err error) {
+func (r *fcmMockResponse) Read(p []byte) (n int, err error) {
 	return r.impl.Read(p)
 }
 
-func (r *mockResponse) Close() error {
+func (r *fcmMockResponse) Close() error {
 	r.closed = true
 	return nil
 }
 
-func (c *mockHTTPClient) Do(request *http.Request) (*http.Response, error) {
+func (c *fcmMockHTTPClient) Do(request *http.Request) (*http.Response, error) {
 	h := http.Header{}
 	for k, v := range c.headers {
 		h.Set(k, v)
 	}
-	body := newMockResponse(c.responseBody, request)
+	body := fcmNewMockResponse(c.responseBody, request)
 	result := &http.Response{
 		StatusCode: c.status,
 		Body:       body,
@@ -70,10 +70,10 @@ func (c *mockHTTPClient) Do(request *http.Request) (*http.Response, error) {
 	return result, c.requestError
 }
 
-var _ FCMHTTPClient = &mockHTTPClient{}
+var _ FCMHTTPClient = &fcmMockHTTPClient{}
 
-func commonFCMMocks(responseCode int, responseBody []byte, headers map[string]string, requestError error) (*push.PushServiceProvider, *mockHTTPClient, *fcmPushService, chan push.PushError) {
-	client := &mockHTTPClient{
+func commonFCMMocks(responseCode int, responseBody []byte, headers map[string]string, requestError error) (*push.PushServiceProvider, *fcmMockHTTPClient, *fcmPushService, chan push.PushError) {
+	client := &fcmMockHTTPClient{
 		status:       responseCode,
 		responseBody: responseBody,
 		headers:      headers,
@@ -91,10 +91,10 @@ func commonFCMMocks(responseCode int, responseBody []byte, headers map[string]st
 
 	psp, err := psm.BuildPushServiceProviderFromMap(map[string]string{
 		"pushservicetype": service.Name(),
-		"service":         MOCK_SERVICE,
+		"service":         FCM_MOCK_SERVICE,
 		"subscriber":      "mocksubscriber",
-		"apikey":          MOCK_API_KEY,
-		"projectid":       MOCK_PROJECT_ID,
+		"apikey":          FCM_MOCK_API_KEY,
+		"projectid":       FCM_MOCK_PROJECT_ID,
 	})
 
 	if psp == nil {
@@ -106,13 +106,13 @@ func commonFCMMocks(responseCode int, responseBody []byte, headers map[string]st
 	return psp, client, service, errChan
 }
 
-func asyncCreateDPQueue(wg *sync.WaitGroup, dpQueue chan<- *push.DeliveryPoint, regId, subscriber string) {
+func fcmAsyncCreateDPQueue(wg *sync.WaitGroup, dpQueue chan<- *push.DeliveryPoint, regId, subscriber string) {
 	psm := push.GetPushServiceManager()
 	mockDeliveryPoint, err := psm.BuildDeliveryPointFromMap(map[string]string{
 		"regid":           regId,
 		"subscriber":      subscriber,
 		"pushservicetype": "fcm",
-		"service":         MOCK_SERVICE,
+		"service":         FCM_MOCK_SERVICE,
 	})
 	if err != nil {
 		panic(err)
@@ -122,13 +122,13 @@ func asyncCreateDPQueue(wg *sync.WaitGroup, dpQueue chan<- *push.DeliveryPoint, 
 	wg.Done()
 }
 
-func asyncPush(wg *sync.WaitGroup, service *fcmPushService, psp *push.PushServiceProvider, dpQueue <-chan *push.DeliveryPoint, resQueue chan<- *push.PushResult, notif *push.Notification) {
+func fcmAsyncPush(wg *sync.WaitGroup, service *fcmPushService, psp *push.PushServiceProvider, dpQueue <-chan *push.DeliveryPoint, resQueue chan<- *push.PushResult, notif *push.Notification) {
 	service.Push(psp, dpQueue, resQueue, notif)
 	wg.Done()
 }
 
-// TestPushSingle tests the ability to send a single push without error, and shut down cleanly.
-func TestPushSingle(t *testing.T) {
+// fcmTestPushSingle tests the ability to send a single push without error, and shut down cleanly.
+func fcmTestPushSingle(t *testing.T) {
 	expectedRegId := "mockregid"
 	notif := push.NewEmptyNotification()
 	expectedPayload := `{"message":{"aPushType":{"foo":"bar","other":"value"},"fcm":{},"others":{"type":"aPushType"}}}`
@@ -136,13 +136,13 @@ func TestPushSingle(t *testing.T) {
 		"uniqush.payload.fcm": expectedPayload,
 	}
 	mockHTTPResponse := []byte(`{"multicast_id":777,"canonical_ids":1,"success":1,"failure":0,"results":[{"message_id":"UID12345"}]}`)
-	psp, mockHTTPClient, service, errChan := commonFCMMocks(200, mockHTTPResponse, map[string]string{}, nil)
+	psp, fcmMockHTTPClient, service, errChan := commonFCMMocks(200, mockHTTPResponse, map[string]string{}, nil)
 	dpQueue := make(chan *push.DeliveryPoint)
 	resQueue := make(chan *push.PushResult)
 	wg := new(sync.WaitGroup)
 	wg.Add(2)
-	go asyncCreateDPQueue(wg, dpQueue, expectedRegId, "unusedsubscriber1")
-	go asyncPush(wg, service, psp, dpQueue, resQueue, notif)
+	go fcmAsyncCreateDPQueue(wg, dpQueue, expectedRegId, "unusedsubscriber1")
+	go fcmAsyncPush(wg, service, psp, dpQueue, resQueue, notif)
 	resCount := 0
 	for res := range resQueue {
 		if res == nil {
@@ -165,19 +165,19 @@ func TestPushSingle(t *testing.T) {
 	if numErrs := len(errChan); numErrs > 0 {
 		t.Errorf("Unexpected number of errors: want none, got %d", numErrs)
 	}
-	if len(mockHTTPClient.performed) != 1 {
-		t.Errorf("Unexpected number of http calls: want 1, got %#v", mockHTTPClient.performed)
+	if len(fcmMockHTTPClient.performed) != 1 {
+		t.Errorf("Unexpected number of http calls: want 1, got %#v", fcmMockHTTPClient.performed)
 	}
-	mockResponse := mockHTTPClient.performed[0]
-	if !mockResponse.closed {
+	fcmMockResponse := fcmMockHTTPClient.performed[0]
+	if !fcmMockResponse.closed {
 		t.Error("Expected the mock response body to be closed")
 	}
 
-	assertExpectedFCMRequest(t, mockResponse.request, expectedRegId, expectedPayload)
+	assertExpectedFCMRequest(t, fcmMockResponse.request, expectedRegId, expectedPayload)
 }
 
-// TestPushSingleError tests the ability to send a single push with an error error, and shut down cleanly.
-func TestPushSingleError(t *testing.T) {
+// fcmTestPushSingleError tests the ability to send a single push with an error error, and shut down cleanly.
+func fcmTestPushSingleError(t *testing.T) {
 	expectedRegId := "mockregid"
 	notif := push.NewEmptyNotification()
 	expectedPayload := `{"message":{"aPushType":{"foo":"bar","other":"value"},"fcm":{},"others":{"type":"aPushType"}}}`
@@ -185,13 +185,13 @@ func TestPushSingleError(t *testing.T) {
 		"uniqush.payload.fcm": expectedPayload,
 	}
 	mockHTTPResponse := []byte(`HTTP/401 error mock response`)
-	psp, mockHTTPClient, service, errChan := commonFCMMocks(401, mockHTTPResponse, map[string]string{}, nil)
+	psp, fcmMockHTTPClient, service, errChan := commonFCMMocks(401, mockHTTPResponse, map[string]string{}, nil)
 	dpQueue := make(chan *push.DeliveryPoint)
 	resQueue := make(chan *push.PushResult)
 	wg := new(sync.WaitGroup)
 	wg.Add(2)
-	go asyncCreateDPQueue(wg, dpQueue, expectedRegId, "unusedsubscriber1")
-	go asyncPush(wg, service, psp, dpQueue, resQueue, notif)
+	go fcmAsyncCreateDPQueue(wg, dpQueue, expectedRegId, "unusedsubscriber1")
+	go fcmAsyncPush(wg, service, psp, dpQueue, resQueue, notif)
 	resCount := 0
 	for res := range resQueue {
 		if res.Err == nil {
@@ -218,15 +218,15 @@ func TestPushSingleError(t *testing.T) {
 	if numErrs := len(errChan); numErrs > 0 {
 		t.Errorf("Unexpected number of errors: want none, got %d", numErrs)
 	}
-	if len(mockHTTPClient.performed) != 1 {
-		t.Errorf("Unexpected number of http calls: want 1, got %#v", mockHTTPClient.performed)
+	if len(fcmMockHTTPClient.performed) != 1 {
+		t.Errorf("Unexpected number of http calls: want 1, got %#v", fcmMockHTTPClient.performed)
 	}
-	mockResponse := mockHTTPClient.performed[0]
-	if !mockResponse.closed {
+	fcmMockResponse := fcmMockHTTPClient.performed[0]
+	if !fcmMockResponse.closed {
 		t.Error("Expected the mock response body to be closed")
 	}
 
-	assertExpectedFCMRequest(t, mockResponse.request, expectedRegId, expectedPayload)
+	assertExpectedFCMRequest(t, fcmMockResponse.request, expectedRegId, expectedPayload)
 }
 
 // Helper function, because golang json serialization has an unpredictable order.
@@ -257,7 +257,7 @@ func assertExpectedFCMRequest(t *testing.T, request *http.Request, expectedRegId
 	}
 
 	actualAuth := request.Header.Get("Authorization")
-	expectedAuth := "key=" + MOCK_API_KEY
+	expectedAuth := "key=" + FCM_MOCK_API_KEY
 	if actualAuth != expectedAuth {
 		t.Errorf("Expected auth %q, got %q", expectedAuth, actualAuth)
 	}
