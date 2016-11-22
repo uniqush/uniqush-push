@@ -37,16 +37,16 @@ const (
 	gcmServiceURL string = "https://android.googleapis.com/gcm/send"
 )
 
-// HTTPClient is a mockable interface for the parts of http.Client used by the GCM module.
-type HTTPClient interface {
+// GCMHTTPClient is a mockable interface for the parts of http.Client used by the GCM module.
+type GCMHTTPClient interface {
 	Do(*http.Request) (*http.Response, error)
 }
 
-var _ HTTPClient = &http.Client{}
+var _ GCMHTTPClient = &http.Client{}
 
 type gcmPushService struct {
 	// There is only one Transport and one Client for connecting to gcm, shared by the set of PSPs with pushservicetype=gcm (whether or not this is using a sandbox)
-	client HTTPClient
+	client GCMHTTPClient
 }
 
 var _ push.PushServiceType = &gcmPushService{}
@@ -75,7 +75,7 @@ func InstallGCM() {
 	psm.RegisterPushServiceType(newGCMPushService())
 }
 
-func (g *gcmPushService) OverrideClient(client HTTPClient) {
+func (g *gcmPushService) OverrideClient(client GCMHTTPClient) {
 	g.client = client
 }
 

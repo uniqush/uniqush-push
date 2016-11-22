@@ -37,11 +37,16 @@ const (
 	fcmServiceURL string = "https://fcm.googleapis.com/fcm/send"
 )
 
-var _ HTTPClient = &http.Client{}
+// FCMHTTPClient is a mockable interface for the parts of http.Client used by the GCM module.
+type FCMHTTPClient interface {
+	Do(*http.Request) (*http.Response, error)
+}
+
+var _ FCMHTTPClient = &http.Client{}
 
 type fcmPushService struct {
 	// There is only one Transport and one Client for connecting to fcm, shared by the set of PSPs with pushservicetype=fcm (whether or not this is using a sandbox)
-	client HTTPClient
+	client FCMHTTPClient
 }
 
 var _ push.PushServiceType = &fcmPushService{}
@@ -70,7 +75,7 @@ func InstallFCM() {
 	psm.RegisterPushServiceType(newFCMPushService())
 }
 
-func (g *fcmPushService) OverrideClient(client HTTPClient) {
+func (g *fcmPushService) OverrideClient(client FCMHTTPClient) {
 	g.client = client
 }
 
@@ -457,6 +462,10 @@ func (self *fcmPushService) Push(psp *push.PushServiceProvider, dpQueue <-chan *
 	}
 
 	close(resQueue)
+}
+
+func (self *fcmPushService) Preview(notif *push.Notification) ([]byte, push.PushError) {
+	return toFCMPayload(notif, []string{"placeholderRegId"})
 }
 
 func (self *fcmPushService) SetErrorReportChan(errChan chan<- push.PushError) {

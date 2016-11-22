@@ -2,10 +2,12 @@ package srv
 
 import (
 	"bytes"
+	"encoding/json"
 	"fmt"
 	"io"
 	"io/ioutil"
 	"net/http"
+	"reflect"
 	"sync"
 	"testing"
 
@@ -68,16 +70,16 @@ func (c *mockHTTPClient) Do(request *http.Request) (*http.Response, error) {
 	return result, c.requestError
 }
 
-var _ GCMHTTPClient = &mockHTTPClient{}
+var _ FCMHTTPClient = &mockHTTPClient{}
 
-func commonGCMMocks(responseCode int, responseBody []byte, headers map[string]string, requestError error) (*push.PushServiceProvider, *mockHTTPClient, *gcmPushService, chan push.PushError) {
+func commonFCMMocks(responseCode int, responseBody []byte, headers map[string]string, requestError error) (*push.PushServiceProvider, *mockHTTPClient, *fcmPushService, chan push.PushError) {
 	client := &mockHTTPClient{
 		status:       responseCode,
 		responseBody: responseBody,
 		headers:      headers,
 		requestError: requestError,
 	}
-	service := newGCMPushService()
+	service := newFCMPushService()
 	service.OverrideClient(client)
 
 	// Overwrite the APNS service.
@@ -109,7 +111,7 @@ func asyncCreateDPQueue(wg *sync.WaitGroup, dpQueue chan<- *push.DeliveryPoint, 
 	mockDeliveryPoint, err := psm.BuildDeliveryPointFromMap(map[string]string{
 		"regid":           regId,
 		"subscriber":      subscriber,
-		"pushservicetype": "gcm",
+		"pushservicetype": "fcm",
 		"service":         MOCK_SERVICE,
 	})
 	if err != nil {
@@ -120,7 +122,7 @@ func asyncCreateDPQueue(wg *sync.WaitGroup, dpQueue chan<- *push.DeliveryPoint, 
 	wg.Done()
 }
 
-func asyncPush(wg *sync.WaitGroup, service *gcmPushService, psp *push.PushServiceProvider, dpQueue <-chan *push.DeliveryPoint, resQueue chan<- *push.PushResult, notif *push.Notification) {
+func asyncPush(wg *sync.WaitGroup, service *fcmPushService, psp *push.PushServiceProvider, dpQueue <-chan *push.DeliveryPoint, resQueue chan<- *push.PushResult, notif *push.Notification) {
 	service.Push(psp, dpQueue, resQueue, notif)
 	wg.Done()
 }
@@ -129,12 +131,12 @@ func asyncPush(wg *sync.WaitGroup, service *gcmPushService, psp *push.PushServic
 func TestPushSingle(t *testing.T) {
 	expectedRegId := "mockregid"
 	notif := push.NewEmptyNotification()
-	expectedPayload := `{"message":{"aPushType":{"foo":"bar","other":"value"},"gcm":{},"others":{"type":"aPushType"}}}`
+	expectedPayload := `{"message":{"aPushType":{"foo":"bar","other":"value"},"fcm":{},"others":{"type":"aPushType"}}}`
 	notif.Data = map[string]string{
-		"uniqush.payload.gcm": expectedPayload,
+		"uniqush.payload.fcm": expectedPayload,
 	}
 	mockHTTPResponse := []byte(`{"multicast_id":777,"canonical_ids":1,"success":1,"failure":0,"results":[{"message_id":"UID12345"}]}`)
-	psp, mockHTTPClient, service, errChan := commonGCMMocks(200, mockHTTPResponse, map[string]string{}, nil)
+	psp, mockHTTPClient, service, errChan := commonFCMMocks(200, mockHTTPResponse, map[string]string{}, nil)
 	dpQueue := make(chan *push.DeliveryPoint)
 	resQueue := make(chan *push.PushResult)
 	wg := new(sync.WaitGroup)
@@ -171,19 +173,19 @@ func TestPushSingle(t *testing.T) {
 		t.Error("Expected the mock response body to be closed")
 	}
 
-	assertExpectedGCMRequest(t, mockResponse.request, expectedRegId, expectedPayload)
+	assertExpectedFCMRequest(t, mockResponse.request, expectedRegId, expectedPayload)
 }
 
 // TestPushSingleError tests the ability to send a single push with an error error, and shut down cleanly.
 func TestPushSingleError(t *testing.T) {
 	expectedRegId := "mockregid"
 	notif := push.NewEmptyNotification()
-	expectedPayload := `{"message":{"aPushType":{"foo":"bar","other":"value"},"gcm":{},"others":{"type":"aPushType"}}}`
+	expectedPayload := `{"message":{"aPushType":{"foo":"bar","other":"value"},"fcm":{},"others":{"type":"aPushType"}}}`
 	notif.Data = map[string]string{
-		"uniqush.payload.gcm": expectedPayload,
+		"uniqush.payload.fcm": expectedPayload,
 	}
 	mockHTTPResponse := []byte(`HTTP/401 error mock response`)
-	psp, mockHTTPClient, service, errChan := commonGCMMocks(401, mockHTTPResponse, map[string]string{}, nil)
+	psp, mockHTTPClient, service, errChan := commonFCMMocks(401, mockHTTPResponse, map[string]string{}, nil)
 	dpQueue := make(chan *push.DeliveryPoint)
 	resQueue := make(chan *push.PushResult)
 	wg := new(sync.WaitGroup)
@@ -197,7 +199,7 @@ func TestPushSingleError(t *testing.T) {
 		}
 		err, ok := res.Err.(*push.BadPushServiceProvider)
 		if !ok {
-			t.Fatal("Expected type BadPushServiceProvider, got %t", err)
+			t.Fatalf("Expected type BadPushServiceProvider, got %t", err)
 		}
 		if res.Provider != psp {
 			t.Errorf("Unexpected psp %v in BadPushServiceProvider result", err.Provider)
@@ -224,13 +226,29 @@ func TestPushSingleError(t *testing.T) {
 		t.Error("Expected the mock response body to be closed")
 	}
 
-	assertExpectedGCMRequest(t, mockResponse.request, expectedRegId, expectedPayload)
+	assertExpectedFCMRequest(t, mockResponse.request, expectedRegId, expectedPayload)
 }
 
-func assertExpectedGCMRequest(t *testing.T, request *http.Request, expectedRegId, expectedPayload string) {
+// Helper function, because golang json serialization has an unpredictable order.
+// Uses reflect.DeepEqual.
+func expectJSONIsEquivalent(t *testing.T, expected []byte, actual []byte) {
+	var expectedObj map[string]interface{}
+	var actualObj map[string]interface{}
+	if err := json.Unmarshal(expected, &expectedObj); err != nil {
+		t.Fatalf("Invalid test expectation of JSON %s: %v", string(expected), err.Error())
+	}
+	if err := json.Unmarshal(actual, &actualObj); err != nil {
+		t.Fatalf("Invalid JSON %s: %v", string(actual), err.Error())
+	}
+	if !reflect.DeepEqual(actualObj, expectedObj) {
+		t.Errorf("%s is not equivalent to %s", actual, expected)
+	}
+}
+
+func assertExpectedFCMRequest(t *testing.T, request *http.Request, expectedRegId, expectedPayload string) {
 	actualURL := request.URL.String()
-	if actualURL != gcmServiceURL {
-		t.Errorf("Expected URL %q, got %q", gcmServiceURL, actualURL)
+	if actualURL != fcmServiceURL {
+		t.Errorf("Expected URL %q, got %q", fcmServiceURL, actualURL)
 	}
 	actualContentType := request.Header.Get("Content-Type")
 	expectedContentType := "application/json"
@@ -248,9 +266,34 @@ func assertExpectedGCMRequest(t *testing.T, request *http.Request, expectedRegId
 	if err != nil {
 		t.Fatalf("Unexpected error reading body: %v", err)
 	}
-	actualBody := string(actualBodyBytes)
 	expectedBody := fmt.Sprintf(`{"registration_ids":[%q],"data":%s,"time_to_live":3600}`, expectedRegId, expectedPayload)
-	if expectedBody != actualBody {
-		t.Errorf("Expected a request body of %q, got %q", expectedBody, actualBody)
+	expectJSONIsEquivalent(t, []byte(expectedBody), actualBodyBytes)
+}
+
+// Overlaps with TestToFCMPayload, since Preview just calls toFCMPayload.
+func TestPreviewWithCommonParameters(t *testing.T) {
+	postData := map[string]string{
+		"msggroup":  "somegroup",
+		"other":     "value",
+		"other.foo": "bar",
+		"ttl":       "5",
+		// FCM module should ignore anything it doesn't recognize begining with "uniqush.", those are reserved.
+		"uniqush.payload.apns": "{}",
+		"uniqush.foo":          "foo",
+	}
+	expectedPayload := `{"registration_ids":["placeholderRegId"],"collapse_key":"somegroup","data":{"other":"value","other.foo":"bar"},"time_to_live":5}`
+
+	notif := push.NewEmptyNotification()
+	notif.Data = postData
+
+	_, _, service, _ := commonFCMMocks(200, []byte("unused"), map[string]string{}, nil)
+	defer service.Finalize()
+
+	payload, err := service.Preview(notif)
+	if err != nil {
+		t.Fatalf("Encountered error %v\n", err)
+	}
+	if string(payload) != expectedPayload {
+		t.Errorf("Expected %s, got %s", expectedPayload, string(payload))
 	}
 }
