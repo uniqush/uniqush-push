@@ -10,7 +10,10 @@ import (
 func testToGCMPayload(t *testing.T, postData map[string]string, regIds []string, expectedPayload string) {
 	notif := push.NewEmptyNotification()
 	notif.Data = postData
-	payload, err := toGCMPayload(notif, regIds)
+	// Create a push service, just for the sake of realistically testing building payloads
+	stubPushService := newGCMPushService()
+	defer stubPushService.Finalize()
+	payload, err := stubPushService.ToCMPayload(notif, regIds)
 	if err != nil {
 		t.Fatalf("Encountered error %v\n", err)
 	}

@@ -1,10 +1,8 @@
 package srv
 
 import (
-	"bytes"
 	"encoding/json"
 	"fmt"
-	"io"
 	"io/ioutil"
 	"net/http"
 	"reflect"
@@ -15,65 +13,13 @@ import (
 )
 
 const (
-	MOCK_API_KEY    = "mockapikey"
-	MOCK_PROJECT_ID = "mockprojectid"
-	MOCK_SERVICE    = "mockservice"
+	GCM_MOCK_API_KEY    = "mockapikey"
+	GCM_MOCK_PROJECT_ID = "mockprojectid"
+	GCM_MOCK_SERVICE    = "mockservice"
 )
 
-type mockHTTPClient struct {
-	status       int
-	responseBody []byte
-	headers      map[string]string
-	requestError error
-	// Mocks for responses given json encoded request, TODO write expectations.
-	// mockResponses map[string]string
-	performed []*mockResponse
-}
-
-type mockResponse struct {
-	impl    *bytes.Reader
-	closed  bool
-	request *http.Request
-}
-
-var _ io.ReadCloser = &mockResponse{}
-
-func newMockResponse(contents []byte, request *http.Request) *mockResponse {
-	return &mockResponse{
-		impl:    bytes.NewReader(contents),
-		closed:  false,
-		request: request,
-	}
-}
-
-func (r *mockResponse) Read(p []byte) (n int, err error) {
-	return r.impl.Read(p)
-}
-
-func (r *mockResponse) Close() error {
-	r.closed = true
-	return nil
-}
-
-func (c *mockHTTPClient) Do(request *http.Request) (*http.Response, error) {
-	h := http.Header{}
-	for k, v := range c.headers {
-		h.Set(k, v)
-	}
-	body := newMockResponse(c.responseBody, request)
-	result := &http.Response{
-		StatusCode: c.status,
-		Body:       body,
-		Header:     h,
-	}
-	c.performed = append(c.performed, body)
-	return result, c.requestError
-}
-
-var _ GCMHTTPClient = &mockHTTPClient{}
-
-func commonGCMMocks(responseCode int, responseBody []byte, headers map[string]string, requestError error) (*push.PushServiceProvider, *mockHTTPClient, *gcmPushService, chan push.PushError) {
-	client := &mockHTTPClient{
+func commonGCMMocks(responseCode int, responseBody []byte, headers map[string]string, requestError error) (*push.PushServiceProvider, *mockCMHTTPClient, *gcmPushService, chan push.PushError) {
+	client := &mockCMHTTPClient{
 		status:       responseCode,
 		responseBody: responseBody,
 		headers:      headers,
@@ -91,10 +37,10 @@ func commonGCMMocks(responseCode int, responseBody []byte, headers map[string]st
 
 	psp, err := psm.BuildPushServiceProviderFromMap(map[string]string{
 		"pushservicetype": service.Name(),
-		"service":         MOCK_SERVICE,
+		"service":         GCM_MOCK_SERVICE,
 		"subscriber":      "mocksubscriber",
-		"apikey":          MOCK_API_KEY,
-		"projectid":       MOCK_PROJECT_ID,
+		"apikey":          GCM_MOCK_API_KEY,
+		"projectid":       GCM_MOCK_PROJECT_ID,
 	})
 
 	if psp == nil {
@@ -112,7 +58,7 @@ func asyncCreateDPQueue(wg *sync.WaitGroup, dpQueue chan<- *push.DeliveryPoint, 
 		"regid":           regId,
 		"subscriber":      subscriber,
 		"pushservicetype": "gcm",
-		"service":         MOCK_SERVICE,
+		"service":         GCM_MOCK_SERVICE,
 	})
 	if err != nil {
 		panic(err)
@@ -136,7 +82,7 @@ func TestPushSingle(t *testing.T) {
 		"uniqush.payload.gcm": expectedPayload,
 	}
 	mockHTTPResponse := []byte(`{"multicast_id":777,"canonical_ids":1,"success":1,"failure":0,"results":[{"message_id":"UID12345"}]}`)
-	psp, mockHTTPClient, service, errChan := commonGCMMocks(200, mockHTTPResponse, map[string]string{}, nil)
+	psp, mockCMHTTPClient, service, errChan := commonGCMMocks(200, mockHTTPResponse, map[string]string{}, nil)
 	dpQueue := make(chan *push.DeliveryPoint)
 	resQueue := make(chan *push.PushResult)
 	wg := new(sync.WaitGroup)
@@ -165,10 +111,10 @@ func TestPushSingle(t *testing.T) {
 	if numErrs := len(errChan); numErrs > 0 {
 		t.Errorf("Unexpected number of errors: want none, got %d", numErrs)
 	}
-	if len(mockHTTPClient.performed) != 1 {
-		t.Errorf("Unexpected number of http calls: want 1, got %#v", mockHTTPClient.performed)
+	if len(mockCMHTTPClient.performed) != 1 {
+		t.Errorf("Unexpected number of http calls: want 1, got %#v", mockCMHTTPClient.performed)
 	}
-	mockResponse := mockHTTPClient.performed[0]
+	mockResponse := mockCMHTTPClient.performed[0]
 	if !mockResponse.closed {
 		t.Error("Expected the mock response body to be closed")
 	}
@@ -185,7 +131,7 @@ func TestPushSingleError(t *testing.T) {
 		"uniqush.payload.gcm": expectedPayload,
 	}
 	mockHTTPResponse := []byte(`HTTP/401 error mock response`)
-	psp, mockHTTPClient, service, errChan := commonGCMMocks(401, mockHTTPResponse, map[string]string{}, nil)
+	psp, mockCMHTTPClient, service, errChan := commonGCMMocks(401, mockHTTPResponse, map[string]string{}, nil)
 	dpQueue := make(chan *push.DeliveryPoint)
 	resQueue := make(chan *push.PushResult)
 	wg := new(sync.WaitGroup)
@@ -218,10 +164,10 @@ func TestPushSingleError(t *testing.T) {
 	if numErrs := len(errChan); numErrs > 0 {
 		t.Errorf("Unexpected number of errors: want none, got %d", numErrs)
 	}
-	if len(mockHTTPClient.performed) != 1 {
-		t.Errorf("Unexpected number of http calls: want 1, got %#v", mockHTTPClient.performed)
+	if len(mockCMHTTPClient.performed) != 1 {
+		t.Errorf("Unexpected number of http calls: want 1, got %#v", mockCMHTTPClient.performed)
 	}
-	mockResponse := mockHTTPClient.performed[0]
+	mockResponse := mockCMHTTPClient.performed[0]
 	if !mockResponse.closed {
 		t.Error("Expected the mock response body to be closed")
 	}
@@ -257,7 +203,7 @@ func assertExpectedGCMRequest(t *testing.T, request *http.Request, expectedRegId
 	}
 
 	actualAuth := request.Header.Get("Authorization")
-	expectedAuth := "key=" + MOCK_API_KEY
+	expectedAuth := "key=" + GCM_MOCK_API_KEY
 	if actualAuth != expectedAuth {
 		t.Errorf("Expected auth %q, got %q", expectedAuth, actualAuth)
 	}

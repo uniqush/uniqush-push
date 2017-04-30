@@ -1,10 +1,8 @@
 package srv
 
 import (
-	"bytes"
 	"encoding/json"
 	"fmt"
-	"io"
 	"io/ioutil"
 	"net/http"
 	"reflect"
@@ -20,60 +18,8 @@ const (
 	FCM_MOCK_SERVICE    = "mockservice"
 )
 
-type fcmMockHTTPClient struct {
-	status       int
-	responseBody []byte
-	headers      map[string]string
-	requestError error
-	// Mocks for responses given json encoded request, TODO write expectations.
-	// fcmMockResponses map[string]string
-	performed []*fcmMockResponse
-}
-
-type fcmMockResponse struct {
-	impl    *bytes.Reader
-	closed  bool
-	request *http.Request
-}
-
-var _ io.ReadCloser = &fcmMockResponse{}
-
-func fcmNewMockResponse(contents []byte, request *http.Request) *fcmMockResponse {
-	return &fcmMockResponse{
-		impl:    bytes.NewReader(contents),
-		closed:  false,
-		request: request,
-	}
-}
-
-func (r *fcmMockResponse) Read(p []byte) (n int, err error) {
-	return r.impl.Read(p)
-}
-
-func (r *fcmMockResponse) Close() error {
-	r.closed = true
-	return nil
-}
-
-func (c *fcmMockHTTPClient) Do(request *http.Request) (*http.Response, error) {
-	h := http.Header{}
-	for k, v := range c.headers {
-		h.Set(k, v)
-	}
-	body := fcmNewMockResponse(c.responseBody, request)
-	result := &http.Response{
-		StatusCode: c.status,
-		Body:       body,
-		Header:     h,
-	}
-	c.performed = append(c.performed, body)
-	return result, c.requestError
-}
-
-var _ FCMHTTPClient = &fcmMockHTTPClient{}
-
-func commonFCMMocks(responseCode int, responseBody []byte, headers map[string]string, requestError error) (*push.PushServiceProvider, *fcmMockHTTPClient, *fcmPushService, chan push.PushError) {
-	client := &fcmMockHTTPClient{
+func commonFCMMocks(responseCode int, responseBody []byte, headers map[string]string, requestError error) (*push.PushServiceProvider, *mockCMHTTPClient, *fcmPushService, chan push.PushError) {
+	client := &mockCMHTTPClient{
 		status:       responseCode,
 		responseBody: responseBody,
 		headers:      headers,
@@ -136,7 +82,7 @@ func fcmTestPushSingle(t *testing.T) {
 		"uniqush.payload.fcm": expectedPayload,
 	}
 	mockHTTPResponse := []byte(`{"multicast_id":777,"canonical_ids":1,"success":1,"failure":0,"results":[{"message_id":"UID12345"}]}`)
-	psp, fcmMockHTTPClient, service, errChan := commonFCMMocks(200, mockHTTPResponse, map[string]string{}, nil)
+	psp, mockCMHTTPClient, service, errChan := commonFCMMocks(200, mockHTTPResponse, map[string]string{}, nil)
 	dpQueue := make(chan *push.DeliveryPoint)
 	resQueue := make(chan *push.PushResult)
 	wg := new(sync.WaitGroup)
@@ -165,10 +111,10 @@ func fcmTestPushSingle(t *testing.T) {
 	if numErrs := len(errChan); numErrs > 0 {
 		t.Errorf("Unexpected number of errors: want none, got %d", numErrs)
 	}
-	if len(fcmMockHTTPClient.performed) != 1 {
-		t.Errorf("Unexpected number of http calls: want 1, got %#v", fcmMockHTTPClient.performed)
+	if len(mockCMHTTPClient.performed) != 1 {
+		t.Errorf("Unexpected number of http calls: want 1, got %#v", mockCMHTTPClient.performed)
 	}
-	fcmMockResponse := fcmMockHTTPClient.performed[0]
+	fcmMockResponse := mockCMHTTPClient.performed[0]
 	if !fcmMockResponse.closed {
 		t.Error("Expected the mock response body to be closed")
 	}
@@ -185,7 +131,7 @@ func fcmTestPushSingleError(t *testing.T) {
 		"uniqush.payload.fcm": expectedPayload,
 	}
 	mockHTTPResponse := []byte(`HTTP/401 error mock response`)
-	psp, fcmMockHTTPClient, service, errChan := commonFCMMocks(401, mockHTTPResponse, map[string]string{}, nil)
+	psp, mockCMHTTPClient, service, errChan := commonFCMMocks(401, mockHTTPResponse, map[string]string{}, nil)
 	dpQueue := make(chan *push.DeliveryPoint)
 	resQueue := make(chan *push.PushResult)
 	wg := new(sync.WaitGroup)
@@ -218,10 +164,10 @@ func fcmTestPushSingleError(t *testing.T) {
 	if numErrs := len(errChan); numErrs > 0 {
 		t.Errorf("Unexpected number of errors: want none, got %d", numErrs)
 	}
-	if len(fcmMockHTTPClient.performed) != 1 {
-		t.Errorf("Unexpected number of http calls: want 1, got %#v", fcmMockHTTPClient.performed)
+	if len(mockCMHTTPClient.performed) != 1 {
+		t.Errorf("Unexpected number of http calls: want 1, got %#v", mockCMHTTPClient.performed)
 	}
-	fcmMockResponse := fcmMockHTTPClient.performed[0]
+	fcmMockResponse := mockCMHTTPClient.performed[0]
 	if !fcmMockResponse.closed {
 		t.Error("Expected the mock response body to be closed")
 	}
