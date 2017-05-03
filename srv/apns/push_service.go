@@ -37,9 +37,8 @@ import (
 	"sync/atomic"
 	"time"
 
-	// There will be two different protocols we may use to connect to APNS: binary and HTTP2.
+	// There are two different protocols we use to connect to APNS: binary and HTTP2.
 	// TODO: Make this configurable.
-	// TODO: Implement HTTP2
 	"github.com/uniqush/uniqush-push/push"
 	"github.com/uniqush/uniqush-push/srv/apns/binary_api"
 	"github.com/uniqush/uniqush-push/srv/apns/common"
@@ -82,38 +81,75 @@ func (p *pushService) BuildPushServiceProviderFromMap(kv map[string]string, psp 
 	}
 
 	if cert, ok := kv["cert"]; ok && len(cert) > 0 {
+		// Binary API
 		psp.FixedData["cert"] = cert
-	} else {
-		return errors.New("NoCertificate")
-	}
 
-	if key, ok := kv["key"]; ok && len(key) > 0 {
-		psp.FixedData["key"] = key
-	} else {
-		return errors.New("NoPrivateKey")
-	}
-
-	_, err := tls.LoadX509KeyPair(psp.FixedData["cert"], psp.FixedData["key"])
-	if err != nil {
-		return err
-	}
-
-	if skip, ok := kv["skipverify"]; ok {
-		if skip == "true" {
-			psp.VolatileData["skipverify"] = "true"
+		if key, ok := kv["key"]; ok && len(key) > 0 {
+			psp.FixedData["key"] = key
+		} else {
+			return errors.New("NoPrivateKey")
 		}
-	}
-	if sandbox, ok := kv["sandbox"]; ok {
-		if sandbox == "true" {
-			psp.VolatileData["addr"] = "gateway.sandbox.push.apple.com:2195"
+
+		_, err := tls.LoadX509KeyPair(psp.FixedData["cert"], psp.FixedData["key"])
+		if err != nil {
+			return err
+		}
+
+		if skip, ok := kv["skipverify"]; ok {
+			if skip == "true" {
+				psp.VolatileData["skipverify"] = "true"
+			}
+		}
+
+		if sandbox, ok := kv["sandbox"]; ok {
+			if sandbox == "true" {
+				psp.VolatileData["addr"] = "gateway.sandbox.push.apple.com:2195"
+				return nil
+			}
+		}
+		if addr, ok := kv["addr"]; ok {
+			psp.VolatileData["addr"] = addr
 			return nil
 		}
+		psp.VolatileData["addr"] = "gateway.push.apple.com:2195"
+	} else {
+		if p8, ok := kv["p8"]; ok && len(p8) > 0 {
+			// HTTP API
+			psp.FixedData["p8"] = p8
+
+			_, err := common.LoadPKCS8Key(p8)
+			if err != nil {
+				return err
+			}
+
+			if keyID, ok := kv["keyid"]; ok {
+				psp.FixedData["keyid"] = keyID
+			} else {
+				return errors.New("NoKeyID")
+			}
+
+			if teamID, ok := kv["teamid"]; ok {
+				psp.FixedData["teamid"] = teamID
+			} else {
+				return errors.New("NoTeamID")
+			}
+
+			if sandbox, ok := kv["sandbox"]; ok {
+				if sandbox == "true" {
+					psp.VolatileData["addr"] = "api.development.push.apple.com:443 "
+					return nil
+				}
+			}
+			if addr, ok := kv["addr"]; ok {
+				psp.VolatileData["addr"] = addr
+				return nil
+			}
+			psp.VolatileData["addr"] = "api.push.apple.com:443 "
+		} else {
+			return errors.New("NoP8Key")
+		}
 	}
-	if addr, ok := kv["addr"]; ok {
-		psp.VolatileData["addr"] = addr
-		return nil
-	}
-	psp.VolatileData["addr"] = "gateway.push.apple.com:2195"
+
 	return nil
 }
 
