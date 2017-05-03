@@ -2,16 +2,16 @@ package common
 
 import (
 	"crypto/ecdsa"
-	"crypto/x509"
-	"encoding/pem"
 	"errors"
-	"io/ioutil"
 	"time"
 
 	jwt "github.com/dgrijalva/jwt-go"
 )
 
+// JWTManager interface to manage APNS JWT
 type JWTManager interface {
+	// GenerateToken returns a token used for APNS connection
+	// Returns error if fails to serialize or sign the token
 	GenerateToken() (string, error)
 }
 
@@ -21,14 +21,11 @@ type jwtManagerImpl struct {
 	iss        string
 }
 
+// NewJWTManager creates a JWTManager to handle APNS authentication token
+// Accepts keyFile as path to p8 key file, the key id, and issuer team id
+// Returns error if fails to read key from the provided path
 func NewJWTManager(keyFile, keyID, teamID string) (JWTManager, error) {
-	keyPEM, err := ioutil.ReadFile(keyFile)
-	if err != nil {
-		return nil, err
-	}
-
-	block, _ := pem.Decode(keyPEM)
-	key, err := x509.ParsePKCS8PrivateKey(block.Bytes)
+	key, err := LoadPKCS8Key(keyFile)
 	if err != nil {
 		return nil, err
 	}
