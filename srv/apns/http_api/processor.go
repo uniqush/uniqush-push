@@ -72,7 +72,7 @@ func (processor *HTTPPushRequestProcessor) SetErrorReportChan(errChan chan<- pus
 func (processor *HTTPPushRequestProcessor) sendRequest(request *http.Request, errChan chan<- push.PushError, resChan chan<- *common.APNSResult) {
 	response, err := processor.client.Do(request)
 	if err != nil {
-		errChan <- push.NewError(err.Error())
+		errChan <- push.NewConnectionError(err)
 		return
 	}
 	defer response.Body.Close()
