@@ -12,14 +12,22 @@ import (
 	"github.com/uniqush/uniqush-push/srv/apns/common"
 )
 
+const (
+	loadKeyError            uint8 = 9
+	tokenSerializationError uint8 = 10
+	invalidRequestError     uint8 = 11
+	httpRequestError        uint8 = 12
+	apnsResponseError       uint8 = 13
+)
+
 // HTTPPushRequestProcessor connects to APNS using HTTP
 // Reference: https://developer.apple.com/library/content/documentation/NetworkingInternet/Conceptual/RemoteNotificationsPG/CommunicatingwithAPNs.html
 type HTTPPushRequestProcessor struct {
 	client *http.Client
 }
 
-// NewHTTPPushProcessor returns a new HTTPPushProcessor using net/http DefaultClient connection pool
-func NewHTTPPushProcessor() common.PushRequestProcessor {
+// NewRequestProcessor returns a new HTTPPushProcessor using net/http DefaultClient connection pool
+func NewRequestProcessor() common.PushRequestProcessor {
 	return &HTTPPushRequestProcessor{
 		client: http.DefaultClient,
 	}
@@ -28,12 +36,12 @@ func NewHTTPPushProcessor() common.PushRequestProcessor {
 func (processor *HTTPPushRequestProcessor) AddRequest(request *common.PushRequest) {
 	jwtManager, err := common.NewJWTManager(request.PSP.FixedData["p8"], request.PSP.FixedData["keyid"], request.PSP.FixedData["teamid"])
 	if err != nil {
-		request.ErrChan <- push.NewError(err.Error())
+		resultAllError(request, loadKeyError, push.NewError(err.Error()))
 		return
 	}
 	jwt, err := jwtManager.GenerateToken()
 	if err != nil {
-		request.ErrChan <- push.NewError(err.Error())
+		resultAllError(request, tokenSerializationError, push.NewError(err.Error()))
 		return
 	}
 	header := http.Header{
@@ -43,17 +51,33 @@ func (processor *HTTPPushRequestProcessor) AddRequest(request *common.PushReques
 	}
 
 	for i, token := range request.Devtokens {
+		msgID := request.GetId(i)
+
 		url := fmt.Sprintf("%s/3/device/%s", request.PSP.FixedData["addr"], hex.EncodeToString(token))
 		httpRequest, err := http.NewRequest("POST", url, bytes.NewReader(request.Payload))
 		if err != nil {
 			request.ErrChan <- push.NewError(err.Error())
+			request.ResChan <- &common.APNSResult{
+				MsgId:  msgID,
+				Status: invalidRequestError,
+				Err:    push.NewError(err.Error()),
+			}
 			continue
 		}
 		httpRequest.Header = header
 
-		msgID := request.GetId(i)
-
 		go processor.sendRequest(httpRequest, msgID, request.ErrChan, request.ResChan)
+	}
+}
+
+func resultAllError(request *common.PushRequest, status uint8, err push.PushError) {
+	for i, _ := range request.Devtokens {
+		msgID := request.GetId(i)
+		request.ResChan <- &common.APNSResult{
+			MsgId:  msgID,
+			Status: status,
+			Err:    err,
+		}
 	}
 }
 
@@ -74,7 +98,11 @@ func (processor *HTTPPushRequestProcessor) SetErrorReportChan(errChan chan<- pus
 func (processor *HTTPPushRequestProcessor) sendRequest(request *http.Request, messageID uint32, errChan chan<- push.PushError, resChan chan<- *common.APNSResult) {
 	response, err := processor.client.Do(request)
 	if err != nil {
-		errChan <- push.NewConnectionError(err)
+		resChan <- &common.APNSResult{
+			MsgId:  messageID,
+			Status: httpRequestError,
+			Err:    push.NewConnectionError(err),
+		}
 		return
 	}
 	defer response.Body.Close()
@@ -89,7 +117,7 @@ func (processor *HTTPPushRequestProcessor) sendRequest(request *http.Request, me
 	}
 	if len(responseBody) > 0 {
 		// Successful request should return empty response body
-		result.Status = uint8(9)
+		result.Status = apnsResponseError
 		apnsError := new(APNSErrorResponse)
 		err := json.Unmarshal(responseBody, apnsError)
 		if err != nil {

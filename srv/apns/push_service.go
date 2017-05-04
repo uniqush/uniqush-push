@@ -51,11 +51,11 @@ const (
 )
 
 type pushService struct {
-	// Implements one of the network protocols for sending requests to APNS and getting the corresponding response.
-	requestProcessor common.PushRequestProcessor
-	nextMessageId    uint32
-	errChan          chan<- push.PushError
-	checkPoint       time.Time
+	binaryRequestProcessor common.PushRequestProcessor
+	httpRequestProcessor   common.PushRequestProcessor
+	errChan                chan<- push.PushError
+	nextMessageId          uint32
+	checkPoint             time.Time
 }
 
 var _ push.PushServiceType = &pushService{}
@@ -65,12 +65,14 @@ func (p *pushService) Name() string {
 }
 
 func (p *pushService) Finalize() {
-	p.requestProcessor.Finalize()
+	p.binaryRequestProcessor.Finalize()
+	p.httpRequestProcessor.Finalize()
 }
 
 func (self *pushService) SetErrorReportChan(errChan chan<- push.PushError) {
 	self.errChan = errChan
-	self.requestProcessor.SetErrorReportChan(errChan)
+	self.binaryRequestProcessor.SetErrorReportChan(errChan)
+	self.httpRequestProcessor.SetErrorReportChan(errChan)
 	return
 }
 
@@ -177,18 +179,11 @@ func (p *pushService) BuildDeliveryPointFromMap(kv map[string]string, dp *push.D
 	return nil
 }
 
-func NewBinaryPushService() *pushService {
-	return newPushService(binary_api.NewRequestProcessor(maxNrConn))
-}
-
-func NewHTTPPushService() *pushService {
-	return newPushService(http_api.NewHTTPPushProcessor())
-}
-
-func newPushService(requestProcessor common.PushRequestProcessor) *pushService {
+func NewPushService() *pushService {
 	return &pushService{
-		requestProcessor: requestProcessor,
-		nextMessageId:    1,
+		binaryRequestProcessor: binary_api.NewRequestProcessor(maxNrConn),
+		httpRequestProcessor:   http_api.NewRequestProcessor(),
+		nextMessageId:          1,
 	}
 }
 
@@ -219,11 +214,12 @@ func apnsresToError(apnsres *common.APNSResult, psp *push.PushServiceProvider, d
 		// err = NewBadDeliveryPointWithDetails(req.dp, "Invalid Token")
 		// This token is invalid, we should unsubscribe this device.
 		err = push.NewUnsubscribeUpdate(psp, dp)
-	case 9:
-		// HTTP API error
-		err = apnsres.Err
 	default:
-		err = push.NewErrorf("Unknown Error: %d", apnsres.Status)
+		if apnsres.Err != nil {
+			err = apnsres.Err
+		} else {
+			err = push.NewErrorf("Unknown Error: %d", apnsres.Status)
+		}
 	}
 	return err
 }
@@ -267,8 +263,15 @@ func (self *pushService) Push(psp *push.PushServiceProvider, dpQueue <-chan *pus
 	req.PSP = psp
 	req.Payload, err = toAPNSPayload(notif)
 
-	if err == nil && len(req.Payload) > self.requestProcessor.GetMaxPayloadSize() {
-		err = push.NewBadNotificationWithDetails(fmt.Sprintf("payload is too large: %d > %d", len(req.Payload), self.requestProcessor.GetMaxPayloadSize()))
+	var requestProcessor common.PushRequestProcessor
+	if _, ok := psp.FixedData["cert"]; ok {
+		requestProcessor = self.binaryRequestProcessor
+	} else {
+		requestProcessor = self.httpRequestProcessor
+	}
+
+	if err == nil && len(req.Payload) > requestProcessor.GetMaxPayloadSize() {
+		err = push.NewBadNotificationWithDetails(fmt.Sprintf("payload is too large: %d > %d", len(req.Payload), requestProcessor.GetMaxPayloadSize()))
 	}
 
 	if err != nil {
@@ -336,7 +339,7 @@ func (self *pushService) Push(psp *push.PushServiceProvider, dpQueue <-chan *pus
 	req.ErrChan = errChan
 	req.ResChan = resChan
 
-	self.requestProcessor.AddRequest(req)
+	requestProcessor.AddRequest(req)
 
 	// errChan closed means the message(s) is/are sent successfully to the APNs.
 	// However, we may have not yet receieved responses from APNS - those are sent on resChan
