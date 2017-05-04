@@ -87,18 +87,19 @@ func (processor *HTTPPushRequestProcessor) sendRequest(request *http.Request, er
 		if err != nil {
 			errChan <- push.NewError(err.Error())
 			resChan <- &common.APNSResult{
-				Status: uint8(response.StatusCode),
-				Err:    push.NewBadNotificationWithDetails(string(responseBody)),
+				StatusCode: response.StatusCode,
+				Err:        push.NewBadNotificationWithDetails(string(responseBody)),
 			}
 		} else {
 			resChan <- &common.APNSResult{
-				Status: uint8(response.StatusCode),
-				Err:    push.NewBadNotificationWithDetails(apnsError.Reason),
+				StatusCode: response.StatusCode,
+				Err:        push.NewBadNotificationWithDetails(apnsError.Reason),
 			}
 		}
 	} else {
 		resChan <- &common.APNSResult{
-			Status: uint8(response.StatusCode),
+			APNSID:     response.Header.Get("apns-id"),
+			StatusCode: response.StatusCode,
 		}
 	}
 }

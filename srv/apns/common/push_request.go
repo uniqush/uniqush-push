@@ -60,7 +60,9 @@ func (self *PushRequest) GetId(idx int) uint32 {
 }
 
 type APNSResult struct {
-	MsgId  uint32
-	Status uint8
-	Err    push.PushError
+	MsgId      uint32
+	Status     uint8
+	StatusCode int
+	APNSID     string
+	Err        push.PushError
 }
