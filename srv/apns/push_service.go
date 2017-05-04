@@ -42,6 +42,7 @@ import (
 	"github.com/uniqush/uniqush-push/push"
 	"github.com/uniqush/uniqush-push/srv/apns/binary_api"
 	"github.com/uniqush/uniqush-push/srv/apns/common"
+	"github.com/uniqush/uniqush-push/srv/apns/http_api"
 )
 
 const (
@@ -180,6 +181,10 @@ func NewBinaryPushService() *pushService {
 	return newPushService(binary_api.NewRequestProcessor(maxNrConn))
 }
 
+func NewHTTPPushService() *pushService {
+	return newPushService(http_api.NewHTTPPushProcessor())
+}
+
 func newPushService(requestProcessor common.PushRequestProcessor) *pushService {
 	return &pushService{
 		requestProcessor: requestProcessor,
@@ -214,6 +219,9 @@ func apnsresToError(apnsres *common.APNSResult, psp *push.PushServiceProvider, d
 		// err = NewBadDeliveryPointWithDetails(req.dp, "Invalid Token")
 		// This token is invalid, we should unsubscribe this device.
 		err = push.NewUnsubscribeUpdate(psp, dp)
+	case 9:
+		// HTTP API error
+		err = apnsres.Err
 	default:
 		err = push.NewErrorf("Unknown Error: %d", apnsres.Status)
 	}

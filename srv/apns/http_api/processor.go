@@ -42,7 +42,7 @@ func (processor *HTTPPushRequestProcessor) AddRequest(request *common.PushReques
 		"apns-priority":   []string{"10"}, // Send notification immidiately
 	}
 
-	for _, token := range request.Devtokens {
+	for i, token := range request.Devtokens {
 		url := fmt.Sprintf("%s/3/device/%s", request.PSP.FixedData["addr"], hex.EncodeToString(token))
 		httpRequest, err := http.NewRequest("POST", url, bytes.NewReader(request.Payload))
 		if err != nil {
@@ -51,7 +51,9 @@ func (processor *HTTPPushRequestProcessor) AddRequest(request *common.PushReques
 		}
 		httpRequest.Header = header
 
-		go processor.sendRequest(httpRequest, request.ErrChan, request.ResChan)
+		msgID := request.GetId(i)
+
+		go processor.sendRequest(httpRequest, msgID, request.ErrChan, request.ResChan)
 	}
 }
 
@@ -69,7 +71,7 @@ func (processor *HTTPPushRequestProcessor) Finalize() {
 
 func (processor *HTTPPushRequestProcessor) SetErrorReportChan(errChan chan<- push.PushError) {}
 
-func (processor *HTTPPushRequestProcessor) sendRequest(request *http.Request, errChan chan<- push.PushError, resChan chan<- *common.APNSResult) {
+func (processor *HTTPPushRequestProcessor) sendRequest(request *http.Request, messageID uint32, errChan chan<- push.PushError, resChan chan<- *common.APNSResult) {
 	response, err := processor.client.Do(request)
 	if err != nil {
 		errChan <- push.NewConnectionError(err)
@@ -81,25 +83,21 @@ func (processor *HTTPPushRequestProcessor) sendRequest(request *http.Request, er
 	if err != nil {
 		errChan <- push.NewError(err.Error())
 	}
+
+	result := &common.APNSResult{
+		MsgId: messageID,
+	}
 	if len(responseBody) > 0 {
+		// Successful request should return empty response body
+		result.Status = uint8(9)
 		apnsError := new(APNSErrorResponse)
 		err := json.Unmarshal(responseBody, apnsError)
 		if err != nil {
 			errChan <- push.NewError(err.Error())
-			resChan <- &common.APNSResult{
-				StatusCode: response.StatusCode,
-				Err:        push.NewBadNotificationWithDetails(string(responseBody)),
-			}
+			result.Err = push.NewBadNotificationWithDetails(fmt.Sprint("APNS response:", string(responseBody)))
 		} else {
-			resChan <- &common.APNSResult{
-				StatusCode: response.StatusCode,
-				Err:        push.NewBadNotificationWithDetails(apnsError.Reason),
-			}
-		}
-	} else {
-		resChan <- &common.APNSResult{
-			APNSID:     response.Header.Get("apns-id"),
-			StatusCode: response.StatusCode,
+			result.Err = push.NewBadNotificationWithDetails(fmt.Sprint("APNS error string:", apnsError))
 		}
 	}
+	resChan <- result
 }
