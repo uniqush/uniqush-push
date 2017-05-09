@@ -72,3 +72,10 @@ func TestAddRequest(t *testing.T) {
 		}
 	}
 }
+
+func TestGetMaxPayloadSize(t *testing.T) {
+	maxPayloadSize := NewRequestProcessor().GetMaxPayloadSize()
+	if maxPayloadSize != 4096 {
+		t.Fatalf("Wrong max payload, expected `4096`, got `%d`", maxPayloadSize)
+	}
+}
