@@ -137,9 +137,15 @@ func (p *pushService) BuildPushServiceProviderFromMap(kv map[string]string, psp 
 				return errors.New("NoTeamID")
 			}
 
+			if bundleID, ok := kv["bundleid"]; ok {
+				psp.FixedData["bundleid"] = bundleID
+			} else {
+				return errors.New("NoBundleID")
+			}
+
 			if sandbox, ok := kv["sandbox"]; ok {
 				if sandbox == "true" {
-					psp.VolatileData["addr"] = "api.development.push.apple.com:443 "
+					psp.VolatileData["addr"] = "https://api.development.push.apple.com"
 					return nil
 				}
 			}
@@ -147,7 +153,7 @@ func (p *pushService) BuildPushServiceProviderFromMap(kv map[string]string, psp 
 				psp.VolatileData["addr"] = addr
 				return nil
 			}
-			psp.VolatileData["addr"] = "api.push.apple.com:443 "
+			psp.VolatileData["addr"] = "https://api.push.apple.com"
 		} else {
 			return errors.New("NoP8Key")
 		}
@@ -215,11 +221,7 @@ func apnsresToError(apnsres *common.APNSResult, psp *push.PushServiceProvider, d
 		// This token is invalid, we should unsubscribe this device.
 		err = push.NewUnsubscribeUpdate(psp, dp)
 	default:
-		if apnsres.Err != nil {
-			err = apnsres.Err
-		} else {
-			err = push.NewErrorf("Unknown Error: %d", apnsres.Status)
-		}
+		err = push.NewErrorf("Unknown Error: %d", apnsres.Status)
 	}
 	return err
 }
