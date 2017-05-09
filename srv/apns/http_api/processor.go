@@ -13,14 +13,6 @@ import (
 	"github.com/uniqush/uniqush-push/srv/apns/common"
 )
 
-const (
-	loadKeyError            uint8 = 9
-	tokenSerializationError uint8 = 10
-	invalidRequestError     uint8 = 11
-	httpRequestError        uint8 = 12
-	apnsResponseError       uint8 = 13
-)
-
 // HTTPPushRequestProcessor connects to APNS using HTTP
 // Reference: https://developer.apple.com/library/content/documentation/NetworkingInternet/Conceptual/RemoteNotificationsPG/CommunicatingwithAPNs.html
 type HTTPPushRequestProcessor struct {
