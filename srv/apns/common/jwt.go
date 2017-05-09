@@ -15,6 +15,14 @@ type JWTManager interface {
 	GenerateToken() (string, error)
 }
 
+var jwtManagerSingleton JWTManager
+
+// SetJWTManagerSingleton replaces all instance of JWTManager returned by NewJWTManager by the one specified
+// Useful for testing
+func SetJWTManagerSingleton(jwtManager JWTManager) {
+	jwtManagerSingleton = jwtManager
+}
+
 type jwtManagerImpl struct {
 	privateKey *ecdsa.PrivateKey
 	kid        string
@@ -25,6 +33,10 @@ type jwtManagerImpl struct {
 // Accepts keyFile as path to p8 key file, the key id, and issuer team id
 // Returns error if fails to read key from the provided path
 func NewJWTManager(keyFile, keyID, teamID string) (JWTManager, error) {
+	if jwtManagerSingleton != nil {
+		return jwtManagerSingleton, nil
+	}
+
 	key, err := LoadPKCS8Key(keyFile)
 	if err != nil {
 		return nil, err

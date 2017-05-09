@@ -13,8 +13,7 @@ import (
 	"github.com/uniqush/uniqush-push/srv/apns/common"
 )
 
-// HTTPPushRequestProcessor connects to APNS using HTTP
-// Reference: https://developer.apple.com/library/content/documentation/NetworkingInternet/Conceptual/RemoteNotificationsPG/CommunicatingwithAPNs.html
+// HTTPPushRequestProcessor sends push notification requests to APNS using HTTP API
 type HTTPPushRequestProcessor struct {
 	client *http.Client
 }

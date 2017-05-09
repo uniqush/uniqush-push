@@ -44,6 +44,12 @@ func (*MockJWTManager) GenerateToken() (string, error) {
 	return authToken, nil
 }
 
+func mockAPNSRequest(fn func(r *http.Request) (*http.Response, error)) {
+	httpmock.RegisterResponder("POST", apiURL, fn)
+}
+
+var mockJWTManager = &MockJWTManager{}
+
 func TestAddRequestPushSuccessful(t *testing.T) {
 	httpmock.Activate()
 	defer httpmock.DeactivateAndReset()
@@ -59,11 +65,12 @@ func TestAddRequestPushSuccessful(t *testing.T) {
 		ResChan:   resChan,
 	}
 
-	httpmock.RegisterResponder("POST", apiURL, func(r *http.Request) (*http.Response, error) {
+	mockAPNSRequest(func(r *http.Request) (*http.Response, error) {
 		// Return empty body
 		return httpmock.NewBytesResponse(http.StatusOK, nil), nil
 	})
 
+	common.SetJWTManagerSingleton(mockJWTManager)
 	NewRequestProcessor().AddRequest(request)
 
 	for err := range errChan {
@@ -88,7 +95,8 @@ func TestAddRequestPushFailConnectionError(t *testing.T) {
 		ResChan:   resChan,
 	}
 
-	httpmock.RegisterResponder("POST", apiURL, func(r *http.Request) (*http.Response, error) {
+	common.SetJWTManagerSingleton(mockJWTManager)
+	mockAPNSRequest(func(r *http.Request) (*http.Response, error) {
 		return nil, fmt.Errorf("No connection")
 	})
 
@@ -118,7 +126,8 @@ func TestAddRequestPushFailNotificationError(t *testing.T) {
 		ResChan:   resChan,
 	}
 
-	httpmock.RegisterResponder("POST", apiURL, func(r *http.Request) (*http.Response, error) {
+	common.SetJWTManagerSingleton(mockJWTManager)
+	mockAPNSRequest(func(r *http.Request) (*http.Response, error) {
 		response := &APNSErrorResponse{
 			Reason: "BadDeviceToken",
 		}
