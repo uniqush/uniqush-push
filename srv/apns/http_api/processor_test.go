@@ -48,15 +48,9 @@ func mockAPNSRequest(fn func(r *http.Request) (*http.Response, error)) {
 	httpmock.RegisterResponder("POST", apiURL, fn)
 }
 
-var mockJWTManager = &MockJWTManager{}
-
-func TestAddRequestPushSuccessful(t *testing.T) {
-	httpmock.Activate()
-	defer httpmock.DeactivateAndReset()
-
+func newPushRequest() (*common.PushRequest, chan push.PushError, chan *common.APNSResult) {
 	errChan := make(chan push.PushError)
 	resChan := make(chan *common.APNSResult, 1)
-
 	request := &common.PushRequest{
 		PSP:       pushServiceProvider,
 		Devtokens: [][]byte{devToken},
@@ -65,6 +59,16 @@ func TestAddRequestPushSuccessful(t *testing.T) {
 		ResChan:   resChan,
 	}
 
+	return request, errChan, resChan
+}
+
+var mockJWTManager = &MockJWTManager{}
+
+func TestAddRequestPushSuccessful(t *testing.T) {
+	httpmock.Activate()
+	defer httpmock.DeactivateAndReset()
+
+	request, _, resChan := newPushRequest()
 	mockAPNSRequest(func(r *http.Request) (*http.Response, error) {
 		// Return empty body
 		return httpmock.NewBytesResponse(http.StatusOK, nil), nil
@@ -73,10 +77,9 @@ func TestAddRequestPushSuccessful(t *testing.T) {
 	common.SetJWTManagerSingleton(mockJWTManager)
 	NewRequestProcessor().AddRequest(request)
 
-	for err := range errChan {
-		if err != nil {
-			t.Fatal("Error processing push request,", err)
-		}
+	res := <-resChan
+	if res.MsgId == 0 {
+		t.Fatal("Expected non-zero message id, got zero")
 	}
 }
 
@@ -84,17 +87,7 @@ func TestAddRequestPushFailConnectionError(t *testing.T) {
 	httpmock.Activate()
 	defer httpmock.DeactivateAndReset()
 
-	errChan := make(chan push.PushError)
-	resChan := make(chan *common.APNSResult, 1)
-
-	request := &common.PushRequest{
-		PSP:       pushServiceProvider,
-		Devtokens: [][]byte{devToken},
-		Payload:   payload,
-		ErrChan:   errChan,
-		ResChan:   resChan,
-	}
-
+	request, errChan, _ := newPushRequest()
 	common.SetJWTManagerSingleton(mockJWTManager)
 	mockAPNSRequest(func(r *http.Request) (*http.Response, error) {
 		return nil, fmt.Errorf("No connection")
@@ -102,12 +95,9 @@ func TestAddRequestPushFailConnectionError(t *testing.T) {
 
 	NewRequestProcessor().AddRequest(request)
 
-	for err := range errChan {
-		switch err := err.(type) {
-		case *push.ConnectionError:
-		default:
-			t.Fatal("Expected Connection error, got", err)
-		}
+	err := <-errChan
+	if _, ok := err.(*push.ConnectionError); !ok {
+		t.Fatal("Expected Connection error, got", err)
 	}
 }
 
@@ -115,17 +105,7 @@ func TestAddRequestPushFailNotificationError(t *testing.T) {
 	httpmock.Activate()
 	defer httpmock.DeactivateAndReset()
 
-	errChan := make(chan push.PushError)
-	resChan := make(chan *common.APNSResult, 1)
-
-	request := &common.PushRequest{
-		PSP:       pushServiceProvider,
-		Devtokens: [][]byte{devToken},
-		Payload:   payload,
-		ErrChan:   errChan,
-		ResChan:   resChan,
-	}
-
+	request, errChan, _ := newPushRequest()
 	common.SetJWTManagerSingleton(mockJWTManager)
 	mockAPNSRequest(func(r *http.Request) (*http.Response, error) {
 		response := &APNSErrorResponse{
@@ -136,12 +116,9 @@ func TestAddRequestPushFailNotificationError(t *testing.T) {
 
 	NewRequestProcessor().AddRequest(request)
 
-	for err := range errChan {
-		switch err := err.(type) {
-		case *push.BadNotification:
-		default:
-			t.Fatal("Expected BadNotification error, got", err)
-		}
+	err := <-errChan
+	if _, ok := err.(*push.BadNotification); !ok {
+		t.Fatal("Expected BadNotification error, got", err)
 	}
 }
 
