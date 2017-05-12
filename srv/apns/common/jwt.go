@@ -3,6 +3,7 @@ package common
 import (
 	"crypto/ecdsa"
 	"errors"
+	"sync"
 	"time"
 
 	jwt "github.com/dgrijalva/jwt-go"
@@ -15,11 +16,17 @@ type JWTManager interface {
 	GenerateToken() (string, error)
 }
 
-var jwtManagerSingleton JWTManager
+var (
+	jwtManagerSingleton JWTManager
+	rwMutex             sync.RWMutex
+)
 
 // SetJWTManagerSingleton replaces all instance of JWTManager returned by NewJWTManager by the one specified
 // Useful for testing
 func SetJWTManagerSingleton(jwtManager JWTManager) {
+	rwMutex.Lock()
+	defer rwMutex.Unlock()
+
 	jwtManagerSingleton = jwtManager
 }
 
@@ -33,6 +40,9 @@ type jwtManagerImpl struct {
 // Accepts keyFile as path to p8 key file, the key id, and issuer team id
 // Returns error if fails to read key from the provided path
 func NewJWTManager(keyFile, keyID, teamID string) (JWTManager, error) {
+	rwMutex.RLock()
+	defer rwMutex.RUnlock()
+
 	if jwtManagerSingleton != nil {
 		return jwtManagerSingleton, nil
 	}
