@@ -13,6 +13,17 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  *
+ * This implements version 2 of the Binary Provider API
+ *
+ * ## A note on ttl and expiry (Expiration date)
+ *
+ * From
+ * https://developer.apple.com/library/content/documentation/NetworkingInternet/Conceptual/RemoteNotificationsPG/BinaryProviderAPI.html#//apple_ref/doc/uid/TP40008194-CH13-SW1
+ *
+ * > A UNIX epoch date expressed in seconds (UTC) that identifies when the notification is no longer valid and can be discarded.
+ * >
+ * > If this value is non-zero, APNs stores the notification tries to deliver the notification at least once.
+ * > Specify zero to indicate that the notification expires immediately and that APNs should not store the notification at all.
  */
 
 package apns
@@ -27,7 +38,8 @@ import (
 	"time"
 
 	// There will be two different protocols we may use to connect to APNS: binary and HTTP2.
-	// TODO: Implement HTTP2 in a separate PR. (This may end up requiring go 1.6, I'm not sure yet)
+	// TODO: Make this configurable.
+	// TODO: Implement HTTP2
 	"github.com/uniqush/uniqush-push/push"
 	"github.com/uniqush/uniqush-push/srv/apns/binary_api"
 	"github.com/uniqush/uniqush-push/srv/apns/common"
@@ -36,16 +48,13 @@ import (
 const (
 	maxPayLoadSize int = 2048
 	maxNrConn      int = 13
-
-	// in Seconds
-	maxWaitTime int = 20
 )
 
 type pushService struct {
 	// Implements one of the network protocols for sending requests to APNS and getting the corresponding response.
 	requestProcessor common.PushRequestProcessor
-	errChan          chan<- push.PushError
 	nextMessageId    uint32
+	errChan          chan<- push.PushError
 	checkPoint       time.Time
 }
 
@@ -229,12 +238,21 @@ func (self *pushService) Push(psp *push.PushServiceProvider, dpQueue <-chan *pus
 		return
 	}
 
+	// By default, the notification expires in an hour if the ttl is omitted.
+	// Uniqush users can send a ttl of 0 to send a notification that expires immediately.
+	// Uniqush users can alternately choose a positive ttl in seconds, which will be converted to a timestamp.
 	unixNow := uint32(time.Now().Unix())
 	expiry := unixNow + 60*60
 	if ttlstr, ok := notif.Data["ttl"]; ok {
 		ttl, err := strconv.ParseUint(ttlstr, 10, 32)
 		if err == nil {
-			expiry = unixNow + uint32(ttl)
+			if ttl > 0 {
+				// Expiry is the exact date and time when the notification
+				// expires. It's not a "time to live".
+				expiry = unixNow + uint32(ttl)
+			} else {
+				expiry = uint32(0)
+			}
 		}
 	}
 	req.Expiry = expiry

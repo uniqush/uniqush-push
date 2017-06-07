@@ -13,9 +13,10 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  *
+ * See https://developer.apple.com/library/content/documentation/NetworkingInternet/Conceptual/RemoteNotificationsPG/BinaryProviderAPI.html#//apple_ref/doc/uid/TP40008194-CH13-SW1
  */
 
-// Package binary_api supports the old APNS Binary Provider API (encrypted TCP socket)
+// Package binary_api supports version 2 of the old APNS binary protocol (over an encrypted TCP socket)
 package binary_api
 
 import (
@@ -154,41 +155,90 @@ func (self *BinaryPushRequestProcessor) pushMux() {
 	}
 }
 
-// singlePush sends bytes to APNS, retrying with different connections if it failed to write bytes.
-func (self *BinaryPushRequestProcessor) singlePush(payload, token []byte, expiry uint32, mid uint32, workerPool *Pool, errChan chan<- push.PushError) {
+// generatePayload generates the bytes of a frame to send to APNS, for the Binary Provider API v2
+func generatePayload(payload, token []byte, expiry uint32, mid uint32) []byte {
 	// Total size for each notification:
+	// https://developer.apple.com/library/content/documentation/NetworkingInternet/Conceptual/RemoteNotificationsPG/BinaryProviderAPI.html#//apple_ref/doc/uid/TP40008194-CH13-SW1
 	//
-	// - command: 1
-	// - identifier: 4
-	// - expiry: 4
-	// - device token length: 2
-	// - device token: variable (100 max) - apple announced that we might have 100-byte device tokens in the future, in WWDC 2015. Previously 32.
-	// - payload length: 2
-	// - payload: variable (2048 max, for the **binary** API)
+	// - command:               			1 (`2`)
+	// - Frame length:                      4 (32-bit integer)
+	// - Item 1 - device token: 			103 or 35 (3+100 or 3+32) apple announced that we might have 100-byte device tokens in the future, in WWDC 2015 (conflicts with above document). Previously 32.
+	// - Item 2 - JSON payload: 			2051 (3+2048)
+	// - Item 3 - notification identifier:  7 (3+4)
+	// - Item 4 - expiry identifier:        7 (3+4)
+	// - Item 5 - priority:                 4 (3+1)
 	//
-	// In total, 2161 bytes (max)
+	// In total, 2175 bytes (max)
 	var dataBuffer [2180]byte
 
-	buffer := bytes.NewBuffer(dataBuffer[:0])
-	// command
-	binary.Write(buffer, binary.BigEndian, uint8(1))
 	// transaction id
-	binary.Write(buffer, binary.BigEndian, mid)
+	// https://developer.apple.com/library/ios/documentation/NetworkingInternet/Conceptual/RemoteNotificationsPG/Chapters/CommunicatingWIthAPS.html#//apple_ref/doc/uid/TP40008194-CH101-SW4
+	// Figure 5-2: An arbitrary, opaque value that identifies this notification. This identifier is used for reporting errors to your server.
 
-	// Expiry
-	binary.Write(buffer, binary.BigEndian, expiry)
+	// Format of a frame
+	//
+	// 1. (1 byte) item ID(1-5)
+	// 2. (2 byte) item data length (n)
+	// 3. (n bytes)
 
-	// device token
-	binary.Write(buffer, binary.BigEndian, uint16(len(token)))
+	// 5 frames, with 3 bytes of headers and the following data (The list id is the item ID, 1-5):
+	// 1. Device token (32 bytes)
+	// 2. JSON Payload (variable length, up to 2048 bytes)
+	// 3. Notification identifier (4 bytes)
+	// 4. Expiration date (4 bytes)
+	// 5. Priority (1 byte)
+	buffer := bytes.NewBuffer(dataBuffer[:0])
+	// command is version 2,
+
+	// Write the "Command" (2, to push with version 2 of the protocol)
+	binary.Write(buffer, binary.BigEndian, uint8(2))
+	// Write the "Frame length" (The size of the frame data, which is the remainder of the protocol)
+	frameDataLength := uint32((3 + len(token)) + (3 + len(payload)) + (3 + 4) + (3 + 4) + (3 + 1))
+
+	binary.Write(buffer, binary.BigEndian, frameDataLength)
+
+	// Writes 3 bytes for the item header, with item id and 2 bytes of length
+	writeItemHeader := func(id uint8, itemLength uint16) {
+		buffer.WriteByte(id)
+		binary.Write(buffer, binary.BigEndian, itemLength)
+	}
+
+	// Item 1. Device token
+	writeItemHeader(1, uint16(len(token)))
 	buffer.Write(token)
 
-	// payload
-	binary.Write(buffer, binary.BigEndian, uint16(len(payload)))
+	// Item 2. JSON payload
+	writeItemHeader(2, uint16(len(payload)))
 	buffer.Write(payload)
 
-	pdu := buffer.Bytes()
+	// Item 3. Notification identifier
+	writeItemHeader(3, 4)
+	binary.Write(buffer, binary.BigEndian, uint32(mid))
 
-	// Send the request to APNS. err is nil if bytes were successfully written.
+	// Item 4. Expiration date
+	writeItemHeader(4, 4)
+	binary.Write(buffer, binary.BigEndian, uint32(expiry))
+
+	// Item 5. Priority
+
+	// Previously, in protocol v1, there was implicitly a priority of 10
+	// https://developer.apple.com/library/content/documentation/NetworkingInternet/Conceptual/RemoteNotificationsPG/LegacyNotificationFormat.html#//apple_ref/doc/uid/TP40008194-CH14-SW1
+	// > These formats do not include a priority; a priority of 10 is assumed.
+	priority := uint8(10)
+	writeItemHeader(5, 1)
+	// TODO: If we specify a ttl of 0, assume we want to send it with highest priority. Otherwise... do something else, or allow the user to configure priority?
+	buffer.WriteByte(priority)
+
+	// End of frame
+	return buffer.Bytes()
+}
+
+// singlePush sends bytes to APNS, retrying with different connections if it failed to write bytes.
+func (self *BinaryPushRequestProcessor) singlePush(payload, token []byte, expiry uint32, mid uint32, workerPool *Pool, errChan chan<- push.PushError) {
+	// Generate the v2 frame payload
+	pdu := generatePayload(payload, token, expiry, mid)
+
+	// Send the request(frame) to APNS. err is nil if bytes were successfully written.
 	err := workerPool.Push(pdu)
 
 	// Retry with lengthening randomized delays if there are errors sending bytes to APNS.
