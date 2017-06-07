@@ -22,7 +22,7 @@ import (
 	"strconv"
 	"testing"
 
-	redis3 "gopkg.in/redis.v3"
+	redis5 "gopkg.in/redis.v5"
 )
 
 var dbconf *DatabaseConfig
@@ -55,10 +55,10 @@ func clearData() {
 	if err != nil {
 		db = 0
 	}
-	client := redis3.NewClient(&redis3.Options{
+	client := redis5.NewClient(&redis5.Options{
 		Addr:     fmt.Sprintf("%s:%d", c.Host, c.Port),
 		Password: c.Password,
-		DB:       db,
+		DB:       int(db),
 	})
 
 	client.FlushDb() // Flush the database which pushredisdb.go used.
