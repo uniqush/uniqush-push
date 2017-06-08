@@ -34,24 +34,24 @@ import (
 )
 
 const (
-	gcmServiceURL string = "https://android.googleapis.com/gcm/send"
+	fcmServiceURL string = "https://fcm.googleapis.com/fcm/send"
 )
 
-// GCMHTTPClient is a mockable interface for the parts of http.Client used by the GCM module.
-type GCMHTTPClient interface {
+// FCMHTTPClient is a mockable interface for the parts of http.Client used by the GCM module.
+type FCMHTTPClient interface {
 	Do(*http.Request) (*http.Response, error)
 }
 
-var _ GCMHTTPClient = &http.Client{}
+var _ FCMHTTPClient = &http.Client{}
 
-type gcmPushService struct {
-	// There is only one Transport and one Client for connecting to gcm, shared by the set of PSPs with pushservicetype=gcm (whether or not this is using a sandbox)
-	client GCMHTTPClient
+type fcmPushService struct {
+	// There is only one Transport and one Client for connecting to fcm, shared by the set of PSPs with pushservicetype=fcm (whether or not this is using a sandbox)
+	client FCMHTTPClient
 }
 
-var _ push.PushServiceType = &gcmPushService{}
+var _ push.PushServiceType = &fcmPushService{}
 
-func newGCMPushService() *gcmPushService {
+func newFCMPushService() *fcmPushService {
 	conf := &tls.Config{InsecureSkipVerify: false}
 	tr := &http.Transport{
 		TLSClientConfig:     conf,
@@ -65,21 +65,21 @@ func newGCMPushService() *gcmPushService {
 		Transport: tr,
 		Timeout:   time.Second * 10, // Add a timeout for all requests, in case of network issues.
 	}
-	return &gcmPushService{
+	return &fcmPushService{
 		client: client,
 	}
 }
 
-func InstallGCM() {
+func InstallFCM() {
 	psm := push.GetPushServiceManager()
-	psm.RegisterPushServiceType(newGCMPushService())
+	psm.RegisterPushServiceType(newFCMPushService())
 }
 
-func (g *gcmPushService) OverrideClient(client GCMHTTPClient) {
+func (g *fcmPushService) OverrideClient(client FCMHTTPClient) {
 	g.client = client
 }
 
-func (p *gcmPushService) Finalize() {
+func (p *fcmPushService) Finalize() {
 	if client, isClient := p.client.(*http.Client); isClient {
 		if transport, ok := client.Transport.(*http.Transport); ok {
 			transport.CloseIdleConnections()
@@ -87,18 +87,12 @@ func (p *gcmPushService) Finalize() {
 	}
 }
 
-func (p *gcmPushService) BuildPushServiceProviderFromMap(kv map[string]string,
+func (p *fcmPushService) BuildPushServiceProviderFromMap(kv map[string]string,
 	psp *push.PushServiceProvider) error {
 	if service, ok := kv["service"]; ok && len(service) > 0 {
 		psp.FixedData["service"] = service
 	} else {
 		return errors.New("NoService")
-	}
-
-	if projectid, ok := kv["projectid"]; ok && len(projectid) > 0 {
-		psp.FixedData["projectid"] = projectid
-	} else {
-		return errors.New("NoProjectID")
 	}
 
 	if authtoken, ok := kv["apikey"]; ok && len(authtoken) > 0 {
@@ -110,7 +104,7 @@ func (p *gcmPushService) BuildPushServiceProviderFromMap(kv map[string]string,
 	return nil
 }
 
-func (p *gcmPushService) BuildDeliveryPointFromMap(kv map[string]string,
+func (p *fcmPushService) BuildDeliveryPointFromMap(kv map[string]string,
 	dp *push.DeliveryPoint) error {
 	if service, ok := kv["service"]; ok && len(service) > 0 {
 		dp.FixedData["service"] = service
@@ -134,19 +128,19 @@ func (p *gcmPushService) BuildDeliveryPointFromMap(kv map[string]string,
 	return nil
 }
 
-func (p *gcmPushService) Name() string {
-	return "gcm"
+func (p *fcmPushService) Name() string {
+	return "fcm"
 }
 
-type gcmData struct {
+type fcmData struct {
 	RegIDs         []string               `json:"registration_ids"`
 	CollapseKey    string                 `json:"collapse_key,omitempty"`
-	Data           map[string]interface{} `json:"data"` // For compatibility with other GCM platforms(e.g. iOS), should always be a map[string]string
+	Data           map[string]interface{} `json:"data"` // For compatibility with other FCM platforms(e.g. iOS), should always be a map[string]string
 	DelayWhileIdle bool                   `json:"delay_while_idle,omitempty"`
 	TimeToLive     uint                   `json:"time_to_live,omitempty"`
 }
 
-func (d *gcmData) String() string {
+func (d *fcmData) String() string {
 	ret, err := json.Marshal(d)
 	if err != nil {
 		return ""
@@ -154,7 +148,7 @@ func (d *gcmData) String() string {
 	return string(ret)
 }
 
-type gcmResult struct {
+type fcmResult struct {
 	MulticastID  uint64              `json:"multicast_id"`
 	Success      uint                `json:"success"`
 	Failure      uint                `json:"failure"`
@@ -162,20 +156,20 @@ type gcmResult struct {
 	Results      []map[string]string `json:"results"`
 }
 
-// validateRawGCMData verifies that the user-provided JSON payload is a valid JSON object.
-func validateRawGCMData(payload string) (map[string]interface{}, push.PushError) {
+// validateRawFCMData verifies that the user-provided JSON payload is a valid JSON object.
+func validateRawFCMData(payload string) (map[string]interface{}, push.PushError) {
 	var data map[string]interface{}
 	err := json.Unmarshal([]byte(payload), &data)
 	if data == nil {
-		return nil, push.NewBadNotificationWithDetails(fmt.Sprintf("Could not parse GCM data: %v", err))
+		return nil, push.NewBadNotificationWithDetails(fmt.Sprintf("Could not parse FCM data: %v", err))
 	}
 	return data, nil
 }
 
-// toGCMPayload converts the notification data to a JSON-encoded string to POST to GCM.
-func toGCMPayload(notif *push.Notification, regIds []string) ([]byte, push.PushError) {
+// toFCMPayload converts the notification data to a JSON-encoded string to POST to FCM.
+func toFCMPayload(notif *push.Notification, regIds []string) ([]byte, push.PushError) {
 	postData := notif.Data
-	payload := new(gcmData)
+	payload := new(fcmData)
 	payload.RegIDs = regIds
 
 	// TTL: default is one hour
@@ -195,9 +189,9 @@ func toGCMPayload(notif *push.Notification, regIds []string) ([]byte, push.PushE
 		}
 	}
 
-	if rawData, ok := postData["uniqush.payload.gcm"]; ok {
-		// Could add uniqush.notification.gcm as another optional payload, to conform to GCM spec: https://developers.google.com/cloud-messaging/http-server-ref#send-downstream
-		data, err := validateRawGCMData(rawData)
+	if rawData, ok := postData["uniqush.payload.fcm"]; ok {
+		// Could add uniqush.notification.fcm as another optional payload, to conform to FCM spec: https://developers.google.com/cloud-messaging/http-server-ref#send-downstream
+		data, err := validateRawFCMData(rawData)
 		if err != nil {
 			return nil, err
 		}
@@ -227,7 +221,7 @@ func toGCMPayload(notif *push.Notification, regIds []string) ([]byte, push.PushE
 
 }
 
-func (self *gcmPushService) multicast(psp *push.PushServiceProvider, dpList []*push.DeliveryPoint, resQueue chan<- *push.PushResult, notif *push.Notification) {
+func (self *fcmPushService) multicast(psp *push.PushServiceProvider, dpList []*push.DeliveryPoint, resQueue chan<- *push.PushResult, notif *push.Notification) {
 	if len(dpList) == 0 {
 		return
 	}
@@ -238,7 +232,7 @@ func (self *gcmPushService) multicast(psp *push.PushServiceProvider, dpList []*p
 		regIds = append(regIds, dp.VolatileData["regid"])
 	}
 
-	jpayload, e0 := toGCMPayload(notif, regIds)
+	jpayload, e0 := toFCMPayload(notif, regIds)
 
 	if e0 != nil {
 		for _, dp := range dpList {
@@ -253,7 +247,7 @@ func (self *gcmPushService) multicast(psp *push.PushServiceProvider, dpList []*p
 		return
 	}
 
-	req, e1 := http.NewRequest("POST", gcmServiceURL, bytes.NewReader(jpayload))
+	req, e1 := http.NewRequest("POST", fcmServiceURL, bytes.NewReader(jpayload))
 	if req != nil {
 		defer req.Body.Close()
 	}
@@ -299,7 +293,7 @@ func (self *gcmPushService) multicast(psp *push.PushServiceProvider, dpList []*p
 				res.Err = push.NewRetryErrorWithReason(psp, dp, notif, after, err)
 
 			} else {
-				res.Err = push.NewErrorf("Unrecoverable HTTP error sending to GCM: %v", e2)
+				res.Err = push.NewErrorf("Unrecoverable HTTP error sending to FCM: %v", e2)
 			}
 			resQueue <- res
 		}
@@ -354,19 +348,19 @@ func (self *gcmPushService) multicast(psp *push.PushServiceProvider, dpList []*p
 		res := new(push.PushResult)
 		res.Provider = psp
 		res.Content = notif
-		res.Err = push.NewErrorf("Failed to read GCM response: %v", err)
+		res.Err = push.NewErrorf("Failed to read FCM response: %v", err)
 		resQueue <- res
 		return
 	}
 
-	var result gcmResult
+	var result fcmResult
 	err = json.Unmarshal(contents, &result)
 
 	if err != nil {
 		res := new(push.PushResult)
 		res.Provider = psp
 		res.Content = notif
-		res.Err = push.NewErrorf("Failed to decode GCM response: %v", err)
+		res.Err = push.NewErrorf("Failed to decode FCM response: %v", err)
 		resQueue <- res
 		return
 	}
@@ -401,7 +395,7 @@ func (self *gcmPushService) multicast(psp *push.PushServiceProvider, dpList []*p
 				resQueue <- res
 			default:
 				res := new(push.PushResult)
-				res.Err = push.NewErrorf("GCMError: %v", errmsg)
+				res.Err = push.NewErrorf("FCMError: %v", errmsg)
 				res.Provider = psp
 				res.Content = notif
 				res.Destination = dp
@@ -429,7 +423,7 @@ func (self *gcmPushService) multicast(psp *push.PushServiceProvider, dpList []*p
 
 }
 
-func (self *gcmPushService) Push(psp *push.PushServiceProvider, dpQueue <-chan *push.DeliveryPoint, resQueue chan<- *push.PushResult, notif *push.Notification) {
+func (self *fcmPushService) Push(psp *push.PushServiceProvider, dpQueue <-chan *push.DeliveryPoint, resQueue chan<- *push.PushResult, notif *push.Notification) {
 
 	maxNrDst := 1000
 	dpList := make([]*push.DeliveryPoint, 0, maxNrDst)
@@ -470,10 +464,10 @@ func (self *gcmPushService) Push(psp *push.PushServiceProvider, dpQueue <-chan *
 	close(resQueue)
 }
 
-func (self *gcmPushService) Preview(notif *push.Notification) ([]byte, push.PushError) {
-	return toGCMPayload(notif, []string{"placeholderRegId"})
+func (self *fcmPushService) Preview(notif *push.Notification) ([]byte, push.PushError) {
+	return toFCMPayload(notif, []string{"placeholderRegId"})
 }
 
-func (self *gcmPushService) SetErrorReportChan(errChan chan<- push.PushError) {
+func (self *fcmPushService) SetErrorReportChan(errChan chan<- push.PushError) {
 	return
 }
