@@ -1,5 +1,6 @@
 /*
  * Copyright 2011-2013 Nan Deng
+ * Copyright 2013-2017 Uniqush contributors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -13,7 +14,6 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  *
-
  * This contains cloud messaging code specific to GCM.
  * Implementation details common to GCM and FCM are kept in srv/cloud_messaging
  */
