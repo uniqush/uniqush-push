@@ -450,6 +450,7 @@ func parseKV(form url.Values) (kv map[string]string, perdp map[string][]string) 
 func (self *RestAPI) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	defer r.Body.Close()
 	remoteAddr := r.RemoteAddr
+	w.Header().Set("Content-Type","application/json")
 
 	switch r.URL.Path {
 	case QUERY_SUBSCRIPTIONS_URL:
