@@ -13,19 +13,19 @@ import (
 )
 
 const (
-	GCM_MOCK_API_KEY    = "mockapikey"
-	GCM_MOCK_PROJECT_ID = "mockprojectid"
-	GCM_MOCK_SERVICE    = "mockservice"
+	FCM_MOCK_API_KEY    = "mockapikey"
+	FCM_MOCK_PROJECT_ID = "mockprojectid"
+	FCM_MOCK_SERVICE    = "mockservice"
 )
 
-func commonGCMMocks(responseCode int, responseBody []byte, headers map[string]string, requestError error) (*push.PushServiceProvider, *mockCMHTTPClient, *gcmPushService, chan push.PushError) {
+func commonFCMMocks(responseCode int, responseBody []byte, headers map[string]string, requestError error) (*push.PushServiceProvider, *mockCMHTTPClient, *fcmPushService, chan push.PushError) {
 	client := &mockCMHTTPClient{
 		status:       responseCode,
 		responseBody: responseBody,
 		headers:      headers,
 		requestError: requestError,
 	}
-	service := newGCMPushService()
+	service := newFCMPushService()
 	service.OverrideClient(client)
 
 	// Overwrite the APNS service.
@@ -37,10 +37,10 @@ func commonGCMMocks(responseCode int, responseBody []byte, headers map[string]st
 
 	psp, err := psm.BuildPushServiceProviderFromMap(map[string]string{
 		"pushservicetype": service.Name(),
-		"service":         GCM_MOCK_SERVICE,
+		"service":         FCM_MOCK_SERVICE,
 		"subscriber":      "mocksubscriber",
-		"apikey":          GCM_MOCK_API_KEY,
-		"projectid":       GCM_MOCK_PROJECT_ID,
+		"apikey":          FCM_MOCK_API_KEY,
+		"projectid":       FCM_MOCK_PROJECT_ID,
 	})
 
 	if psp == nil {
@@ -52,13 +52,13 @@ func commonGCMMocks(responseCode int, responseBody []byte, headers map[string]st
 	return psp, client, service, errChan
 }
 
-func asyncCreateDPQueue(wg *sync.WaitGroup, dpQueue chan<- *push.DeliveryPoint, regId, subscriber string) {
+func fcmAsyncCreateDPQueue(wg *sync.WaitGroup, dpQueue chan<- *push.DeliveryPoint, regId, subscriber string) {
 	psm := push.GetPushServiceManager()
 	mockDeliveryPoint, err := psm.BuildDeliveryPointFromMap(map[string]string{
 		"regid":           regId,
 		"subscriber":      subscriber,
-		"pushservicetype": "gcm",
-		"service":         GCM_MOCK_SERVICE,
+		"pushservicetype": "fcm",
+		"service":         FCM_MOCK_SERVICE,
 	})
 	if err != nil {
 		panic(err)
@@ -68,27 +68,27 @@ func asyncCreateDPQueue(wg *sync.WaitGroup, dpQueue chan<- *push.DeliveryPoint, 
 	wg.Done()
 }
 
-func asyncPush(wg *sync.WaitGroup, service *gcmPushService, psp *push.PushServiceProvider, dpQueue <-chan *push.DeliveryPoint, resQueue chan<- *push.PushResult, notif *push.Notification) {
+func fcmAsyncPush(wg *sync.WaitGroup, service *fcmPushService, psp *push.PushServiceProvider, dpQueue <-chan *push.DeliveryPoint, resQueue chan<- *push.PushResult, notif *push.Notification) {
 	service.Push(psp, dpQueue, resQueue, notif)
 	wg.Done()
 }
 
-// TestPushSingle tests the ability to send a single push without error, and shut down cleanly.
-func TestPushSingle(t *testing.T) {
+// fcmTestPushSingle tests the ability to send a single push without error, and shut down cleanly.
+func fcmTestPushSingle(t *testing.T) {
 	expectedRegId := "mockregid"
 	notif := push.NewEmptyNotification()
-	expectedPayload := `{"message":{"aPushType":{"foo":"bar","other":"value"},"gcm":{},"others":{"type":"aPushType"}}}`
+	expectedPayload := `{"message":{"aPushType":{"foo":"bar","other":"value"},"fcm":{},"others":{"type":"aPushType"}}}`
 	notif.Data = map[string]string{
-		"uniqush.payload.gcm": expectedPayload,
+		"uniqush.payload.fcm": expectedPayload,
 	}
 	mockHTTPResponse := []byte(`{"multicast_id":777,"canonical_ids":1,"success":1,"failure":0,"results":[{"message_id":"UID12345"}]}`)
-	psp, mockCMHTTPClient, service, errChan := commonGCMMocks(200, mockHTTPResponse, map[string]string{}, nil)
+	psp, mockCMHTTPClient, service, errChan := commonFCMMocks(200, mockHTTPResponse, map[string]string{}, nil)
 	dpQueue := make(chan *push.DeliveryPoint)
 	resQueue := make(chan *push.PushResult)
 	wg := new(sync.WaitGroup)
 	wg.Add(2)
-	go asyncCreateDPQueue(wg, dpQueue, expectedRegId, "unusedsubscriber1")
-	go asyncPush(wg, service, psp, dpQueue, resQueue, notif)
+	go fcmAsyncCreateDPQueue(wg, dpQueue, expectedRegId, "unusedsubscriber1")
+	go fcmAsyncPush(wg, service, psp, dpQueue, resQueue, notif)
 	resCount := 0
 	for res := range resQueue {
 		if res == nil {
@@ -114,30 +114,30 @@ func TestPushSingle(t *testing.T) {
 	if len(mockCMHTTPClient.performed) != 1 {
 		t.Errorf("Unexpected number of http calls: want 1, got %#v", mockCMHTTPClient.performed)
 	}
-	mockResponse := mockCMHTTPClient.performed[0]
-	if !mockResponse.closed {
+	fcmMockResponse := mockCMHTTPClient.performed[0]
+	if !fcmMockResponse.closed {
 		t.Error("Expected the mock response body to be closed")
 	}
 
-	assertExpectedGCMRequest(t, mockResponse.request, expectedRegId, expectedPayload)
+	assertExpectedFCMRequest(t, fcmMockResponse.request, expectedRegId, expectedPayload)
 }
 
-// TestPushSingleError tests the ability to send a single push with an error error, and shut down cleanly.
-func TestPushSingleError(t *testing.T) {
+// fcmTestPushSingleError tests the ability to send a single push with an error error, and shut down cleanly.
+func fcmTestPushSingleError(t *testing.T) {
 	expectedRegId := "mockregid"
 	notif := push.NewEmptyNotification()
-	expectedPayload := `{"message":{"aPushType":{"foo":"bar","other":"value"},"gcm":{},"others":{"type":"aPushType"}}}`
+	expectedPayload := `{"message":{"aPushType":{"foo":"bar","other":"value"},"fcm":{},"others":{"type":"aPushType"}}}`
 	notif.Data = map[string]string{
-		"uniqush.payload.gcm": expectedPayload,
+		"uniqush.payload.fcm": expectedPayload,
 	}
 	mockHTTPResponse := []byte(`HTTP/401 error mock response`)
-	psp, mockCMHTTPClient, service, errChan := commonGCMMocks(401, mockHTTPResponse, map[string]string{}, nil)
+	psp, mockCMHTTPClient, service, errChan := commonFCMMocks(401, mockHTTPResponse, map[string]string{}, nil)
 	dpQueue := make(chan *push.DeliveryPoint)
 	resQueue := make(chan *push.PushResult)
 	wg := new(sync.WaitGroup)
 	wg.Add(2)
-	go asyncCreateDPQueue(wg, dpQueue, expectedRegId, "unusedsubscriber1")
-	go asyncPush(wg, service, psp, dpQueue, resQueue, notif)
+	go fcmAsyncCreateDPQueue(wg, dpQueue, expectedRegId, "unusedsubscriber1")
+	go fcmAsyncPush(wg, service, psp, dpQueue, resQueue, notif)
 	resCount := 0
 	for res := range resQueue {
 		if res.Err == nil {
@@ -167,17 +167,17 @@ func TestPushSingleError(t *testing.T) {
 	if len(mockCMHTTPClient.performed) != 1 {
 		t.Errorf("Unexpected number of http calls: want 1, got %#v", mockCMHTTPClient.performed)
 	}
-	mockResponse := mockCMHTTPClient.performed[0]
-	if !mockResponse.closed {
+	fcmMockResponse := mockCMHTTPClient.performed[0]
+	if !fcmMockResponse.closed {
 		t.Error("Expected the mock response body to be closed")
 	}
 
-	assertExpectedGCMRequest(t, mockResponse.request, expectedRegId, expectedPayload)
+	assertExpectedFCMRequest(t, fcmMockResponse.request, expectedRegId, expectedPayload)
 }
 
 // Helper function, because golang json serialization has an unpredictable order.
 // Uses reflect.DeepEqual.
-func expectJSONIsEquivalent(t *testing.T, expected []byte, actual []byte) {
+func fcmExpectJSONIsEquivalent(t *testing.T, expected []byte, actual []byte) {
 	var expectedObj map[string]interface{}
 	var actualObj map[string]interface{}
 	if err := json.Unmarshal(expected, &expectedObj); err != nil {
@@ -191,10 +191,10 @@ func expectJSONIsEquivalent(t *testing.T, expected []byte, actual []byte) {
 	}
 }
 
-func assertExpectedGCMRequest(t *testing.T, request *http.Request, expectedRegId, expectedPayload string) {
+func assertExpectedFCMRequest(t *testing.T, request *http.Request, expectedRegId, expectedPayload string) {
 	actualURL := request.URL.String()
-	if actualURL != gcmServiceURL {
-		t.Errorf("Expected URL %q, got %q", gcmServiceURL, actualURL)
+	if actualURL != fcmServiceURL {
+		t.Errorf("Expected URL %q, got %q", fcmServiceURL, actualURL)
 	}
 	actualContentType := request.Header.Get("Content-Type")
 	expectedContentType := "application/json"
@@ -203,7 +203,7 @@ func assertExpectedGCMRequest(t *testing.T, request *http.Request, expectedRegId
 	}
 
 	actualAuth := request.Header.Get("Authorization")
-	expectedAuth := "key=" + GCM_MOCK_API_KEY
+	expectedAuth := "key=" + FCM_MOCK_API_KEY
 	if actualAuth != expectedAuth {
 		t.Errorf("Expected auth %q, got %q", expectedAuth, actualAuth)
 	}
@@ -213,17 +213,17 @@ func assertExpectedGCMRequest(t *testing.T, request *http.Request, expectedRegId
 		t.Fatalf("Unexpected error reading body: %v", err)
 	}
 	expectedBody := fmt.Sprintf(`{"registration_ids":[%q],"data":%s,"time_to_live":3600}`, expectedRegId, expectedPayload)
-	expectJSONIsEquivalent(t, []byte(expectedBody), actualBodyBytes)
+	fcmExpectJSONIsEquivalent(t, []byte(expectedBody), actualBodyBytes)
 }
 
-// Overlaps with TestToGCMPayload, since Preview just calls toGCMPayload.
-func TestPreviewWithCommonParameters(t *testing.T) {
+// Overlaps with TestToFCMPayload, since Preview just calls toFCMPayload.
+func FcmTestPreviewWithCommonParameters(t *testing.T) {
 	postData := map[string]string{
 		"msggroup":  "somegroup",
 		"other":     "value",
 		"other.foo": "bar",
 		"ttl":       "5",
-		// GCM module should ignore anything it doesn't recognize begining with "uniqush.", those are reserved.
+		// FCM module should ignore anything it doesn't recognize begining with "uniqush.", those are reserved.
 		"uniqush.payload.apns": "{}",
 		"uniqush.foo":          "foo",
 	}
@@ -232,7 +232,7 @@ func TestPreviewWithCommonParameters(t *testing.T) {
 	notif := push.NewEmptyNotification()
 	notif.Data = postData
 
-	_, _, service, _ := commonGCMMocks(200, []byte("unused"), map[string]string{}, nil)
+	_, _, service, _ := commonFCMMocks(200, []byte("unused"), map[string]string{}, nil)
 	defer service.Finalize()
 
 	payload, err := service.Preview(notif)

@@ -1,6 +1,6 @@
 /*
  * Copyright 2011-2013 Nan Deng
- * Copyright 2013-2017 Uniqush contributors.
+ * Copyright 2013-2017 Uniqush Contributors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -14,7 +14,8 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  *
- * This contains cloud messaging code specific to GCM.
+
+ * This contains cloud messaging code specific to FCM.
  * Implementation details common to GCM and FCM are kept in srv/cloud_messaging
  */
 
@@ -28,46 +29,40 @@ import (
 )
 
 const (
-	// GCM endpoint
-	gcmServiceURL string = "https://android.googleapis.com/gcm/send"
+	// FCM endpoint
+	fcmServiceURL string = "https://fcm.googleapis.com/fcm/send"
 	// payload key to extract from push requests to uniqush
-	gcmRawPayloadKey = "uniqush.payload.gcm"
+	fcmRawPayloadKey = "uniqush.payload.fcm"
 	// acronym for log messages
-	gcmAcronym = "GCM"
+	fcmAcronym = "FCM"
 	// push service type(name), for requests to uniqush
-	gcmPushServiceName = "gcm"
+	fcmPushServiceName = "fcm"
 )
 
-type gcmPushService struct {
-	// There is only one Transport and one Client for connecting to gcm, shared by the set of PSPs with pushservicetype=gcm (whether or not this is using a sandbox)
+type fcmPushService struct {
+	// There is only one Transport and one Client for connecting to fcm, shared by the set of PSPs with pushservicetype=fcm (whether or not this is using a sandbox)
 	cm.PushServiceBase
 }
 
-var _ push.PushServiceType = &gcmPushService{}
+var _ push.PushServiceType = &fcmPushService{}
 
-func newGCMPushService() *gcmPushService {
-	return &gcmPushService{
-		PushServiceBase: cm.MakePushServiceBase(gcmAcronym, gcmRawPayloadKey, gcmServiceURL, gcmPushServiceName),
+func newFCMPushService() *fcmPushService {
+	return &fcmPushService{
+		PushServiceBase: cm.MakePushServiceBase(fcmAcronym, fcmRawPayloadKey, fcmServiceURL, fcmPushServiceName),
 	}
 }
 
-func InstallGCM() {
+func InstallFCM() {
 	psm := push.GetPushServiceManager()
-	psm.RegisterPushServiceType(newGCMPushService())
+	psm.RegisterPushServiceType(newFCMPushService())
 }
 
-func (p *gcmPushService) BuildPushServiceProviderFromMap(kv map[string]string,
+func (p *fcmPushService) BuildPushServiceProviderFromMap(kv map[string]string,
 	psp *push.PushServiceProvider) error {
 	if service, ok := kv["service"]; ok && len(service) > 0 {
 		psp.FixedData["service"] = service
 	} else {
 		return errors.New("NoService")
-	}
-
-	if projectid, ok := kv["projectid"]; ok && len(projectid) > 0 {
-		psp.FixedData["projectid"] = projectid
-	} else {
-		return errors.New("NoProjectID")
 	}
 
 	if authtoken, ok := kv["apikey"]; ok && len(authtoken) > 0 {
@@ -77,8 +72,4 @@ func (p *gcmPushService) BuildPushServiceProviderFromMap(kv map[string]string,
 	}
 
 	return nil
-}
-
-func (p *gcmPushService) Name() string {
-	return "gcm"
 }
