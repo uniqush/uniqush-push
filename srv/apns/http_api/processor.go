@@ -62,7 +62,7 @@ func (processor *HTTPPushRequestProcessor) sendRequests(request *common.PushRequ
 
 	header := http.Header{
 		"authorization":   []string{"bearer " + jwt},
-		"apns-expiration": []string{"0"},  // Only attempt to send the notification once
+		"apns-expiration": []string{fmt.Sprint(request.Expiry)},
 		"apns-priority":   []string{"10"}, // Send notification immidiately
 		"apns-topic":      []string{request.PSP.FixedData["bundleid"]},
 	}
