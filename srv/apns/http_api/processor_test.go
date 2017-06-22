@@ -1,14 +1,14 @@
 package http_api
 
 import (
+	"bytes"
 	"encoding/hex"
 	"fmt"
-	"net/http"
-	"testing"
-
 	"io/ioutil"
-
-	"bytes"
+	"net/http"
+	"strings"
+	"sync"
+	"testing"
 
 	"github.com/jarcoal/httpmock"
 	"github.com/uniqush/uniqush-push/push"
@@ -16,16 +16,17 @@ import (
 )
 
 const (
-	authToken = "test_auth_token"
-	keyFile   = "../apns-test/localhost.p8"
-	keyID     = "FD8789SD9"
-	teamID    = "JVNS20943"
-	bundleID  = "com.example.test"
+	authToken  = "test_auth_token"
+	authToken2 = "update_auth_token"
+	keyFile    = "../apns-test/localhost.p8"
+	keyID      = "FD8789SD9"
+	teamID     = "JVNS20943"
+	bundleID   = "com.example.test"
 )
 
 var (
 	pushServiceProvider = &push.PushServiceProvider{
-		push.PushPeer{
+		PushPeer: push.PushPeer{
 			VolatileData: map[string]string{
 				"addr": "https://api.development.push.apple.com",
 			},
@@ -42,10 +43,20 @@ var (
 	apiURL   = fmt.Sprintf("%s/3/device/%s", pushServiceProvider.VolatileData["addr"], hex.EncodeToString(devToken))
 )
 
-type MockJWTManager struct{}
+type MockJWTManager struct {
+	once sync.Once
+}
 
-func (*MockJWTManager) GenerateToken() (string, error) {
-	return authToken, nil
+func (jm *MockJWTManager) GenerateToken() (string, error) {
+	token := authToken2
+	jm.once.Do(func() {
+		token = authToken
+	})
+	return token, nil
+}
+
+func newMockJWTManager() *MockJWTManager {
+	return &MockJWTManager{}
 }
 
 func mockAPNSRequest(fn func(r *http.Request) (*http.Response, error)) {
@@ -65,8 +76,6 @@ func newPushRequest() (*common.PushRequest, chan push.PushError, chan *common.AP
 
 	return request, errChan, resChan
 }
-
-var mockJWTManager = &MockJWTManager{}
 
 func TestAddRequestPushSuccessful(t *testing.T) {
 	httpmock.Activate()
@@ -97,7 +106,33 @@ func TestAddRequestPushSuccessful(t *testing.T) {
 		return httpmock.NewBytesResponse(http.StatusOK, nil), nil
 	})
 
-	common.SetJWTManagerSingleton(mockJWTManager)
+	common.SetJWTManager(keyID, newMockJWTManager())
+	NewRequestProcessor().AddRequest(request)
+
+	res := <-resChan
+	if res.MsgId == 0 {
+		t.Fatal("Expected non-zero message id, got zero")
+	}
+}
+
+func TestAddRequestRetryInvalidToken(t *testing.T) {
+	httpmock.Activate()
+	defer httpmock.DeactivateAndReset()
+
+	request, _, resChan := newPushRequest()
+	mockAPNSRequest(func(r *http.Request) (*http.Response, error) {
+		authHeader := r.Header["authorization"][0]
+		token := strings.Split(authHeader, "bearer ")[1]
+		if token == authToken {
+			response := &APNSErrorResponse{
+				Reason: "ExpiredProviderToken",
+			}
+			return httpmock.NewJsonResponse(http.StatusForbidden, response)
+		}
+		return httpmock.NewBytesResponse(http.StatusOK, nil), nil
+	})
+
+	common.SetJWTManager(keyID, newMockJWTManager())
 	NewRequestProcessor().AddRequest(request)
 
 	res := <-resChan
@@ -111,7 +146,7 @@ func TestAddRequestPushFailConnectionError(t *testing.T) {
 	defer httpmock.DeactivateAndReset()
 
 	request, errChan, _ := newPushRequest()
-	common.SetJWTManagerSingleton(mockJWTManager)
+	common.SetJWTManager(keyID, newMockJWTManager())
 	mockAPNSRequest(func(r *http.Request) (*http.Response, error) {
 		return nil, fmt.Errorf("No connection")
 	})
@@ -129,7 +164,7 @@ func TestAddRequestPushFailNotificationError(t *testing.T) {
 	defer httpmock.DeactivateAndReset()
 
 	request, errChan, _ := newPushRequest()
-	common.SetJWTManagerSingleton(mockJWTManager)
+	common.SetJWTManager(keyID, newMockJWTManager())
 	mockAPNSRequest(func(r *http.Request) (*http.Response, error) {
 		response := &APNSErrorResponse{
 			Reason: "BadDeviceToken",

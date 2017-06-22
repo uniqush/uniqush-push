@@ -46,7 +46,7 @@ func (processor *HTTPPushRequestProcessor) SetErrorReportChan(errChan chan<- pus
 func (processor *HTTPPushRequestProcessor) sendRequests(request *common.PushRequest) {
 	defer close(request.ErrChan)
 
-	jwtManager, err := common.NewJWTManager(request.PSP.FixedData["p8"], request.PSP.FixedData["keyid"], request.PSP.FixedData["teamid"])
+	jwtManager, err := common.GetJWTManager(request.PSP.FixedData["p8"], request.PSP.FixedData["keyid"], request.PSP.FixedData["teamid"])
 	if err != nil {
 		request.ErrChan <- push.NewError(err.Error())
 		return
@@ -78,13 +78,13 @@ func (processor *HTTPPushRequestProcessor) sendRequests(request *common.PushRequ
 		}
 		httpRequest.Header = header
 
-		go processor.sendRequest(wg, httpRequest, msgID, request.ErrChan, request.ResChan)
+		go processor.sendRequest(wg, httpRequest, jwtManager, msgID, request.ErrChan, request.ResChan)
 	}
 
 	wg.Wait()
 }
 
-func (processor *HTTPPushRequestProcessor) sendRequest(wg *sync.WaitGroup, request *http.Request, messageID uint32, errChan chan<- push.PushError, resChan chan<- *common.APNSResult) {
+func (processor *HTTPPushRequestProcessor) sendRequest(wg *sync.WaitGroup, request *http.Request, jwtManager common.JWTManager, messageID uint32, errChan chan<- push.PushError, resChan chan<- *common.APNSResult) {
 	defer wg.Done()
 
 	response, err := processor.client.Do(request)
@@ -92,6 +92,23 @@ func (processor *HTTPPushRequestProcessor) sendRequest(wg *sync.WaitGroup, reque
 		errChan <- push.NewConnectionError(err)
 		return
 	}
+
+	if response.StatusCode == http.StatusForbidden {
+		response.Body.Close()
+		// Token might have expired, retry with new token
+		jwt, err := jwtManager.GenerateToken()
+		if err != nil {
+			errChan <- push.NewError(err.Error())
+			return
+		}
+		request.Header["authorization"] = []string{"bearer " + jwt}
+		response, err = processor.client.Do(request)
+		if err != nil {
+			errChan <- push.NewConnectionError(err)
+			return
+		}
+	}
+
 	defer response.Body.Close()
 
 	responseBody, err := ioutil.ReadAll(response.Body)

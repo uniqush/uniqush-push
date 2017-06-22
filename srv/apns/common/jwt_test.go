@@ -11,7 +11,7 @@ func TestGenerateToken(t *testing.T) {
 	keyID := "FD8789SD9"
 	teamID := "JVNS20943"
 
-	jwtManager, err := NewJWTManager(keyFile, keyID, teamID)
+	jwtManager, err := GetJWTManager(keyFile, keyID, teamID)
 	if err != nil {
 		t.Fatal("Failed loading JWT key,", err)
 	}
