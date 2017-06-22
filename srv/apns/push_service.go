@@ -83,83 +83,92 @@ func (p *pushService) BuildPushServiceProviderFromMap(kv map[string]string, psp 
 		return errors.New("NoService")
 	}
 
+	if _, ok := kv["cert"]; ok {
+		return p.buildBinaryPushServiceProviderFromMap(kv, psp)
+	}
+	return p.buildHTTPPushServiceProviderFromMap(kv, psp)
+}
+
+func (p *pushService) buildBinaryPushServiceProviderFromMap(kv map[string]string, psp *push.PushServiceProvider) error {
 	if cert, ok := kv["cert"]; ok && len(cert) > 0 {
-		// Binary API
 		psp.FixedData["cert"] = cert
+	} else {
+		return errors.New("NoCertificate")
+	}
 
-		if key, ok := kv["key"]; ok && len(key) > 0 {
-			psp.FixedData["key"] = key
-		} else {
-			return errors.New("NoPrivateKey")
+	if key, ok := kv["key"]; ok && len(key) > 0 {
+		psp.FixedData["key"] = key
+	} else {
+		return errors.New("NoPrivateKey")
+	}
+
+	_, err := tls.LoadX509KeyPair(psp.FixedData["cert"], psp.FixedData["key"])
+	if err != nil {
+		return err
+	}
+
+	if skip, ok := kv["skipverify"]; ok {
+		if skip == "true" {
+			psp.VolatileData["skipverify"] = "true"
 		}
+	}
 
-		_, err := tls.LoadX509KeyPair(psp.FixedData["cert"], psp.FixedData["key"])
+	if sandbox, ok := kv["sandbox"]; ok {
+		if sandbox == "true" {
+			psp.VolatileData["addr"] = "gateway.sandbox.push.apple.com:2195"
+			return nil
+		}
+	}
+	if addr, ok := kv["addr"]; ok {
+		psp.VolatileData["addr"] = addr
+	} else {
+		psp.VolatileData["addr"] = "gateway.push.apple.com:2195"
+	}
+	return nil
+}
+
+func (p *pushService) buildHTTPPushServiceProviderFromMap(kv map[string]string, psp *push.PushServiceProvider) error {
+	if p8, ok := kv["p8"]; ok && len(p8) > 0 {
+		// HTTP API
+		psp.FixedData["p8"] = p8
+
+		_, err := common.LoadPKCS8Key(p8)
 		if err != nil {
 			return err
 		}
 
-		if skip, ok := kv["skipverify"]; ok {
-			if skip == "true" {
-				psp.VolatileData["skipverify"] = "true"
-			}
+		if keyID, ok := kv["keyid"]; ok {
+			psp.FixedData["keyid"] = keyID
+		} else {
+			return errors.New("NoKeyID")
+		}
+
+		if teamID, ok := kv["teamid"]; ok {
+			psp.FixedData["teamid"] = teamID
+		} else {
+			return errors.New("NoTeamID")
+		}
+
+		if bundleID, ok := kv["bundleid"]; ok {
+			psp.FixedData["bundleid"] = bundleID
+		} else {
+			return errors.New("NoBundleID")
 		}
 
 		if sandbox, ok := kv["sandbox"]; ok {
 			if sandbox == "true" {
-				psp.VolatileData["addr"] = "gateway.sandbox.push.apple.com:2195"
+				psp.VolatileData["addr"] = "https://api.development.push.apple.com"
 				return nil
 			}
 		}
 		if addr, ok := kv["addr"]; ok {
 			psp.VolatileData["addr"] = addr
-			return nil
-		}
-		psp.VolatileData["addr"] = "gateway.push.apple.com:2195"
-	} else {
-		if p8, ok := kv["p8"]; ok && len(p8) > 0 {
-			// HTTP API
-			psp.FixedData["p8"] = p8
-
-			_, err := common.LoadPKCS8Key(p8)
-			if err != nil {
-				return err
-			}
-
-			if keyID, ok := kv["keyid"]; ok {
-				psp.FixedData["keyid"] = keyID
-			} else {
-				return errors.New("NoKeyID")
-			}
-
-			if teamID, ok := kv["teamid"]; ok {
-				psp.FixedData["teamid"] = teamID
-			} else {
-				return errors.New("NoTeamID")
-			}
-
-			if bundleID, ok := kv["bundleid"]; ok {
-				psp.FixedData["bundleid"] = bundleID
-			} else {
-				return errors.New("NoBundleID")
-			}
-
-			if sandbox, ok := kv["sandbox"]; ok {
-				if sandbox == "true" {
-					psp.VolatileData["addr"] = "https://api.development.push.apple.com"
-					return nil
-				}
-			}
-			if addr, ok := kv["addr"]; ok {
-				psp.VolatileData["addr"] = addr
-				return nil
-			}
-			psp.VolatileData["addr"] = "https://api.push.apple.com"
 		} else {
-			return errors.New("NoP8Key")
+			psp.VolatileData["addr"] = "https://api.push.apple.com"
 		}
+		return nil
 	}
-
-	return nil
+	return errors.New("NoP8Key")
 }
 
 func (p *pushService) BuildDeliveryPointFromMap(kv map[string]string, dp *push.DeliveryPoint) error {
