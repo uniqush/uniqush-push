@@ -39,7 +39,7 @@ type jwtManagerImpl struct {
 type t struct {
 	content string
 	expiry  time.Time
-	mutex   sync.RWMutex
+	mutex   sync.Mutex
 }
 
 // GetJWTManager returns a JWTManager to handle APNS authentication token
@@ -97,9 +97,11 @@ func (jm *jwtManagerImpl) GenerateToken() (string, error) {
 }
 
 func (jm *jwtManagerImpl) newToken() (string, time.Time, error) {
+	issuedAt := time.Now()
+
 	token := jwt.NewWithClaims(jwt.SigningMethodES256, jwt.MapClaims{
 		"iss": jm.iss,
-		"iat": time.Now().Unix(),
+		"iat": issuedAt.Unix(),
 	})
 	token.Header["kid"] = jm.kid
 
@@ -107,9 +109,9 @@ func (jm *jwtManagerImpl) newToken() (string, time.Time, error) {
 	if err != nil {
 		return "", time.Time{}, err
 	}
-	return result, time.Now().Add(1 * time.Hour), nil
+	return result, issuedAt.Add(1 * time.Hour), nil
 }
 
 func (token *t) isValid() bool {
-	return token.content != "" && token.expiry.After(time.Now())
+	return token.content != "" && time.Now().Before(token.expiry)
 }
