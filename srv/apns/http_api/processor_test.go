@@ -6,6 +6,10 @@ import (
 	"net/http"
 	"testing"
 
+	"io/ioutil"
+
+	"bytes"
+
 	"github.com/jarcoal/httpmock"
 	"github.com/uniqush/uniqush-push/push"
 	"github.com/uniqush/uniqush-push/srv/apns/common"
@@ -70,6 +74,25 @@ func TestAddRequestPushSuccessful(t *testing.T) {
 
 	request, _, resChan := newPushRequest()
 	mockAPNSRequest(func(r *http.Request) (*http.Response, error) {
+		if len(r.Header["authorization"]) == 0 {
+			t.Error("Missing authorization header")
+		}
+		if len(r.Header["apns-expiration"]) == 0 {
+			t.Error("Missing apns-expiration header")
+		}
+		if len(r.Header["apns-priority"]) == 0 {
+			t.Error("Missing apns-priority header")
+		}
+		if len(r.Header["apns-topic"]) == 0 {
+			t.Error("Missing apns-topic header")
+		}
+		requestBody, err := ioutil.ReadAll(r.Body)
+		if err != nil {
+			t.Error("Error reading request body:", err)
+		}
+		if bytes.Compare(requestBody, payload) != 0 {
+			t.Errorf("Wrong message payload, expected `%v`, got `%v`", payload, requestBody)
+		}
 		// Return empty body
 		return httpmock.NewBytesResponse(http.StatusOK, nil), nil
 	})
