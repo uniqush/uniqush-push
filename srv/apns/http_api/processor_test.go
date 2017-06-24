@@ -77,8 +77,14 @@ func newPushRequest() (*common.PushRequest, chan push.PushError, chan *common.AP
 	return request, errChan, resChan
 }
 
+func newHTTPRequestProcessor() *HTTPPushRequestProcessor {
+	return NewRequestProcessor().(*HTTPPushRequestProcessor)
+}
+
 func TestAddRequestPushSuccessful(t *testing.T) {
-	httpmock.Activate()
+	requestProcessor := newHTTPRequestProcessor()
+
+	httpmock.ActivateNonDefault(requestProcessor.client)
 	defer httpmock.DeactivateAndReset()
 
 	request, _, resChan := newPushRequest()
@@ -107,7 +113,7 @@ func TestAddRequestPushSuccessful(t *testing.T) {
 	})
 
 	common.SetJWTManager(keyID, newMockJWTManager())
-	NewRequestProcessor().AddRequest(request)
+	requestProcessor.AddRequest(request)
 
 	res := <-resChan
 	if res.MsgId == 0 {
@@ -116,7 +122,9 @@ func TestAddRequestPushSuccessful(t *testing.T) {
 }
 
 func TestAddRequestRetryInvalidToken(t *testing.T) {
-	httpmock.Activate()
+	requestProcessor := newHTTPRequestProcessor()
+
+	httpmock.ActivateNonDefault(requestProcessor.client)
 	defer httpmock.DeactivateAndReset()
 
 	request, _, resChan := newPushRequest()
@@ -133,7 +141,7 @@ func TestAddRequestRetryInvalidToken(t *testing.T) {
 	})
 
 	common.SetJWTManager(keyID, newMockJWTManager())
-	NewRequestProcessor().AddRequest(request)
+	requestProcessor.AddRequest(request)
 
 	res := <-resChan
 	if res.MsgId == 0 {
@@ -142,7 +150,9 @@ func TestAddRequestRetryInvalidToken(t *testing.T) {
 }
 
 func TestAddRequestPushFailConnectionError(t *testing.T) {
-	httpmock.Activate()
+	requestProcessor := newHTTPRequestProcessor()
+
+	httpmock.ActivateNonDefault(requestProcessor.client)
 	defer httpmock.DeactivateAndReset()
 
 	request, errChan, _ := newPushRequest()
@@ -151,7 +161,7 @@ func TestAddRequestPushFailConnectionError(t *testing.T) {
 		return nil, fmt.Errorf("No connection")
 	})
 
-	NewRequestProcessor().AddRequest(request)
+	requestProcessor.AddRequest(request)
 
 	err := <-errChan
 	if _, ok := err.(*push.ConnectionError); !ok {
@@ -160,7 +170,9 @@ func TestAddRequestPushFailConnectionError(t *testing.T) {
 }
 
 func TestAddRequestPushFailNotificationError(t *testing.T) {
-	httpmock.Activate()
+	requestProcessor := newHTTPRequestProcessor()
+
+	httpmock.ActivateNonDefault(requestProcessor.client)
 	defer httpmock.DeactivateAndReset()
 
 	request, errChan, _ := newPushRequest()
@@ -172,7 +184,7 @@ func TestAddRequestPushFailNotificationError(t *testing.T) {
 		return httpmock.NewJsonResponse(http.StatusBadRequest, response)
 	})
 
-	NewRequestProcessor().AddRequest(request)
+	requestProcessor.AddRequest(request)
 
 	err := <-errChan
 	if _, ok := err.(*push.BadNotification); !ok {
