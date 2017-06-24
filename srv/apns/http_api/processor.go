@@ -8,6 +8,7 @@ import (
 	"io/ioutil"
 	"net/http"
 	"sync"
+	"time"
 
 	"github.com/uniqush/uniqush-push/push"
 	"github.com/uniqush/uniqush-push/srv/apns/common"
@@ -21,7 +22,16 @@ type HTTPPushRequestProcessor struct {
 // NewRequestProcessor returns a new HTTPPushProcessor using net/http DefaultClient connection pool
 func NewRequestProcessor() common.PushRequestProcessor {
 	return &HTTPPushRequestProcessor{
-		client: http.DefaultClient,
+		client: &http.Client{
+			Transport: &http.Transport{
+				MaxIdleConns:          100,
+				MaxIdleConnsPerHost:   500,
+				IdleConnTimeout:       90 * time.Second,
+				TLSHandshakeTimeout:   10 * time.Second,
+				ExpectContinueTimeout: 1 * time.Second,
+			},
+			Timeout: 20 * time.Second,
+		},
 	}
 }
 
