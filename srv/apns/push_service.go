@@ -60,6 +60,19 @@ type pushService struct {
 
 var _ push.PushServiceType = &pushService{}
 
+func NewPushService() *pushService {
+	return &pushService{
+		binaryRequestProcessor: binary_api.NewRequestProcessor(maxNrConn),
+		httpRequestProcessor:   http_api.NewRequestProcessor(),
+		nextMessageId:          0,
+	}
+}
+
+// getMessageIds is needed for the binary API of APNS.
+func (self *pushService) getMessageIds(n int) uint32 {
+	return atomic.AddUint32(&self.nextMessageId, uint32(n))
+}
+
 func (p *pushService) Name() string {
 	return "apns"
 }
@@ -83,10 +96,7 @@ func (p *pushService) BuildPushServiceProviderFromMap(kv map[string]string, psp 
 		return errors.New("NoService")
 	}
 
-	if _, ok := kv["cert"]; ok {
-		return p.buildBinaryPushServiceProviderFromMap(kv, psp)
-	}
-	return p.buildHTTPPushServiceProviderFromMap(kv, psp)
+	return p.buildBinaryPushServiceProviderFromMap(kv, psp)
 }
 
 func (p *pushService) buildBinaryPushServiceProviderFromMap(kv map[string]string, psp *push.PushServiceProvider) error {
@@ -113,62 +123,25 @@ func (p *pushService) buildBinaryPushServiceProviderFromMap(kv map[string]string
 		}
 	}
 
+	// Put other things which can change in VolatileData.
+	// E.g. a bundleid can be changed by the company which manages the app.
+	if bundleid, ok := kv["bundleid"]; ok {
+		psp.VolatileData["bundleid"] = bundleid
+	} else {
+		psp.VolatileData["bundleid"] = ""
+	}
 	if sandbox, ok := kv["sandbox"]; ok {
 		if sandbox == "true" {
 			psp.VolatileData["addr"] = "gateway.sandbox.push.apple.com:2195"
-			return nil
 		}
-	}
-	if addr, ok := kv["addr"]; ok {
-		psp.VolatileData["addr"] = addr
 	} else {
-		psp.VolatileData["addr"] = "gateway.push.apple.com:2195"
-	}
-	return nil
-}
-
-func (p *pushService) buildHTTPPushServiceProviderFromMap(kv map[string]string, psp *push.PushServiceProvider) error {
-	if p8, ok := kv["p8"]; ok && len(p8) > 0 {
-		// HTTP API
-		psp.FixedData["p8"] = p8
-
-		_, err := common.LoadPKCS8Key(p8)
-		if err != nil {
-			return err
-		}
-
-		if keyID, ok := kv["keyid"]; ok {
-			psp.FixedData["keyid"] = keyID
-		} else {
-			return errors.New("NoKeyID")
-		}
-
-		if teamID, ok := kv["teamid"]; ok {
-			psp.FixedData["teamid"] = teamID
-		} else {
-			return errors.New("NoTeamID")
-		}
-
-		if bundleID, ok := kv["bundleid"]; ok {
-			psp.FixedData["bundleid"] = bundleID
-		} else {
-			return errors.New("NoBundleID")
-		}
-
-		if sandbox, ok := kv["sandbox"]; ok {
-			if sandbox == "true" {
-				psp.VolatileData["addr"] = "https://api.development.push.apple.com"
-				return nil
-			}
-		}
 		if addr, ok := kv["addr"]; ok {
 			psp.VolatileData["addr"] = addr
 		} else {
-			psp.VolatileData["addr"] = "https://api.push.apple.com"
+			psp.VolatileData["addr"] = "gateway.push.apple.com:2195"
 		}
-		return nil
 	}
-	return errors.New("NoP8Key")
+	return nil
 }
 
 func (p *pushService) BuildDeliveryPointFromMap(kv map[string]string, dp *push.DeliveryPoint) error {
@@ -192,18 +165,6 @@ func (p *pushService) BuildDeliveryPointFromMap(kv map[string]string, dp *push.D
 		return errors.New("NoDevToken")
 	}
 	return nil
-}
-
-func NewPushService() *pushService {
-	return &pushService{
-		binaryRequestProcessor: binary_api.NewRequestProcessor(maxNrConn),
-		httpRequestProcessor:   http_api.NewRequestProcessor(),
-		nextMessageId:          1,
-	}
-}
-
-func (self *pushService) getMessageIds(n int) uint32 {
-	return atomic.AddUint32(&self.nextMessageId, uint32(n))
 }
 
 func apnsresToError(apnsres *common.APNSResult, psp *push.PushServiceProvider, dp *push.DeliveryPoint) push.PushError {
@@ -275,10 +236,10 @@ func (self *pushService) Push(psp *push.PushServiceProvider, dpQueue <-chan *pus
 	req.Payload, err = toAPNSPayload(notif)
 
 	var requestProcessor common.PushRequestProcessor
-	if _, ok := psp.FixedData["cert"]; ok {
-		requestProcessor = self.binaryRequestProcessor
-	} else {
+	if http2, ok := notif.Data["uniqush.http2"]; ok && http2 == "1" {
 		requestProcessor = self.httpRequestProcessor
+	} else {
+		requestProcessor = self.binaryRequestProcessor
 	}
 
 	if err == nil && len(req.Payload) > requestProcessor.GetMaxPayloadSize() {
@@ -384,7 +345,8 @@ func (self *pushService) Push(psp *push.PushServiceProvider, dpQueue <-chan *pus
 		}
 	}
 
-	// Wait for the unserialized responses from APNS asynchronously - these will not affect what we send our clients for this request, but will affect subsequent requests.
+	// Wait for the unserialized responses from APNS asyncronously - these will not affect what we send our clients for this request, but will affect subsequent requests.
+	// TODO: With HTTP/2, this can be refactored to become synchronous (not in this PR, not while binary provider is supported for a PSP). The map[string]T can be removed.
 	go self.waitResults(psp, dpList, lastId, resChan)
 }
 

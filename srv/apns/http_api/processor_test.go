@@ -3,14 +3,13 @@ package http_api
 import (
 	"bytes"
 	"encoding/hex"
+	"encoding/json"
 	"fmt"
+	"io"
 	"io/ioutil"
 	"net/http"
-	"strings"
-	"sync"
 	"testing"
 
-	"github.com/jarcoal/httpmock"
 	"github.com/uniqush/uniqush-push/push"
 	"github.com/uniqush/uniqush-push/srv/apns/common"
 )
@@ -18,49 +17,118 @@ import (
 const (
 	authToken  = "test_auth_token"
 	authToken2 = "update_auth_token"
-	keyFile    = "../apns-test/localhost.p8"
 	keyID      = "FD8789SD9"
 	teamID     = "JVNS20943"
 	bundleID   = "com.example.test"
 )
 
 var (
-	pushServiceProvider = &push.PushServiceProvider{
-		PushPeer: push.PushPeer{
-			VolatileData: map[string]string{
-				"addr": "https://api.development.push.apple.com",
-			},
-			FixedData: map[string]string{
-				"p8":       keyFile,
-				"keyid":    keyID,
-				"teamid":   teamID,
-				"bundleid": bundleID,
-			},
-		},
-	}
-	devToken = []byte("test_device_token")
-	payload  = []byte(`{"alert":"test_message"}`)
-	apiURL   = fmt.Sprintf("%s/3/device/%s", pushServiceProvider.VolatileData["addr"], hex.EncodeToString(devToken))
+	pushServiceProvider = initPSP()
+	devToken            = []byte("test_device_token")
+	payload             = []byte(`{"alert":"test_message"}`)
+	apiURL              = fmt.Sprintf("%s/3/device/%s", pushServiceProvider.VolatileData["addr"], hex.EncodeToString(devToken))
+	mockServiceName     = "myService"
 )
 
-type MockJWTManager struct {
-	once sync.Once
-}
+// TODO: refactor into a common test library.
+type mockAPNSServiceType struct{}
 
-func (jm *MockJWTManager) GenerateToken() (string, error) {
-	token := authToken2
-	jm.once.Do(func() {
-		token = authToken
+var _ push.PushServiceType = &mockAPNSServiceType{}
+
+func (self *mockAPNSServiceType) BuildPushServiceProviderFromMap(kv map[string]string, psp *push.PushServiceProvider) error {
+	for key, value := range kv {
+		switch key {
+		case "addr", "bundleid", "skipverify":
+			psp.VolatileData[key] = value
+		case "service", "pushservicetype", "cert", "subscriber", "key":
+			psp.FixedData[key] = value
+		}
+	}
+	return nil
+}
+func (self *mockAPNSServiceType) BuildDeliveryPointFromMap(map[string]string, *push.DeliveryPoint) error {
+	panic("Not implemented")
+}
+func (self *mockAPNSServiceType) Name() string {
+	return "apns"
+}
+func (self *mockAPNSServiceType) Push(*push.PushServiceProvider, <-chan *push.DeliveryPoint, chan<- *push.PushResult, *push.Notification) {
+	panic("Not implemented")
+}
+func (self *mockAPNSServiceType) Preview(*push.Notification) ([]byte, push.PushError) {
+	panic("Not implemented")
+}
+func (self *mockAPNSServiceType) SetErrorReportChan(errChan chan<- push.PushError) {
+	panic("Not implemented")
+}
+func (self *mockAPNSServiceType) Finalize() {}
+
+func initPSP() *push.PushServiceProvider {
+	psm := push.GetPushServiceManager()
+	psm.RegisterPushServiceType(&mockAPNSServiceType{})
+	psp, err := psm.BuildPushServiceProviderFromMap(map[string]string{
+		"service":         mockServiceName,
+		"pushservicetype": "apns",
+		"cert":            "../apns-test/localhost.cert",
+		"subscriber":      "mocksubscriber",
+		"key":             "../apns-test/localhost.key",
+		"addr":            "gateway.push.apple.com:2195",
+		"skipverify":      "true",
+		"bundleid":        bundleID,
 	})
-	return token, nil
+	if err != nil {
+		panic(err)
+	}
+	return psp
 }
 
-func newMockJWTManager() *MockJWTManager {
-	return &MockJWTManager{}
+// TODO: remove unrelated fields
+type mockHTTP2Client struct {
+	processorFn func(r *http.Request) (*http.Response, *mockResponse, error)
+	// Mocks for responses given json encoded request, TODO write expectations.
+	// mockResponses map[string]string
+	performed []*mockResponse
 }
 
-func mockAPNSRequest(fn func(r *http.Request) (*http.Response, error)) {
-	httpmock.RegisterResponder("POST", apiURL, fn)
+func (c *mockHTTP2Client) Do(request *http.Request) (*http.Response, error) {
+	result, mockResponse, err := c.processorFn(request)
+	c.performed = append(c.performed, mockResponse)
+	return result, err
+}
+
+var _ HTTPClient = &mockHTTP2Client{}
+
+type mockResponse struct {
+	impl    *bytes.Reader
+	closed  bool
+	request *http.Request
+}
+
+func (r *mockResponse) Read(p []byte) (n int, err error) {
+	return r.impl.Read(p)
+}
+
+func (r *mockResponse) Close() error {
+	r.closed = true
+	return nil
+}
+
+var _ io.ReadCloser = &mockResponse{}
+
+func newMockResponse(contents []byte, request *http.Request) *mockResponse {
+	return &mockResponse{
+		impl:    bytes.NewReader(contents),
+		closed:  false,
+		request: request,
+	}
+}
+
+func mockAPNSRequest(requestProcessor *HTTPPushRequestProcessor, fn func(r *http.Request) (*http.Response, *mockResponse, error)) {
+	requestProcessor.clientFactory = func(_ *http.Transport) HTTPClient {
+		return &mockHTTP2Client{
+			processorFn: fn,
+		}
+	}
 }
 
 func newPushRequest() (*common.PushRequest, chan push.PushError, chan *common.APNSResult) {
@@ -78,19 +146,20 @@ func newPushRequest() (*common.PushRequest, chan push.PushError, chan *common.AP
 }
 
 func newHTTPRequestProcessor() *HTTPPushRequestProcessor {
-	return NewRequestProcessor().(*HTTPPushRequestProcessor)
+	res := NewRequestProcessor().(*HTTPPushRequestProcessor)
+	// Force tests to override this or crash.
+	res.clientFactory = nil
+	return res
 }
 
 func TestAddRequestPushSuccessful(t *testing.T) {
 	requestProcessor := newHTTPRequestProcessor()
 
-	httpmock.ActivateNonDefault(requestProcessor.client)
-	defer httpmock.DeactivateAndReset()
-
-	request, _, resChan := newPushRequest()
-	mockAPNSRequest(func(r *http.Request) (*http.Response, error) {
-		if len(r.Header["authorization"]) == 0 {
-			t.Error("Missing authorization header")
+	request, errChan, resChan := newPushRequest()
+	mockAPNSRequest(requestProcessor, func(r *http.Request) (*http.Response, *mockResponse, error) {
+		if auth, ok := r.Header["authorization"]; ok {
+			// temporarily disabled
+			t.Errorf("Unexpected authorization header %v", auth)
 		}
 		if len(r.Header["apns-expiration"]) == 0 {
 			t.Error("Missing apns-expiration header")
@@ -109,56 +178,32 @@ func TestAddRequestPushSuccessful(t *testing.T) {
 			t.Errorf("Wrong message payload, expected `%v`, got `%v`", payload, requestBody)
 		}
 		// Return empty body
-		return httpmock.NewBytesResponse(http.StatusOK, nil), nil
-	})
-
-	common.SetJWTManager(keyID, newMockJWTManager())
-	requestProcessor.AddRequest(request)
-
-	res := <-resChan
-	if res.MsgId == 0 {
-		t.Fatal("Expected non-zero message id, got zero")
-	}
-}
-
-func TestAddRequestRetryInvalidToken(t *testing.T) {
-	requestProcessor := newHTTPRequestProcessor()
-
-	httpmock.ActivateNonDefault(requestProcessor.client)
-	defer httpmock.DeactivateAndReset()
-
-	request, _, resChan := newPushRequest()
-	mockAPNSRequest(func(r *http.Request) (*http.Response, error) {
-		authHeader := r.Header["authorization"][0]
-		token := strings.Split(authHeader, "bearer ")[1]
-		if token == authToken {
-			response := &APNSErrorResponse{
-				Reason: "ExpiredProviderToken",
-			}
-			return httpmock.NewJsonResponse(http.StatusForbidden, response)
+		body := newMockResponse([]byte{}, r)
+		response := &http.Response{
+			StatusCode: http.StatusOK,
+			Body:       body,
 		}
-		return httpmock.NewBytesResponse(http.StatusOK, nil), nil
+		return response, body, nil
 	})
 
-	common.SetJWTManager(keyID, newMockJWTManager())
 	requestProcessor.AddRequest(request)
 
-	res := <-resChan
-	if res.MsgId == 0 {
-		t.Fatal("Expected non-zero message id, got zero")
+	select {
+	case res := <-resChan:
+		if res.MsgId == 0 {
+			t.Fatal("Expected non-zero message id, got zero")
+		}
+	case err := <-errChan:
+		t.Fatalf("Response was unexpectedly an error: %v\n", err)
 	}
 }
 
 func TestAddRequestPushFailConnectionError(t *testing.T) {
 	requestProcessor := newHTTPRequestProcessor()
 
-	httpmock.ActivateNonDefault(requestProcessor.client)
-	defer httpmock.DeactivateAndReset()
-
 	request, errChan, _ := newPushRequest()
-	common.SetJWTManager(keyID, newMockJWTManager())
-	mockAPNSRequest(func(r *http.Request) (*http.Response, error) {
-		return nil, fmt.Errorf("No connection")
+	mockAPNSRequest(requestProcessor, func(r *http.Request) (*http.Response, *mockResponse, error) {
+		return nil, nil, fmt.Errorf("No connection")
 	})
 
 	requestProcessor.AddRequest(request)
@@ -169,19 +214,28 @@ func TestAddRequestPushFailConnectionError(t *testing.T) {
 	}
 }
 
+func newMockJSONResponse(r *http.Request, status int, responseData *APNSErrorResponse) (*http.Response, *mockResponse, error) {
+	responseBytes, err := json.Marshal(responseData)
+	if err != nil {
+		panic(fmt.Sprintf("newMockJSONResponse failed: %v", err))
+	}
+	body := newMockResponse(responseBytes, r)
+	response := &http.Response{
+		StatusCode: status,
+		Body:       body,
+	}
+	return response, body, nil
+}
+
 func TestAddRequestPushFailNotificationError(t *testing.T) {
 	requestProcessor := newHTTPRequestProcessor()
 
-	httpmock.ActivateNonDefault(requestProcessor.client)
-	defer httpmock.DeactivateAndReset()
-
 	request, errChan, _ := newPushRequest()
-	common.SetJWTManager(keyID, newMockJWTManager())
-	mockAPNSRequest(func(r *http.Request) (*http.Response, error) {
+	mockAPNSRequest(requestProcessor, func(r *http.Request) (*http.Response, *mockResponse, error) {
 		response := &APNSErrorResponse{
 			Reason: "BadDeviceToken",
 		}
-		return httpmock.NewJsonResponse(http.StatusBadRequest, response)
+		return newMockJSONResponse(r, http.StatusBadRequest, response)
 	})
 
 	requestProcessor.AddRequest(request)

@@ -2,68 +2,140 @@ package http_api
 
 import (
 	"bytes"
+	"crypto/tls"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io/ioutil"
 	"net/http"
+	"strings"
 	"sync"
 	"time"
+
+	"golang.org/x/net/http2"
 
 	"github.com/uniqush/uniqush-push/push"
 	"github.com/uniqush/uniqush-push/srv/apns/common"
 )
 
+// HTTPClient is a mockable interface for the parts of http.Client used by the GCM module.
+type HTTPClient interface {
+	Do(*http.Request) (*http.Response, error)
+}
+
+type ClientFactory func(*http.Transport) HTTPClient
+
 // HTTPPushRequestProcessor sends push notification requests to APNS using HTTP API
 type HTTPPushRequestProcessor struct {
-	client *http.Client
+	clients       map[string]HTTPClient
+	clientsLock   sync.RWMutex
+	clientFactory ClientFactory // can be overridden by test
 }
 
 // NewRequestProcessor returns a new HTTPPushProcessor using net/http DefaultClient connection pool
 func NewRequestProcessor() common.PushRequestProcessor {
 	return &HTTPPushRequestProcessor{
-		client: &http.Client{
-			Transport: &http.Transport{
-				MaxIdleConns:          100,
-				MaxIdleConnsPerHost:   500,
-				IdleConnTimeout:       90 * time.Second,
-				TLSHandshakeTimeout:   10 * time.Second,
-				ExpectContinueTimeout: 1 * time.Second,
-			},
-			Timeout: 20 * time.Second,
-		},
+		clients:       make(map[string]HTTPClient),
+		clientFactory: defaultClientFactory,
 	}
 }
 
-func (processor *HTTPPushRequestProcessor) AddRequest(request *common.PushRequest) {
-	go processor.sendRequests(request)
+func (self *HTTPPushRequestProcessor) AddRequest(request *common.PushRequest) {
+	go self.sendRequests(request)
 }
 
-func (processor *HTTPPushRequestProcessor) GetMaxPayloadSize() int {
+func (self *HTTPPushRequestProcessor) GetMaxPayloadSize() int {
 	return 4096
 }
 
-func (processor *HTTPPushRequestProcessor) Finalize() {
-	switch transport := processor.client.Transport.(type) {
-	case *http.Transport:
-		transport.CloseIdleConnections()
-	default:
+func (self *HTTPPushRequestProcessor) GetClient(psp *push.PushServiceProvider) (HTTPClient, error) {
+	pspName := psp.Name()
+	if client := self.TryGetClient(pspName); client != nil {
+		return client, nil
+	}
+	tlsClientConfig, err := createTLSConfig(psp)
+	if err != nil {
+		return nil, fmt.Errorf("GetClient failed, couldn't create TLS config: %v", err)
+	}
+	self.clientsLock.Lock()
+	defer self.clientsLock.Unlock()
+	if client, ok := self.clients[pspName]; ok {
+		// Maybe something else locked before this goroutine did.
+		return client, nil
+	}
+	transport := &http.Transport{
+		MaxIdleConns:          20,
+		MaxIdleConnsPerHost:   20,
+		IdleConnTimeout:       90 * time.Second,
+		TLSHandshakeTimeout:   10 * time.Second,
+		ExpectContinueTimeout: 1 * time.Second,
+		// Because TLSClientConfig is provided, have to manually configure this client for http2 support.
+		TLSClientConfig: tlsClientConfig,
+	}
+
+	// Requires Go 1.6 or later
+	err = http2.ConfigureTransport(transport)
+	if err != nil {
+		return nil, fmt.Errorf("GetClient failed, couldn't configure for http2: %v", err)
+	}
+
+	client := self.clientFactory(transport)
+	self.clients[pspName] = client
+	return client, nil
+}
+
+func defaultClientFactory(transport *http.Transport) HTTPClient {
+	return &http.Client{
+		Transport: transport,
+		Timeout:   20 * time.Second,
 	}
 }
 
-func (processor *HTTPPushRequestProcessor) SetErrorReportChan(errChan chan<- push.PushError) {}
+func createTLSConfig(psp *push.PushServiceProvider) (*tls.Config, error) {
+	cert, err := tls.LoadX509KeyPair(psp.FixedData["cert"], psp.FixedData["key"])
+	if err != nil {
+		return nil, push.NewBadPushServiceProviderWithDetails(psp, err.Error())
+	}
 
-func (processor *HTTPPushRequestProcessor) sendRequests(request *common.PushRequest) {
+	conf := &tls.Config{
+		Certificates:       []tls.Certificate{cert},
+		InsecureSkipVerify: false,
+	}
+	return conf, nil
+}
+
+func (self *HTTPPushRequestProcessor) TryGetClient(pspName string) HTTPClient {
+	self.clientsLock.RLock()
+	defer self.clientsLock.RUnlock()
+	if client, exists := self.clients[pspName]; exists {
+		return client
+	}
+	return nil
+}
+
+func (self *HTTPPushRequestProcessor) Finalize() {
+	self.clientsLock.Lock()
+	for _, client := range self.clients {
+		if httpClient, isClient := client.(*http.Client); isClient {
+			switch transport := httpClient.Transport.(type) {
+			case *http.Transport:
+				transport.CloseIdleConnections()
+			default:
+			}
+		}
+	}
+}
+
+func (self *HTTPPushRequestProcessor) SetErrorReportChan(errChan chan<- push.PushError) {}
+
+func (self *HTTPPushRequestProcessor) sendRequests(request *common.PushRequest) {
 	defer close(request.ErrChan)
 
-	jwtManager, err := common.GetJWTManager(request.PSP.FixedData["p8"], request.PSP.FixedData["keyid"], request.PSP.FixedData["teamid"])
-	if err != nil {
-		request.ErrChan <- push.NewError(err.Error())
-		return
-	}
-	jwt, err := jwtManager.GenerateToken()
-	if err != nil {
-		request.ErrChan <- push.NewError(err.Error())
+	bundleid, ok := request.PSP.VolatileData["bundleid"]
+	if !ok || bundleid == "" {
+		for _ = range request.Devtokens {
+			request.ErrChan <- push.NewError("Must add bundleid to PSP by calling /addpsp again")
+		}
 		return
 	}
 
@@ -71,16 +143,34 @@ func (processor *HTTPPushRequestProcessor) sendRequests(request *common.PushRequ
 	wg.Add(len(request.Devtokens))
 
 	header := http.Header{
-		"authorization":   []string{"bearer " + jwt},
 		"apns-expiration": []string{fmt.Sprint(request.Expiry)},
 		"apns-priority":   []string{"10"}, // Send notification immidiately
-		"apns-topic":      []string{request.PSP.FixedData["bundleid"]},
+		// This is kept in VolatileData. A PSP may need to be updated first in /addpsp to use this,
+		// by setting bundleid to the bundle id of the app.
+		"apns-topic": []string{bundleid},
+	}
+
+	// TODO: Allow specifying http2 addr without string matching heuristics.
+	psp := request.PSP
+	binaryProtocolAddress := psp.VolatileData["addr"]
+	var http2UrlHost string
+	if strings.Contains(binaryProtocolAddress, "sandbox") {
+		http2UrlHost = "https://api.development.push.apple.com"
+	} else {
+		http2UrlHost = "https://api.push.apple.com"
+	}
+	client, err := self.GetClient(psp)
+	if err != nil {
+		for _ = range request.Devtokens {
+			request.ErrChan <- push.NewErrorf("Could not create a client: %v", err)
+		}
+		return
 	}
 
 	for i, token := range request.Devtokens {
 		msgID := request.GetId(i)
 
-		url := fmt.Sprintf("%s/3/device/%s", request.PSP.VolatileData["addr"], hex.EncodeToString(token))
+		url := fmt.Sprintf("%s/3/device/%s", http2UrlHost, hex.EncodeToString(token))
 		httpRequest, err := http.NewRequest("POST", url, bytes.NewReader(request.Payload))
 		if err != nil {
 			request.ErrChan <- push.NewError(err.Error())
@@ -88,35 +178,19 @@ func (processor *HTTPPushRequestProcessor) sendRequests(request *common.PushRequ
 		}
 		httpRequest.Header = header
 
-		go processor.sendRequest(wg, httpRequest, jwtManager, msgID, request.ErrChan, request.ResChan)
+		go self.sendRequest(wg, client, httpRequest, msgID, request.ErrChan, request.ResChan)
 	}
 
 	wg.Wait()
 }
 
-func (processor *HTTPPushRequestProcessor) sendRequest(wg *sync.WaitGroup, request *http.Request, jwtManager common.JWTManager, messageID uint32, errChan chan<- push.PushError, resChan chan<- *common.APNSResult) {
+func (self *HTTPPushRequestProcessor) sendRequest(wg *sync.WaitGroup, client HTTPClient, request *http.Request, messageID uint32, errChan chan<- push.PushError, resChan chan<- *common.APNSResult) {
 	defer wg.Done()
 
-	response, err := processor.client.Do(request)
+	response, err := client.Do(request)
 	if err != nil {
 		errChan <- push.NewConnectionError(err)
 		return
-	}
-
-	if response.StatusCode == http.StatusForbidden {
-		response.Body.Close()
-		// Token might have expired, retry with new token
-		jwt, err := jwtManager.GenerateToken()
-		if err != nil {
-			errChan <- push.NewError(err.Error())
-			return
-		}
-		request.Header["authorization"] = []string{"bearer " + jwt}
-		response, err = processor.client.Do(request)
-		if err != nil {
-			errChan <- push.NewConnectionError(err)
-			return
-		}
 	}
 
 	defer response.Body.Close()
