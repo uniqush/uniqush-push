@@ -69,3 +69,13 @@ func TestToFCMPayloadUsesMsggroupForCollapseKey(t *testing.T) {
 	expectedPayload := `{"registration_ids":["CAFE1-FF","42-607"],"collapse_key":"AMsgGroup","data":{"message":{"aPushType":{"foo":"bar","other":"value"},"fcm":{},"others":{"type":"aPushType"}}},"time_to_live":3600}`
 	testToFCMPayload(t, postData, regIds, expectedPayload)
 }
+
+// Test the return value of Name()
+func TestFCMPushServiceName(t *testing.T) {
+	stubPushService := newFCMPushService()
+	defer stubPushService.Finalize()
+	name := stubPushService.Name()
+	if name != "fcm" {
+		t.Errorf("Expected %s, got %s", "fcm", name)
+	}
+}

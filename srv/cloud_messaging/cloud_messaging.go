@@ -48,7 +48,7 @@ type PushServiceBase struct {
 	// (Expose functionality of this client through public methods)
 	client HTTPClient
 	// const: "GCM" or "FCM", for logging
-	acronym string
+	initialism string
 	// const: "uniqush.payload.fcm" or "uniqush.payload.gcm"
 	rawPayloadKey string
 	// const: GCM/FCM endpoint. "https://..../push"
@@ -73,7 +73,7 @@ func (g *PushServiceBase) OverrideClient(client HTTPClient) {
 // Builds a common base.
 // Note: Make sure that this can be copied by value (it's a collection of poitners right now).
 // If it can no longer be copied by value, // change to an initializer function.
-func MakePushServiceBase(acronym string, rawPayloadKey string, serviceURL string, pushServiceName string) PushServiceBase {
+func MakePushServiceBase(initialism string, rawPayloadKey string, serviceURL string, pushServiceName string) PushServiceBase {
 	conf := &tls.Config{InsecureSkipVerify: false}
 	tr := &http.Transport{
 		TLSClientConfig:     conf,
@@ -89,7 +89,7 @@ func MakePushServiceBase(acronym string, rawPayloadKey string, serviceURL string
 	}
 	return PushServiceBase{
 		client:          client,
-		acronym:         acronym,
+		initialism:      initialism,
 		rawPayloadKey:   rawPayloadKey,
 		serviceURL:      serviceURL,
 		pushServiceName: pushServiceName,
@@ -342,7 +342,7 @@ func (self *PushServiceBase) multicast(psp *push.PushServiceProvider, dpList []*
 		res := new(push.PushResult)
 		res.Provider = psp
 		res.Content = notif
-		res.Err = push.NewErrorf("Failed to read %s response: %v", self.acronym, err)
+		res.Err = push.NewErrorf("Failed to read %s response: %v", self.initialism, err)
 		resQueue <- res
 		return
 	}
@@ -354,7 +354,7 @@ func (self *PushServiceBase) multicast(psp *push.PushServiceProvider, dpList []*
 		res := new(push.PushResult)
 		res.Provider = psp
 		res.Content = notif
-		res.Err = push.NewErrorf("Failed to decode %s response: %v", self.acronym, err)
+		res.Err = push.NewErrorf("Failed to decode %s response: %v", self.initialism, err)
 		resQueue <- res
 		return
 	}
