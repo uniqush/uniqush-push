@@ -113,7 +113,6 @@ func receiveFeedback(psp *push.PushServiceProvider) []string {
 		devtokenstr = strings.ToLower(devtokenstr)
 		ret = append(ret, devtokenstr)
 	}
-	return ret
 }
 
 func processFeedback(psp *push.PushServiceProvider, dpCache *cache.Cache, errChan chan<- push.PushError) {
