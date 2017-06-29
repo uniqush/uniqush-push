@@ -18,7 +18,7 @@ import (
 	"github.com/uniqush/uniqush-push/srv/apns/common"
 )
 
-// HTTPClient is a mockable interface for the parts of http.Client used by the GCM module.
+// HTTPClient is a mockable interface for the parts of http.Client used by the APNS HTTP2 module.
 type HTTPClient interface {
 	Do(*http.Request) (*http.Response, error)
 }
@@ -154,7 +154,7 @@ func (self *HTTPPushRequestProcessor) sendRequests(request *common.PushRequest) 
 	psp := request.PSP
 	binaryProtocolAddress := psp.VolatileData["addr"]
 	var http2UrlHost string
-	if strings.Contains(binaryProtocolAddress, "sandbox") {
+	if strings.Contains(binaryProtocolAddress, "sandbox") || strings.Contains(binaryProtocolAddress, "api.development.") {
 		http2UrlHost = "https://api.development.push.apple.com"
 	} else {
 		http2UrlHost = "https://api.push.apple.com"
@@ -194,6 +194,7 @@ func (self *HTTPPushRequestProcessor) sendRequest(wg *sync.WaitGroup, client HTT
 	}
 
 	defer response.Body.Close()
+	// TODO: also check response.StatusCode is 200, e.g. when response body is empty?
 
 	responseBody, err := ioutil.ReadAll(response.Body)
 	if err != nil {
