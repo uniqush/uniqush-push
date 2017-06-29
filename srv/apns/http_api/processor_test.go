@@ -8,6 +8,7 @@ import (
 	"io"
 	"io/ioutil"
 	"net/http"
+	"sync"
 	"testing"
 
 	"github.com/uniqush/uniqush-push/push"
@@ -88,10 +89,13 @@ type mockHTTP2Client struct {
 	// Mocks for responses given json encoded request, TODO write expectations.
 	// mockResponses map[string]string
 	performed []*mockResponse
+	mutex     sync.Mutex
 }
 
 func (c *mockHTTP2Client) Do(request *http.Request) (*http.Response, error) {
 	result, mockResponse, err := c.processorFn(request)
+	c.mutex.Lock()
+	defer c.mutex.Unlock()
 	c.performed = append(c.performed, mockResponse)
 	return result, err
 }
@@ -123,12 +127,14 @@ func newMockResponse(contents []byte, request *http.Request) *mockResponse {
 	}
 }
 
-func mockAPNSRequest(requestProcessor *HTTPPushRequestProcessor, fn func(r *http.Request) (*http.Response, *mockResponse, error)) {
-	requestProcessor.clientFactory = func(_ *http.Transport) HTTPClient {
-		return &mockHTTP2Client{
-			processorFn: fn,
-		}
+func mockAPNSRequest(requestProcessor *HTTPPushRequestProcessor, fn func(r *http.Request) (*http.Response, *mockResponse, error)) *mockHTTP2Client {
+	mockClient := &mockHTTP2Client{
+		processorFn: fn,
 	}
+	requestProcessor.clientFactory = func(_ *http.Transport) HTTPClient {
+		return mockClient
+	}
+	return mockClient
 }
 
 func newPushRequest() (*common.PushRequest, chan push.PushError, chan *common.APNSResult) {
@@ -152,24 +158,32 @@ func newHTTPRequestProcessor() *HTTPPushRequestProcessor {
 	return res
 }
 
+func expectHeaderToHaveValue(t *testing.T, r *http.Request, headerName string, expectedHeaderValue string) {
+	if headerValues := r.Header[headerName]; len(headerValues) > 0 {
+		if len(headerValues) > 1 {
+			t.Errorf("Too many header values for %s header, expected 1 value, got values: %v", headerName, headerValues)
+		}
+		headerValue := headerValues[0]
+		if headerValue != expectedHeaderValue {
+			t.Errorf("Expected header value for %s header to be %s, got %s", headerName, expectedHeaderValue, headerValue)
+		}
+	} else {
+		t.Errorf("Missing %s header", headerName)
+	}
+}
+
 func TestAddRequestPushSuccessful(t *testing.T) {
 	requestProcessor := newHTTPRequestProcessor()
 
 	request, errChan, resChan := newPushRequest()
-	mockAPNSRequest(requestProcessor, func(r *http.Request) (*http.Response, *mockResponse, error) {
+	mockClient := mockAPNSRequest(requestProcessor, func(r *http.Request) (*http.Response, *mockResponse, error) {
 		if auth, ok := r.Header["authorization"]; ok {
 			// temporarily disabled
 			t.Errorf("Unexpected authorization header %v", auth)
 		}
-		if len(r.Header["apns-expiration"]) == 0 {
-			t.Error("Missing apns-expiration header")
-		}
-		if len(r.Header["apns-priority"]) == 0 {
-			t.Error("Missing apns-priority header")
-		}
-		if len(r.Header["apns-topic"]) == 0 {
-			t.Error("Missing apns-topic header")
-		}
+		expectHeaderToHaveValue(t, r, "apns-expiration", "0") // Specific to fork, would need to mock time or TTL otherwise
+		expectHeaderToHaveValue(t, r, "apns-priority", "10")
+		expectHeaderToHaveValue(t, r, "apns-topic", bundleID)
 		requestBody, err := ioutil.ReadAll(r.Body)
 		if err != nil {
 			t.Error("Error reading request body:", err)
@@ -195,6 +209,65 @@ func TestAddRequestPushSuccessful(t *testing.T) {
 		}
 	case err := <-errChan:
 		t.Fatalf("Response was unexpectedly an error: %v\n", err)
+	}
+	actualPerformed := len(mockClient.performed)
+	if actualPerformed != 1 {
+		t.Fatalf("Expected 1 request to be performed, but %d were", actualPerformed)
+	}
+}
+
+// Test sending 10 pushes at a time, to catch any obvious race conditions in `go test -race`.
+func TestAddRequestPushSuccessfulWhenConcurrent(t *testing.T) {
+	requestProcessor := newHTTPRequestProcessor()
+
+	iterationCount := 10
+	wg := sync.WaitGroup{}
+	wg.Add(iterationCount)
+
+	mockClient := mockAPNSRequest(requestProcessor, func(r *http.Request) (*http.Response, *mockResponse, error) {
+		if auth, ok := r.Header["authorization"]; ok {
+			// temporarily disabled
+			t.Errorf("Unexpected authorization header %v", auth)
+		}
+		expectHeaderToHaveValue(t, r, "apns-expiration", "0") // Specific to fork, would need to mock time or TTL otherwise
+		expectHeaderToHaveValue(t, r, "apns-priority", "10")
+		expectHeaderToHaveValue(t, r, "apns-topic", bundleID)
+		requestBody, err := ioutil.ReadAll(r.Body)
+		if err != nil {
+			t.Error("Error reading request body:", err)
+		}
+		if bytes.Compare(requestBody, payload) != 0 {
+			t.Errorf("Wrong message payload, expected `%v`, got `%v`", payload, requestBody)
+		}
+		// Return empty body
+		body := newMockResponse([]byte{}, r)
+		response := &http.Response{
+			StatusCode: http.StatusOK,
+			Body:       body,
+		}
+		return response, body, nil
+	})
+	for i := 0; i < iterationCount; i++ {
+		go func() {
+			request, errChan, resChan := newPushRequest()
+
+			requestProcessor.AddRequest(request)
+
+			select {
+			case res := <-resChan:
+				if res.MsgId == 0 {
+					t.Fatal("Expected non-zero message id, got zero")
+				}
+				wg.Done()
+			case err := <-errChan:
+				t.Fatalf("Response was unexpectedly an error: %v\n", err) // terminates test
+			}
+		}()
+	}
+	wg.Wait()
+	actualPerformed := len(mockClient.performed)
+	if actualPerformed != iterationCount {
+		t.Fatalf("Expected %d requests to be performed, but %d were", iterationCount, actualPerformed)
 	}
 }
 
