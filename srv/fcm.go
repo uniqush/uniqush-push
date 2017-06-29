@@ -33,8 +33,8 @@ const (
 	fcmServiceURL string = "https://fcm.googleapis.com/fcm/send"
 	// payload key to extract from push requests to uniqush
 	fcmRawPayloadKey = "uniqush.payload.fcm"
-	// acronym for log messages
-	fcmAcronym = "FCM"
+	// initialism for log messages
+	fcmInitialism = "FCM"
 	// push service type(name), for requests to uniqush
 	fcmPushServiceName = "fcm"
 )
@@ -48,7 +48,7 @@ var _ push.PushServiceType = &fcmPushService{}
 
 func newFCMPushService() *fcmPushService {
 	return &fcmPushService{
-		PushServiceBase: cm.MakePushServiceBase(fcmAcronym, fcmRawPayloadKey, fcmServiceURL, fcmPushServiceName),
+		PushServiceBase: cm.MakePushServiceBase(fcmInitialism, fcmRawPayloadKey, fcmServiceURL, fcmPushServiceName),
 	}
 }
 

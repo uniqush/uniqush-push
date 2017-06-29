@@ -69,3 +69,13 @@ func TestToGCMPayloadUsesMsggroupForCollapseKey(t *testing.T) {
 	expectedPayload := `{"registration_ids":["CAFE1-FF","42-607"],"collapse_key":"AMsgGroup","data":{"message":{"aPushType":{"foo":"bar","other":"value"},"gcm":{},"others":{"type":"aPushType"}}},"time_to_live":3600}`
 	testToGCMPayload(t, postData, regIds, expectedPayload)
 }
+
+// Test the return value of Name()
+func TestGCMPushServiceName(t *testing.T) {
+	stubPushService := newGCMPushService()
+	defer stubPushService.Finalize()
+	name := stubPushService.Name()
+	if name != "gcm" {
+		t.Errorf("Expected %s, got %s", "gcm", name)
+	}
+}

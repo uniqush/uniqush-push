@@ -32,8 +32,8 @@ const (
 	gcmServiceURL string = "https://android.googleapis.com/gcm/send"
 	// payload key to extract from push requests to uniqush
 	gcmRawPayloadKey = "uniqush.payload.gcm"
-	// acronym for log messages
-	gcmAcronym = "GCM"
+	// initialism for log messages
+	gcmInitialism = "GCM"
 	// push service type(name), for requests to uniqush
 	gcmPushServiceName = "gcm"
 )
@@ -47,7 +47,7 @@ var _ push.PushServiceType = &gcmPushService{}
 
 func newGCMPushService() *gcmPushService {
 	return &gcmPushService{
-		PushServiceBase: cm.MakePushServiceBase(gcmAcronym, gcmRawPayloadKey, gcmServiceURL, gcmPushServiceName),
+		PushServiceBase: cm.MakePushServiceBase(gcmInitialism, gcmRawPayloadKey, gcmServiceURL, gcmPushServiceName),
 	}
 }
 
@@ -77,8 +77,4 @@ func (p *gcmPushService) BuildPushServiceProviderFromMap(kv map[string]string,
 	}
 
 	return nil
-}
-
-func (p *gcmPushService) Name() string {
-	return "gcm"
 }
