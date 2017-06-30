@@ -130,7 +130,7 @@ func resultCollector(psp *push.PushServiceProvider, resChan chan<- *common.APNSR
 		var msgid uint32
 		buf := bufData[:]
 
-		for i, _ := range buf {
+		for i := range buf {
 			buf[i] = 0
 		}
 

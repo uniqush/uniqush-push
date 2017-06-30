@@ -292,7 +292,7 @@ func (self *BinaryPushRequestProcessor) multiPush(req *common.PushRequest, worke
 func clearRequest(req *common.PushRequest, resChan chan<- *common.APNSResult) {
 	time.Sleep(time.Duration(maxWaitTime+2) * time.Second)
 
-	for i, _ := range req.Devtokens {
+	for i := range req.Devtokens {
 		res := new(common.APNSResult)
 		res.MsgId = req.GetId(i)
 		// TODO: Should this instead indicate that the request timed out?
@@ -368,7 +368,7 @@ func (self *BinaryPushRequestProcessor) pushWorkerGroup(psp *push.PushServicePro
 				}
 			}
 
-			for i, _ := range req.Devtokens {
+			for i := range req.Devtokens {
 				mid := req.GetId(i)
 				reqMap[mid] = req
 			}
