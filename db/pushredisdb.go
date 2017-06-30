@@ -420,7 +420,7 @@ func (r *PushRedisDB) RebuildServiceSet() error {
 		serviceNameSet[serviceName] = true
 	}
 	var serviceNameList []interface{}
-	for serviceName, _ := range serviceNameSet {
+	for serviceName := range serviceNameSet {
 		serviceNameList = append(serviceNameList, serviceName)
 	}
 	if len(serviceNameList) > 0 {

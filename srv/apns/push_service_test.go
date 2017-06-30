@@ -34,7 +34,7 @@ var _ common.PushRequestProcessor = &MockPushRequestProcessor{}
 func (self *MockPushRequestProcessor) AddRequest(request *common.PushRequest) {
 	close(request.ErrChan) // Would have contents only for an invalid request. Send nothing.
 	go func() {
-		for i, _ := range request.DPList {
+		for i := range request.DPList {
 			request.ResChan <- &common.APNSResult{
 				MsgId:  request.GetId(i),
 				Status: self.status,

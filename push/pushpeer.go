@@ -90,10 +90,10 @@ func (p *PushPeer) Name() string {
 }
 
 func (p *PushPeer) clear() {
-	for k, _ := range p.FixedData {
+	for k := range p.FixedData {
 		delete(p.FixedData, k)
 	}
-	for k, _ := range p.VolatileData {
+	for k := range p.VolatileData {
 		delete(p.VolatileData, k)
 	}
 	p.name = ""

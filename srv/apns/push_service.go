@@ -233,7 +233,7 @@ func (self *pushService) Push(psp *push.PushServiceProvider, dpQueue <-chan *pus
 		res.Content = notif
 		res.Err = push.NewErrorf("Failed to create push: %v", err)
 		resQueue <- res
-		for _ = range dpQueue {
+		for range dpQueue {
 		}
 		return
 	}

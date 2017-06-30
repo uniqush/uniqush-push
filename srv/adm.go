@@ -422,7 +422,7 @@ func (self *admPushService) Preview(notif *push.Notification) ([]byte, push.Push
 func (self *admPushService) Push(psp *push.PushServiceProvider, dpQueue <-chan *push.DeliveryPoint, resQueue chan<- *push.PushResult, notif *push.Notification) {
 	defer close(resQueue)
 	defer func() {
-		for _ = range dpQueue {
+		for range dpQueue {
 		}
 	}()
 
