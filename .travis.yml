@@ -5,9 +5,9 @@ language: go
 dist: trusty
 sudo: false
 
-# Compile with the latest version of go.
+# Compile with go 1.8.3 (or newer). It takes a long time to install `tip`
 go:
-  - tip
+  - 1.8.3
 
 # install step default is `go get ./...`
 # script default is `go test ./...`
