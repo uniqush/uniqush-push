@@ -64,9 +64,12 @@ func (self *HTTPPushRequestProcessor) GetClient(psp *push.PushServiceProvider) (
 		return client, nil
 	}
 	transport := &http.Transport{
+		// The same as GCM.
+		// TODO: Make the maximum number of idle connections configurable.
+		// Note: It's likely that fewer idle clients should be needed than GCM, since HTTP2 allows multiple in-flight requests
+		// Note: Do not set IdleTimeout, it may be a cause of errors in setups where pushes are infrequent.
 		MaxIdleConns:          20,
 		MaxIdleConnsPerHost:   20,
-		IdleConnTimeout:       90 * time.Second,
 		TLSHandshakeTimeout:   10 * time.Second,
 		ExpectContinueTimeout: 1 * time.Second,
 		// Because TLSClientConfig is provided, have to manually configure this client for http2 support.
