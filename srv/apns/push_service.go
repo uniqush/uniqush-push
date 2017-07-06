@@ -170,24 +170,24 @@ func (p *pushService) BuildDeliveryPointFromMap(kv map[string]string, dp *push.D
 func apnsresToError(apnsres *common.APNSResult, psp *push.PushServiceProvider, dp *push.DeliveryPoint) push.PushError {
 	var err push.PushError
 	switch apnsres.Status {
-	case 0:
+	case common.STATUS0_SUCCESS:
 		err = nil
-	case 1:
+	case common.STATUS1_PROCESSING_ERROR:
 		err = push.NewBadDeliveryPointWithDetails(dp, "Processing Error")
-	case 2:
+	case common.STATUS2_MISSING_DEVICE_TOKEN:
 		err = push.NewBadDeliveryPointWithDetails(dp, "Missing Device Token")
-	case 3:
+	case common.STATUS3_MISSING_TOPIC:
 		err = push.NewBadNotificationWithDetails("Missing topic")
-	case 4:
+	case common.STATUS4_MISSING_PAYLOAD:
 		err = push.NewBadNotificationWithDetails("Missing payload")
-	case 5:
+	case common.STATUS5_INVALID_TOKEN_SIZE:
 		err = push.NewBadNotificationWithDetails("Invalid token size")
-	case 6:
+	case common.STATUS6_INVALID_TOPIC_SIZE:
 		err = push.NewBadNotificationWithDetails("Invalid topic size")
-	case 7:
+	case common.STATUS7_INVALID_PAYLOAD_SIZE:
 		err = push.NewBadNotificationWithDetails("Invalid payload size")
-	case 8:
-		// err = NewBadDeliveryPointWithDetails(req.dp, "Invalid Token")
+	case common.STATUS8_UNSUBSCRIBE:
+		// err = push.NewBadDeliveryPointWithDetails(req.dp, "Invalid Token")
 		// This token is invalid, we should unsubscribe this device.
 		err = push.NewUnsubscribeUpdate(psp, dp)
 	default:

@@ -303,7 +303,7 @@ func newMockJSONResponse(r *http.Request, status int, responseData *APNSErrorRes
 func TestAddRequestPushFailNotificationError(t *testing.T) {
 	requestProcessor := newHTTPRequestProcessor()
 
-	request, errChan, _ := newPushRequest()
+	request, errChan, resChan := newPushRequest()
 	mockAPNSRequest(requestProcessor, func(r *http.Request) (*http.Response, *mockResponse, error) {
 		response := &APNSErrorResponse{
 			Reason: "BadDeviceToken",
@@ -313,9 +313,16 @@ func TestAddRequestPushFailNotificationError(t *testing.T) {
 
 	requestProcessor.AddRequest(request)
 
-	err := <-errChan
-	if _, ok := err.(*push.BadNotification); !ok {
-		t.Fatal("Expected BadNotification error, got", err)
+	select {
+	case res := <-resChan:
+		if res.Status != common.STATUS8_UNSUBSCRIBE {
+			t.Fatalf("Expected 8 (unsubscribe), got %d", res.Status)
+		}
+		if res.MsgId == 0 {
+			t.Fatal("Expected non-zero message id, got zero")
+		}
+	case err := <-errChan:
+		t.Fatalf("Expected status code on resChan, got error from errChan: %v", err)
 	}
 }
 

@@ -197,26 +197,63 @@ func (self *HTTPPushRequestProcessor) sendRequest(wg *sync.WaitGroup, client HTT
 	}
 
 	defer response.Body.Close()
-	// TODO: also check response.StatusCode is 200, e.g. when response body is empty?
 
 	responseBody, err := ioutil.ReadAll(response.Body)
 	if err != nil {
 		errChan <- push.NewError(err.Error())
 		return
 	}
+	// https://developer.apple.com/library/content/documentation/NetworkingInternet/Conceptual/RemoteNotificationsPG/CommunicatingwithAPNs.html
+	switch response.StatusCode {
+	case 200:
+		break // success, body must be empty
+	case 410:
+		// Reason is "Unregistered"
+		// > The device token is inactive for the specified topic.
+		resChan <- &common.APNSResult{
+			MsgId:  messageID,
+			Status: common.STATUS8_UNSUBSCRIBE,
+		}
+		return
+	case 400:
+		break // Switch on Reason
+	case 405, 413, 429, 500, 503:
+		// Not sure how to handle this, these error types shouldn't happen in the normal case.
+		// Use generic error handler to report the status message to the client.
+		break
+	default:
+		break
+	}
 
 	if len(responseBody) > 0 {
 		// Successful request should return empty response body
 		apnsError := new(APNSErrorResponse)
 		err := json.Unmarshal(responseBody, apnsError)
+		switch apnsError.Reason {
+		case "BadDeviceToken": // Status code is 400
+			// > The specified device token was bad. Verify that the request contains a valid token and that the token matches the environment.
+			resChan <- &common.APNSResult{
+				MsgId:  messageID,
+				Status: common.STATUS8_UNSUBSCRIBE,
+			}
+			return
+		default:
+			break
+		}
 		if err != nil {
 			errChan <- push.NewError(err.Error())
 		} else {
 			errChan <- push.NewBadNotificationWithDetails(apnsError.Reason)
 		}
 	} else {
-		resChan <- &common.APNSResult{
-			MsgId: messageID,
+		// It must be 200 to be successful.
+		if response.StatusCode == 200 {
+			resChan <- &common.APNSResult{
+				MsgId:  messageID,
+				Status: common.STATUS0_SUCCESS,
+			}
+		} else {
+			errChan <- push.NewErrorf("Unknown error. No response body, HTTP status code is %d", response.StatusCode)
 		}
 	}
 }
