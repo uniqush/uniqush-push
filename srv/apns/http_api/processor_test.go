@@ -319,6 +319,8 @@ func TestAddRequestPushFailNotificationError(t *testing.T) {
 	}
 }
 
+// TODO: Add test of decoding error response with timestamp
+
 func TestGetMaxPayloadSize(t *testing.T) {
 	maxPayloadSize := NewRequestProcessor().GetMaxPayloadSize()
 	if maxPayloadSize != 4096 {
