@@ -34,6 +34,7 @@ import (
 	"time"
 
 	"github.com/uniqush/uniqush-push/push"
+	"github.com/uniqush/uniqush-push/util"
 )
 
 // HTTPClient is a mockable interface for the parts of http.Client used by the GCM and FCM modules.
@@ -207,7 +208,7 @@ func (self *PushServiceBase) ToCMPayload(notif *push.Notification, regIds []stri
 		}
 	}
 
-	jpayload, e0 := json.Marshal(payload)
+	jpayload, e0 := util.MarshalJSONUnescaped(payload)
 	if e0 != nil {
 		return nil, push.NewErrorf("Error converting payload to JSON: %v", e0)
 	}
@@ -288,7 +289,7 @@ func (self *PushServiceBase) multicast(psp *push.PushServiceProvider, dpList []*
 				res.Err = push.NewRetryErrorWithReason(psp, dp, notif, after, err)
 
 			} else {
-				res.Err = push.NewErrorf("Unrecoverable HTTP error sending to FCM: %v", e2)
+				res.Err = push.NewErrorf("Unrecoverable HTTP error sending to GFC/FCM: %v", e2)
 			}
 			resQueue <- res
 		}
@@ -393,7 +394,7 @@ func (self *PushServiceBase) handleCMMulticastResults(psp *push.PushServiceProvi
 				resQueue <- res
 			default:
 				res := new(push.PushResult)
-				res.Err = push.NewErrorf("FCMError: %v", errmsg)
+				res.Err = push.NewErrorf("GCM/FCMError: %v", errmsg)
 				res.Provider = psp
 				res.Content = notif
 				res.Destination = dp
