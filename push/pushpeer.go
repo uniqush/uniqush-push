@@ -23,15 +23,21 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"sync"
 )
 
+// PushPeer implements common functionality for pushes. Other structs in this module include this struct.
 type PushPeer struct {
+	m               sync.Mutex // Enforces that there are no data races on Name() in multi push.
 	name            string
 	pushServiceType PushServiceType
-	VolatileData    map[string]string
-	FixedData       map[string]string
+	// VolatileData contains data about a push peer that may be changed by clients.
+	VolatileData map[string]string
+	// FixedData contains unchanging data about a push peer. FixedData is used to generate the identifier for this PushPeer.
+	FixedData map[string]string
 }
 
+// PushServiceName is the name push service type this object uses (apns, gcm, etc.)
 func (p *PushPeer) PushServiceName() string {
 	return p.pushServiceType.Name()
 }
@@ -73,6 +79,8 @@ func (p *PushPeer) copyPushPeer(dst *PushPeer) {
 }
 
 func (p *PushPeer) Name() string {
+	p.m.Lock()
+	defer p.m.Unlock()
 	if p.name != "" {
 		return p.name
 	}
@@ -90,6 +98,8 @@ func (p *PushPeer) Name() string {
 }
 
 func (p *PushPeer) clear() {
+	p.m.Lock()
+	defer p.m.Unlock()
 	for k := range p.FixedData {
 		delete(p.FixedData, k)
 	}
@@ -135,6 +145,7 @@ func (p *PushPeer) Unmarshal(value []byte) error {
 	return nil
 }
 
+// DeliveryPoint contains information about a user+app+device. It contains the information about that combination needed to send pushes.
 type DeliveryPoint struct {
 	PushPeer
 }

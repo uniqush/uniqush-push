@@ -12,3 +12,6 @@ go:
 # install step default is `go get ./...`
 # script default is `go test ./...`
 # (Could include apns-test.sh, but that doesn't have expected output written yet)
+script:
+  - go tool vet -printfuncs debugf,infof,configf,warnf,errorf,alertf,fatalf .
+  - go test ./... -race
