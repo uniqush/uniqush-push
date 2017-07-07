@@ -46,6 +46,17 @@ func TestToGCMPayloadWithRawUnescapedPayload(t *testing.T) {
 
 func TestToGCMPayloadWithCommonParameters(t *testing.T) {
 	postData := map[string]string{
+		"msggroup":            "somegroup",
+		"uniqush.payload.gcm": `{"message":{"key": {},"x":"<a☃?>\"'"},"other":{}}`,
+		"foo": "bar",
+	}
+	regIds := []string{"CAFE1-FF", "42-607"}
+	expectedPayload := `{"registration_ids":["CAFE1-FF","42-607"],"collapse_key":"somegroup","data":{"message":{"key":{},"x":"<a☃?>\"'"},"other":{}},"time_to_live":3600}`
+	testToGCMPayload(t, postData, regIds, expectedPayload)
+}
+
+func TestToGCMPayloadWithCommonParametersV2(t *testing.T) {
+	postData := map[string]string{
 		"msggroup":  "somegroup",
 		"other":     "value",
 		"other.foo": "bar",
