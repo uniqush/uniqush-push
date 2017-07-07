@@ -145,7 +145,7 @@ func TestPushSingleError(t *testing.T) {
 		}
 		err, ok := res.Err.(*push.BadPushServiceProvider)
 		if !ok {
-			t.Fatalf("Expected type BadPushServiceProvider, got %t", err)
+			t.Fatalf("Expected type BadPushServiceProvider, got %T", err)
 		}
 		if res.Provider != psp {
 			t.Errorf("Unexpected psp %v in BadPushServiceProvider result", err.Provider)
