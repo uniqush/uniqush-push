@@ -58,13 +58,18 @@ func (self *MockPushRequestProcessor) SetErrorReportChan(errChan chan<- push.Pus
 }
 
 func TestCreatePushService(t *testing.T) {
-	service := newPushService(newMockRequestProcessor(APNS_SUCCESS))
+	mockRequestProcessor := newMockRequestProcessor(APNS_SUCCESS)
+	service := NewPushService()
+	service.binaryRequestProcessor = mockRequestProcessor
+	service.httpRequestProcessor = mockRequestProcessor
 	service.Finalize()
 }
 
 func newPushServiceWithErrorChannel(status uint8) (*pushService, *MockPushRequestProcessor, chan push.PushError) {
 	mockRequestProcessor := newMockRequestProcessor(status)
-	service := newPushService(mockRequestProcessor)
+	service := NewPushService()
+	service.binaryRequestProcessor = mockRequestProcessor
+	service.httpRequestProcessor = mockRequestProcessor
 	errChan := make(chan push.PushError, 100)
 	service.SetErrorReportChan(errChan)
 	return service, mockRequestProcessor, errChan

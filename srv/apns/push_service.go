@@ -37,12 +37,12 @@ import (
 	"sync/atomic"
 	"time"
 
-	// There will be two different protocols we may use to connect to APNS: binary and HTTP2.
+	// There are two different protocols we use to connect to APNS: binary and HTTP2.
 	// TODO: Make this configurable.
-	// TODO: Implement HTTP2
 	"github.com/uniqush/uniqush-push/push"
 	"github.com/uniqush/uniqush-push/srv/apns/binary_api"
 	"github.com/uniqush/uniqush-push/srv/apns/common"
+	"github.com/uniqush/uniqush-push/srv/apns/http_api"
 )
 
 const (
@@ -51,26 +51,41 @@ const (
 )
 
 type pushService struct {
-	// Implements one of the network protocols for sending requests to APNS and getting the corresponding response.
-	requestProcessor common.PushRequestProcessor
-	nextMessageId    uint32
-	errChan          chan<- push.PushError
-	checkPoint       time.Time
+	binaryRequestProcessor common.PushRequestProcessor
+	httpRequestProcessor   common.PushRequestProcessor
+	errChan                chan<- push.PushError
+	nextMessageId          uint32
+	checkPoint             time.Time
 }
 
 var _ push.PushServiceType = &pushService{}
+
+func NewPushService() *pushService {
+	return &pushService{
+		binaryRequestProcessor: binary_api.NewRequestProcessor(maxNrConn),
+		httpRequestProcessor:   http_api.NewRequestProcessor(),
+		nextMessageId:          0,
+	}
+}
+
+// getMessageIds is needed for the binary API of APNS.
+func (self *pushService) getMessageIds(n int) uint32 {
+	return atomic.AddUint32(&self.nextMessageId, uint32(n))
+}
 
 func (p *pushService) Name() string {
 	return "apns"
 }
 
 func (p *pushService) Finalize() {
-	p.requestProcessor.Finalize()
+	p.binaryRequestProcessor.Finalize()
+	p.httpRequestProcessor.Finalize()
 }
 
 func (self *pushService) SetErrorReportChan(errChan chan<- push.PushError) {
 	self.errChan = errChan
-	self.requestProcessor.SetErrorReportChan(errChan)
+	self.binaryRequestProcessor.SetErrorReportChan(errChan)
+	self.httpRequestProcessor.SetErrorReportChan(errChan)
 	return
 }
 
@@ -81,6 +96,10 @@ func (p *pushService) BuildPushServiceProviderFromMap(kv map[string]string, psp 
 		return errors.New("NoService")
 	}
 
+	return p.buildBinaryPushServiceProviderFromMap(kv, psp)
+}
+
+func (p *pushService) buildBinaryPushServiceProviderFromMap(kv map[string]string, psp *push.PushServiceProvider) error {
 	if cert, ok := kv["cert"]; ok && len(cert) > 0 {
 		psp.FixedData["cert"] = cert
 	} else {
@@ -103,17 +122,25 @@ func (p *pushService) BuildPushServiceProviderFromMap(kv map[string]string, psp 
 			psp.VolatileData["skipverify"] = "true"
 		}
 	}
+
+	// Put other things which can change in VolatileData.
+	// E.g. a bundleid can be changed by the company which manages the app.
+	if bundleid, ok := kv["bundleid"]; ok {
+		psp.VolatileData["bundleid"] = bundleid
+	} else {
+		psp.VolatileData["bundleid"] = ""
+	}
 	if sandbox, ok := kv["sandbox"]; ok {
 		if sandbox == "true" {
 			psp.VolatileData["addr"] = "gateway.sandbox.push.apple.com:2195"
-			return nil
+		}
+	} else {
+		if addr, ok := kv["addr"]; ok {
+			psp.VolatileData["addr"] = addr
+		} else {
+			psp.VolatileData["addr"] = "gateway.push.apple.com:2195"
 		}
 	}
-	if addr, ok := kv["addr"]; ok {
-		psp.VolatileData["addr"] = addr
-		return nil
-	}
-	psp.VolatileData["addr"] = "gateway.push.apple.com:2195"
 	return nil
 }
 
@@ -140,42 +167,27 @@ func (p *pushService) BuildDeliveryPointFromMap(kv map[string]string, dp *push.D
 	return nil
 }
 
-func NewBinaryPushService() *pushService {
-	return newPushService(binary_api.NewRequestProcessor(maxNrConn))
-}
-
-func newPushService(requestProcessor common.PushRequestProcessor) *pushService {
-	return &pushService{
-		requestProcessor: requestProcessor,
-		nextMessageId:    1,
-	}
-}
-
-func (self *pushService) getMessageIds(n int) uint32 {
-	return atomic.AddUint32(&self.nextMessageId, uint32(n))
-}
-
 func apnsresToError(apnsres *common.APNSResult, psp *push.PushServiceProvider, dp *push.DeliveryPoint) push.PushError {
 	var err push.PushError
 	switch apnsres.Status {
-	case 0:
+	case common.STATUS0_SUCCESS:
 		err = nil
-	case 1:
+	case common.STATUS1_PROCESSING_ERROR:
 		err = push.NewBadDeliveryPointWithDetails(dp, "Processing Error")
-	case 2:
+	case common.STATUS2_MISSING_DEVICE_TOKEN:
 		err = push.NewBadDeliveryPointWithDetails(dp, "Missing Device Token")
-	case 3:
+	case common.STATUS3_MISSING_TOPIC:
 		err = push.NewBadNotificationWithDetails("Missing topic")
-	case 4:
+	case common.STATUS4_MISSING_PAYLOAD:
 		err = push.NewBadNotificationWithDetails("Missing payload")
-	case 5:
+	case common.STATUS5_INVALID_TOKEN_SIZE:
 		err = push.NewBadNotificationWithDetails("Invalid token size")
-	case 6:
+	case common.STATUS6_INVALID_TOPIC_SIZE:
 		err = push.NewBadNotificationWithDetails("Invalid topic size")
-	case 7:
+	case common.STATUS7_INVALID_PAYLOAD_SIZE:
 		err = push.NewBadNotificationWithDetails("Invalid payload size")
-	case 8:
-		// err = NewBadDeliveryPointWithDetails(req.dp, "Invalid Token")
+	case common.STATUS8_UNSUBSCRIBE:
+		// err = push.NewBadDeliveryPointWithDetails(req.dp, "Invalid Token")
 		// This token is invalid, we should unsubscribe this device.
 		err = push.NewUnsubscribeUpdate(psp, dp)
 	default:
@@ -223,8 +235,15 @@ func (self *pushService) Push(psp *push.PushServiceProvider, dpQueue <-chan *pus
 	req.PSP = psp
 	req.Payload, err = toAPNSPayload(notif)
 
-	if err == nil && len(req.Payload) > self.requestProcessor.GetMaxPayloadSize() {
-		err = push.NewBadNotificationWithDetails(fmt.Sprintf("payload is too large: %d > %d", len(req.Payload), self.requestProcessor.GetMaxPayloadSize()))
+	var requestProcessor common.PushRequestProcessor
+	if http2, ok := notif.Data["uniqush.http2"]; ok && http2 == "1" {
+		requestProcessor = self.httpRequestProcessor
+	} else {
+		requestProcessor = self.binaryRequestProcessor
+	}
+
+	if err == nil && len(req.Payload) > requestProcessor.GetMaxPayloadSize() {
+		err = push.NewBadNotificationWithDetails(fmt.Sprintf("payload is too large: %d > %d", len(req.Payload), requestProcessor.GetMaxPayloadSize()))
 	}
 
 	if err != nil {
@@ -292,7 +311,7 @@ func (self *pushService) Push(psp *push.PushServiceProvider, dpQueue <-chan *pus
 	req.ErrChan = errChan
 	req.ResChan = resChan
 
-	self.requestProcessor.AddRequest(req)
+	requestProcessor.AddRequest(req)
 
 	// errChan closed means the message(s) is/are sent successfully to the APNs.
 	// However, we may have not yet receieved responses from APNS - those are sent on resChan
@@ -326,7 +345,8 @@ func (self *pushService) Push(psp *push.PushServiceProvider, dpQueue <-chan *pus
 		}
 	}
 
-	// Wait for the unserialized responses from APNS asynchronously - these will not affect what we send our clients for this request, but will affect subsequent requests.
+	// Wait for the unserialized responses from APNS asyncronously - these will not affect what we send our clients for this request, but will affect subsequent requests.
+	// TODO: With HTTP/2, this can be refactored to become synchronous (not in this PR, not while binary provider is supported for a PSP). The map[string]T can be removed.
 	go self.waitResults(psp, dpList, lastId, resChan)
 }
 

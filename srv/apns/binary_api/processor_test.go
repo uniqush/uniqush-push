@@ -75,7 +75,6 @@ func mockPSPData(serviceName string) *push.PushServiceProvider {
 		"service":         serviceName,
 		"pushservicetype": "apns",
 		"cert":            "../apns-test/localhost.cert",
-		"subscriber":      "mocksubscriber",
 		"key":             "../apns-test/localhost.key",
 		"addr":            "gateway.push.apple.com:2195",
 	})
