@@ -289,7 +289,7 @@ func (self *PushServiceBase) multicast(psp *push.PushServiceProvider, dpList []*
 				res.Err = push.NewRetryErrorWithReason(psp, dp, notif, after, err)
 
 			} else {
-				res.Err = push.NewErrorf("Unrecoverable HTTP error sending to GFC/FCM: %v", e2)
+				res.Err = push.NewErrorf("Unrecoverable HTTP error sending to GCM/FCM: %v", e2)
 			}
 			resQueue <- res
 		}
