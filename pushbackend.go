@@ -221,21 +221,26 @@ func (self *PushBackEnd) fixError(reqId string, remoteAddr string, event error, 
 
 func (self *PushBackEnd) collectResult(reqId string, remoteAddr string, service string, resChan <-chan *push.PushResult, logger log.Logger, after time.Duration, handler ApiResponseHandler) {
 	for res := range resChan {
-		var sub string
-		var ok bool
+		sub, ok := res.Destination.FixedData["subscriber"]
 		if res.Provider != nil && res.Destination != nil {
-			if sub, ok = res.Destination.FixedData["subscriber"]; !ok {
+			if !ok {
 				destinationName := res.Destination.Name()
 				logger.Errorf("RequestID=%v Subscriber=%v DeliveryPoint=%v Bad Delivery Point: No subscriber", reqId, sub, destinationName)
 				handler.AddDetailsToHandler(ApiResponseDetails{RequestId: &reqId, From: &remoteAddr, Service: &service, Subscriber: &sub, DeliveryPoint: &destinationName, Code: UNIQUSH_ERROR_BAD_DELIVERY_POINT})
 				continue
 			}
 		}
+		var subRepr string
+		if ok {
+			subRepr = sub
+		} else {
+			subRepr = "Unknown"
+		}
 		if res.Err == nil {
 			providerName := res.Provider.Name()
 			destinationName := res.Destination.Name()
 			msgId := res.MsgId
-			logger.Infof("RequestID=%v Service=%v Subscriber=%v PushServiceProvider=%v DeliveryPoint=%v MsgId=%v Success!", reqId, service, sub, providerName, destinationName, msgId)
+			logger.Infof("RequestID=%v Service=%v Subscriber=%v PushServiceProvider=%v DeliveryPoint=%v MsgId=%v Success!", reqId, service, subRepr, providerName, destinationName, msgId)
 			handler.AddDetailsToHandler(ApiResponseDetails{RequestId: &reqId, From: &remoteAddr, Service: &service, Subscriber: &sub, PushServiceProvider: &providerName, DeliveryPoint: &destinationName, MessageId: &msgId, Code: UNIQUSH_SUCCESS})
 			continue
 		}
@@ -249,7 +254,7 @@ func (self *PushBackEnd) collectResult(reqId string, remoteAddr string, service 
 			if res.Destination != nil {
 				dpName = res.Destination.Name()
 			}
-			logger.Errorf("RequestID=%v Service=%v Subscriber=%v PushServiceProvider=%v DeliveryPoint=%v Failed: %v", reqId, service, sub, pspName, dpName, err)
+			logger.Errorf("RequestID=%v Service=%v Subscriber=%v PushServiceProvider=%v DeliveryPoint=%v Failed: %v", reqId, service, subRepr, pspName, dpName, err)
 			handler.AddDetailsToHandler(ApiResponseDetails{RequestId: &reqId, From: &remoteAddr, Service: &service, Subscriber: &sub, PushServiceProvider: &pspName, DeliveryPoint: &dpName, Code: UNIQUSH_ERROR_GENERIC, ErrorMsg: strPtrOfErr(err)})
 		}
 	}
