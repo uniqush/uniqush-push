@@ -221,7 +221,11 @@ func (self *PushBackEnd) fixError(reqId string, remoteAddr string, event error, 
 
 func (self *PushBackEnd) collectResult(reqId string, remoteAddr string, service string, resChan <-chan *push.PushResult, logger log.Logger, after time.Duration, handler ApiResponseHandler) {
 	for res := range resChan {
-		sub, ok := res.Destination.FixedData["subscriber"]
+		var sub string
+		ok := false
+		if res.Destination != nil {
+			sub, ok = res.Destination.FixedData["subscriber"]
+		}
 		if res.Provider != nil && res.Destination != nil {
 			if !ok {
 				destinationName := res.Destination.Name()
