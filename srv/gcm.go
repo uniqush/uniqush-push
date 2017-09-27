@@ -29,7 +29,7 @@ import (
 
 const (
 	// GCM endpoint
-	gcmServiceURL string = "https://android.googleapis.com/gcm/send"
+	gcmServiceURL string = "https://gcm-http.googleapis.com/gcm/send"
 	// payload key to extract from push requests to uniqush
 	gcmRawPayloadKey = "uniqush.payload.gcm"
 	// initialism for log messages
