@@ -30,8 +30,11 @@ import (
 const (
 	// GCM endpoint
 	gcmServiceURL string = "https://android.googleapis.com/gcm/send"
-	// payload key to extract from push requests to uniqush
+	// payload key to extract from push requests to uniqush. The corresponding value is a JSON blob for a GCM data
+	// (silent, unless the app has logic to extract information to display notifications on the device)
 	gcmRawPayloadKey = "uniqush.payload.gcm"
+	// notification key to extract from push requests to uniqush. The corresponding value is a JSON blob for a GCM notification (alerts user)
+	gcmRawNotificationKey = "uniqush.notification.gcm"
 	// initialism for log messages
 	gcmInitialism = "GCM"
 	// push service type(name), for requests to uniqush
@@ -47,7 +50,7 @@ var _ push.PushServiceType = &gcmPushService{}
 
 func newGCMPushService() *gcmPushService {
 	return &gcmPushService{
-		PushServiceBase: cm.MakePushServiceBase(gcmInitialism, gcmRawPayloadKey, gcmServiceURL, gcmPushServiceName),
+		PushServiceBase: cm.MakePushServiceBase(gcmInitialism, gcmRawPayloadKey, gcmRawNotificationKey, gcmServiceURL, gcmPushServiceName),
 	}
 }
 

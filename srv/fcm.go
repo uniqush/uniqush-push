@@ -31,8 +31,11 @@ import (
 const (
 	// FCM endpoint
 	fcmServiceURL string = "https://fcm.googleapis.com/fcm/send"
-	// payload key to extract from push requests to uniqush
+	// payload key to extract from push requests to uniqush. The corresponding value is a JSON blob for a FCM data push
+	// (silent, unless the app has logic to extract information to display notifications on the device)
 	fcmRawPayloadKey = "uniqush.payload.fcm"
+	// notification key to extract from push requests to uniqush. The corresponding value is a JSON blob for a FCM notification (alerts user)
+	fcmRawNotificationKey = "uniqush.notification.fcm"
 	// initialism for log messages
 	fcmInitialism = "FCM"
 	// push service type(name), for requests to uniqush
@@ -48,7 +51,7 @@ var _ push.PushServiceType = &fcmPushService{}
 
 func newFCMPushService() *fcmPushService {
 	return &fcmPushService{
-		PushServiceBase: cm.MakePushServiceBase(fcmInitialism, fcmRawPayloadKey, fcmServiceURL, fcmPushServiceName),
+		PushServiceBase: cm.MakePushServiceBase(fcmInitialism, fcmRawPayloadKey, fcmRawNotificationKey, fcmServiceURL, fcmPushServiceName),
 	}
 }
 

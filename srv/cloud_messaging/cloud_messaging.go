@@ -14,7 +14,6 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  *
-
  * This contains implementation details common to GCM and FCM.
  * Parts of this will be refactored as new features are added for FCM/GCM.
  */
@@ -52,6 +51,8 @@ type PushServiceBase struct {
 	initialism string
 	// const: "uniqush.payload.fcm" or "uniqush.payload.gcm"
 	rawPayloadKey string
+	// const: "uniqush.notification.fcm" or "uniqush.notification.gcm"
+	rawNotificationKey string
 	// const: GCM/FCM endpoint. "https://..../push"
 	serviceURL string
 	// const: "gcm" or "fcm", for API requests to uniqush and API responses, as well as logging.
@@ -74,7 +75,7 @@ func (g *PushServiceBase) OverrideClient(client HTTPClient) {
 // Builds a common base.
 // Note: Make sure that this can be copied by value (it's a collection of poitners right now).
 // If it can no longer be copied by value, // change to an initializer function.
-func MakePushServiceBase(initialism string, rawPayloadKey string, serviceURL string, pushServiceName string) PushServiceBase {
+func MakePushServiceBase(initialism string, rawPayloadKey string, rawNotificationKey string, serviceURL string, pushServiceName string) PushServiceBase {
 	conf := &tls.Config{InsecureSkipVerify: false}
 	tr := &http.Transport{
 		TLSClientConfig:     conf,
@@ -89,11 +90,12 @@ func MakePushServiceBase(initialism string, rawPayloadKey string, serviceURL str
 		Timeout:   time.Second * 10, // Add a timeout for all requests, in case of network issues.
 	}
 	return PushServiceBase{
-		client:          client,
-		initialism:      initialism,
-		rawPayloadKey:   rawPayloadKey,
-		serviceURL:      serviceURL,
-		pushServiceName: pushServiceName,
+		client:             client,
+		initialism:         initialism,
+		rawPayloadKey:      rawPayloadKey,
+		rawNotificationKey: rawNotificationKey,
+		serviceURL:         serviceURL,
+		pushServiceName:    pushServiceName,
 	}
 }
 
@@ -122,21 +124,45 @@ func (p *PushServiceBase) BuildDeliveryPointFromMap(kv map[string]string,
 	return nil
 }
 
+type CMCommonData struct {
+	RegIDs         []string `json:"registration_ids"`
+	CollapseKey    string   `json:"collapse_key,omitempty"`
+	DelayWhileIdle bool     `json:"delay_while_idle,omitempty"`
+	TimeToLive     uint     `json:"time_to_live,omitempty"`
+}
+
 // Data used by GCM or FCM. Currently the same.
 type CMData struct {
-	RegIDs         []string               `json:"registration_ids"`
-	CollapseKey    string                 `json:"collapse_key,omitempty"`
-	Data           map[string]interface{} `json:"data"` // For compatibility with other GCM platforms(e.g. iOS), should always be a map[string]string
-	DelayWhileIdle bool                   `json:"delay_while_idle,omitempty"`
-	TimeToLive     uint                   `json:"time_to_live,omitempty"`
+	CMCommonData
+	Data         map[string]interface{} `json:"data,omitempty"`         // For compatibility with other GCM platforms(e.g. iOS), should always be a map[string]string
+	Notification map[string]interface{} `json:"notification,omitempty"` // For compatibility with other GCM platforms(e.g. iOS), should always be a map[string]string
+}
+
+// Data with empty
+type CMEmptyData struct {
+	CMCommonData
+	Data map[string]interface{} `json:"data"`
+}
+
+func (d *CMData) MarshalSafe() ([]byte, error) {
+	if len(d.Data) == 0 && len(d.Notification) == 0 {
+		// extremely rare case
+		empty := CMEmptyData{
+			CMCommonData: d.CMCommonData,
+			Data:         map[string]interface{}{},
+		}
+		return util.MarshalJSONUnescaped(empty)
+	}
+
+	return util.MarshalJSONUnescaped(d)
 }
 
 func (d *CMData) String() string {
-	ret, err := json.Marshal(d)
+	bytes, err := d.MarshalSafe()
 	if err != nil {
 		return ""
 	}
-	return string(ret)
+	return string(bytes)
 }
 
 // validateRawCMData verifies that the user-provided JSON payload is a valid JSON object.
@@ -184,8 +210,18 @@ func (self *PushServiceBase) ToCMPayload(notif *push.Notification, regIds []stri
 		}
 	}
 
+	// Support uniqush.notification.gcm/fcm as another optional payload, to conform to GCM spec: https://developers.google.com/cloud-messaging/http-server-ref#send-downstream
+	// This will make GCM handle displaying the notification instead of the client.
+	// Note that "data" payloads (Uniqush's default for GCM/FCM, for historic reasons) can be sent alongside "notification" payloads.
+	// - In that case, "data" will be sent to the app, and "notification" will be rendered directly for the user to see.
+	if rawNotification, ok := postData[self.rawNotificationKey]; ok {
+		notification, err := validateRawCMData(rawNotification)
+		if err != nil {
+			return nil, err
+		}
+		payload.Notification = notification
+	}
 	if rawData, ok := postData[self.rawPayloadKey]; ok {
-		// Could add uniqush.notification.gcm/fcm as another optional payload, to conform to GCM spec: https://developers.google.com/cloud-messaging/http-server-ref#send-downstream
 		data, err := validateRawCMData(rawData)
 		if err != nil {
 			return nil, err
@@ -208,7 +244,7 @@ func (self *PushServiceBase) ToCMPayload(notif *push.Notification, regIds []stri
 		}
 	}
 
-	jpayload, e0 := util.MarshalJSONUnescaped(payload)
+	jpayload, e0 := payload.MarshalSafe()
 	if e0 != nil {
 		return nil, push.NewErrorf("Error converting payload to JSON: %v", e0)
 	}

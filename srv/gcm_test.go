@@ -8,6 +8,7 @@ import (
 )
 
 func testToGCMPayload(t *testing.T, postData map[string]string, regIds []string, expectedPayload string) {
+	t.Helper()
 	notif := push.NewEmptyNotification()
 	notif.Data = postData
 	// Create a push service, just for the sake of realistically testing building payloads
@@ -26,10 +27,20 @@ func TestToGCMPayloadWithRawPayload(t *testing.T) {
 	postData := map[string]string{
 		"msggroup":            "somegroup",
 		"uniqush.payload.gcm": `{"message":{"key": {},"x":"y"},"other":{}}`,
-		"foo": "bar",
+		"foo": "bar", // ignored
 	}
 	regIds := []string{"CAFE1-FF", "42-607"}
-	expectedPayload := `{"registration_ids":["CAFE1-FF","42-607"],"collapse_key":"somegroup","data":{"message":{"key":{},"x":"y"},"other":{}},"time_to_live":3600}`
+	expectedPayload := `{"registration_ids":["CAFE1-FF","42-607"],"collapse_key":"somegroup","time_to_live":3600,"data":{"message":{"key":{},"x":"y"},"other":{}}}`
+	testToGCMPayload(t, postData, regIds, expectedPayload)
+}
+
+func TestToGCMPayloadWithRawEmptyPayload(t *testing.T) {
+	postData := map[string]string{
+		"msggroup":            "somegroup",
+		"uniqush.payload.gcm": `{}`,
+	}
+	regIds := []string{"CAFE1-FF", "42-607"}
+	expectedPayload := `{"registration_ids":["CAFE1-FF","42-607"],"collapse_key":"somegroup","time_to_live":3600,"data":{}}`
 	testToGCMPayload(t, postData, regIds, expectedPayload)
 }
 
@@ -40,7 +51,7 @@ func TestToGCMPayloadWithRawUnescapedPayload(t *testing.T) {
 		"foo": "bar",
 	}
 	regIds := []string{"CAFE1-FF", "42-607"}
-	expectedPayload := `{"registration_ids":["CAFE1-FF","42-607"],"collapse_key":"somegroup","data":{"message":{"key":{},"x":"<a☃?>\"'"},"other":{}},"time_to_live":3600}`
+	expectedPayload := `{"registration_ids":["CAFE1-FF","42-607"],"collapse_key":"somegroup","time_to_live":3600,"data":{"message":{"key":{},"x":"<a☃?>\"'"},"other":{}}}`
 	testToGCMPayload(t, postData, regIds, expectedPayload)
 }
 
@@ -51,7 +62,7 @@ func TestToGCMPayloadWithCommonParameters(t *testing.T) {
 		"foo": "bar",
 	}
 	regIds := []string{"CAFE1-FF", "42-607"}
-	expectedPayload := `{"registration_ids":["CAFE1-FF","42-607"],"collapse_key":"somegroup","data":{"message":{"key":{},"x":"<a☃?>\"'"},"other":{}},"time_to_live":3600}`
+	expectedPayload := `{"registration_ids":["CAFE1-FF","42-607"],"collapse_key":"somegroup","time_to_live":3600,"data":{"message":{"key":{},"x":"<a☃?>\"'"},"other":{}}}`
 	testToGCMPayload(t, postData, regIds, expectedPayload)
 }
 
@@ -66,18 +77,18 @@ func TestToGCMPayloadWithCommonParametersV2(t *testing.T) {
 		"uniqush.foo":          "foo",
 	}
 	regIds := []string{"CAFE1-FF", "42-607"}
-	expectedPayload := `{"registration_ids":["CAFE1-FF","42-607"],"collapse_key":"somegroup","data":{"other":"value","other.foo":"bar"},"time_to_live":5}`
+	expectedPayload := `{"registration_ids":["CAFE1-FF","42-607"],"collapse_key":"somegroup","time_to_live":5,"data":{"other":"value","other.foo":"bar"}}`
 	testToGCMPayload(t, postData, regIds, expectedPayload)
 }
 
 // Test that it will be encoded properly if uniqush.payload.gcm is provided instead of uniqush.payload
-func TestToGCMPayloadNewWay(t *testing.T) {
+func TestToGCMPayloadWithBlob(t *testing.T) {
 	postData := map[string]string{
-		"msggroup":            "somegroup",
+		"msggroup":            "somegroupnotif",
 		"uniqush.payload.gcm": `{"message":{"aPushType":{"foo":"bar","other":"value"},"gcm":{},"others":{"type":"aPushType"}}}`,
 	}
 	regIds := []string{"CAFE1-FF", "42-607"}
-	expectedPayload := `{"registration_ids":["CAFE1-FF","42-607"],"collapse_key":"somegroup","data":{"message":{"aPushType":{"foo":"bar","other":"value"},"gcm":{},"others":{"type":"aPushType"}}},"time_to_live":3600}`
+	expectedPayload := `{"registration_ids":["CAFE1-FF","42-607"],"collapse_key":"somegroupnotif","time_to_live":3600,"data":{"message":{"aPushType":{"foo":"bar","other":"value"},"gcm":{},"others":{"type":"aPushType"}}}}`
 	testToGCMPayload(t, postData, regIds, expectedPayload)
 }
 
@@ -88,7 +99,30 @@ func TestToGCMPayloadUsesMsggroupForCollapseKey(t *testing.T) {
 		"msggroup":            "AMsgGroup",
 	}
 	regIds := []string{"CAFE1-FF", "42-607"}
-	expectedPayload := `{"registration_ids":["CAFE1-FF","42-607"],"collapse_key":"AMsgGroup","data":{"message":{"aPushType":{"foo":"bar","other":"value"},"gcm":{},"others":{"type":"aPushType"}}},"time_to_live":3600}`
+	expectedPayload := `{"registration_ids":["CAFE1-FF","42-607"],"collapse_key":"AMsgGroup","time_to_live":3600,"data":{"message":{"aPushType":{"foo":"bar","other":"value"},"gcm":{},"others":{"type":"aPushType"}}}}`
+	testToGCMPayload(t, postData, regIds, expectedPayload)
+}
+
+// Test that it will be encoded properly if uniqush.notification.gcm is provided
+func TestToGCMNotificationWithBlob(t *testing.T) {
+	postData := map[string]string{
+		"msggroup":                 "somegroup",
+		"uniqush.notification.gcm": `{"body":"text","icon":"myicon","title":"🔥Notification Title"}`,
+	}
+	regIds := []string{"CAFE1-FF", "11-213"}
+	expectedPayload := `{"registration_ids":["CAFE1-FF","11-213"],"collapse_key":"somegroup","time_to_live":3600,"notification":{"body":"text","icon":"myicon","title":"🔥Notification Title"}}`
+	testToGCMPayload(t, postData, regIds, expectedPayload)
+}
+
+// Test that it will be encoded properly if uniqush.notification.gcm and uniqush.notification.fcm are provided
+func TestToGCMNotificationWithPayloadAndNotificationBlobs(t *testing.T) {
+	postData := map[string]string{
+		"msggroup":                 "bothgroup",
+		"uniqush.notification.gcm": `{"body":"text","icon":"myicon","title":"mytitle"}`,
+		"uniqush.payload.gcm":      `{"message":{"key": {},"x":"y"},"other":{}}`,
+	}
+	regIds := []string{"CAFE1-FF", "11-213"}
+	expectedPayload := `{"registration_ids":["CAFE1-FF","11-213"],"collapse_key":"bothgroup","time_to_live":3600,"data":{"message":{"key":{},"x":"y"},"other":{}},"notification":{"body":"text","icon":"myicon","title":"mytitle"}}`
 	testToGCMPayload(t, postData, regIds, expectedPayload)
 }
 
