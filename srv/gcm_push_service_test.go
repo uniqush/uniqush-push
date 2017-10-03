@@ -227,7 +227,7 @@ func TestPreviewWithCommonParameters(t *testing.T) {
 		"uniqush.payload.apns": "{}",
 		"uniqush.foo":          "foo",
 	}
-	expectedPayload := `{"registration_ids":["placeholderRegId"],"collapse_key":"somegroup","data":{"other":"value","other.foo":"bar"},"time_to_live":5}`
+	expectedPayload := `{"registration_ids":["placeholderRegId"],"collapse_key":"somegroup","time_to_live":5,"data":{"other":"value","other.foo":"bar"}}`
 
 	notif := push.NewEmptyNotification()
 	notif.Data = postData
