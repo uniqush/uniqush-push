@@ -25,7 +25,7 @@ import (
 	"strings"
 
 	"github.com/uniqush/uniqush-push/push"
-	"github.com/uniqush/uniqush-push/srv/apns/common"
+	"github.com/uniqush/uniqush-push/util"
 )
 
 // validateRawAPNSPayload tests that the client-provided JSON payload can be sent to APNS.
@@ -103,7 +103,7 @@ func toAPNSPayload(n *push.Notification) ([]byte, push.PushError) {
 
 	aps["alert"] = alert
 	payload["aps"] = aps
-	j, err := common.MarshalJSONUnescaped(payload)
+	j, err := util.MarshalJSONUnescaped(payload)
 	if err != nil {
 		return nil, push.NewErrorf("Failed to convert notification data to JSON: %v", err)
 	}
