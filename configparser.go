@@ -23,7 +23,7 @@ import (
 	"os"
 	"strings"
 
-	"github.com/ifwe/goconf/conf"
+	"github.com/uniqush/goconf/conf"
 	"github.com/uniqush/log"
 	"github.com/uniqush/uniqush-push/db"
 	"github.com/uniqush/uniqush-push/push"
