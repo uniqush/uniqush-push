@@ -7,7 +7,7 @@ sudo: false
 
 # Compile with go 1.9 (or newer). It takes a long time to install `tip`
 go:
-  - 1.9
+  - 1.9.x
 
 # install step default is `go get ./...`
 # script default is `go test ./...`
