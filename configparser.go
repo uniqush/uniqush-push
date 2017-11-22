@@ -18,6 +18,7 @@
 package main
 
 import (
+	"fmt"
 	"io"
 	"os"
 	"strings"
@@ -42,6 +43,27 @@ const (
 	LOGGER_NR_LOGGERS
 )
 
+func extractLogLevel(loglevel string) (int, string) {
+	warningMsg := ""
+	var level int
+	switch strings.ToLower(loglevel) {
+	case "alert":
+		level = log.LOGLEVEL_ALERT
+	case "error":
+		level = log.LOGLEVEL_ERROR
+	case "warn", "warning":
+		level = log.LOGLEVEL_WARN
+	case "standard", "verbose", "info":
+		level = log.LOGLEVEL_INFO
+	case "debug":
+		level = log.LOGLEVEL_DEBUG
+	default:
+		warningMsg = fmt.Sprintf("Unsupported loglevel %q. Supported values: alert, error, warn/warning, standard/verbose/info, and debug", loglevel)
+		level = log.LOGLEVEL_INFO
+	}
+	return level, warningMsg
+}
+
 func loadLogger(writer io.Writer, c *conf.ConfigFile, field string, prefix string) (log.Logger, error) {
 	var loglevel string
 	var logswitch bool
@@ -61,29 +83,25 @@ func loadLogger(writer io.Writer, c *conf.ConfigFile, field string, prefix strin
 		loglevel = "standard"
 	}
 	var level int
+	warningMsg := ""
 
 	if logswitch {
-		switch strings.ToLower(loglevel) {
-		case "standard":
-			level = log.LOGLEVEL_INFO
-		case "verbose":
-			level = log.LOGLEVEL_INFO
-		case "debug":
-			level = log.LOGLEVEL_DEBUG
-		default:
-			level = log.LOGLEVEL_INFO
-		}
+		level, warningMsg = extractLogLevel(loglevel)
 	} else {
 		level = log.LOGLEVEL_SILENT
 	}
 
 	logger := log.NewLogger(writer, prefix, level)
+	if warningMsg != "" {
+		logger.Warn(warningMsg)
+	}
 	return logger, nil
 }
 
 func LoadDatabaseConfig(cf *conf.ConfigFile) (*db.DatabaseConfig, error) {
 	var err error
 	c := new(db.DatabaseConfig)
+	fmt.Printf("\ncf=%#v\n", *cf)
 	c.PushServiceManager = push.GetPushServiceManager()
 	c.Engine, err = cf.GetString("Database", "engine")
 	if err != nil || c.Engine == "" {
@@ -98,6 +116,7 @@ func LoadDatabaseConfig(cf *conf.ConfigFile) (*db.DatabaseConfig, error) {
 		c.Port = -1
 	}
 	c.Host, err = cf.GetString("Database", "host")
+	fmt.Printf("Host: %q, err: %v", c.Host, err)
 	if err != nil || c.Host == "" {
 		c.Host = "localhost"
 	}
@@ -106,6 +125,7 @@ func LoadDatabaseConfig(cf *conf.ConfigFile) (*db.DatabaseConfig, error) {
 		c.Password = ""
 	}
 	i, e := cf.GetInt("Database", "everysec")
+	// TODO: Change condition to < 60 or change assignment to c.EverySec = 60?
 	c.EverySec = int64(i)
 	if e != nil || c.EverySec <= 60 {
 		c.EverySec = 600
@@ -122,8 +142,8 @@ func LoadDatabaseConfig(cf *conf.ConfigFile) (*db.DatabaseConfig, error) {
 	return c, nil
 }
 
-var (
-	defaultConfigFilePath string = "/etc/uniqush/uniqush.conf"
+const (
+	defaultConfigFilePath = "/etc/uniqush/uniqush.conf"
 )
 
 func OpenConfig(filename string) (c *conf.ConfigFile, err error) {
