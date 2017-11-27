@@ -101,7 +101,6 @@ func loadLogger(writer io.Writer, c *conf.ConfigFile, field string, prefix strin
 func LoadDatabaseConfig(cf *conf.ConfigFile) (*db.DatabaseConfig, error) {
 	var err error
 	c := new(db.DatabaseConfig)
-	fmt.Printf("\ncf=%#v\n", *cf)
 	c.PushServiceManager = push.GetPushServiceManager()
 	c.Engine, err = cf.GetString("Database", "engine")
 	if err != nil || c.Engine == "" {
@@ -116,7 +115,6 @@ func LoadDatabaseConfig(cf *conf.ConfigFile) (*db.DatabaseConfig, error) {
 		c.Port = -1
 	}
 	c.Host, err = cf.GetString("Database", "host")
-	fmt.Printf("Host: %q, err: %v", c.Host, err)
 	if err != nil || c.Host == "" {
 		c.Host = "localhost"
 	}
