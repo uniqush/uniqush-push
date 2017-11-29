@@ -68,6 +68,8 @@ func toAPNSPayload(n *push.Notification) ([]byte, push.PushError) {
 	alert := make(map[string]interface{})
 	for k, v := range n.Data {
 		switch k {
+		case "title":
+			alert["title"] = v
 		case "msg":
 			alert["body"] = v
 		case "action-loc-key":
