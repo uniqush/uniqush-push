@@ -3,12 +3,15 @@
 TAG=$( git describe --always )
 
 function finish {
+    echo "Removing container..."
     docker rm uniqush-push-$TAG
 }
 
 trap finish EXIT
 
-docker build --tag uniqush-build:$TAG .
+SCRIPT_DIR="$( cd "$( dirname "$0" )" && pwd )"
+bash "${SCRIPT_DIR}/build-docker-image.sh"
+
 docker run \
        --name=uniqush-push-$TAG \
        uniqush-build:$TAG
