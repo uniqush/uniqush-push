@@ -157,11 +157,36 @@ func (f *pushDatabaseOpts) AddPushServiceProviderToService(service string,
 	}
 	f.dblock.Lock()
 	defer f.dblock.Unlock()
+
+	//Service can have multiple psp in different push service type, but user might add redundant psp(different setting) with same service name. Under this situation, only one service will be used for subsribe and push in runtime.
+	//Unfortunately, no one know which psp will be used in subscribe and push later, only the very first one returned from getting psp2srv api will be used. That's a bug.
+	//So the new service psp with duplicate push type should be added. It will be verified before ADD.
+	expsps, err := f.db.GetPushServiceProvidersByService(service)
+	if err != nil {
+		return fmt.Errorf("Error querying psp with name: %v", err)
+	}
+	if len(expsps) > 0 {
+		for index := range expsps {
+			pushpsp, perr := f.db.GetPushServiceProvider(expsps[index])
+
+			if perr != nil {
+				return fmt.Errorf("Error to retrieve psp with name: %v", err)
+			}
+			//Whether the existing psp has the same push service type
+			if pushpsp.PushServiceName() == push_service_provider.PushServiceName() {
+				//The service has a psp in same push service type
+				return fmt.Errorf("Unable to add the service %s due to dulicate Push Service Provider in same type. New psp detail: %v", service, push_service_provider)
+			}
+		}
+
+	}
+
 	e := f.db.SetPushServiceProvider(push_service_provider)
 	if e != nil {
 		return fmt.Errorf("Error associating psp with name: %v", e)
 	}
 	return f.db.AddPushServiceProviderToService(service, push_service_provider.Name())
+
 }
 
 func (f *pushDatabaseOpts) AddDeliveryPointToService(service string,
