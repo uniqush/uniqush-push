@@ -78,6 +78,10 @@ func toAPNSPayload(n *push.Notification) ([]byte, push.PushError) {
 			alert[k] = v
 		case "loc-args":
 			alert[k] = parseList(v)
+		case "title-loc-key":
+			alert[k] = v
+		case "title-loc-args":
+			alert[k] = parseList(v)
 		case "badge", "content-available":
 			b, err := strconv.Atoi(v)
 			if err != nil {
