@@ -126,9 +126,7 @@ func parseList(str string) []string {
 		} else if r == '\\' {
 			escape = true
 		} else if r == ',' {
-			if len(elem) > 0 {
-				ret = append(ret, string(elem))
-			}
+			ret = append(ret, string(elem))
 			elem = elem[:0]
 		} else {
 			elem = append(elem, r)
