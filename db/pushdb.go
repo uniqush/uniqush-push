@@ -163,6 +163,8 @@ func (f *pushDatabaseOpts) AddPushServiceProviderToService(service string,
 			//Whether the existing psp has the same push service type
 			if pushpsp.PushServiceName() == push_service_provider.PushServiceName() {
 				//The service has a psp in same push service type
+				//The fixed data must be same, otherwise, it's denied to add multiple psp with same fixed data
+				pushpsp.PushPeer.
 				return fmt.Errorf("Unable to add the service %s due to dulicate Push Service Provider in same type. New psp detail: %v", service, push_service_provider)
 			}
 		}
