@@ -78,6 +78,10 @@ func toAPNSPayload(n *push.Notification) ([]byte, push.PushError) {
 			alert[k] = v
 		case "loc-args":
 			alert[k] = parseList(v)
+		case "title-loc-key":
+			alert[k] = v
+		case "title-loc-args":
+			alert[k] = parseList(v)
 		case "badge", "content-available":
 			b, err := strconv.Atoi(v)
 			if err != nil {
@@ -126,9 +130,7 @@ func parseList(str string) []string {
 		} else if r == '\\' {
 			escape = true
 		} else if r == ',' {
-			if len(elem) > 0 {
-				ret = append(ret, string(elem))
-			}
+			ret = append(ret, string(elem))
 			elem = elem[:0]
 		} else {
 			elem = append(elem, r)
