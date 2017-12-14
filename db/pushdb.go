@@ -1,5 +1,6 @@
 /*
  * Copyright 2011 Nan Deng
+ *           2017 Victor Lang
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -96,19 +97,19 @@ type pushDatabaseOpts struct {
 }
 
 /*
-func NewPushDatabaseOpts(conf *DatabaseConfig) (PushDatabase, error) {
-	var err error
-	f := new(pushDatabaseOpts)
-	udb, err := newPushRedisDB(conf)
-	if udb == nil || err != nil {
-		return nil, err
-	}
-	f.db = NewCachedUniqushDatabase(udb, udb, conf)
-	if f.db == nil {
-		return nil, errors.New("Cannot create cached database")
-	}
-	return f, nil
-}
+ func NewPushDatabaseOpts(conf *DatabaseConfig) (PushDatabase, error) {
+	 var err error
+	 f := new(pushDatabaseOpts)
+	 udb, err := newPushRedisDB(conf)
+	 if udb == nil || err != nil {
+		 return nil, err
+	 }
+	 f.db = NewCachedUniqushDatabase(udb, udb, conf)
+	 if f.db == nil {
+		 return nil, errors.New("Cannot create cached database")
+	 }
+	 return f, nil
+ }
 */
 
 func NewPushDatabaseWithoutCache(conf *DatabaseConfig) (PushDatabase, error) {
@@ -158,9 +159,10 @@ func (f *pushDatabaseOpts) AddPushServiceProviderToService(service string,
 	f.dblock.Lock()
 	defer f.dblock.Unlock()
 
-	//Service can have multiple psp in different push service type, but user might add redundant psp(different setting) with same service name. Under this situation, only one service will be used for subsribe and push in runtime.
-	//Unfortunately, no one know which psp will be used in subscribe and push later, only the very first one returned from getting psp2srv api will be used. That's a bug.
-	//So the new service psp with duplicate push type should be added. It will be verified before ADD.
+	//#198:
+	//2017 Victor Lang
+	//Before add a new psp to service, try to verify there is no redundant psp in same type exists under the same service.
+	//Currently, redundant psp to service will result in problem in subscribe and push later.
 	expsps, err := f.db.GetPushServiceProvidersByService(service)
 	if err != nil {
 		return fmt.Errorf("Error querying psp with name: %v", err)
@@ -175,9 +177,12 @@ func (f *pushDatabaseOpts) AddPushServiceProviderToService(service string,
 			//Whether the existing psp has the same push service type
 			if pushpsp.PushServiceName() == push_service_provider.PushServiceName() {
 				//The service has a psp in same push service type
-				//The fixed data must be same, otherwise, it's denied to add multiple psp with same fixed data
-				pushpsp.PushPeer.
-				return fmt.Errorf("Unable to add the service %s due to dulicate Push Service Provider in same type. New psp detail: %v", service, push_service_provider)
+				//The same fixed data are allowed under this situation in case the user wants to update "VolatileData" data in psp,
+				// and the "different" fixed data is disallowed.
+				//Since the psp's fixed data currently is used to generate UNIQUE pushpeer name, let's directly compare the Name() of pushpeer for now.
+				if pushpsp.PushPeer.Name() != push_service_provider.PushPeer.Name() {
+					return fmt.Errorf("Provider with different fixed data already exists in the service %s for type %s. The detail of new psp: %v", service, push_service_provider.PushServiceName(), push_service_provider)
+				}
 			}
 		}
 
