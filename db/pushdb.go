@@ -97,19 +97,19 @@ type pushDatabaseOpts struct {
 }
 
 /*
- func NewPushDatabaseOpts(conf *DatabaseConfig) (PushDatabase, error) {
-	 var err error
-	 f := new(pushDatabaseOpts)
-	 udb, err := newPushRedisDB(conf)
-	 if udb == nil || err != nil {
-		 return nil, err
-	 }
-	 f.db = NewCachedUniqushDatabase(udb, udb, conf)
-	 if f.db == nil {
-		 return nil, errors.New("Cannot create cached database")
-	 }
-	 return f, nil
- }
+func NewPushDatabaseOpts(conf *DatabaseConfig) (PushDatabase, error) {
+	var err error
+	f := new(pushDatabaseOpts)
+	udb, err := newPushRedisDB(conf)
+	if udb == nil || err != nil {
+		return nil, err
+	}
+	f.db = NewCachedUniqushDatabase(udb, udb, conf)
+	if f.db == nil {
+		return nil, errors.New("Cannot create cached database")
+	}
+	return f, nil
+}
 */
 
 func NewPushDatabaseWithoutCache(conf *DatabaseConfig) (PushDatabase, error) {
@@ -159,33 +159,34 @@ func (f *pushDatabaseOpts) AddPushServiceProviderToService(service string,
 	f.dblock.Lock()
 	defer f.dblock.Unlock()
 
-	//#198:
-	//2017 Victor Lang
-	//Before add a new psp to service, try to verify there is no redundant psp in same type exists under the same service.
-	//Currently, redundant psp to service will result in problem in subscribe and push later.
+	/*
+	 * #198:
+	 * 2017 Victor Lang
+	 * Before add a new psp to service, try to verify there is no redundant psp in same type exists under the same service.
+	 * Currently, redundant psp to service will result in problem in subscribe and push later.
+	 */
 	expsps, err := f.db.GetPushServiceProvidersByService(service)
 	if err != nil {
 		return fmt.Errorf("Error querying psp with name: %v", err)
 	}
-	if len(expsps) > 0 {
-		for index := range expsps {
-			pushpsp, perr := f.db.GetPushServiceProvider(expsps[index])
 
-			if perr != nil {
-				return fmt.Errorf("Error to retrieve psp with name: %v", err)
-			}
-			//Whether the existing psp has the same push service type
-			if pushpsp.PushServiceName() == push_service_provider.PushServiceName() {
-				//The service has a psp in same push service type
-				//The same fixed data are allowed under this situation in case the user wants to update "VolatileData" data in psp,
-				// and the "different" fixed data is disallowed.
-				//Since the psp's fixed data currently is used to generate UNIQUE pushpeer name, let's directly compare the Name() of pushpeer for now.
-				if pushpsp.PushPeer.Name() != push_service_provider.PushPeer.Name() {
-					return fmt.Errorf("Provider with different fixed data already exists in the service %s for type %s. The detail of new psp: %v", service, push_service_provider.PushServiceName(), push_service_provider)
-				}
+	for _, pspitem := range expsps {
+		pushpsp, perr := f.db.GetPushServiceProvider(pspitem)
+		if perr != nil {
+			return fmt.Errorf("Error to retrieve psp with name: %v", perr)
+		}
+		// Whether the existing psp has the same push service type
+		if pushpsp.PushServiceName() == push_service_provider.PushServiceName() {
+			/*
+			 * The service already has a psp in same push service type
+			 * The same fixed data are allowed under this situation in case the user wants to update "VolatileData" data in psp,
+			 * and the "different" fixed data is disallowed.
+			 * Since the psp's fixed data currently is used to generate UNIQUE pushpeer name, let's directly compare the Name() of pushpeer for now.
+			 */
+			if pushpsp.PushPeer.Name() != push_service_provider.PushPeer.Name() {
+				return fmt.Errorf("This PSP [%s] already exists with different fixed data as push service type %s. Please double check current PSPs. Also this could be fixed by removing the old PSP, but that would delete subscribers", service, push_service_provider.PushServiceName())
 			}
 		}
-
 	}
 
 	e := f.db.SetPushServiceProvider(push_service_provider)
@@ -193,7 +194,6 @@ func (f *pushDatabaseOpts) AddPushServiceProviderToService(service string,
 		return fmt.Errorf("Error associating psp with name: %v", e)
 	}
 	return f.db.AddPushServiceProviderToService(service, push_service_provider.Name())
-
 }
 
 func (f *pushDatabaseOpts) AddDeliveryPointToService(service string,
