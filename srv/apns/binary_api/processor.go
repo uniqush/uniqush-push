@@ -269,10 +269,6 @@ func (self *BinaryPushRequestProcessor) singlePush(payload, token []byte, expiry
 // multiPush calls singlePush in parallel for each token type in Devtokens, and waits for each singlePush to complete.
 func (self *BinaryPushRequestProcessor) multiPush(req *common.PushRequest, workerpool *Pool) {
 	defer close(req.ErrChan)
-	if len(req.Payload) > self.GetMaxPayloadSize() {
-		req.ErrChan <- push.NewBadNotificationWithDetails("payload is too large")
-		return
-	}
 
 	n := len(req.Devtokens)
 	wg := new(sync.WaitGroup)

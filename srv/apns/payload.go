@@ -113,9 +113,6 @@ func toAPNSPayload(n *push.Notification) ([]byte, push.PushError) {
 	if err != nil {
 		return nil, push.NewErrorf("Failed to convert notification data to JSON: %v", err)
 	}
-	if len(j) > maxPayLoadSize {
-		return nil, push.NewBadNotificationWithDetails("payload is too large")
-	}
 	return j, nil
 }
 

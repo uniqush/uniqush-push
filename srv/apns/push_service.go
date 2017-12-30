@@ -46,8 +46,7 @@ import (
 )
 
 const (
-	maxPayLoadSize int = 2048
-	maxNrConn      int = 13
+	maxNrConn int = 13
 )
 
 type pushService struct {
@@ -242,8 +241,18 @@ func (self *pushService) Push(psp *push.PushServiceProvider, dpQueue <-chan *pus
 		requestProcessor = self.binaryRequestProcessor
 	}
 
-	if err == nil && len(req.Payload) > requestProcessor.GetMaxPayloadSize() {
-		err = push.NewBadNotificationWithDetails(fmt.Sprintf("payload is too large: %d > %d", len(req.Payload), requestProcessor.GetMaxPayloadSize()))
+	maxPayloadSize := requestProcessor.GetMaxPayloadSize()
+	// If uniqush.apns_voip=1 for /push, assume the PSP has been set up with a VoIP certificate.
+	// Support 5120 byte payloads for VoIP pushes. Assume VoIP pushes must be http2. https://github.com/uniqush/uniqush-push/issues/202
+	// TODO: Automatically append ".voip" if it's not already the suffix
+	if requestProcessor == self.httpRequestProcessor {
+		if isVoIP, ok := notif.Data["uniqush.apns_voip"]; ok && isVoIP == "1" {
+			maxPayloadSize = 5120
+		}
+	}
+
+	if err == nil && len(req.Payload) > maxPayloadSize {
+		err = push.NewBadNotificationWithDetails(fmt.Sprintf("payload is too large: %d > %d", len(req.Payload), maxPayloadSize))
 	}
 
 	if err != nil {
