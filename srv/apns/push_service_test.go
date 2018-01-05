@@ -204,6 +204,8 @@ func TestPushMultiple(t *testing.T) {
 	service.Finalize()
 }
 
+// TODO: Add tests of uniqush generating expected errors for the various payload size limits. (2048 for binary, 4096 for HTTP2, 5120 for VoIP + HTTP2
+
 // TestPushUnsubscribe tests that an UnsubscribeUpdate should be generated from the corresponding apns status code.
 func TestPushUnsubscribe(t *testing.T) {
 	expectedContentId := 2223511
