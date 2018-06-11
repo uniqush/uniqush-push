@@ -28,8 +28,8 @@ import (
 )
 
 const (
-	// GCM endpoint
-	gcmServiceURL string = "https://gcm-http.googleapis.com/gcm/send"
+	// GCM endpoint (FCM can be used to push GCM subscriptions. gcm-http.googleapis.com/gcm/ will be decommissioned in april 2019)
+	gcmServiceURL string = "https://fcm.googleapis.com/fcm/send"
 	// payload key to extract from push requests to uniqush. The corresponding value is a JSON blob for a GCM data
 	// (silent, unless the app has logic to extract information to display notifications on the device)
 	gcmRawPayloadKey = "uniqush.payload.gcm"
