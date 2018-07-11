@@ -22,8 +22,26 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strconv"
 	"strings"
 	"sync"
+)
+
+const (
+	// Fields in FixedData, found in each DeliveryPoint.
+	SERVICE    = "service"
+	SUBSCRIBER = "subscriber"
+	// Fields which may or may not be in VolatileData of any DeliveryPoint
+	// DEVICE_ID is used by **clients of** uniqush to uniquely identify the device which a given DeliveryPoint corresponds to. This can be real or fictional, and does not affect uniqush's behavior in any way.
+	// It is useful when you have multiple apps, and need to know if they're on the same device.
+	DEVICE_ID     = "devid"
+	OLD_DEVICE_ID = "old_devid" // Hack specific to our company. We changed our device ids.
+	// SUBSCRIBE_DATE is optional, can be used by clients for seeing the most recent date when a DP was added. This is a unix timestamp.
+	SUBSCRIBE_DATE = "subscribe_date"
+	// APP_VERSION is optional. It should be a dot separated string of numbers, representing the version of the iOS/android/amazon app, at the last time a given subscription was added. It may be used for deciding whether to push.
+	// TODO: Allow clients to specify version ranges?
+	APP_VERSION = "app_version"
+	LOCALE      = "locale"
 )
 
 // PushPeer implements common functionality for pushes. Other structs in this module include this struct.
@@ -156,6 +174,35 @@ func NewEmptyDeliveryPoint() *DeliveryPoint {
 	return ret
 }
 
+// AddCommonData adds both mandatory and optional data, which could be present in a delivery point for any push service type. On failure, returns an error.
+func (dp *DeliveryPoint) AddCommonData(kv map[string]string) error {
+	if service, ok := kv["service"]; ok && len(service) > 0 {
+		dp.FixedData["service"] = service
+	} else {
+		return errors.New("NoService")
+	}
+	if sub, ok := kv["subscriber"]; ok && len(sub) > 0 {
+		dp.FixedData["subscriber"] = sub
+	} else {
+		return errors.New("NoSubscriber")
+	}
+
+	if subscribeDate, ok := kv[SUBSCRIBE_DATE]; ok && len(subscribeDate) > 0 {
+		if _, err := strconv.ParseFloat(subscribeDate, 64); err != nil {
+			return errors.New(fmt.Sprintf("Invalid subscribe_date %q, expected a unix timestamp: %v", subscribeDate, err))
+		}
+		dp.VolatileData[SUBSCRIBE_DATE] = subscribeDate
+	}
+	// Volatile fields with no validation
+	for _, field := range []string{DEVICE_ID, OLD_DEVICE_ID, APP_VERSION, LOCALE} {
+		if value, ok := kv[field]; ok && len(value) > 0 {
+			dp.VolatileData[field] = value
+		}
+	}
+	return nil
+}
+
+// PushServiceProvider contains the data needed to send pushes to an external push notifications service provider (certificates, pushservicetype, server address, etc.).
 type PushServiceProvider struct {
 	PushPeer
 }
@@ -200,8 +247,21 @@ func UnserializeSubscription(data []byte) (map[string]string, error) {
 		sub := f[0]
 		sub["pushservicetype"] = parts[0]
 		delete(sub, "subscriber")
-		// TODO: Return any data useful to uniqush users from VolatileData (in a separate PR). It will be in f[1] if it exists.
-		// (E.g. if version of the app, device id for a device token (e.g. for checking if two device tokens in different pushservicetypes belong to the same device))
+		if len(f) > 1 {
+			volatileData := f[1]
+			if devid, ok := volatileData[DEVICE_ID]; ok && len(devid) > 0 {
+				sub[DEVICE_ID] = devid
+			}
+			if devid, ok := volatileData[OLD_DEVICE_ID]; ok && len(devid) > 0 {
+				sub[OLD_DEVICE_ID] = devid
+			}
+			if subscribeDate, ok := volatileData[SUBSCRIBE_DATE]; ok && len(subscribeDate) > 0 {
+				sub[SUBSCRIBE_DATE] = subscribeDate
+			}
+			if appVersion, ok := volatileData[APP_VERSION]; ok && len(appVersion) > 0 {
+				sub[APP_VERSION] = appVersion
+			}
+		}
 
 		return sub, nil
 	}

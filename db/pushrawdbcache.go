@@ -20,15 +20,15 @@ package db
 import (
 	"time"
 
-	"github.com/uniqush/cache"
+	cache "github.com/uniqush/cache2"
 	"github.com/uniqush/uniqush-push/push"
 )
 
 type pushRawDatabaseCache struct {
 	pspCache  *cache.Cache
 	dpCache   *cache.Cache
-	srvSub2Dp *cache.Cache
-	srv2Psp   *cache.Cache
+	srvSub2Dp *cache.SimpleCache
+	srv2Psp   *cache.SimpleCache
 	dbwriter  pushRawDatabaseWriter
 	dbreader  pushRawDatabaseReader
 }
@@ -82,8 +82,8 @@ func NewpushRawDatabaseCache(c *DatabaseConfig,
 	cdb.dpCache = cache.New(cacheSize, leastDirty, time.Duration(flushPeriod)*time.Second, dpflusher)
 
 	// We will flush them manually
-	cdb.srvSub2Dp = cache.New(cacheSize, -1, time.Duration(0)*time.Second, nil)
-	cdb.srv2Psp = cache.New(cacheSize, -1, time.Duration(0)*time.Second, nil)
+	cdb.srvSub2Dp = cache.NewSimple(cacheSize)
+	cdb.srv2Psp = cache.NewSimple(cacheSize)
 	return cdb, nil
 }
 

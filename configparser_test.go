@@ -50,7 +50,9 @@ func TestOpenConfig(t *testing.T) {
 		Engine:             "redis",
 		Name:               "0",
 		Host:               "localhost",
-		Port:               -1,  // redis db package converts this to default redis port
+		Port:               -1, // redis db package converts this to default redis port
+		SlaveHost:          "",
+		SlavePort:          -1,
 		EverySec:           600, // TODO: Change configparser.go to make this 60?
 		LeastDirty:         10,
 		CacheSize:          1024,

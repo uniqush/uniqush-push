@@ -57,6 +57,8 @@ func (self *MockPushRequestProcessor) SetErrorReportChan(errChan chan<- push.Pus
 	self.errChan = errChan
 }
 
+func (self *MockPushRequestProcessor) SetPushServiceConfig(c *push.PushServiceConfig) {}
+
 func TestCreatePushService(t *testing.T) {
 	mockRequestProcessor := newMockRequestProcessor(APNS_SUCCESS)
 	service := NewPushService()
@@ -314,7 +316,7 @@ func TestToAPNSPayloadWithKey(t *testing.T) {
 	}
 }
 
-func TestToAPNSPayload(t *testing.T) {
+func TestToAPNSPayloadCreatesUnescapedJSON(t *testing.T) {
 	expectedJson := `{"aps":{"alert":{"body":"hello world <&>"}}}`
 	notification := &push.Notification{
 		Data: map[string]string{"msg": "hello world <&>"},
@@ -325,6 +327,20 @@ func TestToAPNSPayload(t *testing.T) {
 	}
 	if !bytes.Equal([]byte(expectedJson), payload) {
 		t.Errorf("Expected %v(%s), Got %v(%s)", []byte(expectedJson), expectedJson, payload, string(payload))
+	}
+}
+
+func TestToAPNSPayloadError(t *testing.T) {
+	json := `{"aps":null}`
+	notification := &push.Notification{
+		Data: map[string]string{"uniqush.payload.apns": json},
+	}
+	_, err := toAPNSPayload(notification)
+	if err == nil {
+		t.Fatalf("expected invalid payload to cause an error")
+	}
+	if _, ok := err.(*push.BadNotification); !ok {
+		t.Errorf("Unexpected error type: Expected NewBadNotificationWithDetails, got %#v", err)
 	}
 }
 
@@ -389,6 +405,7 @@ func TestPreview(t *testing.T) {
 }
 
 func expectMapEquals(t *testing.T, expected map[string]string, actual map[string]string, description string) {
+	t.Helper()
 	for k, v := range expected {
 		actualV, ok := actual[k]
 		if !ok {
@@ -426,6 +443,42 @@ func TestBuildPushServiceProviderFromMap(t *testing.T) {
 		"devtoken":   "303f3f3f",
 	}
 	expectedVolatileData := map[string]string{}
+	expectMapEquals(t, expectedFixedData, dp.FixedData, "dp.FixedData")
+	expectMapEquals(t, expectedVolatileData, dp.VolatileData, "dp.VolatileData")
+}
+
+func TestBuildPushServiceProviderFromMapExtraData(t *testing.T) {
+	service, _, _ := newPushServiceWithErrorChannel(APNS_SUCCESS)
+
+	// Overwrite the APNS service.
+	psm := push.GetPushServiceManager()
+	psm.RegisterPushServiceType(service)
+
+	dp, err := psm.BuildDeliveryPointFromMap(map[string]string{
+		"pushservicetype":     service.Name(),
+		"service":             "mockservice",
+		"subscriber":          "mocksubscriber",
+		"devtoken":            "303f3f3f",
+		push.DEVICE_ID:        "ADEVICE11",
+		push.APP_VERSION:      "5.3.1",
+		push.LOCALE:           "fr_FR",
+		push.SUBSCRIBE_DATE:   "1234567890",
+		"invalidIgnoredField": "SOMETHING", // For compatibility with other versions, this should ignore DeliveryPoint fields that aren't implemented.
+	})
+	if err != nil {
+		t.Fatalf("Unexpected err in BuildDeliveryPointFromMap: %v", err)
+	}
+	expectedFixedData := map[string]string{
+		"service":    "mockservice",
+		"subscriber": "mocksubscriber",
+		"devtoken":   "303f3f3f",
+	}
+	expectedVolatileData := map[string]string{
+		push.DEVICE_ID:      "ADEVICE11",
+		push.APP_VERSION:    "5.3.1",
+		push.LOCALE:         "fr_FR",
+		push.SUBSCRIBE_DATE: "1234567890",
+	}
 	expectMapEquals(t, expectedFixedData, dp.FixedData, "dp.FixedData")
 	expectMapEquals(t, expectedVolatileData, dp.VolatileData, "dp.VolatileData")
 }

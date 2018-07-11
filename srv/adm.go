@@ -63,7 +63,10 @@ func newADMPushService() *admPushService {
 
 func InstallADM() {
 	psm := push.GetPushServiceManager()
-	psm.RegisterPushServiceType(newADMPushService())
+	err := psm.RegisterPushServiceType(newADMPushService())
+	if err != nil {
+		panic(fmt.Sprintf("Failed to install ADM module: %v", err))
+	}
 }
 
 func (self *admPushService) Finalize() {}
@@ -71,6 +74,9 @@ func (self *admPushService) Name() string {
 	return "adm"
 }
 func (self *admPushService) SetErrorReportChan(errChan chan<- push.PushError) {
+	return
+}
+func (self *admPushService) SetPushServiceConfig(c *push.PushServiceConfig) {
 	return
 }
 
@@ -97,16 +103,11 @@ func (self *admPushService) BuildPushServiceProviderFromMap(kv map[string]string
 }
 
 func (self *admPushService) BuildDeliveryPointFromMap(kv map[string]string, dp *push.DeliveryPoint) error {
-	if service, ok := kv["service"]; ok && len(service) > 0 {
-		dp.FixedData["service"] = service
-	} else {
-		return errors.New("NoService")
+	err := dp.AddCommonData(kv)
+	if err != nil {
+		return err
 	}
-	if sub, ok := kv["subscriber"]; ok && len(sub) > 0 {
-		dp.FixedData["subscriber"] = sub
-	} else {
-		return errors.New("NoSubscriber")
-	}
+
 	if regid, ok := kv["regid"]; ok && len(regid) > 0 {
 		dp.FixedData["regid"] = regid
 	} else {
@@ -261,7 +262,7 @@ func notifToMessage(notif *push.Notification) (msg *admMessage, err push.PushErr
 		}
 	}
 	if rawPayload, ok := notif.Data["uniqush.payload.adm"]; ok {
-		jsonErr := json.Unmarshal([]byte(rawPayload), &(msg.Data))
+		jsonErr := json.Unmarshal([]byte(rawPayload), &msg.Data)
 		if jsonErr != nil {
 			err = push.NewBadNotificationWithDetails(fmt.Sprintf("invalid uniqush.payload.adm: %v", jsonErr))
 			return
@@ -446,6 +447,7 @@ func (self *admPushService) Push(psp *push.PushServiceProvider, dpQueue <-chan *
 		resQueue <- res
 		return
 	}
+	// TODO: Use unescaped JSON, and check the 6KB limit before a push? Can't test these out without a kindle.
 
 	wg := sync.WaitGroup{}
 

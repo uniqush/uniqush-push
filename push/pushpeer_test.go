@@ -22,9 +22,13 @@ import (
 	"testing"
 )
 
+// testPushServiceType implements the PushServiceType interface and must
+// implement the functions below even when they do nothing.
 type testPushServiceType struct {
 	name string
 }
+
+var _ PushServiceType = &testPushServiceType{}
 
 func newTestPushServiceType() *testPushServiceType {
 	ret := new(testPushServiceType)
@@ -32,55 +36,63 @@ func newTestPushServiceType() *testPushServiceType {
 	return ret
 }
 
-func (t *testPushServiceType) Name() string {
-	return t.name
-}
-
-func (t *testPushServiceType) Finalize() {
+func (pst *testPushServiceType) SetErrorReportChan(errChan chan<- PushError) {
 	return
 }
 
-func (t *testPushServiceType) BuildPushServiceProviderFromMap(kv map[string]string, psp *PushServiceProvider) error {
+func (pst *testPushServiceType) Name() string {
+	return pst.name
+}
+
+func (pst *testPushServiceType) Finalize() {
+	return
+}
+
+func (pst *testPushServiceType) BuildPushServiceProviderFromMap(kv map[string]string, psp *PushServiceProvider) error {
 	for k, v := range kv {
 		psp.FixedData[k] = v
 	}
 	return nil
 }
 
-func (t *testPushServiceType) BuildDeliveryPointFromMap(kv map[string]string, dp *DeliveryPoint) error {
+func (pst *testPushServiceType) BuildDeliveryPointFromMap(kv map[string]string, dp *DeliveryPoint) error {
 	for k, v := range kv {
 		dp.FixedData[k] = v
 	}
 	return nil
 }
 
-func (t *testPushServiceType) Push(*PushServiceProvider, <-chan *DeliveryPoint, chan<- *PushResult, *Notification) {
-	fmt.Print("Push!\n")
+func (pst *testPushServiceType) Push(*PushServiceProvider, <-chan *DeliveryPoint, chan<- *PushResult, *Notification) {
+	fmt.Println("Push!")
 }
 
 func (t *testPushServiceType) Preview(*Notification) ([]byte, PushError) {
-	fmt.Print("Preview!\n")
+	fmt.Println("Preview!")
 	return []byte("{}"), nil
 }
 
-func (t *testPushServiceType) SetErrorReportChan(chan<- PushError) {}
+func (pst *testPushServiceType) SetPushServiceConfig(c *PushServiceConfig) {
+	return
+}
 
 func TestPushPeer(t *testing.T) {
 	pp := new(PushPeer)
 	tpst := newTestPushServiceType()
 	pp.pushServiceType = tpst
-	pp.FixedData = make(map[string]string, 2)
-	pp.FixedData["senderid"] = "uniqush.go@gmail.com"
-	pp.FixedData["authtoken"] = "fasdf"
-	pp.FixedData["service"] = "servicenameHavingTestService"
+	pp.FixedData = map[string]string{
+		"senderid":  "uniqush.go@gmail.com",
+		"authtoken": "fasdf",
+		"service":   "testServiceName",
+	}
 
-	pp.VolatileData = make(map[string]string, 1)
-	pp.VolatileData["realauthtoken"] = "fsfad"
+	pp.VolatileData = map[string]string{
+		"realauthtoken": "fsfad",
+	}
 
-	fmt.Printf("Name: %s\n", pp.Name())
+	t.Logf("Name: %s\n", pp.Name())
 
 	str := pp.Marshal()
-	fmt.Printf("Marshal: %s\n", string(str))
+	t.Logf("Marshal: %s\n", string(str))
 
 	psm := GetPushServiceManager()
 
@@ -91,27 +103,28 @@ func TestPushPeer(t *testing.T) {
 		t.Errorf("BuildPushServiceProviderFromBytes failed: %v\n", err)
 		return
 	}
-	fmt.Printf("Push Service: %s", psp.String())
-	value := psp.Marshal()
-	fmt.Printf("PSP Name: %v\n", psp.Name())
-	fmt.Printf("PSP Marshal: %s\n", string(value))
+	t.Logf("Push Service: %s\n", psp.String())
+	t.Logf("PSP Name: %v\n", psp.Name())
+	t.Logf("PSP Marshal: %s\n", string(psp.Marshal()))
 }
 
 func TestCompatability(t *testing.T) {
-	pspm := make(map[string]string, 2)
-	pspm["pushservicetype"] = "testService"
-	pspm["senderid"] = "uniqush.go@gmail.com"
-	pspm["authtoken"] = "fsafds"
-	pspm["service"] = "servicenameHavingTestService"
-
-	dpm := make(map[string]string, 2)
-	dpm["pushservicetype"] = "testService"
-	dpm["regid"] = "fdsafas"
-	dpm["subscriber"] = "subscriber.1234"
-
 	tpst := newTestPushServiceType()
 	psm := GetPushServiceManager()
 	psm.RegisterPushServiceType(tpst)
+
+	pspm := map[string]string{
+		"pushservicetype": tpst.Name(),
+		"senderid":        "uniqush.go@gmail.com",
+		"authtoken":       "fsafds",
+		"service":         "testServiceName",
+	}
+
+	dpm := map[string]string{
+		"pushservicetype": "testService",
+		"regid":           "fdsafas",
+		"subscriber":      "subscriber.1234",
+	}
 
 	psp, err := psm.BuildPushServiceProviderFromMap(pspm)
 	if err != nil {

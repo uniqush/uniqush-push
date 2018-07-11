@@ -19,7 +19,6 @@ package db
 
 import (
 	"fmt"
-
 	"github.com/uniqush/uniqush-push/push"
 )
 
@@ -31,6 +30,10 @@ type DatabaseConfig struct {
 	Host      string
 	Port      int
 	CacheSize int
+
+	// Config for read-only slave (uses same Name as master db)
+	SlaveHost string
+	SlavePort int
 
 	/* dump the dirty data to db every EverySec seconds,
 	 * if there are more than LeastDirty dirty items

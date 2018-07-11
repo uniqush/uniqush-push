@@ -21,7 +21,6 @@ import (
 	"flag"
 	"fmt"
 	"os"
-	"runtime"
 
 	"github.com/uniqush/uniqush-push/srv"
 )
@@ -29,7 +28,7 @@ import (
 var uniqushPushConfFlags = flag.String("config", "/etc/uniqush/uniqush-push.conf", "Config file path")
 var uniqushPushShowVersionFlag = flag.Bool("version", false, "Version info")
 
-var uniqushPushVersion = "uniqush-push 2.5.1-dev"
+var uniqushPushVersion = "uniqush-push 2.6.0-dev"
 
 func installPushServices() {
 	srv.InstallGCM()
@@ -44,7 +43,6 @@ func main() {
 		fmt.Printf("%v\n", uniqushPushVersion)
 		return
 	}
-	runtime.GOMAXPROCS(runtime.NumCPU() + 1)
 	installPushServices()
 
 	err := Run(*uniqushPushConfFlags, uniqushPushVersion)

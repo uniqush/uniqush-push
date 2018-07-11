@@ -22,6 +22,7 @@ package srv
 
 import (
 	"errors"
+	"fmt"
 
 	"github.com/uniqush/uniqush-push/push"
 	cm "github.com/uniqush/uniqush-push/srv/cloud_messaging"
@@ -56,7 +57,10 @@ func newGCMPushService() *gcmPushService {
 
 func InstallGCM() {
 	psm := push.GetPushServiceManager()
-	psm.RegisterPushServiceType(newGCMPushService())
+	err := psm.RegisterPushServiceType(newGCMPushService())
+	if err != nil {
+		panic(fmt.Sprintf("Failed to install GCM module: %v", err))
+	}
 }
 
 func (p *gcmPushService) BuildPushServiceProviderFromMap(kv map[string]string,

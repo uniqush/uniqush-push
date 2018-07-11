@@ -138,6 +138,30 @@ func getSubscribersFromMap(kv map[string]string, validate bool) (subs []string, 
 	return
 }
 
+// Get the optional delivery_point_ids from a map.
+func getDeliveryPointIdsFromMap(kv map[string]string) (deliveryPointNames []string, err error) {
+	var v string
+	var ok bool
+	if v, ok = kv["delivery_point_id"]; !ok {
+		return nil, nil
+	}
+	if len(v) == 0 {
+		return nil, fmt.Errorf("EmptyDeliveryPoints")
+	}
+	s := strings.Split(v, ",")
+	deliveryPointNames = make([]string, 0, len(s))
+	for _, dpName := range s {
+		if len(dpName) > 0 {
+			// TODO validate.
+			deliveryPointNames = append(deliveryPointNames, dpName)
+		}
+	}
+	if len(deliveryPointNames) == 0 {
+		return nil, fmt.Errorf("EmptyDeliveryPoints")
+	}
+	return
+}
+
 func getServiceFromMap(kv map[string]string, validate bool) (service string, err error) {
 	var ok bool
 	if service, ok = kv["service"]; !ok {
@@ -270,6 +294,17 @@ func (self *RestAPI) pushNotification(reqId string, kv map[string]string, perdp 
 		handler.AddDetailsToHandler(ApiResponseDetails{RequestId: &reqId, From: &remoteAddr, Service: &service, Code: UNIQUSH_ERROR_NO_SUBSCRIBER})
 		return
 	}
+	dpIds, err := getDeliveryPointIdsFromMap(kv)
+	if err != nil {
+		logger.Errorf("RequestId=%v From=%v Service=%v Cannot get delivery point ids: %v", reqId, remoteAddr, service, err)
+		handler.AddDetailsToHandler(ApiResponseDetails{RequestId: &reqId, From: &remoteAddr, Service: &service, Code: UNIQUSH_ERROR_CANNOT_GET_DELIVERY_POINT_ID})
+		return
+	}
+	if len(subs) == 0 {
+		logger.Errorf("RequestId=%v From=%v Service=%v NoSubscriber", reqId, remoteAddr, service)
+		handler.AddDetailsToHandler(ApiResponseDetails{RequestId: &reqId, From: &remoteAddr, Service: &service, Code: UNIQUSH_ERROR_NO_SUBSCRIBER})
+		return
+	}
 
 	notif, details, err := self.buildNotificationFromKV(reqId, kv, logger, remoteAddr, service, subs)
 	if err != nil {
@@ -279,7 +314,7 @@ func (self *RestAPI) pushNotification(reqId string, kv map[string]string, perdp 
 
 	logger.Infof("RequestId=%v From=%v Service=%v NrSubscribers=%v Subscribers=\"%+v\"", reqId, remoteAddr, service, len(subs), subs)
 
-	self.backend.Push(reqId, remoteAddr, service, subs, notif, perdp, logger, handler)
+	self.backend.Push(reqId, remoteAddr, service, subs, dpIds, notif, perdp, logger, handler)
 }
 
 // preview takes key-value pairs (pushservicetype, plus data for building the payload), a logger, and logging data.
@@ -289,7 +324,7 @@ func (self *RestAPI) preview(reqId string, kv map[string]string, logger log.Logg
 		msg := "Must specify a known pushservicetype"
 		return PreviewApiResponseDetails{Code: UNIQUSH_ERROR_NO_PUSH_SERVICE_TYPE, ErrorMsg: &msg}
 	}
-	delete(kv, "pushservicetype")
+	delete(kv, "pushservicetype") // Some modules don't filter this out.
 	notif, details, err := self.buildNotificationFromKV(reqId, kv, logger, remoteAddr, "placeholderservice", []string{})
 	if err != nil {
 		return PreviewApiResponseDetails{
@@ -364,7 +399,18 @@ func (self *RestAPI) querySubscriptions(kv map[string][]string, logger log.Logge
 	if ok && len(servicesParam) > 0 {
 		services = strings.Split(servicesParam[0], ",")
 	}
-	return self.backend.Subscriptions(services, subscriberParam[0], logger)
+	includeDPIds := false
+	if v, ok := kv["include_delivery_point_ids"]; ok && len(v) > 0 && v[0] == "1" {
+		includeDPIds = true
+	}
+	subscriptions := self.backend.Subscriptions(services, subscriberParam[0], logger, includeDPIds)
+	json, err := json.Marshal(subscriptions)
+	if err != nil {
+		logger.Errorf("Service=%v Subscriber=%v %s", services, subscriberParam[0], err)
+		return []byte("[]")
+	}
+
+	return json
 }
 
 func encodePSPForAPI(psp *push.PushServiceProvider) map[string]string {
@@ -520,7 +566,8 @@ func (self *RestAPI) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		self.pushNotification(rid, kv, perdp, self.loggers[LOGGER_PUSH], remoteAddr, handler)
 	}
 	if handler != nil {
-		_, err := w.Write(handler.ToJSON())
+		// Be consistent about ending responses in \r\n
+		_, err := fmt.Fprintf(w, "%s\r\n", string(handler.ToJSON()))
 		if err != nil {
 			self.loggers[LOGGER_WEB].Errorf("Failed to write http response: %v", err)
 		}

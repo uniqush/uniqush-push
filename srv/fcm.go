@@ -14,7 +14,6 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  *
-
  * This contains cloud messaging code specific to FCM.
  * Implementation details common to GCM and FCM are kept in srv/cloud_messaging
  */
@@ -23,6 +22,7 @@ package srv
 
 import (
 	"errors"
+	"fmt"
 
 	"github.com/uniqush/uniqush-push/push"
 	cm "github.com/uniqush/uniqush-push/srv/cloud_messaging"
@@ -57,7 +57,10 @@ func newFCMPushService() *fcmPushService {
 
 func InstallFCM() {
 	psm := push.GetPushServiceManager()
-	psm.RegisterPushServiceType(newFCMPushService())
+	err := psm.RegisterPushServiceType(newFCMPushService())
+	if err != nil {
+		panic(fmt.Sprintf("Failed to install FCM module: %v", err))
+	}
 }
 
 func (p *fcmPushService) BuildPushServiceProviderFromMap(kv map[string]string,

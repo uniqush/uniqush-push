@@ -47,6 +47,7 @@ import (
 
 // Danger: writing wrong data may leads to inconsistent
 type pushRawDatabaseWriter interface {
+	// SetDeliveryPoint serializes the delivery point, and saves the serialized delivery point based on its name.
 	SetDeliveryPoint(dp *push.DeliveryPoint) error
 	SetPushServiceProvider(psp *push.PushServiceProvider) error
 	RemoveDeliveryPoint(dp string) error
