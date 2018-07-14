@@ -9,6 +9,11 @@ sudo: false
 go:
   - 1.10.x
 
+# Only compute the build status for PRs in travis
+branches:
+  only:
+    - master
+
 # install step default is `go get ./...`
 # script default is `go test ./...`
 # (Could include apns-test.sh, but that doesn't have expected output written yet)
