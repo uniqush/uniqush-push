@@ -22,7 +22,7 @@ import (
 	"strconv"
 	"testing"
 
-	redis5 "gopkg.in/redis.v5"
+	"github.com/go-redis/redis"
 )
 
 var dbconf *DatabaseConfig
@@ -55,7 +55,7 @@ func clearData() {
 	if err != nil {
 		db = 0
 	}
-	client := redis5.NewClient(&redis5.Options{
+	client := redis.NewClient(&redis.Options{
 		Addr:     fmt.Sprintf("%s:%d", c.Host, c.Port),
 		Password: c.Password,
 		DB:       int(db),

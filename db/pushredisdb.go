@@ -24,9 +24,9 @@ import (
 	"strings"
 	"time"
 
+	"github.com/go-redis/redis"
 	"github.com/uniqush/log"
 	"github.com/uniqush/uniqush-push/push"
-	redis5 "gopkg.in/redis.v5"
 )
 
 type PushRedisDB struct {
@@ -35,74 +35,74 @@ type PushRedisDB struct {
 }
 
 type redisClient interface {
-	Decr(key string) *redis5.IntCmd
-	Del(keys ...string) *redis5.IntCmd
-	Exists(key string) *redis5.BoolCmd
-	Get(key string) *redis5.StringCmd
-	Incr(key string) *redis5.IntCmd
-	Keys(key string) *redis5.StringSliceCmd
-	MGet(keys ...string) *redis5.SliceCmd
-	Save() *redis5.StatusCmd
-	SAdd(key string, members ...interface{}) *redis5.IntCmd
-	SRem(key string, members ...interface{}) *redis5.IntCmd
-	Set(key string, value interface{}, expiration time.Duration) *redis5.StatusCmd
-	SMembers(key string) *redis5.StringSliceCmd
+	Decr(key string) *redis.IntCmd
+	Del(keys ...string) *redis.IntCmd
+	Exists(keys ...string) *redis.IntCmd
+	Get(key string) *redis.StringCmd
+	Incr(key string) *redis.IntCmd
+	Keys(key string) *redis.StringSliceCmd
+	MGet(keys ...string) *redis.SliceCmd
+	Save() *redis.StatusCmd
+	SAdd(key string, members ...interface{}) *redis.IntCmd
+	SRem(key string, members ...interface{}) *redis.IntCmd
+	Set(key string, value interface{}, expiration time.Duration) *redis.StatusCmd
+	SMembers(key string) *redis.StringSliceCmd
 }
 
 type redisMultiClient struct {
-	masterClient *redis5.Client
-	slaveClient  *redis5.Client
+	masterClient *redis.Client
+	slaveClient  *redis.Client
 }
 
-func (mc *redisMultiClient) Decr(key string) *redis5.IntCmd {
+func (mc *redisMultiClient) Decr(key string) *redis.IntCmd {
 	return mc.masterClient.Decr(key)
 }
 
-func (mc *redisMultiClient) Del(keys ...string) *redis5.IntCmd {
+func (mc *redisMultiClient) Del(keys ...string) *redis.IntCmd {
 	return mc.masterClient.Del(keys...)
 }
 
-func (mc *redisMultiClient) Exists(key string) *redis5.BoolCmd {
-	return mc.slaveClient.Exists(key)
+func (mc *redisMultiClient) Exists(keys ...string) *redis.IntCmd {
+	return mc.slaveClient.Exists(keys...)
 }
 
-func (mc *redisMultiClient) Get(key string) *redis5.StringCmd {
+func (mc *redisMultiClient) Get(key string) *redis.StringCmd {
 	return mc.slaveClient.Get(key)
 }
 
-func (mc *redisMultiClient) Incr(key string) *redis5.IntCmd {
+func (mc *redisMultiClient) Incr(key string) *redis.IntCmd {
 	return mc.masterClient.Incr(key)
 }
 
-func (mc *redisMultiClient) Keys(key string) *redis5.StringSliceCmd {
+func (mc *redisMultiClient) Keys(key string) *redis.StringSliceCmd {
 	return mc.slaveClient.Keys(key)
 }
 
-func (mc *redisMultiClient) MGet(keys ...string) *redis5.SliceCmd {
+func (mc *redisMultiClient) MGet(keys ...string) *redis.SliceCmd {
 	return mc.slaveClient.MGet(keys...)
 }
 
-func (mc *redisMultiClient) Save() *redis5.StatusCmd {
+func (mc *redisMultiClient) Save() *redis.StatusCmd {
 	return mc.masterClient.Save()
 }
 
-func (mc *redisMultiClient) SAdd(key string, members ...interface{}) *redis5.IntCmd {
+func (mc *redisMultiClient) SAdd(key string, members ...interface{}) *redis.IntCmd {
 	return mc.masterClient.SAdd(key, members...)
 }
 
-func (mc *redisMultiClient) SRem(key string, members ...interface{}) *redis5.IntCmd {
+func (mc *redisMultiClient) SRem(key string, members ...interface{}) *redis.IntCmd {
 	return mc.masterClient.SRem(key, members...)
 }
 
-func (mc *redisMultiClient) Set(key string, value interface{}, expiration time.Duration) *redis5.StatusCmd {
+func (mc *redisMultiClient) Set(key string, value interface{}, expiration time.Duration) *redis.StatusCmd {
 	return mc.masterClient.Set(key, value, expiration)
 }
 
-func (mc *redisMultiClient) SMembers(key string) *redis5.StringSliceCmd {
+func (mc *redisMultiClient) SMembers(key string) *redis.StringSliceCmd {
 	return mc.slaveClient.SMembers(key)
 }
 
-var _ redisClient = &redis5.Client{}
+var _ redisClient = &redis.Client{}
 var _ pushRawDatabase = &PushRedisDB{}
 
 const (
@@ -116,7 +116,7 @@ const (
 )
 
 // Optionally returns a redis client for read-only operations.
-func buildRedisSlaveClient(c *DatabaseConfig) (*redis5.Client, error) {
+func buildRedisSlaveClient(c *DatabaseConfig) (*redis.Client, error) {
 	host := c.SlaveHost
 	port := c.SlavePort
 	name := c.Name
@@ -132,7 +132,7 @@ func buildRedisSlaveClient(c *DatabaseConfig) (*redis5.Client, error) {
 	if err != nil {
 		db = 0
 	}
-	ret := redis5.NewClient(&redis5.Options{
+	ret := redis.NewClient(&redis.Options{
 		Addr:     fmt.Sprintf("%s:%d", host, port),
 		Password: c.Password,
 		DB:       int(db),
@@ -162,7 +162,7 @@ func buildRedisClient(c *DatabaseConfig) (redisClient, error) {
 	if err != nil {
 		db = 0
 	}
-	client := redis5.NewClient(&redis5.Options{
+	client := redis.NewClient(&redis.Options{
 		Addr:     fmt.Sprintf("%s:%d", c.Host, c.Port),
 		Password: c.Password,
 		DB:       int(db),
@@ -467,7 +467,6 @@ func (r *PushRedisDB) GetPushServiceProvidersByService(srv string) ([]string, er
 }
 
 func (r *PushRedisDB) RemovePushServiceProviderFromService(srv, psp string) error {
-	// TODO: pipelined
 	err := r.client.SRem(SERVICE_TO_PUSH_SERVICE_PROVIDERS_PREFIX+srv, psp).Err()
 	if err != nil {
 		return fmt.Errorf("RemovePSPFromService failed for psp %q of service %q: %v", psp, srv, err)
@@ -477,7 +476,7 @@ func (r *PushRedisDB) RemovePushServiceProviderFromService(srv, psp string) erro
 	if err != nil {
 		return fmt.Errorf("Unable to determine if service %q still exists after removing psp %q: %v", srv, psp, err)
 	}
-	if !exists {
+	if exists == 0 {
 		err := r.client.SRem(SERVICES_SET, srv).Err() // Non-essential. Used to list services in API.
 		if err != nil {
 			return fmt.Errorf("Unable to remove %q from set of services", srv)
