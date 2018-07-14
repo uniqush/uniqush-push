@@ -73,8 +73,8 @@ func (g *PushServiceBase) OverrideClient(client HTTPClient) {
 }
 
 // Builds a common base.
-// Note: Make sure that this can be copied by value (it's a collection of poitners right now).
-// If it can no longer be copied by value, // change to an initializer function.
+// Note: Make sure that this can be copied by value (it's a collection of pointers right now).
+// If it can no longer be copied by value, then change this into an initializer function.
 func MakePushServiceBase(initialism string, rawPayloadKey string, rawNotificationKey string, serviceURL string, pushServiceName string) PushServiceBase {
 	conf := &tls.Config{InsecureSkipVerify: false}
 	tr := &http.Transport{
@@ -102,15 +102,9 @@ func MakePushServiceBase(initialism string, rawPayloadKey string, rawNotificatio
 // Builds an FCM/GCM delivery point from key-value pairs provided by an API call to uniqush-push.
 func (p *PushServiceBase) BuildDeliveryPointFromMap(kv map[string]string,
 	dp *push.DeliveryPoint) error {
-	if service, ok := kv["service"]; ok && len(service) > 0 {
-		dp.FixedData["service"] = service
-	} else {
-		return errors.New("NoService")
-	}
-	if sub, ok := kv["subscriber"]; ok && len(sub) > 0 {
-		dp.FixedData["subscriber"] = sub
-	} else {
-		return errors.New("NoSubscriber")
+	err := dp.AddCommonData(kv)
+	if err != nil {
+		return err
 	}
 	if account, ok := kv["account"]; ok && len(account) > 0 {
 		dp.FixedData["account"] = account
@@ -236,7 +230,7 @@ func (self *PushServiceBase) ToCMPayload(notif *push.Notification, regIds []stri
 				continue
 			}
 			switch k {
-			case "msggroup", "ttl":
+			case "msggroup", "ttl", "collapse_key":
 				continue
 			default:
 				payload.Data[k] = v
@@ -325,7 +319,7 @@ func (self *PushServiceBase) multicast(psp *push.PushServiceProvider, dpList []*
 				res.Err = push.NewRetryErrorWithReason(psp, dp, notif, after, err)
 
 			} else {
-				res.Err = push.NewErrorf("Unrecoverable HTTP error sending to GCM/FCM: %v", e2)
+				res.Err = push.NewErrorf("Unrecoverable HTTP error sending to %s: %v", self.pushServiceName, e2)
 			}
 			resQueue <- res
 		}
@@ -430,7 +424,7 @@ func (self *PushServiceBase) handleCMMulticastResults(psp *push.PushServiceProvi
 				resQueue <- res
 			default:
 				res := new(push.PushResult)
-				res.Err = push.NewErrorf("GCM/FCMError: %v", errmsg)
+				res.Err = push.NewErrorf("FCMError: %v", errmsg)
 				res.Provider = psp
 				res.Content = notif
 				res.Destination = dp
@@ -503,5 +497,9 @@ func (self *PushServiceBase) Preview(notif *push.Notification) ([]byte, push.Pus
 }
 
 func (self *PushServiceBase) SetErrorReportChan(errChan chan<- push.PushError) {
+	return
+}
+
+func (self *PushServiceBase) SetPushServiceConfig(c *push.PushServiceConfig) {
 	return
 }

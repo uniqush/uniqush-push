@@ -35,6 +35,9 @@ type PushRequestProcessor interface {
 
 	// SetErrorReportChan sets the error reporting channel (shared with the apnsPushService)
 	SetErrorReportChan(errChan chan<- push.PushError)
+
+	// SetPushServiceConfig sets the config of this PushRequestProcessor when the service is registered.
+	SetPushServiceConfig(c *push.PushServiceConfig)
 }
 
 type PushRequest struct {

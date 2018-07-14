@@ -181,7 +181,7 @@ func resultCollector(psp *push.PushServiceProvider, resChan chan<- *common.APNSR
 		// Because APNS pushes don't wait for APNS to respond with bytes, this won't be part of the uniqush response, but will be used to update the DB.
 		resChan <- res
 
-		// A status code of 10 indicates that the APNs server closed the connection. Close this connection.
+		// A status code of 10 indicates that the APNs server closed the connection.
 		// See https://developer.apple.com/library/ios/documentation/NetworkingInternet/Conceptual/RemoteNotificationsPG/Appendixes/BinaryProviderAPI.html#//apple_ref/doc/uid/TP40008194-CH106-SW8 Table A-1
 		if status == 10 {
 			return

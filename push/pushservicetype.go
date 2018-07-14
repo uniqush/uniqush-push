@@ -78,5 +78,9 @@ type PushServiceType interface {
 	// The type of the errors sent may cause the push service manager to take various actions.
 	SetErrorReportChan(errChan chan<- PushError)
 
+	// Set the config for the push service provider.
+	// The config for a given pushservicetype is passed to the corresponding PushServiceType
+	SetPushServiceConfig(conf *PushServiceConfig)
+
 	Finalize()
 }

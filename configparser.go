@@ -118,6 +118,14 @@ func LoadDatabaseConfig(cf *conf.ConfigFile) (*db.DatabaseConfig, error) {
 	if err != nil || c.Host == "" {
 		c.Host = "localhost"
 	}
+	c.SlavePort, err = cf.GetInt("Database", "slave_port")
+	if err != nil || c.SlavePort <= 0 {
+		c.SlavePort = -1
+	}
+	c.SlaveHost, err = cf.GetString("Database", "slave_host")
+	if err != nil || c.SlaveHost == "" {
+		c.SlaveHost = ""
+	}
 	c.Password, err = cf.GetString("Database", "password")
 	if err != nil {
 		c.Password = ""
@@ -257,6 +265,7 @@ func Run(conf, version string) error {
 		return err
 	}
 	psm := push.GetPushServiceManager()
+	psm.SetConfigFile(c)
 
 	db, err := db.NewPushDatabaseWithoutCache(dbconf)
 	if err != nil {

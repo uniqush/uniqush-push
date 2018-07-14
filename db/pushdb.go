@@ -20,15 +20,28 @@ package db
 import (
 	"errors"
 	"fmt"
+	"strings"
 	"sync"
 
 	"github.com/uniqush/log"
 	"github.com/uniqush/uniqush-push/push"
 )
 
+const (
+	DELIVERY_POINT_ID = "delivery_point_id" // temporary variable in Subscription responses. This is the internal identifier for a delivery point(subscription).
+)
+
 type PushServiceProviderDeliveryPointPair struct {
 	PushServiceProvider *push.PushServiceProvider
 	DeliveryPoint       *push.DeliveryPoint
+}
+
+// isErrCausedByMissingKey checks if an error is caused by a missing redis key. It uses string comparisons because err's type may be erased, and doesn't exist to begin with.
+func isErrCausedByMissingKey(err error) bool {
+	// TODO - fix this check.
+	// This would be a redis.redisError with Err = "redis: nil", and could be detected in pushredisdb.go
+	// return strings.Contains(err.Error(), "Redis Error: Key does not exist")
+	return strings.Contains(err.Error(), "redis: nil") // redisv3 check.
 }
 
 // You may always want to use a front desk to get data from db
@@ -69,8 +82,7 @@ type PushDatabase interface {
 
 	ModifyDeliveryPoint(dp *push.DeliveryPoint) error
 
-	GetPushServiceProviderDeliveryPointPairs(service string,
-		subscriber string) ([]PushServiceProviderDeliveryPointPair, error)
+	GetPushServiceProviderDeliveryPointPairs(service string, subscriber string, dpNamesRequested []string) ([]PushServiceProviderDeliveryPointPair, error)
 
 	GetSubscriptions(services []string, user string, logger log.Logger) ([]map[string]string, error)
 
@@ -217,8 +229,9 @@ func (f *pushDatabaseOpts) RemoveDeliveryPointFromService(service string,
 	return nil
 }
 
+// Fetch all of the delivery points of subscriber for a given service. If dpNames is not empty, limit the results to fetch to that subset.
 func (f *pushDatabaseOpts) GetPushServiceProviderDeliveryPointPairs(service string,
-	subscriber string) ([]PushServiceProviderDeliveryPointPair, error) {
+	subscriber string, dpNamesRequested []string) ([]PushServiceProviderDeliveryPointPair, error) {
 	f.dblock.RLock()
 	defer f.dblock.RUnlock()
 	dpnames, err := f.db.GetDeliveryPointsNameByServiceSubscriber(service, subscriber)
@@ -230,10 +243,23 @@ func (f *pushDatabaseOpts) GetPushServiceProviderDeliveryPointPairs(service stri
 	}
 	ret := make([]PushServiceProviderDeliveryPointPair, 0, len(dpnames))
 
+	dpNamesSubset := make(map[string]bool, len(dpNamesRequested))
+	for _, name := range dpNamesRequested {
+		dpNamesSubset[name] = true
+	}
+
 	for srv, dpList := range dpnames {
 		for _, dpName := range dpList {
+			if len(dpNamesSubset) != 0 && dpNamesSubset[dpName] != true {
+				// If we request a subset of delivery points, don't fetch or return data for the ones that weren't requested.
+				continue
+			}
 			dp, e0 := f.db.GetDeliveryPoint(dpName)
 			if e0 != nil {
+				if isErrCausedByMissingKey(e0) {
+					f.db.RemoveDeliveryPoint(dpName)
+					continue
+				}
 				return nil, fmt.Errorf("Failed to get delivery point info for %s: %v", dpName, e0)
 			}
 			if dp == nil {
@@ -242,6 +268,10 @@ func (f *pushDatabaseOpts) GetPushServiceProviderDeliveryPointPairs(service stri
 
 			pspname, e := f.db.GetPushServiceProviderNameByServiceDeliveryPoint(srv, dpName)
 			if e != nil {
+				if isErrCausedByMissingKey(e) {
+					f.db.RemoveDeliveryPoint(dpName)
+					continue
+				}
 				return nil, fmt.Errorf("Failed to get psp name for dp %s: %v", dpName, e)
 			}
 
@@ -251,6 +281,18 @@ func (f *pushDatabaseOpts) GetPushServiceProviderDeliveryPointPairs(service stri
 
 			psp, e1 := f.db.GetPushServiceProvider(pspname)
 			if e1 != nil {
+				// If the error was caused because the PSP for the dpName no longer exists, then ignore and remove that delivery point.
+				if isErrCausedByMissingKey(e1) {
+					e2 := f.db.RemoveDeliveryPoint(dpName)
+					e3 := f.db.RemovePushServiceProviderOfServiceDeliveryPoint(srv, dpName)
+					if e2 != nil {
+						return nil, fmt.Errorf("Failed to remove dp %s with invalid psp %s: %v", dpName, pspname, e2)
+					}
+					if e3 != nil {
+						return nil, fmt.Errorf("Failed to remove pspname %s for dp %s (PSP no longer exists): %v", pspname, dpName, e3)
+					}
+					continue
+				}
 				return nil, fmt.Errorf("Failed to get information about psp %s: %v", pspname, e1)
 			}
 			if psp == nil {
@@ -276,11 +318,11 @@ func (f *pushDatabaseOpts) ModifyPushServiceProvider(psp *push.PushServiceProvid
 func (f *pushDatabaseOpts) GetServiceNames() ([]string, error) {
 	f.dblock.RLock()
 	defer f.dblock.RUnlock()
-	psps, err := f.db.GetServiceNames()
+	serviceNames, err := f.db.GetServiceNames()
 	if err != nil {
 		return nil, fmt.Errorf("GetServiceNames: %v", err)
 	}
-	return psps, nil
+	return serviceNames, nil
 }
 
 func (f *pushDatabaseOpts) GetPushServiceProviderConfigs() ([]*push.PushServiceProvider, error) {
@@ -315,8 +357,17 @@ func (f *pushDatabaseOpts) ModifyDeliveryPoint(dp *push.DeliveryPoint) error {
 }
 
 func (f *pushDatabaseOpts) GetSubscriptions(services []string, user string, logger log.Logger) ([]map[string]string, error) {
-	f.dblock.RLock()
-	defer f.dblock.RUnlock()
+	// Note: GetSubscriptions() reads only SERVICE_SUBSCRIBER_TO_DELIVERY_POINTS_PREFIX+service and DELIVERY_POINT_PREFIX+dpName in the common case.
+	// GetSubscriptions() does not read from the push service providers.
+
+	// If a delivery point was unexpectedly missing,
+	// then GetSubscriptions() would write to SERVICE_SUBSCRIBER_TO_DELIVERY_POINTS_PREFIX+service and DELIVERY_POINT_COUNTER_PREFIX + dpName
+	// (We don't get errors for "cleaning up count for delivery point" in the last day).
+	// If this lock is disabled, the /subscriptions API and related APIs (e.g. /push) are much faster and no longer have a single bottleneck.
+
+	// f.dblock.RLock()
+	// defer f.dblock.RUnlock()
+	// End note.
 	subs, err := f.db.GetSubscriptions(services, user, logger)
 	if err != nil {
 		return nil, fmt.Errorf("GetSubscriptions: %v", err)

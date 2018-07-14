@@ -17,6 +17,7 @@ server side, you can send push notifications to any supported mobile platform.
 ## Supported Platforms ##
 
 - [GCM](http://developer.android.com/guide/google/gcm/index.html) from Google for the Android platform
+- [FCM](https://firebase.google.com/docs/cloud-messaging/) from Google for the Android platform
 - [APNS](http://developer.apple.com/library/mac/#documentation/NetworkingInternet/Conceptual/RemoteNotificationsPG/ApplePushService/ApplePushService.html) from Apple for the iOS platform
 - [ADM](https://developer.amazon.com/sdk/adm.html) from Amazon for Kindle tablets
 

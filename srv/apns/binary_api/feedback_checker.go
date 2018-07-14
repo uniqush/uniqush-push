@@ -29,7 +29,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/uniqush/cache"
+	cache "github.com/uniqush/cache2"
 	"github.com/uniqush/uniqush-push/push"
 )
 
@@ -115,7 +115,7 @@ func receiveFeedback(psp *push.PushServiceProvider) []string {
 	}
 }
 
-func processFeedback(psp *push.PushServiceProvider, dpCache *cache.Cache, errChan chan<- push.PushError) {
+func processFeedback(psp *push.PushServiceProvider, dpCache *cache.SimpleCache, errChan chan<- push.PushError) {
 	keys := receiveFeedback(psp)
 	for _, token := range keys {
 		dpif := dpCache.Delete(token)
@@ -130,7 +130,7 @@ func processFeedback(psp *push.PushServiceProvider, dpCache *cache.Cache, errCha
 }
 
 // feedbackChecker periodically connects to the APNS feedback servers to get a list of unsubscriptions.
-func feedbackChecker(psp *push.PushServiceProvider, dpCache *cache.Cache, errChan chan<- push.PushError) {
+func feedbackChecker(psp *push.PushServiceProvider, dpCache *cache.SimpleCache, errChan chan<- push.PushError) {
 	for {
 		time.Sleep(time.Duration(feedbackCheckPeriod) * time.Minute)
 		processFeedback(psp, dpCache, errChan)

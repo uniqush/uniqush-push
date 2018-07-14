@@ -62,6 +62,9 @@ func (self *mockAPNSServiceType) Preview(*push.Notification) ([]byte, push.PushE
 func (self *mockAPNSServiceType) SetErrorReportChan(errChan chan<- push.PushError) {
 	panic("Not implemented")
 }
+func (self *mockAPNSServiceType) SetPushServiceConfig(*push.PushServiceConfig) {
+	panic("Not implemented")
+}
 func (self *mockAPNSServiceType) Finalize() {}
 
 func initPSP() *push.PushServiceProvider {
@@ -159,6 +162,7 @@ func newHTTPRequestProcessor() *HTTPPushRequestProcessor {
 }
 
 func expectHeaderToHaveValue(t *testing.T, r *http.Request, headerName string, expectedHeaderValue string) {
+	t.Helper()
 	if headerValues := r.Header[headerName]; len(headerValues) > 0 {
 		if len(headerValues) > 1 {
 			t.Errorf("Too many header values for %s header, expected 1 value, got values: %v", headerName, headerValues)

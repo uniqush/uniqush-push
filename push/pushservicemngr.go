@@ -22,6 +22,8 @@ import (
 	"fmt"
 	"strings"
 	"sync"
+
+	"github.com/uniqush/goconf/conf"
 )
 
 type serviceType struct {
@@ -31,6 +33,7 @@ type serviceType struct {
 type PushServiceManager struct {
 	serviceTypes map[string]*serviceType
 	errChan      chan<- PushError
+	configFile   *conf.ConfigFile
 }
 
 var (
@@ -39,10 +42,15 @@ var (
 )
 
 /* This is a singleton */
+func newPushServiceManager() *PushServiceManager {
+	ret := new(PushServiceManager)
+	ret.serviceTypes = make(map[string]*serviceType, 5)
+	return ret
+}
+
 func GetPushServiceManager() *PushServiceManager {
 	once.Do(func() {
-		pushServiceManager = new(PushServiceManager)
-		pushServiceManager.serviceTypes = make(map[string]*serviceType, 5)
+		pushServiceManager = newPushServiceManager()
 	})
 	return pushServiceManager
 }
@@ -58,8 +66,14 @@ func newDeliveryPoint() interface{} {
 func (m *PushServiceManager) RegisterPushServiceType(pt PushServiceType) error {
 	name := pt.Name()
 	pair := new(serviceType)
+	if existing, ok := m.serviceTypes[name]; ok {
+		return fmt.Errorf("Attempted to register handler for %q, but %#v already exists", name, existing)
+	}
 	if m.errChan != nil {
 		pt.SetErrorReportChan(m.errChan)
+	}
+	if m.configFile != nil {
+		pt.SetPushServiceConfig(NewPushServiceConfig(m.configFile, name))
 	}
 	pair.pst = pt
 	m.serviceTypes[name] = pair
@@ -207,6 +221,13 @@ func (m *PushServiceManager) SetErrorReportChan(errChan chan<- PushError) {
 	m.errChan = errChan
 	for _, t := range m.serviceTypes {
 		t.pst.SetErrorReportChan(errChan)
+	}
+}
+
+func (m *PushServiceManager) SetConfigFile(c *conf.ConfigFile) {
+	m.configFile = c
+	for _, t := range m.serviceTypes {
+		t.pst.SetPushServiceConfig(NewPushServiceConfig(m.configFile, t.pst.Name()))
 	}
 }
 

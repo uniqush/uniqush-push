@@ -5,7 +5,7 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/uniqush/cache"
+	cache "github.com/uniqush/cache2"
 	"github.com/uniqush/uniqush-push/push"
 	"github.com/uniqush/uniqush-push/srv/apns/binary_api/mocks"
 	"github.com/uniqush/uniqush-push/srv/apns/common"
@@ -47,6 +47,10 @@ func (self *MockAPNSPushServiceType) Preview(*push.Notification) ([]byte, push.P
 func (self *MockAPNSPushServiceType) SetErrorReportChan(errChan chan<- push.PushError) {
 	panic("Not implemented")
 }
+func (self *MockAPNSPushServiceType) SetPushServiceConfig(*push.PushServiceConfig) {
+	panic("Not implemented")
+}
+
 func (self *MockAPNSPushServiceType) Finalize() {}
 
 type MockConnManager struct {
@@ -65,7 +69,7 @@ func newMockConnManager(status uint8) *MockConnManager {
 	}
 }
 
-func mockEmptyFeedbackChecker(psp *push.PushServiceProvider, dpCache *cache.Cache, errChan chan<- push.PushError) {
+func mockEmptyFeedbackChecker(psp *push.PushServiceProvider, dpCache *cache.SimpleCache, errChan chan<- push.PushError) {
 }
 
 func mockPSPData(serviceName string) *push.PushServiceProvider {
@@ -171,7 +175,7 @@ func TestPushSuccess(t *testing.T) {
 	testPushForwardsErrorCode(t, APNS_SUCCESS)
 }
 
-// TestPushSuccess checks that the user of this RequestProcessor is forwarded the correct status code for unsubscribe operations..
+// TestPushUnsubscribe checks that the user of this RequestProcessor is forwarded the correct status code for unsubscribe operations..
 func TestPushUnsubscribe(t *testing.T) {
 	testPushForwardsErrorCode(t, APNS_UNSUBSCRIBE)
 }
@@ -184,6 +188,11 @@ func testPushForwardsErrorCode(t *testing.T, status uint8) {
 	req, errChan, resChan := createSinglePushRequest(psp)
 
 	requestProcessor.AddRequest(req)
+	verifyRequestProcessorRespondsWithStatus(t, status, req, errChan, resChan)
+	verifyNewConnectionLogged(t, serviceErrChan)
+}
+
+func verifyRequestProcessorRespondsWithStatus(t *testing.T, status uint8, req *common.PushRequest, errChan chan push.PushError, resChan chan *common.APNSResult) {
 
 	for err := range errChan {
 		t.Fatalf("Expected 0 errors for successful push, got %#v", err)
@@ -198,9 +207,80 @@ func testPushForwardsErrorCode(t *testing.T, status uint8) {
 	if res.Status != status {
 		t.Errorf("Expected status code to be %d, got %d", status, res.Status)
 	}
+}
+
+func verifyNewConnectionLogged(t *testing.T, serviceErrChan chan push.PushError) {
 	err := <-serviceErrChan
 	expectedErrMsg := "Connection to APNS opened: <nil> to <nil>"
 	if expectedErrMsg != err.Error() {
 		t.Errorf("Expected loggingConnManager to log %q, but the first log was %#v", expectedErrMsg, err)
+	}
+}
+
+func TestRequestAfterShutdown(t *testing.T) {
+	requestProcessor := NewRequestProcessor(MOCK_NR_CONN)
+	serviceName := "mockservice.apns"
+	psp, _, serviceErrChan := commonBinaryMocks(requestProcessor, APNS_SUCCESS, serviceName)
+	req, errChan, resChan := createSinglePushRequest(psp)
+	requestProcessor.AddRequest(req)
+
+	verifyRequestProcessorRespondsWithStatus(t, APNS_SUCCESS, req, errChan, resChan)
+	verifyNewConnectionLogged(t, serviceErrChan)
+
+	req, errChan, resChan = createSinglePushRequest(psp)
+
+	requestProcessor.Finalize()
+	requestProcessor.AddRequest(req)
+	err := <-errChan
+	expectedErrMsg := "Uniqush is shutting down"
+	if expectedErrMsg != err.Error() {
+		t.Errorf("Expected to log %q, but the first error was %q (%#v)", expectedErrMsg, err.Error(), err)
+	}
+	for err := range errChan {
+		t.Errorf("Expected just 1 error for successful push, got %#v", err)
+	}
+	if len(serviceErrChan) > 0 {
+		err := <-errChan
+		t.Errorf("Expected no additional logs for service, got %#v", err)
+	}
+}
+
+func TestParallelRequestAndShutdown(t *testing.T) {
+	requestProcessor := NewRequestProcessor(MOCK_NR_CONN)
+	serviceName := "mockservice.apns"
+	psp, _, serviceErrChan := commonBinaryMocks(requestProcessor, APNS_SUCCESS, serviceName)
+	req, errChan, resChan := createSinglePushRequest(psp)
+	doneFinalize := make(chan bool)
+
+	go func() {
+		requestProcessor.Finalize()
+		doneFinalize <- true
+	}()
+	go func() {
+		requestProcessor.AddRequest(req)
+	}()
+	<-doneFinalize
+	// Should either return a result or report that uniqush is shutting down.
+	// This test should not fail, and should not report a race condition when run with `go test -race`
+	errCount := 0
+	expectedErrMsg := "Uniqush is shutting down"
+	for err := range errChan {
+		errCount += 1
+		if expectedErrMsg != err.Error() {
+			t.Errorf("Expected to log %q, but the first error was %q (%#v)", expectedErrMsg, err.Error(), err)
+		}
+	}
+	if errCount > 1 {
+		t.Errorf("Expected 0 or 1 errors, got %d errors", errCount)
+	}
+
+	if errCount == 0 {
+		verifyRequestProcessorRespondsWithStatus(t, APNS_SUCCESS, req, errChan, resChan)
+		verifyNewConnectionLogged(t, serviceErrChan)
+	} else {
+		if len(resChan) != 0 {
+			res := <-resChan
+			t.Errorf("There was an error, didn't expect to have a result, but got %#v", res)
+		}
 	}
 }

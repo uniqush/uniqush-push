@@ -22,6 +22,7 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/uniqush/log"
 	"github.com/uniqush/uniqush-push/push"
@@ -29,10 +30,79 @@ import (
 )
 
 type PushRedisDB struct {
-	client *redis5.Client
+	client redisClient
 	psm    *push.PushServiceManager
 }
 
+type redisClient interface {
+	Decr(key string) *redis5.IntCmd
+	Del(keys ...string) *redis5.IntCmd
+	Exists(key string) *redis5.BoolCmd
+	Get(key string) *redis5.StringCmd
+	Incr(key string) *redis5.IntCmd
+	Keys(key string) *redis5.StringSliceCmd
+	MGet(keys ...string) *redis5.SliceCmd
+	Save() *redis5.StatusCmd
+	SAdd(key string, members ...interface{}) *redis5.IntCmd
+	SRem(key string, members ...interface{}) *redis5.IntCmd
+	Set(key string, value interface{}, expiration time.Duration) *redis5.StatusCmd
+	SMembers(key string) *redis5.StringSliceCmd
+}
+
+type redisMultiClient struct {
+	masterClient *redis5.Client
+	slaveClient  *redis5.Client
+}
+
+func (mc *redisMultiClient) Decr(key string) *redis5.IntCmd {
+	return mc.masterClient.Decr(key)
+}
+
+func (mc *redisMultiClient) Del(keys ...string) *redis5.IntCmd {
+	return mc.masterClient.Del(keys...)
+}
+
+func (mc *redisMultiClient) Exists(key string) *redis5.BoolCmd {
+	return mc.slaveClient.Exists(key)
+}
+
+func (mc *redisMultiClient) Get(key string) *redis5.StringCmd {
+	return mc.slaveClient.Get(key)
+}
+
+func (mc *redisMultiClient) Incr(key string) *redis5.IntCmd {
+	return mc.masterClient.Incr(key)
+}
+
+func (mc *redisMultiClient) Keys(key string) *redis5.StringSliceCmd {
+	return mc.slaveClient.Keys(key)
+}
+
+func (mc *redisMultiClient) MGet(keys ...string) *redis5.SliceCmd {
+	return mc.slaveClient.MGet(keys...)
+}
+
+func (mc *redisMultiClient) Save() *redis5.StatusCmd {
+	return mc.masterClient.Save()
+}
+
+func (mc *redisMultiClient) SAdd(key string, members ...interface{}) *redis5.IntCmd {
+	return mc.masterClient.SAdd(key, members...)
+}
+
+func (mc *redisMultiClient) SRem(key string, members ...interface{}) *redis5.IntCmd {
+	return mc.masterClient.SRem(key, members...)
+}
+
+func (mc *redisMultiClient) Set(key string, value interface{}, expiration time.Duration) *redis5.StatusCmd {
+	return mc.masterClient.Set(key, value, expiration)
+}
+
+func (mc *redisMultiClient) SMembers(key string) *redis5.StringSliceCmd {
+	return mc.slaveClient.SMembers(key)
+}
+
+var _ redisClient = &redis5.Client{}
 var _ pushRawDatabase = &PushRedisDB{}
 
 const (
@@ -45,7 +115,32 @@ const (
 	SERVICES_SET                                           string = "services{0}"             // SET - This is a set of service names.
 )
 
-func newPushRedisDB(c *DatabaseConfig) (*PushRedisDB, error) {
+// Optionally returns a redis client for read-only operations.
+func buildRedisSlaveClient(c *DatabaseConfig) (*redis5.Client, error) {
+	host := c.SlaveHost
+	port := c.SlavePort
+	name := c.Name
+	if host == "" && port <= 0 {
+		return nil, nil
+	}
+
+	if host == "" || port <= 0 {
+		return nil, errors.New("Missing redis slave host or port")
+	}
+
+	db, err := strconv.ParseInt(name, 10, 64)
+	if err != nil {
+		db = 0
+	}
+	ret := redis5.NewClient(&redis5.Options{
+		Addr:     fmt.Sprintf("%s:%d", host, port),
+		Password: c.Password,
+		DB:       int(db),
+	})
+	return ret, nil
+}
+
+func buildRedisClient(c *DatabaseConfig) (redisClient, error) {
 	if c == nil {
 		return nil, errors.New("Invalid Database Config")
 	}
@@ -72,13 +167,36 @@ func newPushRedisDB(c *DatabaseConfig) (*PushRedisDB, error) {
 		Password: c.Password,
 		DB:       int(db),
 	})
+	if slaveClient, err := buildRedisSlaveClient(c); slaveClient != nil || err != nil {
+		if err != nil {
+			return nil, fmt.Errorf("Invalid Redis Slave Database Config: %s", err.Error())
+		}
+		dualClient := &redisMultiClient{
+			masterClient: client,
+			slaveClient:  slaveClient,
+		}
+		return dualClient, nil
+	}
+	return client, nil
+}
 
+func buildPushRedisDB(client redisClient, psm *push.PushServiceManager) *PushRedisDB {
 	ret := new(PushRedisDB)
 	ret.client = client
-	ret.psm = c.PushServiceManager
+	ret.psm = psm
 	if ret.psm == nil {
 		ret.psm = push.GetPushServiceManager()
 	}
+	return ret
+}
+
+func newPushRedisDB(c *DatabaseConfig) (*PushRedisDB, error) {
+	client, err := buildRedisClient(c)
+	if err != nil {
+		return nil, err
+	}
+
+	ret := buildPushRedisDB(client, c.PushServiceManager)
 	return ret, nil
 }
 
@@ -157,7 +275,8 @@ func (r *PushRedisDB) SetDeliveryPoint(dp *push.DeliveryPoint) error {
 }
 
 func (r *PushRedisDB) GetPushServiceProvider(name string) (*push.PushServiceProvider, error) {
-	b, err := r.client.Get(PUSH_SERVICE_PROVIDER_PREFIX + name).Bytes()
+	cmd := r.client.Get(PUSH_SERVICE_PROVIDER_PREFIX + name)
+	b, err := cmd.Bytes()
 	if err != nil {
 		return nil, fmt.Errorf("GetPushServiceProvider failed: %v", err)
 	}
@@ -490,10 +609,12 @@ func (r *PushRedisDB) GetSubscriptions(queryServices []string, subscriber string
 				logger.Errorf("Error unserializing subscription for delivery point data for dp %q user %q service %q data %v: %v", dpName, subscriber, service, subscriptionData, err)
 				continue
 			}
+			// DELIVERY_POINT_ID is for use by clients which wish to remove subscriptions unambiguously
+			subscriptionData[DELIVERY_POINT_ID] = dpName
 			subscriptions = append(subscriptions, subscriptionData)
 		} else {
 			logger.Errorf("Redis error fetching subscriber delivery point data for dp %q user %q service %q, removing...", dpName, subscriber, service)
-			// The multi-get did not encounter an error, so this key is missing.
+			// The multi-get returned nil, so this key is missing.
 			// Try to remove this delivery point as cleanly as possible, removing counts, etc.
 			r.removeMissingDeliveryPointFromServiceSubscriber(service, subscriber, dpName, logger)
 		}

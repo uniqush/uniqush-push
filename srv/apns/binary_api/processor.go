@@ -27,7 +27,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/uniqush/cache"
+	cache "github.com/uniqush/cache2"
 	"github.com/uniqush/uniqush-push/push"
 	"github.com/uniqush/uniqush-push/srv/apns/common"
 )
@@ -54,7 +54,7 @@ type BinaryPushRequestProcessor struct {
 	connManagerMaker func(psp *push.PushServiceProvider, resultChan chan<- *common.APNSResult) ConnManager
 	// feedbackChecker is called once. It periodically connects to APNS's feedback servers and fetches unsubscribe updates.
 	// TODO: Should I still call feedbackChecker in the HTTP/2 API?
-	feedbackChecker func(psp *push.PushServiceProvider, dpCache *cache.Cache, errChan chan<- push.PushError)
+	feedbackChecker func(psp *push.PushServiceProvider, dpCache *cache.SimpleCache, errChan chan<- push.PushError)
 }
 
 var _ common.PushRequestProcessor = &BinaryPushRequestProcessor{}
@@ -90,11 +90,24 @@ func (self *BinaryPushRequestProcessor) Finalize() {
 }
 
 func (self *BinaryPushRequestProcessor) GetMaxPayloadSize() int {
+	// https://developer.apple.com/library/archive/documentation/NetworkingInternet/Conceptual/RemoteNotificationsPG/BinaryProviderAPI.html#//apple_ref/doc/uid/TP40008194-CH13-SW1
+	// > Variable length, less than or equal to 2 kilobytes
 	return 2048
 }
 
 func (self *BinaryPushRequestProcessor) SetErrorReportChan(errChan chan<- push.PushError) {
 	self.errChan = errChan
+}
+
+func (self *BinaryPushRequestProcessor) SetPushServiceConfig(c *push.PushServiceConfig) {
+	// This uses the fact that registration takes place before any requests are sent, so pools aren't created yet.
+
+	if poolSize, err := c.GetInt("pool_size"); err == nil && poolSize > 0 {
+		if poolSize > 50 { // More than you would ever use
+			poolSize = 50
+		}
+		self.poolSize = poolSize
+	}
 }
 
 func (self *BinaryPushRequestProcessor) AddRequest(req *common.PushRequest) {
@@ -300,7 +313,7 @@ func clearRequest(req *common.PushRequest, resChan chan<- *common.APNSResult) {
 }
 
 // overrideFeedbackChecker overrides the function used to listen for unsubscriptions from the APNS feedback servers.
-func (self *BinaryPushRequestProcessor) overrideFeedbackChecker(newFeedbackChecker func(*push.PushServiceProvider, *cache.Cache, chan<- push.PushError)) {
+func (self *BinaryPushRequestProcessor) overrideFeedbackChecker(newFeedbackChecker func(*push.PushServiceProvider, *cache.SimpleCache, chan<- push.PushError)) {
 	self.feedbackChecker = newFeedbackChecker
 }
 
@@ -322,7 +335,7 @@ func (self *BinaryPushRequestProcessor) pushWorkerGroup(psp *push.PushServicePro
 
 	workerid := fmt.Sprintf("workder-%v-%v", time.Now().Unix(), rand.Int63())
 
-	dpCache := cache.New(256, -1, 0*time.Second, nil)
+	dpCache := cache.NewSimple(256)
 
 	// In a background thread, connect to corresponding feedback server and listen for unsubscribe updates to send to that user.
 	go self.feedbackChecker(psp, dpCache, self.errChan)

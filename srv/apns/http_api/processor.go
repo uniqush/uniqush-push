@@ -131,12 +131,14 @@ func (self *HTTPPushRequestProcessor) Finalize() {
 
 func (self *HTTPPushRequestProcessor) SetErrorReportChan(errChan chan<- push.PushError) {}
 
+func (self *HTTPPushRequestProcessor) SetPushServiceConfig(c *push.PushServiceConfig) {}
+
 func (self *HTTPPushRequestProcessor) sendRequests(request *common.PushRequest) {
 	defer close(request.ErrChan)
 
 	bundleid, ok := request.PSP.VolatileData["bundleid"]
 	if !ok || bundleid == "" {
-		for _ = range request.Devtokens {
+		for range request.Devtokens {
 			request.ErrChan <- push.NewError("Must add bundleid to PSP by calling /addpsp again")
 		}
 		return
@@ -164,7 +166,7 @@ func (self *HTTPPushRequestProcessor) sendRequests(request *common.PushRequest) 
 	}
 	client, err := self.GetClient(psp)
 	if err != nil {
-		for _ = range request.Devtokens {
+		for range request.Devtokens {
 			request.ErrChan <- push.NewErrorf("Could not create a client: %v", err)
 		}
 		return

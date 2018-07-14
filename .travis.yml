@@ -5,7 +5,7 @@ language: go
 dist: trusty
 sudo: false
 
-# Compile with go 1.9 (or newer). It takes a long time to install `tip`
+# Compile with go 1.10 (or newer). It takes a long time to install `tip`
 go:
   - 1.10.x
 
