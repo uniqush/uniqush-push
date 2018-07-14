@@ -528,7 +528,7 @@ func (self *RestAPI) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 }
 
 func (self *RestAPI) Run(addr string, stopChan chan<- bool) {
-	self.loggers[LOGGER_WEB].Configf("[Start] %s", addr)
+	self.loggers[LOGGER_WEB].Infof("[Start] %s", addr)
 	self.loggers[LOGGER_WEB].Debugf("[Version] %s", self.version)
 	http.Handle(STOP_PROGRAM_URL, self)
 	http.Handle(VERSION_INFO_URL, self)
