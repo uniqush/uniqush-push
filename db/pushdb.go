@@ -1,5 +1,6 @@
 /*
  * Copyright 2011 Nan Deng
+ *           2017 Victor Lang
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -157,6 +158,37 @@ func (f *pushDatabaseOpts) AddPushServiceProviderToService(service string,
 	}
 	f.dblock.Lock()
 	defer f.dblock.Unlock()
+
+	/*
+	 * #198:
+	 * 2017 Victor Lang
+	 * Before add a new psp to service, try to verify there is no redundant psp in same type exists under the same service.
+	 * Currently, redundant psp to service will result in problem in subscribe and push later.
+	 */
+	expsps, err := f.db.GetPushServiceProvidersByService(service)
+	if err != nil {
+		return fmt.Errorf("Error querying psp with name: %v", err)
+	}
+
+	for _, pspitem := range expsps {
+		pushpsp, perr := f.db.GetPushServiceProvider(pspitem)
+		if perr != nil {
+			return fmt.Errorf("Error to retrieve psp with name: %v", perr)
+		}
+		// Whether the existing psp has the same push service type
+		if pushpsp.PushServiceName() == push_service_provider.PushServiceName() {
+			/*
+			 * The service already has a psp in same push service type
+			 * The same fixed data are allowed under this situation in case the user wants to update "VolatileData" data in psp,
+			 * and the "different" fixed data is disallowed.
+			 * Since the psp's fixed data currently is used to generate UNIQUE pushpeer name, let's directly compare the Name() of pushpeer for now.
+			 */
+			if pushpsp.PushPeer.Name() != push_service_provider.PushPeer.Name() {
+				return fmt.Errorf("This PSP [%s] already exists with different fixed data as push service type %s. Please double check current PSPs. Also this could be fixed by removing the old PSP, but that would delete subscribers", service, push_service_provider.PushServiceName())
+			}
+		}
+	}
+
 	e := f.db.SetPushServiceProvider(push_service_provider)
 	if e != nil {
 		return fmt.Errorf("Error associating psp with name: %v", e)
