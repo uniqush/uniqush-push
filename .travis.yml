@@ -5,6 +5,11 @@ language: go
 dist: trusty
 sudo: false
 
+# https://docs.travis-ci.com/user/database-setup/
+# Some of the db unit tests require redis on 127.0.0.0:6379
+services:
+- redis-server
+
 # Compile with go 1.10 (or newer). It takes a long time to install `tip`
 go:
   - 1.10.x
