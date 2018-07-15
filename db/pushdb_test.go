@@ -18,11 +18,11 @@
 package db
 
 import (
-	"reflect"
 	"testing"
 
 	"github.com/uniqush/uniqush-push/push"
 	apns_mocks "github.com/uniqush/uniqush-push/srv/apns/http_api/mocks"
+	"github.com/uniqush/uniqush-push/test_util"
 )
 
 var dbconf *DatabaseConfig
@@ -40,68 +40,189 @@ func connectDatabase() (db PushDatabase, err error) {
 	return NewPushDatabaseWithoutCache(getTestDatabaseConfig())
 }
 
-func clearRedisData() {
-	conf := getTestDatabaseConfig()
-	client, err := newPushRedisDB(conf)
-	if err != nil {
-		panic(err)
-	}
+const SERVICE_NAME = "pushdb_test_service"
+const OTHER_SERVICE_NAME = "pushdb_other_test_service"
 
-	client.client.FlushDb() // Flush the database which pushredisdb.go used.
-}
-
-func TestConnectAndDelete(t *testing.T) {
-	_, err := connectDatabase()
-	if err != nil {
-		t.Fatalf("Error: %v", err)
-	}
-	clearRedisData()
-}
-
-func TestInsertAndGetPushServiceProviders(t *testing.T) {
-	client, err := connectDatabase()
-	if err != nil {
-		t.Fatalf("Error: %v", err)
-	}
-	clearRedisData()
-
-	psm := push.GetMockPushServiceManager()
-
-	pst := &apns_mocks.MockPushServiceType{}
-	err = psm.RegisterPushServiceType(pst)
-	if err != nil {
-		panic(err)
-	}
-
-	serviceName := "pushdb_test_service"
-	psp_data := map[string]string{
-		"service":         serviceName,
-		"pushservicetype": pst.Name(), // "apns"
+func defaultMockPSPData() map[string]string {
+	return map[string]string{
+		"service":         SERVICE_NAME,
+		"pushservicetype": "apns",
 		"cert":            "fakecert.cert",
 		"key":             "fakecert.key",
 		"addr":            "gateway.push.apple.com:2195",
 		"skipverify":      "true",
-		"bundleid":        "fakebundleid",
+		"bundleid":        "",
 	}
+}
+
+func connectDatabaseAndClearRedisData(t *testing.T) PushDatabase {
+	t.Helper()
+	client, err := connectDatabase()
+	if err != nil {
+		t.Fatalf("Error connecting to redis for test: %v", err)
+	}
+	client.(*pushDatabaseOpts).db.(*PushRedisDB).client.FlushDb()
+	return client
+}
+
+func TestConnectAndClearCache(t *testing.T) {
+	connectDatabaseAndClearRedisData(t)
+}
+
+func TestInsertAndGetPushServiceProviders(t *testing.T) {
+	client := connectDatabaseAndClearRedisData(t)
+
+	psm := initializePushServiceManagerForTest()
+
+	pst := &apns_mocks.MockPushServiceType{}
+	err := psm.RegisterPushServiceType(pst)
+	if err != nil {
+		panic(err)
+	}
+
+	psp_data := defaultMockPSPData()
 	psp, err := psm.BuildPushServiceProviderFromMap(psp_data)
 	if err != nil {
 		t.Fatalf("Could not create a mock PSP: %v", err)
 	}
 
-	err = client.AddPushServiceProviderToService(serviceName, psp)
+	err = client.AddPushServiceProviderToService(SERVICE_NAME, psp)
 	if err != nil {
 		t.Fatalf("Could not add the mock PSP: %v", err)
 	}
-	client_impl, ok := client.(*pushDatabaseOpts)
-	if !ok {
-		t.Fatalf("Unexpected struct implementing push.PushDatabase")
-	}
-	stored_services_names, err := client_impl.db.GetPushServiceProvidersByService(serviceName)
+	storedServicesNames, err := client.(*pushDatabaseOpts).db.GetPushServiceProvidersByService(SERVICE_NAME)
 	if err != nil {
 		t.Fatalf("Failed to fetch stored_services_names from the db")
 	}
-	expected_stored_services_names := []string{psp.Name()}
-	if !reflect.DeepEqual(expected_stored_services_names, stored_services_names) {
-		t.Errorf("Expected %v to equal %v", expected_stored_services_names, stored_services_names)
+	pspName := psp.Name()
+	test_util.ExpectStringEquals(t, "apns:3c82df754225cdf5fc5379402952ebeeb2a9e6b0", pspName, "should have deterministic psp name")
+	test_util.ExpectEquals(t, []string{pspName}, storedServicesNames, "should be able to fetch the new service from the db")
+}
+
+func TestInsertPushServiceProvidersDifferentServices(t *testing.T) {
+	client := connectDatabaseAndClearRedisData(t)
+
+	psm := initializePushServiceManagerForTest()
+
+	pst := &apns_mocks.MockPushServiceType{}
+	err := psm.RegisterPushServiceType(pst)
+	if err != nil {
+		t.Fatalf("apns PST already exists: %v", err)
+	}
+
+	// Test adding the first service type
+	{
+		pspData := defaultMockPSPData()
+		psp, err := psm.BuildPushServiceProviderFromMap(pspData)
+		if err != nil {
+			t.Fatalf("Could not create a mock PSP: %v", err)
+		}
+
+		err = client.AddPushServiceProviderToService(SERVICE_NAME, psp)
+		if err != nil {
+			t.Fatalf("Could not add the mock PSP: %v", err)
+		}
+		storedServicesNames, err := client.(*pushDatabaseOpts).db.GetPushServiceProvidersByService(SERVICE_NAME)
+		if err != nil {
+			t.Fatalf("Failed to fetch stored_services_names from the db")
+		}
+		pspName := psp.Name()
+		test_util.ExpectStringEquals(t, "apns:3c82df754225cdf5fc5379402952ebeeb2a9e6b0", pspName, "should have deterministic PSP name")
+		test_util.ExpectEquals(t, []string{pspName}, storedServicesNames, "should be able to fetch the new service from the db")
+	}
+
+	{
+		otherPSPData := defaultMockPSPData()
+		otherPSPData["service"] = OTHER_SERVICE_NAME
+		otherPSPData["cert"] = "otherfakecert.cert"
+		otherPSPData["key"] = "otherfakecert.key"
+		otherPSP, err := psm.BuildPushServiceProviderFromMap(otherPSPData)
+		if err != nil {
+			t.Fatalf("Could not create a mock PSP: %v", err)
+		}
+
+		err = client.AddPushServiceProviderToService(OTHER_SERVICE_NAME, otherPSP)
+		if err != nil {
+			t.Fatalf("Could not add the mock PSP: %v", err)
+		}
+		storedServicesNames, err := client.(*pushDatabaseOpts).db.GetPushServiceProvidersByService(OTHER_SERVICE_NAME)
+		if err != nil {
+			t.Fatalf("Failed to fetch stored_services_names from the db")
+		}
+		otherPSPName := otherPSP.Name()
+		test_util.ExpectStringEquals(t, "apns:ce1f6634c47c49f0b5d9c5d609e55544979d2172", otherPSPName, "should have deterministic PSP name")
+		test_util.ExpectEquals(t, []string{otherPSPName}, storedServicesNames, "should be able to fetch the new service from the db")
+	}
+}
+
+func initializePushServiceManagerForTest() *push.PushServiceManager {
+	psm := push.GetPushServiceManager()
+	psm.ClearAllPushServiceTypesForUnitTest()
+	return psm
+}
+
+func TestInsertPushServiceProvidersConflictSameService(t *testing.T) {
+	client := connectDatabaseAndClearRedisData(t)
+
+	psm := initializePushServiceManagerForTest()
+
+	pst := &apns_mocks.MockPushServiceType{}
+	err := psm.RegisterPushServiceType(pst)
+	test_util.ExpectStringEquals(t, "apns", pst.Name(), "sanity check")
+	if err != nil {
+		t.Fatalf("apns PST already exists: %v", err)
+	}
+
+	// Test adding the first service type
+	var pspName string
+	{
+		pspData := defaultMockPSPData()
+		psp, err := psm.BuildPushServiceProviderFromMap(pspData)
+		if err != nil {
+			t.Fatalf("Could not create a mock PSP: %v", err)
+		}
+
+		err = client.AddPushServiceProviderToService(SERVICE_NAME, psp)
+		if err != nil {
+			t.Fatalf("Could not add the mock PSP: %v", err)
+		}
+		storedServicesNames, err := client.(*pushDatabaseOpts).db.GetPushServiceProvidersByService(SERVICE_NAME)
+		if err != nil {
+			t.Fatalf("Failed to fetch stored_services_names from the db")
+		}
+		pspName = psp.Name()
+		test_util.ExpectStringEquals(t, "apns:3c82df754225cdf5fc5379402952ebeeb2a9e6b0", pspName, "should have deterministic PSP name")
+
+		test_util.ExpectEquals(t, []string{pspName}, storedServicesNames, "should be able to fetch the old service from the db")
+	}
+
+	{
+		// We create a PSP that has different FixedData from the first PSP (for historical reasons, it's impossible to change certificate file path, but you can change the contents),
+		otherPSPData := defaultMockPSPData()
+		otherPSPData["cert"] = "otherfakecert.cert"
+		otherPSPData["key"] = "otherfakecert.key"
+
+		otherPSP, err := psm.BuildPushServiceProviderFromMap(otherPSPData)
+		if err != nil {
+			t.Fatalf("Could not create a mock PSP: %v", err)
+		}
+
+		err = client.AddPushServiceProviderToService(SERVICE_NAME, otherPSP)
+		if err == nil {
+			t.Fatalf("Expected an error adding the conflicting mock PSP")
+		}
+		test_util.ExpectStringEquals(
+			t,
+			"A different PSP for service pushdb_test_service already exists with different fixed data as push service type apns (It has a separate subscriber list). Please double check the list of current PSPs with the /psps API. Note that this error could be worked around by removing the old PSP, but that would delete subscriptions.",
+			err.Error(),
+			"error message should describe the conflict",
+		)
+		otherPSPName := otherPSP.Name()
+		test_util.ExpectStringEquals(t, "apns:c5de2508902f441a5252c60044745915df2f7368", otherPSPName, "should have deterministic PSP name")
+		storedServicesNames, err := client.(*pushDatabaseOpts).db.GetPushServiceProvidersByService(SERVICE_NAME)
+		if err != nil {
+			t.Fatalf("Failed to fetch stored_services_names from the db")
+		}
+		test_util.ExpectEquals(t, []string{pspName}, storedServicesNames, "should be able to fetch the originally added service (not the new service) from the db")
 	}
 }

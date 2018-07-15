@@ -2,27 +2,13 @@ package main
 
 import (
 	"fmt"
-	"reflect"
 	"testing"
 
 	"github.com/uniqush/log"
 	"github.com/uniqush/uniqush-push/db"
 	"github.com/uniqush/uniqush-push/push"
+	"github.com/uniqush/uniqush-push/test_util"
 )
-
-func expectEquals(t *testing.T, expected interface{}, actual interface{}, msg string) {
-	t.Helper()
-	if !reflect.DeepEqual(expected, actual) {
-		t.Errorf("expectEquals failed: %s: %#v != %#v", msg, expected, actual)
-	}
-}
-
-func expectStringEquals(t *testing.T, expected string, actual string, msg string) {
-	t.Helper()
-	if expected != actual {
-		t.Errorf("expectEquals failed: %s: %q != %q", msg, expected, actual)
-	}
-}
 
 func TestOpenConfig(t *testing.T) {
 	c, err := OpenConfig("conf/uniqush-push.conf")
@@ -38,9 +24,9 @@ func TestOpenConfig(t *testing.T) {
 		return s
 	}
 
-	expectStringEquals(t, "on", getString("WebFrontend", "log"), "unexpected data for log")
-	expectStringEquals(t, "standard", getString("WebFrontend", "loglevel"), "unexpected data for loglevel")
-	expectStringEquals(t, "localhost:9898", getString("WebFrontend", "addr"), "unexpected data for addr")
+	test_util.ExpectStringEquals(t, "on", getString("WebFrontend", "log"), "unexpected data for log")
+	test_util.ExpectStringEquals(t, "standard", getString("WebFrontend", "loglevel"), "unexpected data for loglevel")
+	test_util.ExpectStringEquals(t, "localhost:9898", getString("WebFrontend", "addr"), "unexpected data for addr")
 
 	dbConf, err := LoadDatabaseConfig(c)
 	if err != nil {
@@ -58,20 +44,20 @@ func TestOpenConfig(t *testing.T) {
 		CacheSize:          1024,
 		PushServiceManager: push.GetPushServiceManager(),
 	}
-	expectEquals(t, *expectedDbConf, *dbConf, "expected config settings to be parsed")
+	test_util.ExpectEquals(t, *expectedDbConf, *dbConf, "expected config settings to be parsed")
 }
 
 func TestExtractLogLevel(t *testing.T) {
 	expectLogLevelForName := func(level int, loglevel string) {
 		actualLevel, warningMsg := extractLogLevel(loglevel)
-		expectStringEquals(t, "", warningMsg, "expected no warning")
-		expectEquals(t, level, actualLevel, "expected log level to be parsed")
+		test_util.ExpectStringEquals(t, "", warningMsg, "expected no warning")
+		test_util.ExpectEquals(t, level, actualLevel, "expected log level to be parsed")
 	}
 	expectLogLevelForName(log.LOGLEVEL_WARN, "warn")
 	expectLogLevelForName(log.LOGLEVEL_ERROR, "error")
 	expectLogLevelForName(log.LOGLEVEL_INFO, "standard")
 
 	level, warningMsg := extractLogLevel("blue")
-	expectStringEquals(t, `Unsupported loglevel "blue". Supported values: alert, error, warn/warning, standard/verbose/info, and debug`, warningMsg, "expected a warning message")
-	expectEquals(t, log.LOGLEVEL_INFO, level, "expected INFO level fallback")
+	test_util.ExpectStringEquals(t, `Unsupported loglevel "blue". Supported values: alert, error, warn/warning, standard/verbose/info, and debug`, warningMsg, "expected a warning message")
+	test_util.ExpectEquals(t, log.LOGLEVEL_INFO, level, "expected INFO level fallback")
 }
