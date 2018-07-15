@@ -356,7 +356,7 @@ func apiBytesToObject(data []byte) interface{} {
 func (self *RestAPI) stop(w io.Writer, remoteAddr string) {
 	self.waitGroup.Wait()
 	self.backend.Finalize()
-	self.loggers[LOGGER_WEB].Infof("stopped by %v", remoteAddr)
+	self.loggers[LoggerWeb].Infof("stopped by %v", remoteAddr)
 	if w != nil {
 		fmt.Fprintf(w, "Stopped\r\n")
 	}
@@ -500,27 +500,27 @@ func (self *RestAPI) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	switch r.URL.Path {
 	case QUERY_SUBSCRIPTIONS_URL:
 		r.ParseForm()
-		n := self.querySubscriptions(r.Form, self.loggers[LOGGER_SUBSCRIPTIONS])
+		n := self.querySubscriptions(r.Form, self.loggers[LoggerSubscriptions])
 		fmt.Fprintf(w, "%s\r\n", n)
 		return
 	case QUERY_PUSH_SERVICE_PROVIDERS:
-		n := self.queryPSPs(self.loggers[LOGGER_PSPS])
+		n := self.queryPSPs(self.loggers[LoggerPSPs])
 		fmt.Fprintf(w, "%s\r\n", n)
 		return
 	case REBUILD_SERVICE_SET_URL:
-		n := self.rebuildServiceSet(self.loggers[LOGGER_SERVICES])
+		n := self.rebuildServiceSet(self.loggers[LoggerServices])
 		fmt.Fprintf(w, "%s\r\n", n)
 		return
 	case QUERY_NUMBER_OF_DELIVERY_POINTS_URL:
 		r.ParseForm()
-		n := self.numberOfDeliveryPoints(r.Form, self.loggers[LOGGER_WEB], remoteAddr)
+		n := self.numberOfDeliveryPoints(r.Form, self.loggers[LoggerWeb], remoteAddr)
 		fmt.Fprintf(w, "%v\r\n", n)
 		return
 	case PREVIEW_PUSH_NOTIFICATION_URL:
 		r.ParseForm()
 		kv, _ := parseKV(r.Form)
 		rid := randomUniqId()
-		details := self.preview(rid, kv, self.loggers[LOGGER_PREVIEW], remoteAddr)
+		details := self.preview(rid, kv, self.loggers[LoggerPreview], remoteAddr)
 		bytes, err := json.Marshal(details)
 		if err != nil {
 			fmt.Fprintf(w, "%s\r\n", string(err.Error()))
@@ -530,7 +530,7 @@ func (self *RestAPI) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	case VERSION_INFO_URL:
 		fmt.Fprintf(w, "%v\r\n", self.version)
-		self.loggers[LOGGER_WEB].Infof("Checked version from %v", remoteAddr)
+		self.loggers[LoggerWeb].Infof("Checked version from %v", remoteAddr)
 		return
 	case STOP_PROGRAM_URL:
 		self.stop(w, remoteAddr)
@@ -545,38 +545,38 @@ func (self *RestAPI) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	var details ApiResponseDetails
 	switch r.URL.Path {
 	case ADD_PUSH_SERVICE_PROVIDER_TO_SERVICE_URL:
-		handler = newSimpleResponseHandler(self.loggers[LOGGER_ADDPSP], "AddPushServiceProvider")
-		details = self.changePushServiceProvider(kv, self.loggers[LOGGER_ADDPSP], remoteAddr, true)
+		handler = newSimpleResponseHandler(self.loggers[LoggerAddPSP], "AddPushServiceProvider")
+		details = self.changePushServiceProvider(kv, self.loggers[LoggerAddPSP], remoteAddr, true)
 		handler.AddDetailsToHandler(details)
 	case REMOVE_PUSH_SERVICE_PROVIDER_TO_SERVICE_URL:
-		handler = newSimpleResponseHandler(self.loggers[LOGGER_RMPSP], "RemovePushServiceProvider")
-		details = self.changePushServiceProvider(kv, self.loggers[LOGGER_RMPSP], remoteAddr, false)
+		handler = newSimpleResponseHandler(self.loggers[LoggerRemovePSP], "RemovePushServiceProvider")
+		details = self.changePushServiceProvider(kv, self.loggers[LoggerRemovePSP], remoteAddr, false)
 		handler.AddDetailsToHandler(details)
 	case ADD_DELIVERY_POINT_TO_SERVICE_URL:
-		handler = newSimpleResponseHandler(self.loggers[LOGGER_SUB], "Subscribe")
-		details = self.changeSubscription(kv, self.loggers[LOGGER_SUB], remoteAddr, true)
+		handler = newSimpleResponseHandler(self.loggers[LoggerSub], "Subscribe")
+		details = self.changeSubscription(kv, self.loggers[LoggerSub], remoteAddr, true)
 		handler.AddDetailsToHandler(details)
 	case REMOVE_DELIVERY_POINT_FROM_SERVICE_URL:
-		handler = newSimpleResponseHandler(self.loggers[LOGGER_UNSUB], "Unsubscribe")
-		details = self.changeSubscription(kv, self.loggers[LOGGER_UNSUB], remoteAddr, false)
+		handler = newSimpleResponseHandler(self.loggers[LoggerUnsub], "Unsubscribe")
+		details = self.changeSubscription(kv, self.loggers[LoggerUnsub], remoteAddr, false)
 		handler.AddDetailsToHandler(details)
 	case PUSH_NOTIFICATION_URL:
-		handler = newPushResponseHandler(self.loggers[LOGGER_PUSH])
+		handler = newPushResponseHandler(self.loggers[LoggerPush])
 		rid := randomUniqId()
-		self.pushNotification(rid, kv, perdp, self.loggers[LOGGER_PUSH], remoteAddr, handler)
+		self.pushNotification(rid, kv, perdp, self.loggers[LoggerPush], remoteAddr, handler)
 	}
 	if handler != nil {
 		// Be consistent about ending responses in \r\n
 		_, err := fmt.Fprintf(w, "%s\r\n", string(handler.ToJSON()))
 		if err != nil {
-			self.loggers[LOGGER_WEB].Errorf("Failed to write http response: %v", err)
+			self.loggers[LoggerWeb].Errorf("Failed to write http response: %v", err)
 		}
 	}
 }
 
 func (self *RestAPI) Run(addr string, stopChan chan<- bool) {
-	self.loggers[LOGGER_WEB].Infof("[Start] %s", addr)
-	self.loggers[LOGGER_WEB].Debugf("[Version] %s", self.version)
+	self.loggers[LoggerWeb].Infof("[Start] %s", addr)
+	self.loggers[LoggerWeb].Debugf("[Version] %s", self.version)
 	http.Handle(STOP_PROGRAM_URL, self)
 	http.Handle(VERSION_INFO_URL, self)
 	http.Handle(ADD_PUSH_SERVICE_PROVIDER_TO_SERVICE_URL, self)
@@ -592,7 +592,7 @@ func (self *RestAPI) Run(addr string, stopChan chan<- bool) {
 	self.stopChan = stopChan
 	err := http.ListenAndServe(addr, nil)
 	if err != nil {
-		self.loggers[LOGGER_WEB].Fatalf("HTTPServerError \"%v\"", err)
+		self.loggers[LoggerWeb].Fatalf("HTTPServerError \"%v\"", err)
 	}
 	return
 }

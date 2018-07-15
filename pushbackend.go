@@ -27,6 +27,7 @@ import (
 	"github.com/uniqush/uniqush-push/push"
 )
 
+// PushBackEnd contains the data structures associated with sending pushes, managing subscriptions, and logging the results.
 type PushBackEnd struct {
 	psm     *push.PushServiceManager
 	db      db.PushDatabase
@@ -34,6 +35,7 @@ type PushBackEnd struct {
 	errChan chan push.PushError
 }
 
+// Finalize will save all subscriptions (and perform other cleanup) as part of the push service shutting down.
 func (self *PushBackEnd) Finalize() {
 	// TODO: Add an option to prevent calling SAVE in implementations such as redis.
 	// Users may want this if saving is time-consuming or already configured to happen periodically.
@@ -42,6 +44,7 @@ func (self *PushBackEnd) Finalize() {
 	self.psm.Finalize()
 }
 
+// NewPushBackEnd creates and sets up the only instance of the push implementation.
 func NewPushBackEnd(psm *push.PushServiceManager, database db.PushDatabase, loggers []log.Logger) *PushBackEnd {
 	ret := new(PushBackEnd)
 	ret.psm = psm
@@ -53,54 +56,39 @@ func NewPushBackEnd(psm *push.PushServiceManager, database db.PushDatabase, logg
 	return ret
 }
 
+// AddPushServiceProvider is used by /addpsp to add a push service provider (for a service+push type) to the database.
 func (self *PushBackEnd) AddPushServiceProvider(service string, psp *push.PushServiceProvider) error {
-	err := self.db.AddPushServiceProviderToService(service, psp)
-	if err != nil {
-		return err
-	}
-	return nil
+	return self.db.AddPushServiceProviderToService(service, psp)
 }
 
+// RemovePushServiceProvider is used by /rmpsp to remove a push service provider (for a service+push type) from the database.
 func (self *PushBackEnd) RemovePushServiceProvider(service string, psp *push.PushServiceProvider) error {
-	err := self.db.RemovePushServiceProviderFromService(service, psp)
-	if err != nil {
-		return err
-	}
-	return nil
+	return self.db.RemovePushServiceProviderFromService(service, psp)
 }
 
 func (self *PushBackEnd) GetPushServiceProviderConfigs() ([]*push.PushServiceProvider, error) {
-	data, err := self.db.GetPushServiceProviderConfigs()
-	return data, err
+	return self.db.GetPushServiceProviderConfigs()
 }
 
 func (self *PushBackEnd) Subscribe(service, sub string, dp *push.DeliveryPoint) (*push.PushServiceProvider, error) {
-	psp, err := self.db.AddDeliveryPointToService(service, sub, dp)
-	if err != nil {
-		return nil, err
-	}
-	return psp, nil
+	return self.db.AddDeliveryPointToService(service, sub, dp)
 }
 
 func (self *PushBackEnd) Unsubscribe(service, sub string, dp *push.DeliveryPoint) error {
-	err := self.db.RemoveDeliveryPointFromService(service, sub, dp)
-	if err != nil {
-		return err
-	}
-	return nil
+	return self.db.RemoveDeliveryPointFromService(service, sub, dp)
 }
 
 func (self *PushBackEnd) processError() {
 	for err := range self.errChan {
 		rid := randomUniqId()
 		nullHandler := &NullApiResponseHandler{}
-		e := self.fixError(rid, "", err, self.loggers[LOGGER_PUSH], 0*time.Second, nullHandler)
+		e := self.fixError(rid, "", err, self.loggers[LoggerPush], 0*time.Second, nullHandler)
 		if e != nil {
 			switch e0 := e.(type) {
 			case *push.InfoReport:
-				self.loggers[LOGGER_PUSH].Infof("%v", e0)
+				self.loggers[LoggerPush].Infof("%v", e0)
 			default: // Includes *ErrorReport
-				self.loggers[LOGGER_PUSH].Errorf("Error: %v", e0)
+				self.loggers[LoggerPush].Errorf("Error: %v", e0)
 			}
 		}
 	}
@@ -140,7 +128,7 @@ func (self *PushBackEnd) fixError(reqId string, remoteAddr string, event error, 
 			subs := make([]string, 1)
 			subs[0] = sub
 			after = 2 * after
-			self.pushImpl(reqId, remoteAddr, service, subs, nil, err.Content, nil, self.loggers[LOGGER_PUSH], err.Provider, err.Destination, after, handler)
+			self.pushImpl(reqId, remoteAddr, service, subs, nil, err.Content, nil, self.loggers[LoggerPush], err.Provider, err.Destination, after, handler)
 		}()
 	case *push.PushServiceProviderUpdate:
 		if err.Provider == nil {

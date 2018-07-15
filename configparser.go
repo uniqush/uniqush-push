@@ -29,18 +29,19 @@ import (
 	"github.com/uniqush/uniqush-push/push"
 )
 
+// Logger*
 const (
-	LOGGER_WEB = iota
-	LOGGER_ADDPSP
-	LOGGER_RMPSP
-	LOGGER_PSPS
-	LOGGER_SUB
-	LOGGER_UNSUB
-	LOGGER_PUSH
-	LOGGER_SUBSCRIPTIONS
-	LOGGER_SERVICES
-	LOGGER_PREVIEW
-	LOGGER_NR_LOGGERS
+	LoggerWeb = iota
+	LoggerAddPSP
+	LoggerRemovePSP
+	LoggerPSPs
+	LoggerSub
+	LoggerUnsub
+	LoggerPush
+	LoggerSubscriptions
+	LoggerServices
+	LoggerPreview
+	NumberOfLoggers
 )
 
 func extractLogLevel(loglevel string) (int, string) {
@@ -98,6 +99,7 @@ func loadLogger(writer io.Writer, c *conf.ConfigFile, field string, prefix strin
 	return logger, nil
 }
 
+// LoadDatabaseConfig returns a representation of the [Database] section from uniqush.conf, or an error
 func LoadDatabaseConfig(cf *conf.ConfigFile) (*db.DatabaseConfig, error) {
 	var err error
 	c := new(db.DatabaseConfig)
@@ -152,6 +154,7 @@ const (
 	defaultConfigFilePath = "/etc/uniqush/uniqush.conf"
 )
 
+// OpenConfig opens the uniqush.conf file at filename, or returns an error
 func OpenConfig(filename string) (c *conf.ConfigFile, err error) {
 	if filename == "" {
 		filename = defaultConfigFilePath
@@ -163,6 +166,8 @@ func OpenConfig(filename string) (c *conf.ConfigFile, err error) {
 	return
 }
 
+// LoadLoggers will return an array of loggers, for each type in the enum.
+// The log level of individual loggers vary based on the config.
 func LoadLoggers(c *conf.ConfigFile) (loggers []log.Logger, err error) {
 	var logfile io.Writer
 
@@ -176,61 +181,61 @@ func LoadLoggers(c *conf.ConfigFile) (loggers []log.Logger, err error) {
 		logfile = os.Stderr
 	}
 
-	loggers = make([]log.Logger, LOGGER_NR_LOGGERS)
-	loggers[LOGGER_WEB], err = loadLogger(logfile, c, "WebFrontend", "[WebFrontend]")
+	loggers = make([]log.Logger, NumberOfLoggers)
+	loggers[LoggerWeb], err = loadLogger(logfile, c, "WebFrontend", "[WebFrontend]")
 	if err != nil {
 		loggers = nil
 		return
 	}
 
-	loggers[LOGGER_ADDPSP], err = loadLogger(logfile, c, "AddPushServiceProvider", "[AddPushServiceProvider]")
+	loggers[LoggerAddPSP], err = loadLogger(logfile, c, "AddPushServiceProvider", "[AddPushServiceProvider]")
 	if err != nil {
 		loggers = nil
 		return
 	}
 
-	loggers[LOGGER_RMPSP], err = loadLogger(logfile, c, "RemovePushServiceProvider", "[RemovePushServiceProvider]")
+	loggers[LoggerRemovePSP], err = loadLogger(logfile, c, "RemovePushServiceProvider", "[RemovePushServiceProvider]")
 	if err != nil {
 		loggers = nil
 		return
 	}
 
-	loggers[LOGGER_PSPS], err = loadLogger(logfile, c, "PSPs", "[PSPs]")
+	loggers[LoggerPSPs], err = loadLogger(logfile, c, "PSPs", "[PSPs]")
 	if err != nil {
 		loggers = nil
 		return
 	}
 
-	loggers[LOGGER_SUB], err = loadLogger(logfile, c, "Subscribe", "[Subscribe]")
+	loggers[LoggerSub], err = loadLogger(logfile, c, "Subscribe", "[Subscribe]")
 	if err != nil {
 		loggers = nil
 		return
 	}
 
-	loggers[LOGGER_UNSUB], err = loadLogger(logfile, c, "Unsubscribe", "[Unsubscribe]")
+	loggers[LoggerUnsub], err = loadLogger(logfile, c, "Unsubscribe", "[Unsubscribe]")
 	if err != nil {
 		loggers = nil
 		return
 	}
 
-	loggers[LOGGER_PUSH], err = loadLogger(logfile, c, "Push", "[Push]")
+	loggers[LoggerPush], err = loadLogger(logfile, c, "Push", "[Push]")
 	if err != nil {
 		loggers = nil
 		return
 	}
 
-	loggers[LOGGER_SUBSCRIPTIONS], err = loadLogger(logfile, c, "Subscriptions", "[Subscriptions]")
+	loggers[LoggerSubscriptions], err = loadLogger(logfile, c, "Subscriptions", "[Subscriptions]")
 	if err != nil {
 		loggers = nil
 		return
 	}
-	loggers[LOGGER_SERVICES], err = loadLogger(logfile, c, "Services", "[Services]")
+	loggers[LoggerServices], err = loadLogger(logfile, c, "Services", "[Services]")
 	if err != nil {
 		loggers = nil
 		return
 	}
 
-	loggers[LOGGER_PREVIEW], err = loadLogger(logfile, c, "Preview", "[Preview]")
+	loggers[LoggerPreview], err = loadLogger(logfile, c, "Preview", "[Preview]")
 	if err != nil {
 		loggers = nil
 		return
@@ -238,6 +243,9 @@ func LoadLoggers(c *conf.ConfigFile) (loggers []log.Logger, err error) {
 	return
 }
 
+// LoadRestAddr returns the address to listen to HTTP requests on, or returns an error.
+// The default is localhost:9898, which will accept connections only from localhost.
+// 0.0.0.0:9898 can be used to listen in on all interfaces, a firewall to control access to uniqush-push is strongly recommended.
 func LoadRestAddr(c *conf.ConfigFile) (string, error) {
 	addr, err := c.GetString("WebFrontend", "addr")
 	if err != nil || addr == "" {
@@ -247,6 +255,7 @@ func LoadRestAddr(c *conf.ConfigFile) (string, error) {
 	return addr, err
 }
 
+// Run will load the configuration and start the uniqush-push server and REST API based on that config.
 func Run(conf, version string) error {
 	c, err := OpenConfig(conf)
 	if err != nil {
