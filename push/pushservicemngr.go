@@ -55,6 +55,10 @@ func GetPushServiceManager() *PushServiceManager {
 	return pushServiceManager
 }
 
+func GetMockPushServiceManager() *PushServiceManager {
+	return newPushServiceManager()
+}
+
 func newPushServiceProvider() interface{} {
 	return NewEmptyPushServiceProvider()
 }
@@ -81,29 +85,27 @@ func (m *PushServiceManager) RegisterPushServiceType(pt PushServiceType) error {
 }
 
 func (m *PushServiceManager) BuildPushServiceProviderFromMap(kv map[string]string) (psp *PushServiceProvider, err error) {
-	if ptname, ok := kv["pushservicetype"]; ok {
-		if pair, ok := m.serviceTypes[ptname]; ok {
-			// XXX We are not ready to use pool
-			// pspif := pair.pspPool.Get()
-			// psp = pspif.(*PushServiceProvider)
-			// psp.objPool = pair.pspPool
-			psp = NewEmptyPushServiceProvider()
-			pst := pair.pst
-			err = pst.BuildPushServiceProviderFromMap(kv, psp)
-			if err != nil {
-				return nil, err
-			}
-			if _, ok := psp.FixedData["service"]; !ok {
-				err = fmt.Errorf("Bad Push Service Provider Implementation: service field is mandatory")
-				psp = nil
-				return
-			}
-			psp.pushServiceType = pst
-			return
-		}
+	ptname, ok := kv["pushservicetype"]
+	if !ok {
+		return nil, errors.New("No Push Service Type Specified")
+	}
+	pair, ok := m.serviceTypes[ptname]
+	if !ok {
 		return nil, fmt.Errorf("Unknown Push Service Type: %v", ptname)
 	}
-	return nil, errors.New("No Push Service Type Specified")
+	psp = NewEmptyPushServiceProvider()
+	pst := pair.pst
+	err = pst.BuildPushServiceProviderFromMap(kv, psp)
+	if err != nil {
+		return nil, err
+	}
+	if _, ok := psp.FixedData["service"]; !ok {
+		err = fmt.Errorf("Bad Push Service Provider Implementation: service field is mandatory")
+		psp = nil
+		return
+	}
+	psp.pushServiceType = pst
+	return
 }
 
 func (m *PushServiceManager) BuildPushServiceProviderFromBytes(value []byte) (psp *PushServiceProvider, err error) {

@@ -13,6 +13,7 @@ import (
 
 	"github.com/uniqush/uniqush-push/push"
 	"github.com/uniqush/uniqush-push/srv/apns/common"
+	apns_mocks "github.com/uniqush/uniqush-push/srv/apns/http_api/mocks"
 )
 
 const (
@@ -31,50 +32,13 @@ var (
 	mockServiceName     = "myService"
 )
 
-// TODO: refactor into a common test library.
-type mockAPNSServiceType struct{}
-
-var _ push.PushServiceType = &mockAPNSServiceType{}
-
-func (self *mockAPNSServiceType) BuildPushServiceProviderFromMap(kv map[string]string, psp *push.PushServiceProvider) error {
-	for key, value := range kv {
-		switch key {
-		case "addr", "bundleid", "skipverify":
-			psp.VolatileData[key] = value
-		case "service", "pushservicetype", "cert", "subscriber", "key":
-			psp.FixedData[key] = value
-		}
-	}
-	return nil
-}
-func (self *mockAPNSServiceType) BuildDeliveryPointFromMap(map[string]string, *push.DeliveryPoint) error {
-	panic("Not implemented")
-}
-func (self *mockAPNSServiceType) Name() string {
-	return "apns"
-}
-func (self *mockAPNSServiceType) Push(*push.PushServiceProvider, <-chan *push.DeliveryPoint, chan<- *push.PushResult, *push.Notification) {
-	panic("Not implemented")
-}
-func (self *mockAPNSServiceType) Preview(*push.Notification) ([]byte, push.PushError) {
-	panic("Not implemented")
-}
-func (self *mockAPNSServiceType) SetErrorReportChan(errChan chan<- push.PushError) {
-	panic("Not implemented")
-}
-func (self *mockAPNSServiceType) SetPushServiceConfig(*push.PushServiceConfig) {
-	panic("Not implemented")
-}
-func (self *mockAPNSServiceType) Finalize() {}
-
 func initPSP() *push.PushServiceProvider {
 	psm := push.GetPushServiceManager()
-	psm.RegisterPushServiceType(&mockAPNSServiceType{})
+	psm.RegisterPushServiceType(&apns_mocks.MockPushServiceType{})
 	psp, err := psm.BuildPushServiceProviderFromMap(map[string]string{
 		"service":         mockServiceName,
 		"pushservicetype": "apns",
 		"cert":            "../apns-test/localhost.cert",
-		"subscriber":      "mocksubscriber",
 		"key":             "../apns-test/localhost.key",
 		"addr":            "gateway.push.apple.com:2195",
 		"skipverify":      "true",

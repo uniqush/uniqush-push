@@ -13,7 +13,6 @@
  * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
  * See the License for the specific language governing permissions and
  * limitations under the License.
- *
  */
 
 package db
@@ -147,8 +146,7 @@ func (f *pushDatabaseOpts) RemovePushServiceProviderFromService(service string, 
 	return nil
 }
 
-func (f *pushDatabaseOpts) AddPushServiceProviderToService(service string,
-	push_service_provider *push.PushServiceProvider) error {
+func (f *pushDatabaseOpts) AddPushServiceProviderToService(service string, push_service_provider *push.PushServiceProvider) error {
 	if push_service_provider == nil {
 		return nil
 	}
@@ -160,31 +158,40 @@ func (f *pushDatabaseOpts) AddPushServiceProviderToService(service string,
 	defer f.dblock.Unlock()
 
 	/*
-	 * #198:
-	 * 2017 Victor Lang
-	 * Before add a new psp to service, try to verify there is no redundant psp in same type exists under the same service.
-	 * Currently, redundant psp to service will result in problem in subscribe and push later.
+	 * Patch by Victor Lang (PR #201)
+	 * Before adding a new psp to a service, try to verify that there is no redundant PSP of same type (GCM, FCM, APNS, or ADM)
+	 * that was already created for the given service.
+	 * Currently, redundant psp to service will result in problem when API clients attempt to subscribe and push later.
+	 *
+	 * However, allow /addpsp to be used to update an existing PSP, as long as none of the fixed data for the PSP changes
 	 */
 	expsps, err := f.db.GetPushServiceProvidersByService(service)
 	if err != nil {
-		return fmt.Errorf("Error querying psp with name: %v", err)
+		return fmt.Errorf("Error in AddPushServiceProviderToService querying list of PSPs for service %s: %v", service, err)
 	}
 
 	for _, pspitem := range expsps {
 		pushpsp, perr := f.db.GetPushServiceProvider(pspitem)
 		if perr != nil {
-			return fmt.Errorf("Error to retrieve psp with name: %v", perr)
+			return fmt.Errorf("Error in AddPushServiceProviderToService retrieving existing PSP %s for service %s with name: %v", pspitem, service, perr)
 		}
-		// Whether the existing psp has the same push service type
+		// Check if the existing PSP has the same push service type
 		if pushpsp.PushServiceName() == push_service_provider.PushServiceName() {
 			/*
-			 * The service already has a psp in same push service type
-			 * The same fixed data are allowed under this situation in case the user wants to update "VolatileData" data in psp,
-			 * and the "different" fixed data is disallowed.
-			 * Since the psp's fixed data currently is used to generate UNIQUE pushpeer name, let's directly compare the Name() of pushpeer for now.
+			 * The service already has a PSP of the same push service type.
+			 *
+			 * The same fixed data are allowed under this situation in case the user wants to update the changeable VolatileData of a PSP,
+			 * but we disallow adding a different PSP of the same type.
+			 *
+			 * Because the psp's fixed data currently is used to generate a unique pushpeer name,
+			 * we directly compare the Name() of pushpeer and reject the new PSP if the name is different.
 			 */
 			if pushpsp.PushPeer.Name() != push_service_provider.PushPeer.Name() {
-				return fmt.Errorf("This PSP [%s] already exists with different fixed data as push service type %s. Please double check current PSPs. Also this could be fixed by removing the old PSP, but that would delete subscribers", service, push_service_provider.PushServiceName())
+				return fmt.Errorf(
+					"A different PSP for service %s already exists with different fixed data as push service type %s (It has a separate subscriber list). Please double check the list of current PSPs with the /psps API. Note that this error could be worked around by removing the old PSP, but that would delete subscriptions.",
+					service,
+					push_service_provider.PushServiceName(),
+				)
 			}
 		}
 	}

@@ -18,59 +18,90 @@
 package db
 
 import (
-	"fmt"
-	"strconv"
+	"reflect"
 	"testing"
 
-	"github.com/go-redis/redis"
+	"github.com/uniqush/uniqush-push/push"
+	apns_mocks "github.com/uniqush/uniqush-push/srv/apns/http_api/mocks"
 )
 
 var dbconf *DatabaseConfig
 
-func init() {
-	dbconf = new(DatabaseConfig)
-	dbconf.Host = ""
-	dbconf.Port = 0
-	dbconf.Name = "0"
-	dbconf.Engine = "redis"
+func getTestDatabaseConfig() *DatabaseConfig {
+	return &DatabaseConfig{
+		Host:   "localhost",
+		Port:   6379,
+		Name:   "0",
+		Engine: "redis",
+	}
 }
 
 func connectDatabase() (db PushDatabase, err error) {
-	db, err = NewPushDatabaseWithoutCache(dbconf)
-	return
+	return NewPushDatabaseWithoutCache(getTestDatabaseConfig())
 }
 
-func clearData() {
-	c := dbconf
-	if c.Host == "" {
-		c.Host = "localhost"
-	}
-	if c.Port <= 0 {
-		c.Port = 6379
-	}
-	if c.Name == "" {
-		c.Name = "0"
-	}
-	db, err := strconv.ParseInt(c.Name, 10, 64)
+func clearRedisData() {
+	conf := getTestDatabaseConfig()
+	client, err := newPushRedisDB(conf)
 	if err != nil {
-		db = 0
+		panic(err)
 	}
-	client := redis.NewClient(&redis.Options{
-		Addr:     fmt.Sprintf("%s:%d", c.Host, c.Port),
-		Password: c.Password,
-		DB:       int(db),
-	})
 
-	client.FlushDb() // Flush the database which pushredisdb.go used.
+	client.client.FlushDb() // Flush the database which pushredisdb.go used.
 }
 
 func TestConnectAndDelete(t *testing.T) {
 	_, err := connectDatabase()
 	if err != nil {
-		t.Errorf("Error: %v", err)
+		t.Fatalf("Error: %v", err)
 	}
-	clearData()
+	clearRedisData()
 }
 
 func TestInsertAndGetPushServiceProviders(t *testing.T) {
+	client, err := connectDatabase()
+	if err != nil {
+		t.Fatalf("Error: %v", err)
+	}
+	clearRedisData()
+
+	psm := push.GetMockPushServiceManager()
+
+	pst := &apns_mocks.MockPushServiceType{}
+	err = psm.RegisterPushServiceType(pst)
+	if err != nil {
+		panic(err)
+	}
+
+	serviceName := "pushdb_test_service"
+	psp_data := map[string]string{
+		"service":         serviceName,
+		"pushservicetype": pst.Name(), // "apns"
+		"cert":            "fakecert.cert",
+		"key":             "fakecert.key",
+		"addr":            "gateway.push.apple.com:2195",
+		"skipverify":      "true",
+		"bundleid":        "fakebundleid",
+	}
+	psp, err := psm.BuildPushServiceProviderFromMap(psp_data)
+	if err != nil {
+		t.Fatalf("Could not create a mock PSP: %v", err)
+	}
+
+	err = client.AddPushServiceProviderToService(serviceName, psp)
+	if err != nil {
+		t.Fatalf("Could not add the mock PSP: %v", err)
+	}
+	client_impl, ok := client.(*pushDatabaseOpts)
+	if !ok {
+		t.Fatalf("Unexpected struct implementing push.PushDatabase")
+	}
+	stored_services_names, err := client_impl.db.GetPushServiceProvidersByService(serviceName)
+	if err != nil {
+		t.Fatalf("Failed to fetch stored_services_names from the db")
+	}
+	expected_stored_services_names := []string{psp.Name()}
+	if !reflect.DeepEqual(expected_stored_services_names, stored_services_names) {
+		t.Errorf("Expected %v to equal %v", expected_stored_services_names, stored_services_names)
+	}
 }
