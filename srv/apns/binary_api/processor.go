@@ -227,11 +227,11 @@ func generatePayload(payload, token []byte, expiry uint32, mid uint32) []byte {
 
 	// Item 3. Notification identifier
 	writeItemHeader(3, 4)
-	binary.Write(buffer, binary.BigEndian, uint32(mid))
+	binary.Write(buffer, binary.BigEndian, mid)
 
 	// Item 4. Expiration date
 	writeItemHeader(4, 4)
-	binary.Write(buffer, binary.BigEndian, uint32(expiry))
+	binary.Write(buffer, binary.BigEndian, expiry)
 
 	// Item 5. Priority
 
@@ -265,10 +265,8 @@ func (prp *BinaryPushRequestProcessor) singlePush(payload, token []byte, expiry 
 			return
 		case *TemporaryError:
 			errChan <- push.NewErrorf("error on connection with %v: %v. Will retry within %v", err.Endpoint, err.Err, sleepTime)
-			break
 		default:
 			errChan <- push.NewErrorf("unknown error on connection: %v. Will retry within %v", err, sleepTime)
-			break
 		}
 		errChan = prp.errChan
 

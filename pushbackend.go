@@ -126,7 +126,15 @@ func (backend *PushBackEnd) fixError(
 	}
 }
 
-func (backend *PushBackEnd) fixRetryError(err *push.RetryError, reqID string, remoteAddr string, logger log.Logger, after time.Duration, handler ApiResponseHandler) {
+// fixRetryError will retry sending the push with longer and longer intervals, and give up when the interval exceeds 1 minute.
+func (backend *PushBackEnd) fixRetryError(
+	err *push.RetryError,
+	reqID string,
+	remoteAddr string,
+	logger log.Logger,
+	after time.Duration,
+	handler ApiResponseHandler,
+) {
 	if err.Provider == nil || err.Destination == nil || err.Content == nil {
 		return
 	}
@@ -287,7 +295,15 @@ func (backend *PushBackEnd) fixUnsubscribeUpdate(
 	}
 }
 
-func (backend *PushBackEnd) collectResult(reqID string, remoteAddr string, service string, resChan <-chan *push.Result, logger log.Logger, after time.Duration, handler ApiResponseHandler) {
+func (backend *PushBackEnd) collectResult(
+	reqID string,
+	remoteAddr string,
+	service string,
+	resChan <-chan *push.Result,
+	logger log.Logger,
+	after time.Duration,
+	handler ApiResponseHandler,
+) {
 	for res := range resChan {
 		var sub string
 		ok := false
@@ -381,7 +397,20 @@ func (backend *PushBackEnd) Push(reqID string, remoteAddr string, service string
 
 // pushImpl will fetch subscriptions and send push notifications using the corresponding service.
 // It will retry pushes if they fail (May be through sending an RetryError, or it may be within the psp implementation).
-func (backend *PushBackEnd) pushImpl(reqID string, remoteAddr string, service string, subs []string, dpNamesRequested []string, notif *push.Notification, perdp map[string][]string, logger log.Logger, provider *push.PushServiceProvider, dest *push.DeliveryPoint, after time.Duration, handler ApiResponseHandler) {
+func (backend *PushBackEnd) pushImpl(
+	reqID string,
+	remoteAddr string,
+	service string,
+	subs []string,
+	dpNamesRequested []string,
+	notif *push.Notification,
+	perdp map[string][]string,
+	logger log.Logger,
+	provider *push.PushServiceProvider,
+	dest *push.DeliveryPoint,
+	after time.Duration,
+	handler ApiResponseHandler,
+) {
 	// dpChanMap maps a PushServiceProvider(by name) to a list of delivery points to send data to (from various subscriptions).
 	// If there are multiple subscriptions, lazily adding to a channel is probably faster than passing a list,
 	// because you'd need to fetch all subscriptions from the DB before starting to push otherwise.
@@ -394,7 +423,8 @@ func (backend *PushBackEnd) pushImpl(reqID string, remoteAddr string, service st
 		dpidx := 0
 		var pspDpList []db.PushServiceProviderDeliveryPointPair
 		if provider != nil && dest != nil {
-			pspDpList := make([]db.PushServiceProviderDeliveryPointPair, 1)
+			// Note: subs always has length 1 when dest != nil
+			pspDpList = make([]db.PushServiceProviderDeliveryPointPair, 1)
 			pspDpList[0].PushServiceProvider = provider
 			pspDpList[0].DeliveryPoint = dest
 		} else {
@@ -450,6 +480,7 @@ func (backend *PushBackEnd) pushImpl(reqID string, remoteAddr string, service st
 				wg.Add(1)
 				// Wait for the response from the PSP asynchronously
 				go func() {
+					// Note: if this is a retry, the duration `after` will increase, and fixError will account for that when deciding to retry
 					backend.collectResult(reqID, remoteAddr, service, resChan, logger, after, handler)
 					wg.Done()
 				}()

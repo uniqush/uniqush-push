@@ -134,8 +134,6 @@ func poolWorker(wg *sync.WaitGroup, manager ConnManager, requests <-chan workerR
 	}
 	if conn != nil {
 		conn.Close()
-		conn = nil
-		closed = nil
 	}
 }
 

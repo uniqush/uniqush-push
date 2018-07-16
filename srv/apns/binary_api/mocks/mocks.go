@@ -261,8 +261,7 @@ func (netConn *MockNetConn) ReadNotification() (notif *APNSNotificaton, err erro
 }
 
 func (netConn *MockNetConn) Reply(status *APNSResponse) error {
-	var command uint8
-	command = 8
+	command := uint8(8)
 	// Write to the mock connection half that it's reading *from*
 	var conn io.Writer = netConn.readConn
 	err := binary.Write(conn, binary.BigEndian, command)
@@ -273,11 +272,7 @@ func (netConn *MockNetConn) Reply(status *APNSResponse) error {
 	if err != nil {
 		return err
 	}
-	err = binary.Write(conn, binary.BigEndian, status.id)
-	if err != nil {
-		return err
-	}
-	return nil
+	return binary.Write(conn, binary.BigEndian, status.id)
 }
 
 func SimulateStableAPNSServer(conn *MockNetConn, statusCode uint8) (int, error) {

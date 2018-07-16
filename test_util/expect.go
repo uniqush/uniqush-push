@@ -1,6 +1,7 @@
 package test_util
 
 import (
+	"encoding/json"
 	"reflect"
 	"testing"
 )
@@ -16,5 +17,22 @@ func ExpectStringEquals(t *testing.T, expected string, actual string, msg string
 	t.Helper()
 	if expected != actual {
 		t.Errorf("ExpectStringEquals failed: %s: %q != %q", msg, expected, actual)
+	}
+}
+
+// ExpectJSONIsEquivalent asserts that two JSON strings represent the same JSON object, possibly in different order. golang json serialization has an unpredictable order.
+// Uses reflect.DeepEqual.
+func ExpectJSONIsEquivalent(t *testing.T, expected []byte, actual []byte) {
+	t.Helper()
+	var expectedObj map[string]interface{}
+	var actualObj map[string]interface{}
+	if err := json.Unmarshal(expected, &expectedObj); err != nil {
+		t.Fatalf("Invalid test expectation of JSON %s: %v", string(expected), err.Error())
+	}
+	if err := json.Unmarshal(actual, &actualObj); err != nil {
+		t.Fatalf("Invalid JSON %s: %v", string(actual), err.Error())
+	}
+	if !reflect.DeepEqual(actualObj, expectedObj) {
+		t.Errorf("%s is not equivalent to %s", actual, expected)
 	}
 }

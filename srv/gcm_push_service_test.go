@@ -1,15 +1,14 @@
 package srv
 
 import (
-	"encoding/json"
 	"fmt"
 	"io/ioutil"
 	"net/http"
-	"reflect"
 	"sync"
 	"testing"
 
 	"github.com/uniqush/uniqush-push/push"
+	"github.com/uniqush/uniqush-push/test_util"
 )
 
 const (
@@ -175,22 +174,6 @@ func TestPushSingleError(t *testing.T) {
 	assertExpectedGCMRequest(t, mockResponse.request, expectedRegID, expectedPayload)
 }
 
-// Helper function, because golang json serialization has an unpredictable order.
-// Uses reflect.DeepEqual.
-func expectJSONIsEquivalent(t *testing.T, expected []byte, actual []byte) {
-	var expectedObj map[string]interface{}
-	var actualObj map[string]interface{}
-	if err := json.Unmarshal(expected, &expectedObj); err != nil {
-		t.Fatalf("Invalid test expectation of JSON %s: %v", string(expected), err.Error())
-	}
-	if err := json.Unmarshal(actual, &actualObj); err != nil {
-		t.Fatalf("Invalid JSON %s: %v", string(actual), err.Error())
-	}
-	if !reflect.DeepEqual(actualObj, expectedObj) {
-		t.Errorf("%s is not equivalent to %s", actual, expected)
-	}
-}
-
 func assertExpectedGCMRequest(t *testing.T, request *http.Request, expectedRegID, expectedPayload string) {
 	actualURL := request.URL.String()
 	if actualURL != gcmServiceURL {
@@ -213,7 +196,7 @@ func assertExpectedGCMRequest(t *testing.T, request *http.Request, expectedRegID
 		t.Fatalf("Unexpected error reading body: %v", err)
 	}
 	expectedBody := fmt.Sprintf(`{"registration_ids":[%q],"data":%s,"time_to_live":3600}`, expectedRegID, expectedPayload)
-	expectJSONIsEquivalent(t, []byte(expectedBody), actualBodyBytes)
+	test_util.ExpectJSONIsEquivalent(t, []byte(expectedBody), actualBodyBytes)
 }
 
 // Overlaps with TestToGCMPayload, since Preview just calls toGCMPayload.

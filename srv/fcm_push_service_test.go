@@ -1,15 +1,14 @@
 package srv
 
 import (
-	"encoding/json"
 	"fmt"
 	"io/ioutil"
 	"net/http"
-	"reflect"
 	"sync"
 	"testing"
 
 	"github.com/uniqush/uniqush-push/push"
+	"github.com/uniqush/uniqush-push/test_util"
 )
 
 const (
@@ -73,8 +72,8 @@ func fcmAsyncPush(wg *sync.WaitGroup, service *fcmPushService, psp *push.PushSer
 	wg.Done()
 }
 
-// fcmTestPushSingle tests the ability to send a single push without error, and shut down cleanly.
-func fcmTestPushSingle(t *testing.T) {
+// TestFCMPushSingle tests the ability to send a single push without error, and shut down cleanly.
+func TestFCMPushSingle(t *testing.T) {
 	expectedRegID := "mockregid"
 	notif := push.NewEmptyNotification()
 	expectedPayload := `{"message":{"aPushType":{"foo":"bar","other":"value"},"fcm":{},"others":{"type":"aPushType"}}}`
@@ -122,8 +121,8 @@ func fcmTestPushSingle(t *testing.T) {
 	assertExpectedFCMRequest(t, fcmMockResponse.request, expectedRegID, expectedPayload)
 }
 
-// fcmTestPushSingleError tests the ability to send a single push with an error error, and shut down cleanly.
-func fcmTestPushSingleError(t *testing.T) {
+// TestFCMPushSingleError tests the ability to send a single push with an error error, and shut down cleanly.
+func TestFCMPushSingleError(t *testing.T) {
 	expectedRegID := "mockregid"
 	notif := push.NewEmptyNotification()
 	expectedPayload := `{"message":{"aPushType":{"foo":"bar","other":"value"},"fcm":{},"others":{"type":"aPushType"}}}`
@@ -175,22 +174,6 @@ func fcmTestPushSingleError(t *testing.T) {
 	assertExpectedFCMRequest(t, fcmMockResponse.request, expectedRegID, expectedPayload)
 }
 
-// Helper function, because golang json serialization has an unpredictable order.
-// Uses reflect.DeepEqual.
-func fcmExpectJSONIsEquivalent(t *testing.T, expected []byte, actual []byte) {
-	var expectedObj map[string]interface{}
-	var actualObj map[string]interface{}
-	if err := json.Unmarshal(expected, &expectedObj); err != nil {
-		t.Fatalf("Invalid test expectation of JSON %s: %v", string(expected), err.Error())
-	}
-	if err := json.Unmarshal(actual, &actualObj); err != nil {
-		t.Fatalf("Invalid JSON %s: %v", string(actual), err.Error())
-	}
-	if !reflect.DeepEqual(actualObj, expectedObj) {
-		t.Errorf("%s is not equivalent to %s", actual, expected)
-	}
-}
-
 func assertExpectedFCMRequest(t *testing.T, request *http.Request, expectedRegID, expectedPayload string) {
 	actualURL := request.URL.String()
 	if actualURL != fcmServiceURL {
@@ -213,11 +196,11 @@ func assertExpectedFCMRequest(t *testing.T, request *http.Request, expectedRegID
 		t.Fatalf("Unexpected error reading body: %v", err)
 	}
 	expectedBody := fmt.Sprintf(`{"registration_ids":[%q],"data":%s,"time_to_live":3600}`, expectedRegID, expectedPayload)
-	fcmExpectJSONIsEquivalent(t, []byte(expectedBody), actualBodyBytes)
+	test_util.ExpectJSONIsEquivalent(t, []byte(expectedBody), actualBodyBytes)
 }
 
 // Overlaps with TestToFCMPayload, since Preview just calls toFCMPayload.
-func FcmTestPreviewWithCommonParameters(t *testing.T) {
+func TestFCMPreviewWithCommonParameters(t *testing.T) {
 	postData := map[string]string{
 		"msggroup":  "somegroup",
 		"other":     "value",
@@ -239,7 +222,5 @@ func FcmTestPreviewWithCommonParameters(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Encountered error %v\n", err)
 	}
-	if string(payload) != expectedPayload {
-		t.Errorf("Expected %s, got %s", expectedPayload, string(payload))
-	}
+	test_util.ExpectJSONIsEquivalent(t, []byte(expectedPayload), payload)
 }

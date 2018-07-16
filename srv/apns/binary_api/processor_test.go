@@ -228,7 +228,7 @@ func TestRequestAfterShutdown(t *testing.T) {
 	verifyRequestProcessorRespondsWithStatus(t, APNSSuccess, req, errChan, resChan)
 	verifyNewConnectionLogged(t, serviceErrChan)
 
-	req, errChan, resChan = createSinglePushRequest(psp)
+	req, errChan, _ = createSinglePushRequest(psp)
 
 	requestProcessor.Finalize()
 	requestProcessor.AddRequest(req)

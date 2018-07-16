@@ -117,7 +117,7 @@ func (cm *connManagerImpl) NewConn() (net.Conn, <-chan bool, error) {
 // resultCollector processes the 6-byte APNS responses for each of our push notifications.
 // One resultCollector goroutine is automatically created for each connection established by NewConn (used by worker pools)
 // Visible for testing.
-func resultCollector(psp *push.PushServiceProvider, resChan chan<- *common.APNSResult, c net.Conn, closed chan<- bool) {
+func resultCollector(psp *push.PushServiceProvider, resChan chan<- *common.APNSResult, c io.ReadCloser, closed chan<- bool) {
 	defer func() {
 		// Optimization: If listening socket notices that the channel is closed, notify the sending socket so that it can reopen it.
 		closed <- true

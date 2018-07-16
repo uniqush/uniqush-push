@@ -78,37 +78,28 @@ const (
 	REBUILD_SERVICE_SET_URL                     = "/rebuildserviceset"
 )
 
-var validServicePattern *regexp.Regexp
-var validSubscriberPattern *regexp.Regexp
+// TODO: Switch to the stricter regex in a subsequent release.
+// uniqush.org didn't really document the accepted characters, so it's possible some clients used invalid characters.
+// Don't allow backticks.
+// TODO: Log an error if they're used.
+// var validServicePattern *regexp.Regexp = regexp.MustCompile(`^[a-zA-Z.0-9_@-]+$`)
+// var validSubscriberPattern *regexp.Regexp = regexp.MustCompile(`^[a-zA-Z.0-9_@-]+$`)
 
-func init() {
-	var err error
-	validServicePattern, err = regexp.Compile(`^[a-zA-z.0-9-_@]+$`)
-	if err != nil {
-		validServicePattern = nil
-	}
-	validSubscriberPattern, err = regexp.Compile(`^[a-zA-z.0-9-_@]+$`)
-	if err != nil {
-		validSubscriberPattern = nil
-	}
-}
+var validServicePattern *regexp.Regexp = regexp.MustCompile(`^[a-zA-Z.0-9_@\[\]^\\\\-]+$`)
+var validSubscriberPattern *regexp.Regexp = regexp.MustCompile(`^[a-zA-Z.0-9_@-\[\]^\\\\-]+$`)
 
 func validateSubscribers(subs []string) error {
-	if validSubscriberPattern != nil {
-		for _, sub := range subs {
-			if !validSubscriberPattern.MatchString(sub) {
-				return fmt.Errorf("invalid subscriber name: %s. Accept charaters: a-z, A-Z, 0-9, -, _, @ or .", sub)
-			}
+	for _, sub := range subs {
+		if !validSubscriberPattern.MatchString(sub) {
+			return fmt.Errorf("invalid subscriber name: %q. Accepted characters: a-z, A-Z, 0-9, -, _, @ or .", sub)
 		}
 	}
 	return nil
 }
 
 func validateService(service string) error {
-	if validServicePattern != nil {
-		if !validServicePattern.MatchString(service) {
-			return fmt.Errorf("invalid service name: %s. Accept charaters: a-z, A-Z, 0-9, -, _, @ or .", service)
-		}
+	if !validServicePattern.MatchString(service) {
+		return fmt.Errorf("invalid service name: %q. Accepted characters: a-z, A-Z, 0-9, -, _, @ or .", service)
 	}
 	return nil
 }
