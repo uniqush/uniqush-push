@@ -17,7 +17,7 @@
 
 package binary_api
 
-// This file implements a goroutine that periodically connects to apple's feedback servers, and forwards unsubscribe updates on a channel of push.PushErrors
+// This file implements a goroutine that periodically connects to apple's feedback servers, and forwards unsubscribe updates on a channel of push.Error instances.
 
 import (
 	"crypto/tls"

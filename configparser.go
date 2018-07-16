@@ -29,7 +29,7 @@ import (
 	"github.com/uniqush/uniqush-push/push"
 )
 
-// Logger*
+// Logger* is an enum of the indices of the loggers for the various log categories.
 const (
 	LoggerWeb = iota
 	LoggerAddPSP
