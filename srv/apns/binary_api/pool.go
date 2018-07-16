@@ -122,7 +122,7 @@ func poolWorker(wg *sync.WaitGroup, manager ConnManager, requests <-chan workerR
 		}
 		deadline := time.Now().Add(time.Duration(maxWaitTime) * time.Second)
 		conn.SetWriteDeadline(deadline)
-		err := writen(conn, request.Payload)
+		err := writeN(conn, request.Payload)
 		if err != nil {
 			request.Response <- &TemporaryError{Err: err, Endpoint: conn.RemoteAddr()}
 			conn.Close()
@@ -137,10 +137,10 @@ func poolWorker(wg *sync.WaitGroup, manager ConnManager, requests <-chan workerR
 	}
 }
 
-// writen is a safe wrapper around Write, specialized for `net.Conn`s.
-// writen will continue calling write until it finishes or an error is encountered.
+// writeN is a safe wrapper around Write, specialized for `net.Conn`s.
+// writeN will continue calling write until it finishes or an error is encountered.
 // It will abort after 10 "temporary errors" - it's gotten into a busy loop and ate 100% of a CPU once.
-func writen(w io.Writer, buf []byte) error {
+func writeN(w io.Writer, buf []byte) error {
 	remainingTemporaryErrors := 10
 	n := len(buf)
 	for n >= 0 {

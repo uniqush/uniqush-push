@@ -48,7 +48,7 @@ func TestADMNotifToMessageWithTTL(t *testing.T) {
 		"other":     "value",
 		"other.foo": "bar",
 		"ttl":       "5",
-		// ADM module should ignore anything it doesn't recognize begining with "uniqush.", those are reserved.
+		// ADM module should ignore anything it doesn't recognize beginning with "uniqush.", those are reserved.
 		"uniqush.payload.apns": "{}",
 		"uniqush.payload.gcm":  `{"key":{},"x":"y"}`,
 	}

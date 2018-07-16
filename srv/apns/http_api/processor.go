@@ -149,7 +149,7 @@ func (prp *HTTPPushRequestProcessor) sendRequests(request *common.PushRequest) {
 
 	header := http.Header{
 		"apns-expiration": []string{fmt.Sprint(request.Expiry)},
-		"apns-priority":   []string{"10"}, // Send notification immidiately
+		"apns-priority":   []string{"10"}, // Send notification immediately
 		// This is kept in VolatileData. A PSP may need to be updated first in /addpsp to use this,
 		// by setting bundleid to the bundle id of the app.
 		"apns-topic": []string{bundleid},
