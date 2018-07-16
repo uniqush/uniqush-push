@@ -361,7 +361,7 @@ func (ps *pushService) Push(psp *push.PushServiceProvider, dpQueue <-chan *push.
 			r.Provider = psp
 			r.Content = notif
 			r.Destination = dp
-			mid := req.GetId(i)
+			mid := req.GetID(i)
 			r.MsgId = fmt.Sprintf("apns:%v-%v", psp.Name(), mid)
 			r.Err = nil
 			resQueue <- r

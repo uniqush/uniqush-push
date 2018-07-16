@@ -54,7 +54,7 @@ type PushRequest struct {
 }
 
 // Used by binary protocol.
-func (self *PushRequest) GetId(idx int) uint32 {
+func (self *PushRequest) GetID(idx int) uint32 {
 	if idx < 0 || idx >= len(self.Devtokens) {
 		return 0
 	}

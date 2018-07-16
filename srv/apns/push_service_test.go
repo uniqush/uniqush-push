@@ -31,13 +31,13 @@ func newMockRequestProcessor(status uint8) *MockPushRequestProcessor {
 
 var _ common.PushRequestProcessor = &MockPushRequestProcessor{}
 
-func (self *MockPushRequestProcessor) AddRequest(request *common.PushRequest) {
+func (mockPRP *MockPushRequestProcessor) AddRequest(request *common.PushRequest) {
 	close(request.ErrChan) // Would have contents only for an invalid request. Send nothing.
 	go func() {
 		for i := range request.DPList {
 			request.ResChan <- &common.APNSResult{
-				MsgId:  request.GetId(i),
-				Status: self.status,
+				MsgId:  request.GetID(i),
+				Status: mockPRP.status,
 				Err:    nil,
 			}
 		}
@@ -45,19 +45,19 @@ func (self *MockPushRequestProcessor) AddRequest(request *common.PushRequest) {
 	}()
 }
 
-func (self *MockPushRequestProcessor) GetMaxPayloadSize() int {
+func (mockPRP *MockPushRequestProcessor) GetMaxPayloadSize() int {
 	return 2048
 }
 
-func (self *MockPushRequestProcessor) Finalize() {
-	self.didFinalize = true
+func (mockPRP *MockPushRequestProcessor) Finalize() {
+	mockPRP.didFinalize = true
 }
 
-func (self *MockPushRequestProcessor) SetErrorReportChan(errChan chan<- push.PushError) {
-	self.errChan = errChan
+func (mockPRP *MockPushRequestProcessor) SetErrorReportChan(errChan chan<- push.PushError) {
+	mockPRP.errChan = errChan
 }
 
-func (self *MockPushRequestProcessor) SetPushServiceConfig(c *push.PushServiceConfig) {}
+func (mockPRP *MockPushRequestProcessor) SetPushServiceConfig(c *push.PushServiceConfig) {}
 
 func TestCreatePushService(t *testing.T) {
 	mockRequestProcessor := newMockRequestProcessor(APNSSuccess)
@@ -98,7 +98,7 @@ func commonAPNSMocks(status uint8) (*push.PushServiceProvider, *MockPushRequestP
 	return psp, mockRequestProcessor, service, errChan
 }
 
-func createNotification(expectedContentId int, pushType string, msg string) *push.Notification {
+func createNotification(expectedContentID int, pushType string, msg string) *push.Notification {
 	return &push.Notification{
 		Data: map[string]string{
 			"msg": "hello world",
@@ -122,13 +122,13 @@ func asyncPush(wg *sync.WaitGroup, service *pushService, psp *push.PushServicePr
 
 // TestPushSingle tests the ability to send a single push without error, and shut down cleanly.
 func TestPushSingle(t *testing.T) {
-	expectedContentId := 2223511
+	expectedContentID := 2223511
 	expectedToken := hex.EncodeToString([]byte("FakeDevToken"))
 
 	psp, _, service, errChan := commonAPNSMocks(APNSSuccess)
 
 	resQueue := make(chan *push.PushResult)
-	notif := createNotification(expectedContentId, "helloworld", "Hello World")
+	notif := createNotification(expectedContentID, "helloworld", "Hello World")
 
 	wg := new(sync.WaitGroup)
 	wg.Add(2)
@@ -138,7 +138,7 @@ func TestPushSingle(t *testing.T) {
 	go asyncPush(wg, service, psp, dpQueue, resQueue, notif)
 	resCount := 0
 	for res := range resQueue {
-		resCount += 1
+		resCount++
 		// Might not be worth testing
 		if res == nil {
 			t.Fatal("Unexpected result - closed")
@@ -162,7 +162,7 @@ func TestPushSingle(t *testing.T) {
 
 func TestPushMultiple(t *testing.T) {
 	pushes := 3
-	expectedContentId := 2223511
+	expectedContentID := 2223511
 	expectedToken := hex.EncodeToString([]byte("FakeDevToken"))
 
 	psp, _, service, _ := commonAPNSMocks(APNSSuccess)
@@ -176,7 +176,7 @@ func TestPushMultiple(t *testing.T) {
 	for i := 0; i < pushes; i++ {
 		dpQueue := make(chan *push.DeliveryPoint)
 		go asyncCreateDPQueue(wg, dpQueue, expectedToken, "unusedsubscriber2")
-		notif := createNotification(expectedContentId, fmt.Sprintf("helloworld%d", i), fmt.Sprintf("Hello World%d", i))
+		notif := createNotification(expectedContentID, fmt.Sprintf("helloworld%d", i), fmt.Sprintf("Hello World%d", i))
 		notifs[i] = notif
 		resQueue := make(chan *push.PushResult)
 		resQueues[i] = resQueue
@@ -186,7 +186,7 @@ func TestPushMultiple(t *testing.T) {
 		resCount := 0
 		notif := notifs[i]
 		for res := range resQueue {
-			resCount += 1
+			resCount++
 			// Might not be worth testing
 			if res == nil {
 				t.Fatal("Unexpected result - closed")
@@ -210,13 +210,13 @@ func TestPushMultiple(t *testing.T) {
 
 // TestPushUnsubscribe tests that an UnsubscribeUpdate should be generated from the corresponding apns status code.
 func TestPushUnsubscribe(t *testing.T) {
-	expectedContentId := 2223511
+	expectedContentID := 2223511
 	expectedToken := hex.EncodeToString([]byte("FakeDevToken"))
 
 	psp, _, service, errChan := commonAPNSMocks(APNSUnsubscribe)
 
 	resQueue := make(chan *push.PushResult)
-	notif := createNotification(expectedContentId, "helloworld", "Hello World")
+	notif := createNotification(expectedContentID, "helloworld", "Hello World")
 
 	wg := new(sync.WaitGroup)
 	wg.Add(2)
@@ -227,7 +227,7 @@ func TestPushUnsubscribe(t *testing.T) {
 	go asyncPush(wg, service, psp, dpQueue, resQueue, notif)
 	resCount := 0
 	for res := range resQueue {
-		resCount += 1
+		resCount++
 		// Might not be worth testing
 		if res == nil {
 			t.Fatal("Unexpected result - closed")

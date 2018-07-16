@@ -11,17 +11,18 @@ import (
 	"github.com/uniqush/uniqush-push/srv/apns/common"
 )
 
-const APNS_SUCCESS uint8 = 0
-const APNS_UNSUBSCRIBE uint8 = 8
+const APNSSuccess uint8 = 0
+const APNSUnsubscribe uint8 = 8
 
-const MOCK_NR_CONN = 2
+// MockConnectionCount is the number of workers to use for this test. Each worker has a single TCP socket for the binary protocol.
+const MockConnectionCount = 2
 
 // MockAPNSPushServiceType replaces apnsPushService. It is registered so that tested functions using the global push registry work properly.
 type MockAPNSPushServiceType struct{}
 
 var _ push.PushServiceType = &MockAPNSPushServiceType{}
 
-func (self *MockAPNSPushServiceType) BuildPushServiceProviderFromMap(kv map[string]string, psp *push.PushServiceProvider) error {
+func (pst *MockAPNSPushServiceType) BuildPushServiceProviderFromMap(kv map[string]string, psp *push.PushServiceProvider) error {
 	for key, value := range kv {
 		switch key {
 		case "addr":
@@ -32,26 +33,26 @@ func (self *MockAPNSPushServiceType) BuildPushServiceProviderFromMap(kv map[stri
 	}
 	return nil
 }
-func (self *MockAPNSPushServiceType) BuildDeliveryPointFromMap(map[string]string, *push.DeliveryPoint) error {
+func (pst *MockAPNSPushServiceType) BuildDeliveryPointFromMap(map[string]string, *push.DeliveryPoint) error {
 	panic("Not implemented")
 }
-func (self *MockAPNSPushServiceType) Name() string {
+func (pst *MockAPNSPushServiceType) Name() string {
 	return "apns"
 }
-func (self *MockAPNSPushServiceType) Push(*push.PushServiceProvider, <-chan *push.DeliveryPoint, chan<- *push.PushResult, *push.Notification) {
+func (pst *MockAPNSPushServiceType) Push(*push.PushServiceProvider, <-chan *push.DeliveryPoint, chan<- *push.PushResult, *push.Notification) {
 	panic("Not implemented")
 }
-func (self *MockAPNSPushServiceType) Preview(*push.Notification) ([]byte, push.PushError) {
+func (pst *MockAPNSPushServiceType) Preview(*push.Notification) ([]byte, push.PushError) {
 	panic("Not implemented")
 }
-func (self *MockAPNSPushServiceType) SetErrorReportChan(errChan chan<- push.PushError) {
+func (pst *MockAPNSPushServiceType) SetErrorReportChan(errChan chan<- push.PushError) {
 	panic("Not implemented")
 }
-func (self *MockAPNSPushServiceType) SetPushServiceConfig(*push.PushServiceConfig) {
+func (pst *MockAPNSPushServiceType) SetPushServiceConfig(*push.PushServiceConfig) {
 	panic("Not implemented")
 }
 
-func (self *MockAPNSPushServiceType) Finalize() {}
+func (pst *MockAPNSPushServiceType) Finalize() {}
 
 type MockConnManager struct {
 	mockedConns []*mocks.MockNetConn
@@ -101,24 +102,24 @@ func commonBinaryMocks(requestProcessor *BinaryPushRequestProcessor, status uint
 }
 
 // NewConn creates a mock connection which responds with a hardcoded status result for each push.
-func (self *MockConnManager) NewConn() (net.Conn, <-chan bool, error) {
+func (cm *MockConnManager) NewConn() (net.Conn, <-chan bool, error) {
 	mockedConn := mocks.NewMockNetConn()
-	go mocks.SimulateStableAPNSServer(mockedConn, self.status)
+	go mocks.SimulateStableAPNSServer(mockedConn, cm.status)
 	didClose := make(chan bool, 1)
-	go resultCollector(self.psp, self.resChan, mockedConn, didClose)
-	self.mutex.Lock()
-	defer self.mutex.Unlock()
-	self.mockedConns = append(self.mockedConns, mockedConn)
+	go resultCollector(cm.psp, cm.resChan, mockedConn, didClose)
+	cm.mutex.Lock()
+	defer cm.mutex.Unlock()
+	cm.mockedConns = append(cm.mockedConns, mockedConn)
 	return mockedConn, didClose, nil
 }
 
-func (self *MockConnManager) CleanUp() {
-	self.mutex.Lock()
-	defer self.mutex.Unlock()
-	for _, mockedConn := range self.mockedConns {
+func (cm *MockConnManager) CleanUp() {
+	cm.mutex.Lock()
+	defer cm.mutex.Unlock()
+	for _, mockedConn := range cm.mockedConns {
 		mockedConn.CleanUp()
 	}
-	self.mockedConns = nil
+	cm.mockedConns = nil
 }
 
 func mockConnManagerMaker(connManager *MockConnManager) func(psp *push.PushServiceProvider, resChan chan<- *common.APNSResult) ConnManager {
@@ -172,16 +173,16 @@ func createSinglePushRequest(psp *push.PushServiceProvider) (*common.PushRequest
 
 // TestPushSuccess checks that the user of this RequestProcessor is forwarded the correct status code for successes.
 func TestPushSuccess(t *testing.T) {
-	testPushForwardsErrorCode(t, APNS_SUCCESS)
+	testPushForwardsErrorCode(t, APNSSuccess)
 }
 
 // TestPushUnsubscribe checks that the user of this RequestProcessor is forwarded the correct status code for unsubscribe operations..
 func TestPushUnsubscribe(t *testing.T) {
-	testPushForwardsErrorCode(t, APNS_UNSUBSCRIBE)
+	testPushForwardsErrorCode(t, APNSUnsubscribe)
 }
 
 func testPushForwardsErrorCode(t *testing.T, status uint8) {
-	requestProcessor := NewRequestProcessor(MOCK_NR_CONN)
+	requestProcessor := NewRequestProcessor(MockConnectionCount)
 	defer requestProcessor.Finalize()
 	serviceName := "mockservice.apns"
 	psp, _, serviceErrChan := commonBinaryMocks(requestProcessor, status, serviceName)
@@ -200,9 +201,9 @@ func verifyRequestProcessorRespondsWithStatus(t *testing.T, status uint8, req *c
 
 	res := <-resChan
 	close(resChan)
-	expectedMsgId := req.MaxMsgId - 1
-	if expectedMsgId != res.MsgId {
-		t.Errorf("Expected only msgid to be %d, got %d", expectedMsgId, res.MsgId)
+	expectedMsgID := req.MaxMsgId - 1
+	if expectedMsgID != res.MsgId {
+		t.Errorf("Expected only msgid to be %d, got %d", expectedMsgID, res.MsgId)
 	}
 	if res.Status != status {
 		t.Errorf("Expected status code to be %d, got %d", status, res.Status)
@@ -218,13 +219,13 @@ func verifyNewConnectionLogged(t *testing.T, serviceErrChan chan push.PushError)
 }
 
 func TestRequestAfterShutdown(t *testing.T) {
-	requestProcessor := NewRequestProcessor(MOCK_NR_CONN)
+	requestProcessor := NewRequestProcessor(MockConnectionCount)
 	serviceName := "mockservice.apns"
-	psp, _, serviceErrChan := commonBinaryMocks(requestProcessor, APNS_SUCCESS, serviceName)
+	psp, _, serviceErrChan := commonBinaryMocks(requestProcessor, APNSSuccess, serviceName)
 	req, errChan, resChan := createSinglePushRequest(psp)
 	requestProcessor.AddRequest(req)
 
-	verifyRequestProcessorRespondsWithStatus(t, APNS_SUCCESS, req, errChan, resChan)
+	verifyRequestProcessorRespondsWithStatus(t, APNSSuccess, req, errChan, resChan)
 	verifyNewConnectionLogged(t, serviceErrChan)
 
 	req, errChan, resChan = createSinglePushRequest(psp)
@@ -246,9 +247,9 @@ func TestRequestAfterShutdown(t *testing.T) {
 }
 
 func TestParallelRequestAndShutdown(t *testing.T) {
-	requestProcessor := NewRequestProcessor(MOCK_NR_CONN)
+	requestProcessor := NewRequestProcessor(MockConnectionCount)
 	serviceName := "mockservice.apns"
-	psp, _, serviceErrChan := commonBinaryMocks(requestProcessor, APNS_SUCCESS, serviceName)
+	psp, _, serviceErrChan := commonBinaryMocks(requestProcessor, APNSSuccess, serviceName)
 	req, errChan, resChan := createSinglePushRequest(psp)
 	doneFinalize := make(chan bool)
 
@@ -265,7 +266,7 @@ func TestParallelRequestAndShutdown(t *testing.T) {
 	errCount := 0
 	expectedErrMsg := "Uniqush is shutting down"
 	for err := range errChan {
-		errCount += 1
+		errCount++
 		if expectedErrMsg != err.Error() {
 			t.Errorf("Expected to log %q, but the first error was %q (%#v)", expectedErrMsg, err.Error(), err)
 		}
@@ -275,7 +276,7 @@ func TestParallelRequestAndShutdown(t *testing.T) {
 	}
 
 	if errCount == 0 {
-		verifyRequestProcessorRespondsWithStatus(t, APNS_SUCCESS, req, errChan, resChan)
+		verifyRequestProcessorRespondsWithStatus(t, APNSSuccess, req, errChan, resChan)
 		verifyNewConnectionLogged(t, serviceErrChan)
 	} else {
 		if len(resChan) != 0 {

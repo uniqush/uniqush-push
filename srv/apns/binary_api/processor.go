@@ -42,6 +42,7 @@ type pushWorkerGroupInfo struct {
 	ch  chan *common.PushRequest
 }
 
+// BinaryPushRequestProcessor contains the logic for V2 of the Binary Provider API.
 type BinaryPushRequestProcessor struct {
 	reqChan    chan *common.PushRequest
 	errChan    chan<- push.PushError
@@ -76,57 +77,57 @@ func NewRequestProcessor(poolSize int) *BinaryPushRequestProcessor {
 	return ret
 }
 
-func (self *BinaryPushRequestProcessor) Finalize() {
-	self.reqLock.Lock()
-	wasFinished := self.finished
-	self.finished = true
-	self.reqLock.Unlock()
+func (prp *BinaryPushRequestProcessor) Finalize() {
+	prp.reqLock.Lock()
+	wasFinished := prp.finished
+	prp.finished = true
+	prp.reqLock.Unlock()
 	if wasFinished {
 		fmt.Println("Finalize was called twice - this shouldn't happen")
 	} else {
-		close(self.reqChan)
+		close(prp.reqChan)
 	}
-	self.wgFinalize.Wait()
+	prp.wgFinalize.Wait()
 }
 
-func (self *BinaryPushRequestProcessor) GetMaxPayloadSize() int {
+func (prp *BinaryPushRequestProcessor) GetMaxPayloadSize() int {
 	// https://developer.apple.com/library/archive/documentation/NetworkingInternet/Conceptual/RemoteNotificationsPG/BinaryProviderAPI.html#//apple_ref/doc/uid/TP40008194-CH13-SW1
 	// > Variable length, less than or equal to 2 kilobytes
 	return 2048
 }
 
-func (self *BinaryPushRequestProcessor) SetErrorReportChan(errChan chan<- push.PushError) {
-	self.errChan = errChan
+func (prp *BinaryPushRequestProcessor) SetErrorReportChan(errChan chan<- push.PushError) {
+	prp.errChan = errChan
 }
 
-func (self *BinaryPushRequestProcessor) SetPushServiceConfig(c *push.PushServiceConfig) {
+func (prp *BinaryPushRequestProcessor) SetPushServiceConfig(c *push.PushServiceConfig) {
 	// This uses the fact that registration takes place before any requests are sent, so pools aren't created yet.
 
 	if poolSize, err := c.GetInt("pool_size"); err == nil && poolSize > 0 {
 		if poolSize > 50 { // More than you would ever use
 			poolSize = 50
 		}
-		self.poolSize = poolSize
+		prp.poolSize = poolSize
 	}
 }
 
-func (self *BinaryPushRequestProcessor) AddRequest(req *common.PushRequest) {
-	self.reqLock.RLock()
-	defer self.reqLock.RUnlock()
-	if self.finished {
+func (prp *BinaryPushRequestProcessor) AddRequest(req *common.PushRequest) {
+	prp.reqLock.RLock()
+	defer prp.reqLock.RUnlock()
+	if prp.finished {
 		go func() { // Asynchronously do this, sending on ErrChan would be a blocking operation.
 			req.ErrChan <- push.NewError("Uniqush is shutting down")
 			close(req.ErrChan)
 		}()
 		return
 	}
-	self.reqChan <- req
+	prp.reqChan <- req
 }
 
-// pushMux processes requests from self.reqChan to send pushes, forwarding the requests to pushWorkerGroups it creates for them to send responses
-func (self *BinaryPushRequestProcessor) pushMux() {
+// pushMux processes requests from prp.reqChan to send pushes, forwarding the requests to pushWorkerGroups it creates for them to send responses
+func (prp *BinaryPushRequestProcessor) pushMux() {
 	connMap := make(map[string]*pushWorkerGroupInfo, 10)
-	for req := range self.reqChan {
+	for req := range prp.reqChan {
 		if req == nil {
 			break
 		}
@@ -149,10 +150,10 @@ func (self *BinaryPushRequestProcessor) pushMux() {
 				ch:  make(chan *common.PushRequest),
 			}
 			connMap[psp.Name()] = workerGroup
-			self.wgFinalize.Add(1)
+			prp.wgFinalize.Add(1)
 			go func() {
-				defer self.wgFinalize.Done()
-				self.pushWorkerGroup(psp, workerGroup.ch)
+				defer prp.wgFinalize.Done()
+				prp.pushWorkerGroup(psp, workerGroup.ch)
 			}()
 		}
 
@@ -247,7 +248,7 @@ func generatePayload(payload, token []byte, expiry uint32, mid uint32) []byte {
 }
 
 // singlePush sends bytes to APNS, retrying with different connections if it failed to write bytes.
-func (self *BinaryPushRequestProcessor) singlePush(payload, token []byte, expiry uint32, mid uint32, workerPool *Pool, errChan chan<- push.PushError) {
+func (prp *BinaryPushRequestProcessor) singlePush(payload, token []byte, expiry uint32, mid uint32, workerPool *Pool, errChan chan<- push.PushError) {
 	// Generate the v2 frame payload
 	pdu := generatePayload(payload, token, expiry, mid)
 
@@ -269,7 +270,7 @@ func (self *BinaryPushRequestProcessor) singlePush(payload, token []byte, expiry
 			errChan <- push.NewErrorf("unknown error on connection: %v. Will retry within %v", err, sleepTime)
 			break
 		}
-		errChan = self.errChan
+		errChan = prp.errChan
 
 		time.Sleep(sleepTime)
 		// randomly wait more time
@@ -280,7 +281,7 @@ func (self *BinaryPushRequestProcessor) singlePush(payload, token []byte, expiry
 }
 
 // multiPush calls singlePush in parallel for each token type in Devtokens, and waits for each singlePush to complete.
-func (self *BinaryPushRequestProcessor) multiPush(req *common.PushRequest, workerpool *Pool) {
+func (prp *BinaryPushRequestProcessor) multiPush(req *common.PushRequest, workerpool *Pool) {
 	defer close(req.ErrChan)
 
 	n := len(req.Devtokens)
@@ -288,9 +289,9 @@ func (self *BinaryPushRequestProcessor) multiPush(req *common.PushRequest, worke
 	wg.Add(n)
 
 	for i, token := range req.Devtokens {
-		mid := req.GetId(i)
+		mid := req.GetID(i)
 		go func(mid uint32, token []byte) {
-			self.singlePush(req.Payload, token, req.Expiry, mid, workerpool, req.ErrChan)
+			prp.singlePush(req.Payload, token, req.Expiry, mid, workerpool, req.ErrChan)
 			wg.Done()
 		}(mid, token)
 	}
@@ -303,7 +304,7 @@ func clearRequest(req *common.PushRequest, resChan chan<- *common.APNSResult) {
 
 	for i := range req.Devtokens {
 		res := new(common.APNSResult)
-		res.MsgId = req.GetId(i)
+		res.MsgId = req.GetID(i)
 		// TODO: Should this instead indicate that the request timed out?
 		res.Status = uint8(0)
 		res.Err = nil
@@ -313,24 +314,24 @@ func clearRequest(req *common.PushRequest, resChan chan<- *common.APNSResult) {
 }
 
 // overrideFeedbackChecker overrides the function used to listen for unsubscriptions from the APNS feedback servers.
-func (self *BinaryPushRequestProcessor) overrideFeedbackChecker(newFeedbackChecker func(*push.PushServiceProvider, *cache.SimpleCache, chan<- push.PushError)) {
-	self.feedbackChecker = newFeedbackChecker
+func (prp *BinaryPushRequestProcessor) overrideFeedbackChecker(newFeedbackChecker func(*push.PushServiceProvider, *cache.SimpleCache, chan<- push.PushError)) {
+	prp.feedbackChecker = newFeedbackChecker
 }
 
 // overrideAPNSConnManagerMaker overrides the function used to construct a ConnManager implementation.
 // This should be used only for tests.
-func (self *BinaryPushRequestProcessor) overrideAPNSConnManagerMaker(connManagerMaker func(*push.PushServiceProvider, chan<- *common.APNSResult) ConnManager) {
-	self.connManagerMaker = connManagerMaker
+func (prp *BinaryPushRequestProcessor) overrideAPNSConnManagerMaker(connManagerMaker func(*push.PushServiceProvider, chan<- *common.APNSResult) ConnManager) {
+	prp.connManagerMaker = connManagerMaker
 }
 
 // pushWorkerGroup receives pushRequests from reqChan, responding on the channels within that common.PushRequest
-func (self *BinaryPushRequestProcessor) pushWorkerGroup(psp *push.PushServiceProvider, reqChan <-chan *common.PushRequest) {
+func (prp *BinaryPushRequestProcessor) pushWorkerGroup(psp *push.PushServiceProvider, reqChan <-chan *common.PushRequest) {
 	resultChan := make(chan *common.APNSResult, 100)
 	// Create a connection manager to open connections.
 	// This will create a goroutine listening on each connection it creates, to be sent to us on resultChan.
-	manager := newLoggingConnManager(self.connManagerMaker(psp, (chan<- *common.APNSResult)(resultChan)), self.errChan)
+	manager := newLoggingConnManager(prp.connManagerMaker(psp, (chan<- *common.APNSResult)(resultChan)), prp.errChan)
 	// There's a pool for each push endpoint.
-	workerpool := NewPool(manager, self.poolSize, maxWaitTime)
+	workerpool := NewPool(manager, prp.poolSize, maxWaitTime)
 	defer workerpool.Close()
 
 	workerid := fmt.Sprintf("workder-%v-%v", time.Now().Unix(), rand.Int63())
@@ -338,7 +339,7 @@ func (self *BinaryPushRequestProcessor) pushWorkerGroup(psp *push.PushServicePro
 	dpCache := cache.NewSimple(256)
 
 	// In a background thread, connect to corresponding feedback server and listen for unsubscribe updates to send to that user.
-	go self.feedbackChecker(psp, dpCache, self.errChan)
+	go prp.feedbackChecker(psp, dpCache, prp.errChan)
 
 	// XXX use a tree structure would be faster and more stable.
 	reqMap := make(map[uint32]*common.PushRequest, 1024)
@@ -350,7 +351,7 @@ func (self *BinaryPushRequestProcessor) pushWorkerGroup(psp *push.PushServicePro
 			delete(reqMap, res.MsgId)
 			req.ResChan <- res
 		} else if res.Err != nil {
-			self.errChan <- res.Err
+			prp.errChan <- res.Err
 		}
 	}
 	for {
@@ -378,7 +379,7 @@ func (self *BinaryPushRequestProcessor) pushWorkerGroup(psp *push.PushServicePro
 			}
 
 			for i := range req.Devtokens {
-				mid := req.GetId(i)
+				mid := req.GetID(i)
 				reqMap[mid] = req
 			}
 
@@ -387,7 +388,7 @@ func (self *BinaryPushRequestProcessor) pushWorkerGroup(psp *push.PushServicePro
 					dpCache.Set(key, dp)
 				}
 			}
-			go self.multiPush(req, workerpool)
+			go prp.multiPush(req, workerpool)
 			go clearRequest(req, resultChan)
 		case res := <-resultChan:
 			if res == nil {

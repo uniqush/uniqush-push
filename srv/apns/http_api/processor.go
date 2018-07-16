@@ -40,26 +40,26 @@ func NewRequestProcessor() common.PushRequestProcessor {
 	}
 }
 
-func (self *HTTPPushRequestProcessor) AddRequest(request *common.PushRequest) {
-	go self.sendRequests(request)
+func (prp *HTTPPushRequestProcessor) AddRequest(request *common.PushRequest) {
+	go prp.sendRequests(request)
 }
 
-func (self *HTTPPushRequestProcessor) GetMaxPayloadSize() int {
+func (prp *HTTPPushRequestProcessor) GetMaxPayloadSize() int {
 	return 4096
 }
 
-func (self *HTTPPushRequestProcessor) GetClient(psp *push.PushServiceProvider) (HTTPClient, error) {
+func (prp *HTTPPushRequestProcessor) GetClient(psp *push.PushServiceProvider) (HTTPClient, error) {
 	pspName := psp.Name()
-	if client := self.TryGetClient(pspName); client != nil {
+	if client := prp.TryGetClient(pspName); client != nil {
 		return client, nil
 	}
 	tlsClientConfig, err := createTLSConfig(psp)
 	if err != nil {
 		return nil, fmt.Errorf("GetClient failed, couldn't create TLS config: %v", err)
 	}
-	self.clientsLock.Lock()
-	defer self.clientsLock.Unlock()
-	if client, ok := self.clients[pspName]; ok {
+	prp.clientsLock.Lock()
+	defer prp.clientsLock.Unlock()
+	if client, ok := prp.clients[pspName]; ok {
 		// Maybe something else locked before this goroutine did.
 		return client, nil
 	}
@@ -82,8 +82,8 @@ func (self *HTTPPushRequestProcessor) GetClient(psp *push.PushServiceProvider) (
 		return nil, fmt.Errorf("GetClient failed, couldn't configure for http2: %v", err)
 	}
 
-	client := self.clientFactory(transport)
-	self.clients[pspName] = client
+	client := prp.clientFactory(transport)
+	prp.clients[pspName] = client
 	return client, nil
 }
 
@@ -107,18 +107,18 @@ func createTLSConfig(psp *push.PushServiceProvider) (*tls.Config, error) {
 	return conf, nil
 }
 
-func (self *HTTPPushRequestProcessor) TryGetClient(pspName string) HTTPClient {
-	self.clientsLock.RLock()
-	defer self.clientsLock.RUnlock()
-	if client, exists := self.clients[pspName]; exists {
+func (prp *HTTPPushRequestProcessor) TryGetClient(pspName string) HTTPClient {
+	prp.clientsLock.RLock()
+	defer prp.clientsLock.RUnlock()
+	if client, exists := prp.clients[pspName]; exists {
 		return client
 	}
 	return nil
 }
 
-func (self *HTTPPushRequestProcessor) Finalize() {
-	self.clientsLock.Lock()
-	for _, client := range self.clients {
+func (prp *HTTPPushRequestProcessor) Finalize() {
+	prp.clientsLock.Lock()
+	for _, client := range prp.clients {
 		if httpClient, isClient := client.(*http.Client); isClient {
 			switch transport := httpClient.Transport.(type) {
 			case *http.Transport:
@@ -129,11 +129,11 @@ func (self *HTTPPushRequestProcessor) Finalize() {
 	}
 }
 
-func (self *HTTPPushRequestProcessor) SetErrorReportChan(errChan chan<- push.PushError) {}
+func (prp *HTTPPushRequestProcessor) SetErrorReportChan(errChan chan<- push.PushError) {}
 
-func (self *HTTPPushRequestProcessor) SetPushServiceConfig(c *push.PushServiceConfig) {}
+func (prp *HTTPPushRequestProcessor) SetPushServiceConfig(c *push.PushServiceConfig) {}
 
-func (self *HTTPPushRequestProcessor) sendRequests(request *common.PushRequest) {
+func (prp *HTTPPushRequestProcessor) sendRequests(request *common.PushRequest) {
 	defer close(request.ErrChan)
 
 	bundleid, ok := request.PSP.VolatileData["bundleid"]
@@ -164,7 +164,7 @@ func (self *HTTPPushRequestProcessor) sendRequests(request *common.PushRequest) 
 	} else {
 		http2UrlHost = "https://api.push.apple.com"
 	}
-	client, err := self.GetClient(psp)
+	client, err := prp.GetClient(psp)
 	if err != nil {
 		for range request.Devtokens {
 			request.ErrChan <- push.NewErrorf("Could not create a client: %v", err)
@@ -173,7 +173,7 @@ func (self *HTTPPushRequestProcessor) sendRequests(request *common.PushRequest) 
 	}
 
 	for i, token := range request.Devtokens {
-		msgID := request.GetId(i)
+		msgID := request.GetID(i)
 
 		url := fmt.Sprintf("%s/3/device/%s", http2UrlHost, hex.EncodeToString(token))
 		httpRequest, err := http.NewRequest("POST", url, bytes.NewReader(request.Payload))
@@ -183,13 +183,13 @@ func (self *HTTPPushRequestProcessor) sendRequests(request *common.PushRequest) 
 		}
 		httpRequest.Header = header
 
-		go self.sendRequest(wg, client, httpRequest, msgID, request.ErrChan, request.ResChan)
+		go prp.sendRequest(wg, client, httpRequest, msgID, request.ErrChan, request.ResChan)
 	}
 
 	wg.Wait()
 }
 
-func (self *HTTPPushRequestProcessor) sendRequest(wg *sync.WaitGroup, client HTTPClient, request *http.Request, messageID uint32, errChan chan<- push.PushError, resChan chan<- *common.APNSResult) {
+func (prp *HTTPPushRequestProcessor) sendRequest(wg *sync.WaitGroup, client HTTPClient, request *http.Request, messageID uint32, errChan chan<- push.PushError, resChan chan<- *common.APNSResult) {
 	defer wg.Done()
 
 	response, err := client.Do(request)

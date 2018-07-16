@@ -26,11 +26,11 @@ type APNSNotificaton struct {
 	payload    []byte
 }
 
-func (self *APNSNotificaton) String() string {
-	token := hex.EncodeToString(self.devToken)
+func (notification *APNSNotificaton) String() string {
+	token := hex.EncodeToString(notification.devToken)
 	token = strings.ToLower(token)
 	return fmt.Sprintf("command=%v; id=%v; expiry=%v; token=%v; payload=%v",
-		self.command, self.id, self.expiry, token, string(self.payload))
+		notification.command, notification.id, notification.expiry, token, string(notification.payload))
 }
 
 type APNSResponse struct {
@@ -50,17 +50,17 @@ func newMockDirectionalConn() *MockDirectionalConn {
 	}
 }
 
-func (self *MockDirectionalConn) Write(b []byte) (n int, err error) {
+func (directionalConn *MockDirectionalConn) Write(b []byte) (n int, err error) {
 	for _, x := range b {
-		self.channel <- x
+		directionalConn.channel <- x
 	}
 	return len(b), nil
 }
 
-func (self *MockDirectionalConn) Read(b []byte) (int, error) {
+func (directionalConn *MockDirectionalConn) Read(b []byte) (int, error) {
 	n := len(b)
 	for x := 0; x < n; x++ {
-		result, ok := <-self.channel
+		result, ok := <-directionalConn.channel
 		if !ok {
 			if x != 0 {
 				panic("Mock read unexpectedly cut off, shouldn't happen\n")
@@ -72,8 +72,8 @@ func (self *MockDirectionalConn) Read(b []byte) (int, error) {
 	return n, nil
 }
 
-func (self *MockDirectionalConn) CleanUp() {
-	close(self.channel)
+func (directionalConn *MockDirectionalConn) CleanUp() {
+	close(directionalConn.channel)
 }
 
 type MockNetConn struct {
@@ -93,56 +93,56 @@ func NewMockNetConn() *MockNetConn {
 	}
 }
 
-func (self *MockNetConn) CleanUp() {
-	self.readConn.CleanUp()
-	self.rwmutex.Lock()
-	defer self.rwmutex.Unlock()
+func (netConn *MockNetConn) CleanUp() {
+	netConn.readConn.CleanUp()
+	netConn.rwmutex.Lock()
+	defer netConn.rwmutex.Unlock()
 	// TODO: attempt read?
-	if !self.isClientClosed {
+	if !netConn.isClientClosed {
 		panic("Client code didn't clean up the channel")
 	}
 }
 
-func (self *MockNetConn) Read(b []byte) (n int, err error) {
-	self.rwmutex.RLock()
-	defer self.rwmutex.RUnlock()
-	return self.readConn.Read(b)
+func (netConn *MockNetConn) Read(b []byte) (n int, err error) {
+	netConn.rwmutex.RLock()
+	defer netConn.rwmutex.RUnlock()
+	return netConn.readConn.Read(b)
 }
 
-func (self *MockNetConn) Write(b []byte) (n int, err error) {
-	self.rwmutex.RLock()
-	defer self.rwmutex.RUnlock()
-	return self.writeConn.Write(b)
+func (netConn *MockNetConn) Write(b []byte) (n int, err error) {
+	netConn.rwmutex.RLock()
+	defer netConn.rwmutex.RUnlock()
+	return netConn.writeConn.Write(b)
 }
 
-func (self *MockNetConn) Close() error {
+func (netConn *MockNetConn) Close() error {
 	// Allow isClientClosed to be called multiple times - from resultCollector and from worker pool
 	// (e.g. if both of them notice connection issues)
-	if !self.isClientClosed {
-		self.writeConn.CleanUp()
-		self.isClientClosed = true
+	if !netConn.isClientClosed {
+		netConn.writeConn.CleanUp()
+		netConn.isClientClosed = true
 	}
 	return nil
 }
 
-func (self *MockNetConn) LocalAddr() net.Addr {
+func (netConn *MockNetConn) LocalAddr() net.Addr {
 	return nil
 }
 
-func (self *MockNetConn) RemoteAddr() net.Addr {
+func (netConn *MockNetConn) RemoteAddr() net.Addr {
 	return nil
 }
 
-func (self *MockNetConn) SetDeadline(t time.Time) error {
-	self.SetReadDeadline(t)
-	return self.SetWriteDeadline(t)
+func (netConn *MockNetConn) SetDeadline(t time.Time) error {
+	netConn.SetReadDeadline(t)
+	return netConn.SetWriteDeadline(t)
 }
 
-func (self *MockNetConn) SetReadDeadline(t time.Time) error {
+func (netConn *MockNetConn) SetReadDeadline(t time.Time) error {
 	return nil
 }
 
-func (self *MockNetConn) SetWriteDeadline(t time.Time) error {
+func (netConn *MockNetConn) SetWriteDeadline(t time.Time) error {
 	return nil
 }
 
@@ -165,10 +165,10 @@ func bytesToUint8(data []byte) uint8 {
 	return data[0]
 }
 
-func (self *MockNetConn) ReadNotification() (notif *APNSNotificaton, err error) {
+func (netConn *MockNetConn) ReadNotification() (notif *APNSNotificaton, err error) {
 	notif = new(APNSNotificaton)
 	// Read the bytes that the *tested* code sent
-	var conn io.Reader = self.writeConn
+	var conn io.Reader = netConn.writeConn
 	err = binary.Read(conn, binary.BigEndian, &(notif.command))
 	if err != nil {
 		notif = nil
@@ -203,13 +203,13 @@ func (self *MockNetConn) ReadNotification() (notif *APNSNotificaton, err error) 
 			}
 		}
 
-		var itemId uint8
-		err := binary.Read(conn, binary.BigEndian, &itemId)
+		var itemID uint8
+		err := binary.Read(conn, binary.BigEndian, &itemID)
 		if err != nil {
 			panic(err)
 		}
-		if itemId != expectedId {
-			panic(fmt.Errorf("Expected item id %d, but uniqush sent item id %d", expectedId, itemId))
+		if itemID != expectedId {
+			panic(fmt.Errorf("Expected item id %d, but uniqush sent item id %d", expectedId, itemID))
 		}
 		decreaseRemainingLen(1)
 		var itemLength uint16
@@ -260,11 +260,11 @@ func (self *MockNetConn) ReadNotification() (notif *APNSNotificaton, err error) 
 	return
 }
 
-func (self *MockNetConn) Reply(status *APNSResponse) error {
+func (netConn *MockNetConn) Reply(status *APNSResponse) error {
 	var command uint8
 	command = 8
 	// Write to the mock connection half that it's reading *from*
-	var conn io.Writer = self.readConn
+	var conn io.Writer = netConn.readConn
 	err := binary.Write(conn, binary.BigEndian, command)
 	if err != nil {
 		return err
@@ -292,6 +292,6 @@ func SimulateStableAPNSServer(conn *MockNetConn, statusCode uint8) (int, error) 
 			status: statusCode,
 		}
 		conn.Reply(status)
-		count += 1
+		count++
 	}
 }
