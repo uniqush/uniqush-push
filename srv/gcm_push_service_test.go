@@ -13,9 +13,9 @@ import (
 )
 
 const (
-	GCM_MOCK_API_KEY    = "mockapikey"
-	GCM_MOCK_PROJECT_ID = "mockprojectid"
-	GCM_MOCK_SERVICE    = "mockservice"
+	GCMMockAPIKey    = "mockapikey"
+	GCMMockProjectID = "mockprojectid"
+	GCMMockService   = "mockservice"
 )
 
 func commonGCMMocks(responseCode int, responseBody []byte, headers map[string]string, requestError error) (*push.PushServiceProvider, *mockCMHTTPClient, *gcmPushService, chan push.PushError) {
@@ -37,10 +37,10 @@ func commonGCMMocks(responseCode int, responseBody []byte, headers map[string]st
 
 	psp, err := psm.BuildPushServiceProviderFromMap(map[string]string{
 		"pushservicetype": service.Name(),
-		"service":         GCM_MOCK_SERVICE,
+		"service":         GCMMockService,
 		"subscriber":      "mocksubscriber",
-		"apikey":          GCM_MOCK_API_KEY,
-		"projectid":       GCM_MOCK_PROJECT_ID,
+		"apikey":          GCMMockAPIKey,
+		"projectid":       GCMMockProjectID,
 	})
 
 	if psp == nil {
@@ -52,13 +52,13 @@ func commonGCMMocks(responseCode int, responseBody []byte, headers map[string]st
 	return psp, client, service, errChan
 }
 
-func asyncCreateDPQueue(wg *sync.WaitGroup, dpQueue chan<- *push.DeliveryPoint, regId, subscriber string) {
+func asyncCreateDPQueue(wg *sync.WaitGroup, dpQueue chan<- *push.DeliveryPoint, regID, subscriber string) {
 	psm := push.GetPushServiceManager()
 	mockDeliveryPoint, err := psm.BuildDeliveryPointFromMap(map[string]string{
-		"regid":           regId,
+		"regid":           regID,
 		"subscriber":      subscriber,
 		"pushservicetype": "gcm",
-		"service":         GCM_MOCK_SERVICE,
+		"service":         GCMMockService,
 	})
 	if err != nil {
 		panic(err)
@@ -75,7 +75,7 @@ func asyncPush(wg *sync.WaitGroup, service *gcmPushService, psp *push.PushServic
 
 // TestPushSingle tests the ability to send a single push without error, and shut down cleanly.
 func TestPushSingle(t *testing.T) {
-	expectedRegId := "mockregid"
+	expectedRegID := "mockregid"
 	notif := push.NewEmptyNotification()
 	expectedPayload := `{"message":{"aPushType":{"foo":"bar","other":"value"},"gcm":{},"others":{"type":"aPushType"}}}`
 	notif.Data = map[string]string{
@@ -87,7 +87,7 @@ func TestPushSingle(t *testing.T) {
 	resQueue := make(chan *push.PushResult)
 	wg := new(sync.WaitGroup)
 	wg.Add(2)
-	go asyncCreateDPQueue(wg, dpQueue, expectedRegId, "unusedsubscriber1")
+	go asyncCreateDPQueue(wg, dpQueue, expectedRegID, "unusedsubscriber1")
 	go asyncPush(wg, service, psp, dpQueue, resQueue, notif)
 	resCount := 0
 	for res := range resQueue {
@@ -100,7 +100,7 @@ func TestPushSingle(t *testing.T) {
 		if notif != res.Content {
 			t.Errorf("Expected %#v, got %#v\n", notif, res.Content)
 		}
-		resCount += 1
+		resCount++
 	}
 	if resCount != 1 {
 		t.Errorf("Unexpected number of results: want 1, got %d", resCount)
@@ -119,12 +119,12 @@ func TestPushSingle(t *testing.T) {
 		t.Error("Expected the mock response body to be closed")
 	}
 
-	assertExpectedGCMRequest(t, mockResponse.request, expectedRegId, expectedPayload)
+	assertExpectedGCMRequest(t, mockResponse.request, expectedRegID, expectedPayload)
 }
 
 // TestPushSingleError tests the ability to send a single push with an error error, and shut down cleanly.
 func TestPushSingleError(t *testing.T) {
-	expectedRegId := "mockregid"
+	expectedRegID := "mockregid"
 	notif := push.NewEmptyNotification()
 	expectedPayload := `{"message":{"aPushType":{"foo":"bar","other":"value"},"gcm":{},"others":{"type":"aPushType"}}}`
 	notif.Data = map[string]string{
@@ -136,7 +136,7 @@ func TestPushSingleError(t *testing.T) {
 	resQueue := make(chan *push.PushResult)
 	wg := new(sync.WaitGroup)
 	wg.Add(2)
-	go asyncCreateDPQueue(wg, dpQueue, expectedRegId, "unusedsubscriber1")
+	go asyncCreateDPQueue(wg, dpQueue, expectedRegID, "unusedsubscriber1")
 	go asyncPush(wg, service, psp, dpQueue, resQueue, notif)
 	resCount := 0
 	for res := range resQueue {
@@ -153,7 +153,7 @@ func TestPushSingleError(t *testing.T) {
 		if res.Content != notif {
 			t.Errorf("Unexpected content %v in BadPushServiceProvider", res.Content)
 		}
-		resCount += 1
+		resCount++
 	}
 	if resCount != 1 {
 		t.Errorf("Unexpected number of results: want 1, got %d", resCount)
@@ -172,7 +172,7 @@ func TestPushSingleError(t *testing.T) {
 		t.Error("Expected the mock response body to be closed")
 	}
 
-	assertExpectedGCMRequest(t, mockResponse.request, expectedRegId, expectedPayload)
+	assertExpectedGCMRequest(t, mockResponse.request, expectedRegID, expectedPayload)
 }
 
 // Helper function, because golang json serialization has an unpredictable order.
@@ -191,7 +191,7 @@ func expectJSONIsEquivalent(t *testing.T, expected []byte, actual []byte) {
 	}
 }
 
-func assertExpectedGCMRequest(t *testing.T, request *http.Request, expectedRegId, expectedPayload string) {
+func assertExpectedGCMRequest(t *testing.T, request *http.Request, expectedRegID, expectedPayload string) {
 	actualURL := request.URL.String()
 	if actualURL != gcmServiceURL {
 		t.Errorf("Expected URL %q, got %q", gcmServiceURL, actualURL)
@@ -203,7 +203,7 @@ func assertExpectedGCMRequest(t *testing.T, request *http.Request, expectedRegId
 	}
 
 	actualAuth := request.Header.Get("Authorization")
-	expectedAuth := "key=" + GCM_MOCK_API_KEY
+	expectedAuth := "key=" + GCMMockAPIKey
 	if actualAuth != expectedAuth {
 		t.Errorf("Expected auth %q, got %q", expectedAuth, actualAuth)
 	}
@@ -212,7 +212,7 @@ func assertExpectedGCMRequest(t *testing.T, request *http.Request, expectedRegId
 	if err != nil {
 		t.Fatalf("Unexpected error reading body: %v", err)
 	}
-	expectedBody := fmt.Sprintf(`{"registration_ids":[%q],"data":%s,"time_to_live":3600}`, expectedRegId, expectedPayload)
+	expectedBody := fmt.Sprintf(`{"registration_ids":[%q],"data":%s,"time_to_live":3600}`, expectedRegID, expectedPayload)
 	expectJSONIsEquivalent(t, []byte(expectedBody), actualBodyBytes)
 }
 

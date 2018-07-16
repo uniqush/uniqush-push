@@ -41,12 +41,12 @@ func validateRawAPNSPayload(payload string) ([]byte, push.PushError) {
 	if !ok {
 		return nil, push.NewBadNotificationWithDetails("Payload missing aps")
 	}
-	aps_dict, ok := aps.(map[string]interface{})
+	apsDict, ok := aps.(map[string]interface{})
 	if !ok {
 		return nil, push.NewBadNotificationWithDetails("aps is not a dictionary")
 	}
-	if _, ok := aps_dict["alert"]; !ok {
-		if content_available, ok := aps_dict["content-available"]; !ok || content_available != "1" {
+	if _, ok := apsDict["alert"]; !ok {
+		if contentAvailable, ok := apsDict["content-available"]; !ok || contentAvailable != "1" {
 			return nil, push.NewBadNotificationWithDetails("Missing alert and this is not a silent notification(content-available is not 1)")
 		}
 	}

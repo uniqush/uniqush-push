@@ -14,10 +14,12 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  *
- * This contains implementation details common to GCM and FCM.
- * Parts of this will be refactored as new features are added for FCM/GCM.
  */
+
+// Package cloud_messaging contains implementation details common to GCM and FCM.
 package cloud_messaging
+
+// TODO: Refactor this as new features are added for FCM/GCM.
 
 import (
 	"bytes"
@@ -43,6 +45,8 @@ type HTTPClient interface {
 
 var _ HTTPClient = &http.Client{}
 
+// PushServiceBase contains the data structures common to Uniqush's GCM and FCM push service implementations.
+// This struct is included in the GCM and FCM push service structs.
 type PushServiceBase struct {
 	// There is only one Transport and one Client for connecting to gcm or fcm, shared by the set of PSPs with pushservicetype=fcm (whether or not this is using a sandbox)
 	// (Expose functionality of this client through public methods)
@@ -59,20 +63,21 @@ type PushServiceBase struct {
 	pushServiceName string
 }
 
-// Close all open connections.
-func (p *PushServiceBase) Finalize() {
-	if client, isClient := p.client.(*http.Client); isClient {
+// Finalize will close all open HTTPS connections to GCM/FCM.
+func (psb *PushServiceBase) Finalize() {
+	if client, isClient := psb.client.(*http.Client); isClient {
 		if transport, ok := client.Transport.(*http.Transport); ok {
 			transport.CloseIdleConnections()
 		}
 	}
 }
 
-func (g *PushServiceBase) OverrideClient(client HTTPClient) {
-	g.client = client
+// OverrideClient will override the client interface. It is used only for unit testing.
+func (psb *PushServiceBase) OverrideClient(client HTTPClient) {
+	psb.client = client
 }
 
-// Builds a common base.
+// MakePushServiceBase instantiates the fields of the FCM/GCM base class PushServiceBase.
 // Note: Make sure that this can be copied by value (it's a collection of pointers right now).
 // If it can no longer be copied by value, then change this into an initializer function.
 func MakePushServiceBase(initialism string, rawPayloadKey string, rawNotificationKey string, serviceURL string, pushServiceName string) PushServiceBase {
@@ -99,9 +104,8 @@ func MakePushServiceBase(initialism string, rawPayloadKey string, rawNotificatio
 	}
 }
 
-// Builds an FCM/GCM delivery point from key-value pairs provided by an API call to uniqush-push.
-func (p *PushServiceBase) BuildDeliveryPointFromMap(kv map[string]string,
-	dp *push.DeliveryPoint) error {
+// BuildDeliveryPointFromMap builds an FCM/GCM delivery point from key-value pairs provided by an API call to uniqush-push.
+func (psb *PushServiceBase) BuildDeliveryPointFromMap(kv map[string]string, dp *push.DeliveryPoint) error {
 	err := dp.AddCommonData(kv)
 	if err != nil {
 		return err
@@ -118,6 +122,7 @@ func (p *PushServiceBase) BuildDeliveryPointFromMap(kv map[string]string,
 	return nil
 }
 
+// CMCommonData contains common fields of HTTP API requests to GCM or FCM
 type CMCommonData struct {
 	RegIDs         []string `json:"registration_ids"`
 	CollapseKey    string   `json:"collapse_key,omitempty"`
@@ -125,14 +130,14 @@ type CMCommonData struct {
 	TimeToLive     uint     `json:"time_to_live,omitempty"`
 }
 
-// Data used by GCM or FCM. Currently the same.
+// CMData contains fields of HTTP API push requests to GCM or FCM.
 type CMData struct {
 	CMCommonData
 	Data         map[string]interface{} `json:"data,omitempty"`         // For compatibility with other GCM platforms(e.g. iOS), should always be a map[string]string
 	Notification map[string]interface{} `json:"notification,omitempty"` // For compatibility with other GCM platforms(e.g. iOS), should always be a map[string]string
 }
 
-// Data with empty
+// CMEmptyData contains
 type CMEmptyData struct {
 	CMCommonData
 	Data map[string]interface{} `json:"data"`
@@ -169,20 +174,26 @@ func validateRawCMData(payload string) (map[string]interface{}, push.PushError) 
 	return data, nil
 }
 
-// GCM/FCM result. Currently the same for both GCM and FCM.
+// CMResult contains the JSON unserialized data of a response from GCM or FCM. Currently, this is the same for both GCM and FCM.
 type CMResult struct {
-	MulticastID  uint64              `json:"multicast_id"`
-	Success      uint                `json:"success"`
-	Failure      uint                `json:"failure"`
-	CanonicalIDs uint                `json:"canonical_ids"`
-	Results      []map[string]string `json:"results"`
+	// MulticastID is unused
+	MulticastID uint64 `json:"multicast_id"`
+	// Success contains the number of pushes that succeeded
+	Success uint `json:"success"`
+	// Failure contains the number of pushes that failed.
+	Failure uint `json:"failure"`
+	// CanonicalIDs is unused
+	CanonicalIDs uint `json:"canonical_ids"`
+	// Results is the list of responses for each successful or unsuccessful push attempt.
+	Results []map[string]string `json:"results"`
 }
 
-func (self *PushServiceBase) Name() string {
-	return self.pushServiceName
+func (psb *PushServiceBase) Name() string {
+	return psb.pushServiceName
 }
 
-func (self *PushServiceBase) ToCMPayload(notif *push.Notification, regIds []string) ([]byte, push.PushError) {
+// ToCMPayload will serialize notif as a push service payload
+func (psb *PushServiceBase) ToCMPayload(notif *push.Notification, regIds []string) ([]byte, push.PushError) {
 	postData := notif.Data
 	payload := new(CMData)
 	payload.RegIDs = regIds
@@ -208,22 +219,21 @@ func (self *PushServiceBase) ToCMPayload(notif *push.Notification, regIds []stri
 	// This will make GCM handle displaying the notification instead of the client.
 	// Note that "data" payloads (Uniqush's default for GCM/FCM, for historic reasons) can be sent alongside "notification" payloads.
 	// - In that case, "data" will be sent to the app, and "notification" will be rendered directly for the user to see.
-	if rawNotification, ok := postData[self.rawNotificationKey]; ok {
+	if rawNotification, ok := postData[psb.rawNotificationKey]; ok {
 		notification, err := validateRawCMData(rawNotification)
 		if err != nil {
 			return nil, err
 		}
 		payload.Notification = notification
 	}
-	if rawData, ok := postData[self.rawPayloadKey]; ok {
+	if rawData, ok := postData[psb.rawPayloadKey]; ok {
 		data, err := validateRawCMData(rawData)
 		if err != nil {
 			return nil, err
 		}
 		payload.Data = data
 	} else {
-		nr_elem := len(postData)
-		payload.Data = make(map[string]interface{}, nr_elem)
+		payload.Data = make(map[string]interface{}, len(postData))
 
 		for k, v := range postData {
 			if strings.HasPrefix(k, "uniqush.") { // The "uniqush." keys are reserved for uniqush use.
@@ -266,26 +276,26 @@ func sendErrToEachDP(psp *push.PushServiceProvider, dpList []*push.DeliveryPoint
 	}
 }
 
-func (self *PushServiceBase) multicast(psp *push.PushServiceProvider, dpList []*push.DeliveryPoint, resQueue chan<- *push.PushResult, notif *push.Notification) {
+func (psb *PushServiceBase) multicast(psp *push.PushServiceProvider, dpList []*push.DeliveryPoint, resQueue chan<- *push.PushResult, notif *push.Notification) {
 	if len(dpList) == 0 {
 		return
 	}
 	regIds := extractRegIds(dpList)
 
-	jpayload, e0 := self.ToCMPayload(notif, regIds)
+	jpayload, e0 := psb.ToCMPayload(notif, regIds)
 
 	if e0 != nil {
 		sendErrToEachDP(psp, dpList, resQueue, notif, e0)
 		return
 	}
 
-	req, e1 := http.NewRequest("POST", self.serviceURL, bytes.NewReader(jpayload))
+	req, e1 := http.NewRequest("POST", psb.serviceURL, bytes.NewReader(jpayload))
 	if req != nil {
 		defer req.Body.Close()
 	}
 	if e1 != nil {
-		http_err := push.NewErrorf("Error constructing HTTP request: %v", e1)
-		sendErrToEachDP(psp, dpList, resQueue, notif, http_err)
+		httpErr := push.NewErrorf("Error constructing HTTP request: %v", e1)
+		sendErrToEachDP(psp, dpList, resQueue, notif, httpErr)
 		return
 	}
 
@@ -295,7 +305,7 @@ func (self *PushServiceBase) multicast(psp *push.PushServiceProvider, dpList []*
 	req.Header.Set("Content-Type", "application/json")
 
 	// Perform a request, using a connection from the connection pool of a shared http.Client instance.
-	r, e2 := self.client.Do(req)
+	r, e2 := psb.client.Do(req)
 	if r != nil {
 		defer r.Body.Close()
 	}
@@ -319,16 +329,16 @@ func (self *PushServiceBase) multicast(psp *push.PushServiceProvider, dpList []*
 				res.Err = push.NewRetryErrorWithReason(psp, dp, notif, after, err)
 
 			} else {
-				res.Err = push.NewErrorf("Unrecoverable HTTP error sending to %s: %v", self.pushServiceName, e2)
+				res.Err = push.NewErrorf("Unrecoverable HTTP error sending to %s: %v", psb.pushServiceName, e2)
 			}
 			resQueue <- res
 		}
 		return
 	}
 	// TODO: How does this work if there are multiple delivery points in one request to GCM/FCM?
-	new_auth_token := r.Header.Get("Update-Client-Auth")
-	if new_auth_token != "" && apikey != new_auth_token {
-		psp.VolatileData["apikey"] = new_auth_token
+	newAuthToken := r.Header.Get("Update-Client-Auth")
+	if newAuthToken != "" && apikey != newAuthToken {
+		psp.VolatileData["apikey"] = newAuthToken
 		res := new(push.PushResult)
 		res.Provider = psp
 		res.Content = notif
@@ -373,7 +383,7 @@ func (self *PushServiceBase) multicast(psp *push.PushServiceProvider, dpList []*
 		res := new(push.PushResult)
 		res.Provider = psp
 		res.Content = notif
-		res.Err = push.NewErrorf("Failed to read %s response: %v", self.initialism, err)
+		res.Err = push.NewErrorf("Failed to read %s response: %v", psb.initialism, err)
 		resQueue <- res
 		return
 	}
@@ -385,15 +395,15 @@ func (self *PushServiceBase) multicast(psp *push.PushServiceProvider, dpList []*
 		res := new(push.PushResult)
 		res.Provider = psp
 		res.Content = notif
-		res.Err = push.NewErrorf("Failed to decode %s response: %v", self.initialism, err)
+		res.Err = push.NewErrorf("Failed to decode %s response: %v", psb.initialism, err)
 		resQueue <- res
 		return
 	}
 
-	self.handleCMMulticastResults(psp, dpList, resQueue, notif, result.Results)
+	psb.handleCMMulticastResults(psp, dpList, resQueue, notif, result.Results)
 }
 
-func (self *PushServiceBase) handleCMMulticastResults(psp *push.PushServiceProvider, dpList []*push.DeliveryPoint, resQueue chan<- *push.PushResult, notif *push.Notification, results []map[string]string) {
+func (psb *PushServiceBase) handleCMMulticastResults(psp *push.PushServiceProvider, dpList []*push.DeliveryPoint, resQueue chan<- *push.PushResult, notif *push.Notification, results []map[string]string) {
 	for i, r := range results {
 		if i >= len(dpList) {
 			break
@@ -451,12 +461,13 @@ func (self *PushServiceBase) handleCMMulticastResults(psp *push.PushServiceProvi
 	}
 }
 
-func (self *PushServiceBase) Push(psp *push.PushServiceProvider, dpQueue <-chan *push.DeliveryPoint, resQueue chan<- *push.PushResult, notif *push.Notification) {
+// Push sends a push notification to 1 or more delivery points in dpQueue asynchronously, and sends results on resQueue.
+func (psb *PushServiceBase) Push(psp *push.PushServiceProvider, dpQueue <-chan *push.DeliveryPoint, resQueue chan<- *push.PushResult, notif *push.Notification) {
 
 	maxNrDst := 1000
 	dpList := make([]*push.DeliveryPoint, 0, maxNrDst)
 	for dp := range dpQueue {
-		if psp.PushServiceName() != dp.PushServiceName() || psp.PushServiceName() != self.pushServiceName {
+		if psp.PushServiceName() != dp.PushServiceName() || psp.PushServiceName() != psb.pushServiceName {
 			res := new(push.PushResult)
 			res.Provider = psp
 			res.Destination = dp
@@ -481,25 +492,25 @@ func (self *PushServiceBase) Push(psp *push.PushServiceProvider, dpQueue <-chan 
 		}
 
 		if len(dpList) >= maxNrDst {
-			self.multicast(psp, dpList, resQueue, notif)
+			psb.multicast(psp, dpList, resQueue, notif)
 			dpList = dpList[:0]
 		}
 	}
 	if len(dpList) > 0 {
-		self.multicast(psp, dpList, resQueue, notif)
+		psb.multicast(psp, dpList, resQueue, notif)
 	}
 
 	close(resQueue)
 }
 
-func (self *PushServiceBase) Preview(notif *push.Notification) ([]byte, push.PushError) {
-	return self.ToCMPayload(notif, []string{"placeholderRegId"})
+func (psb *PushServiceBase) Preview(notif *push.Notification) ([]byte, push.PushError) {
+	return psb.ToCMPayload(notif, []string{"placeholderRegId"})
 }
 
-func (self *PushServiceBase) SetErrorReportChan(errChan chan<- push.PushError) {
+func (psb *PushServiceBase) SetErrorReportChan(errChan chan<- push.PushError) {
 	return
 }
 
-func (self *PushServiceBase) SetPushServiceConfig(c *push.PushServiceConfig) {
+func (psb *PushServiceBase) SetPushServiceConfig(c *push.PushServiceConfig) {
 	return
 }

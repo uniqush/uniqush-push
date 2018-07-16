@@ -49,64 +49,65 @@ const (
 	maxNrConn int = 13
 )
 
+// pushService is the APNS push service. It implements the two network protocols for sending requests to APNS and getting the corresponding response.
 type pushService struct {
-	// Implements the two network protocols for sending requests to APNS and getting the corresponding response.
 	binaryRequestProcessor common.PushRequestProcessor
 	httpRequestProcessor   common.PushRequestProcessor
 	errChan                chan<- push.PushError
-	nextMessageId          uint32
+	nextMessageID          uint32
 }
 
 var _ push.PushServiceType = &pushService{}
 
+// NewPushService creates a new APNS push service.
 func NewPushService() *pushService {
 	return &pushService{
 		binaryRequestProcessor: binary_api.NewRequestProcessor(maxNrConn),
 		httpRequestProcessor:   http_api.NewRequestProcessor(),
-		nextMessageId:          0,
+		nextMessageID:          0,
 	}
 }
 
 // getMessageIds is needed for the binary API of APNS.
-func (self *pushService) getMessageIds(n int) uint32 {
-	return atomic.AddUint32(&self.nextMessageId, uint32(n))
+func (ps *pushService) getMessageIds(n int) uint32 {
+	return atomic.AddUint32(&ps.nextMessageID, uint32(n))
 }
 
-func (p *pushService) Name() string {
+func (ps *pushService) Name() string {
 	return "apns"
 }
 
-func (p *pushService) Finalize() {
-	p.binaryRequestProcessor.Finalize()
-	p.httpRequestProcessor.Finalize()
+func (ps *pushService) Finalize() {
+	ps.binaryRequestProcessor.Finalize()
+	ps.httpRequestProcessor.Finalize()
 }
 
-func (self *pushService) SetErrorReportChan(errChan chan<- push.PushError) {
-	self.errChan = errChan
-	self.binaryRequestProcessor.SetErrorReportChan(errChan)
-	self.httpRequestProcessor.SetErrorReportChan(errChan)
+func (ps *pushService) SetErrorReportChan(errChan chan<- push.PushError) {
+	ps.errChan = errChan
+	ps.binaryRequestProcessor.SetErrorReportChan(errChan)
+	ps.httpRequestProcessor.SetErrorReportChan(errChan)
 	return
 }
 
 // SetPushServiceConfig sets the config for this and the requestProcessor when the service is registered.
-func (self *pushService) SetPushServiceConfig(c *push.PushServiceConfig) {
+func (ps *pushService) SetPushServiceConfig(c *push.PushServiceConfig) {
 	// This uses the fact that registration takes place before any requests are sent, so pools aren't created yet.
 
-	self.binaryRequestProcessor.SetPushServiceConfig(c)
-	self.httpRequestProcessor.SetPushServiceConfig(c)
+	ps.binaryRequestProcessor.SetPushServiceConfig(c)
+	ps.httpRequestProcessor.SetPushServiceConfig(c)
 }
 
-func (p *pushService) BuildPushServiceProviderFromMap(kv map[string]string, psp *push.PushServiceProvider) error {
+func (ps *pushService) BuildPushServiceProviderFromMap(kv map[string]string, psp *push.PushServiceProvider) error {
 	if service, ok := kv["service"]; ok {
 		psp.FixedData["service"] = service
 	} else {
 		return errors.New("NoService")
 	}
 
-	return p.buildBinaryPushServiceProviderFromMap(kv, psp)
+	return ps.buildBinaryPushServiceProviderFromMap(kv, psp)
 }
 
-func (p *pushService) buildBinaryPushServiceProviderFromMap(kv map[string]string, psp *push.PushServiceProvider) error {
+func (ps *pushService) buildBinaryPushServiceProviderFromMap(kv map[string]string, psp *push.PushServiceProvider) error {
 	if cert, ok := kv["cert"]; ok && len(cert) > 0 {
 		psp.FixedData["cert"] = cert
 	} else {
@@ -151,7 +152,7 @@ func (p *pushService) buildBinaryPushServiceProviderFromMap(kv map[string]string
 	return nil
 }
 
-func (p *pushService) BuildDeliveryPointFromMap(kv map[string]string, dp *push.DeliveryPoint) error {
+func (ps *pushService) BuildDeliveryPointFromMap(kv map[string]string, dp *push.DeliveryPoint) error {
 	dp.AddCommonData(kv)
 	if devtoken, ok := kv["devtoken"]; ok && len(devtoken) > 0 {
 		_, err := hex.DecodeString(devtoken)
@@ -197,7 +198,7 @@ func apnsresToError(apnsres *common.APNSResult, psp *push.PushServiceProvider, d
 
 // waitResults collects all the results from APNS for a push that has already been sent (and uniqush has already replied to clients)
 // and sends any UnsubscribeUpdates to the pushbackend so pushbackend can update the DB.
-func (self *pushService) waitResults(psp *push.PushServiceProvider, dpList []*push.DeliveryPoint, lastId uint32, resChan <-chan *common.APNSResult) {
+func (ps *pushService) waitResults(psp *push.PushServiceProvider, dpList []*push.DeliveryPoint, lastID uint32, resChan <-chan *common.APNSResult) {
 	k := 0
 	// Wait for exactly len(dpList) results (one for each deliveryPoint, because of multiPush)
 	n := len(dpList)
@@ -205,7 +206,7 @@ func (self *pushService) waitResults(psp *push.PushServiceProvider, dpList []*pu
 		return
 	}
 	for res := range resChan {
-		idx := res.MsgId - lastId + uint32(n)
+		idx := res.MsgId - lastID + uint32(n)
 		if idx >= uint32(len(dpList)) || idx < 0 {
 			continue
 		}
@@ -213,7 +214,7 @@ func (self *pushService) waitResults(psp *push.PushServiceProvider, dpList []*pu
 		err := apnsresToError(res, psp, dp)
 		if err != nil {
 			// Send all errors over the channel so they can be logged.
-			self.errChan <- err
+			ps.errChan <- err
 		}
 		k++
 		if k >= n {
@@ -223,16 +224,16 @@ func (self *pushService) waitResults(psp *push.PushServiceProvider, dpList []*pu
 }
 
 // Returns a JSON APNS payload, for a dummy device token
-func (self *pushService) Preview(notif *push.Notification) ([]byte, push.PushError) {
+func (ps *pushService) Preview(notif *push.Notification) ([]byte, push.PushError) {
 	return toAPNSPayload(notif)
 }
 
 // Push will read all of the delivery points to send to from dpQueue and send responses on resQueue before closing the channel. If the notification data is invalid,
 // it will send only one response.
-func (self *pushService) Push(psp *push.PushServiceProvider, dpQueue <-chan *push.DeliveryPoint, resQueue chan<- *push.PushResult, notif *push.Notification) {
+func (ps *pushService) Push(psp *push.PushServiceProvider, dpQueue <-chan *push.DeliveryPoint, resQueue chan<- *push.PushResult, notif *push.Notification) {
 	defer close(resQueue)
 	// Profiling
-	// self.updateCheckPoint("")
+	// ps.updateCheckPoint("")
 	var err push.PushError
 	req := new(common.PushRequest)
 	req.PSP = psp
@@ -240,16 +241,16 @@ func (self *pushService) Push(psp *push.PushServiceProvider, dpQueue <-chan *pus
 
 	var requestProcessor common.PushRequestProcessor
 	if http2, ok := notif.Data["uniqush.http2"]; ok && http2 == "1" {
-		requestProcessor = self.httpRequestProcessor
+		requestProcessor = ps.httpRequestProcessor
 	} else {
-		requestProcessor = self.binaryRequestProcessor
+		requestProcessor = ps.binaryRequestProcessor
 	}
 
 	maxPayloadSize := requestProcessor.GetMaxPayloadSize()
 	// If uniqush.apns_voip=1 for /push, assume the PSP has been set up with a VoIP certificate.
 	// Support 5120 byte payloads for VoIP pushes. Assume VoIP pushes must be http2. https://github.com/uniqush/uniqush-push/issues/202
 	// TODO: Automatically append ".voip" if it's not already the suffix
-	if requestProcessor == self.httpRequestProcessor {
+	if requestProcessor == ps.httpRequestProcessor {
 		if isVoIP, ok := notif.Data["uniqush.apns_voip"]; ok && isVoIP == "1" {
 			maxPayloadSize = 5120
 		}
@@ -320,8 +321,8 @@ func (self *pushService) Push(psp *push.PushServiceProvider, dpQueue <-chan *pus
 	}
 
 	n := len(req.Devtokens)
-	lastId := self.getMessageIds(n)
-	req.MaxMsgId = lastId
+	lastID := ps.getMessageIds(n)
+	req.MaxMsgId = lastID
 	req.DPList = dpList
 
 	// We send this request object to be processed by pushMux goroutine, to send responses/errors back.
@@ -348,7 +349,7 @@ func (self *pushService) Push(psp *push.PushServiceProvider, dpQueue <-chan *pus
 		resQueue <- res
 	}
 	// Profiling
-	// self.updateCheckPoint("sending the message takes")
+	// ps.updateCheckPoint("sending the message takes")
 	if err != nil {
 		// TODO: in another pr, send responses where some requests succeed, but other requests fail. (E.g. mix of unsubscribe responses on resChan and connection errors)
 		return
@@ -369,5 +370,5 @@ func (self *pushService) Push(psp *push.PushServiceProvider, dpQueue <-chan *pus
 
 	// Wait for the unserialized responses from APNS asyncronously - these will not affect what we send our clients for this request, but will affect subsequent requests.
 	// TODO: With HTTP/2, this can be refactored to become synchronous (not in this PR, not while binary provider is supported for a PSP). The map[string]T can be removed.
-	go self.waitResults(psp, dpList, lastId, resChan)
+	go ps.waitResults(psp, dpList, lastID, resChan)
 }

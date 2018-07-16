@@ -55,6 +55,7 @@ func newFCMPushService() *fcmPushService {
 	}
 }
 
+// InstallFCM registers the only instance of the FCM push service. It is called only once.
 func InstallFCM() {
 	psm := push.GetPushServiceManager()
 	err := psm.RegisterPushServiceType(newFCMPushService())

@@ -61,6 +61,7 @@ func newADMPushService() *admPushService {
 	return ret
 }
 
+// InstallADM registers the only instance of the ADM push service. It is called only once.
 func InstallADM() {
 	psm := push.GetPushServiceManager()
 	err := psm.RegisterPushServiceType(newADMPushService())
@@ -69,18 +70,18 @@ func InstallADM() {
 	}
 }
 
-func (self *admPushService) Finalize() {}
-func (self *admPushService) Name() string {
+func (adm *admPushService) Finalize() {}
+func (adm *admPushService) Name() string {
 	return "adm"
 }
-func (self *admPushService) SetErrorReportChan(errChan chan<- push.PushError) {
+func (adm *admPushService) SetErrorReportChan(errChan chan<- push.PushError) {
 	return
 }
-func (self *admPushService) SetPushServiceConfig(c *push.PushServiceConfig) {
+func (adm *admPushService) SetPushServiceConfig(c *push.PushServiceConfig) {
 	return
 }
 
-func (self *admPushService) BuildPushServiceProviderFromMap(kv map[string]string, psp *push.PushServiceProvider) error {
+func (adm *admPushService) BuildPushServiceProviderFromMap(kv map[string]string, psp *push.PushServiceProvider) error {
 	if service, ok := kv["service"]; ok && len(service) > 0 {
 		psp.FixedData["service"] = service
 	} else {
@@ -102,7 +103,7 @@ func (self *admPushService) BuildPushServiceProviderFromMap(kv map[string]string
 	return nil
 }
 
-func (self *admPushService) BuildDeliveryPointFromMap(kv map[string]string, dp *push.DeliveryPoint) error {
+func (adm *admPushService) BuildDeliveryPointFromMap(kv map[string]string, dp *push.DeliveryPoint) error {
 	err := dp.AddCommonData(kv)
 	if err != nil {
 		return err
@@ -389,21 +390,21 @@ func admSinglePush(psp *push.PushServiceProvider, dp *push.DeliveryPoint, data [
 	return id, nil
 }
 
-func (self *admPushService) lockPsp(psp *push.PushServiceProvider) (*push.PushServiceProvider, push.PushError) {
+func (adm *admPushService) lockPsp(psp *push.PushServiceProvider) (*push.PushServiceProvider, push.PushError) {
 	respCh := make(chan *pspLockResponse)
 	req := &pspLockRequest{
 		psp:    psp,
 		respCh: respCh,
 	}
 
-	self.pspLock <- req
+	adm.pspLock <- req
 
 	resp := <-respCh
 
 	return resp.psp, resp.err
 }
 
-func (self *admPushService) notifToJSON(notif *push.Notification) ([]byte, push.PushError) {
+func (adm *admPushService) notifToJSON(notif *push.Notification) ([]byte, push.PushError) {
 	msg, err := notifToMessage(notif)
 	if err != nil {
 		return nil, err
@@ -416,11 +417,11 @@ func (self *admPushService) notifToJSON(notif *push.Notification) ([]byte, push.
 	return data, nil
 }
 
-func (self *admPushService) Preview(notif *push.Notification) ([]byte, push.PushError) {
-	return self.notifToJSON(notif)
+func (adm *admPushService) Preview(notif *push.Notification) ([]byte, push.PushError) {
+	return adm.notifToJSON(notif)
 }
 
-func (self *admPushService) Push(psp *push.PushServiceProvider, dpQueue <-chan *push.DeliveryPoint, resQueue chan<- *push.PushResult, notif *push.Notification) {
+func (adm *admPushService) Push(psp *push.PushServiceProvider, dpQueue <-chan *push.DeliveryPoint, resQueue chan<- *push.PushResult, notif *push.Notification) {
 	defer close(resQueue)
 	defer func() {
 		for range dpQueue {
@@ -432,7 +433,7 @@ func (self *admPushService) Push(psp *push.PushServiceProvider, dpQueue <-chan *
 	res.Provider = psp
 
 	var err push.PushError
-	psp, err = self.lockPsp(psp)
+	psp, err = adm.lockPsp(psp)
 	if err != nil {
 		res.Err = err
 		resQueue <- res
@@ -440,7 +441,7 @@ func (self *admPushService) Push(psp *push.PushServiceProvider, dpQueue <-chan *
 			return
 		}
 	}
-	data, err := self.notifToJSON(notif)
+	data, err := adm.notifToJSON(notif)
 
 	if err != nil {
 		res.Err = err

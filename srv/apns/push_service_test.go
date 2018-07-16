@@ -13,8 +13,8 @@ import (
 	"github.com/uniqush/uniqush-push/srv/apns/common"
 )
 
-const APNS_SUCCESS uint8 = 0
-const APNS_UNSUBSCRIBE uint8 = 8
+const APNSSuccess uint8 = 0
+const APNSUnsubscribe uint8 = 8
 
 type MockPushRequestProcessor struct {
 	status      uint8
@@ -60,7 +60,7 @@ func (self *MockPushRequestProcessor) SetErrorReportChan(errChan chan<- push.Pus
 func (self *MockPushRequestProcessor) SetPushServiceConfig(c *push.PushServiceConfig) {}
 
 func TestCreatePushService(t *testing.T) {
-	mockRequestProcessor := newMockRequestProcessor(APNS_SUCCESS)
+	mockRequestProcessor := newMockRequestProcessor(APNSSuccess)
 	service := NewPushService()
 	service.binaryRequestProcessor = mockRequestProcessor
 	service.httpRequestProcessor = mockRequestProcessor
@@ -125,7 +125,7 @@ func TestPushSingle(t *testing.T) {
 	expectedContentId := 2223511
 	expectedToken := hex.EncodeToString([]byte("FakeDevToken"))
 
-	psp, _, service, errChan := commonAPNSMocks(APNS_SUCCESS)
+	psp, _, service, errChan := commonAPNSMocks(APNSSuccess)
 
 	resQueue := make(chan *push.PushResult)
 	notif := createNotification(expectedContentId, "helloworld", "Hello World")
@@ -165,7 +165,7 @@ func TestPushMultiple(t *testing.T) {
 	expectedContentId := 2223511
 	expectedToken := hex.EncodeToString([]byte("FakeDevToken"))
 
-	psp, _, service, _ := commonAPNSMocks(APNS_SUCCESS)
+	psp, _, service, _ := commonAPNSMocks(APNSSuccess)
 
 	resQueues := make([]chan *push.PushResult, pushes)
 	notifs := make([]*push.Notification, pushes)
@@ -213,7 +213,7 @@ func TestPushUnsubscribe(t *testing.T) {
 	expectedContentId := 2223511
 	expectedToken := hex.EncodeToString([]byte("FakeDevToken"))
 
-	psp, _, service, errChan := commonAPNSMocks(APNS_UNSUBSCRIBE)
+	psp, _, service, errChan := commonAPNSMocks(APNSUnsubscribe)
 
 	resQueue := make(chan *push.PushResult)
 	notif := createNotification(expectedContentId, "helloworld", "Hello World")
@@ -393,7 +393,7 @@ func TestPreview(t *testing.T) {
 			"uniqush.foo": "ignored",
 		},
 	}
-	_, _, service, _ := commonAPNSMocks(APNS_UNSUBSCRIBE)
+	_, _, service, _ := commonAPNSMocks(APNSSuccess)
 	defer service.Finalize()
 	payload, err := service.Preview(notification)
 	if err != nil {
@@ -422,7 +422,7 @@ func expectMapEquals(t *testing.T, expected map[string]string, actual map[string
 }
 
 func TestBuildPushServiceProviderFromMap(t *testing.T) {
-	service, _, _ := newPushServiceWithErrorChannel(APNS_SUCCESS)
+	service, _, _ := newPushServiceWithErrorChannel(APNSSuccess)
 
 	// Overwrite the APNS service.
 	psm := push.GetPushServiceManager()
@@ -448,7 +448,7 @@ func TestBuildPushServiceProviderFromMap(t *testing.T) {
 }
 
 func TestBuildPushServiceProviderFromMapExtraData(t *testing.T) {
-	service, _, _ := newPushServiceWithErrorChannel(APNS_SUCCESS)
+	service, _, _ := newPushServiceWithErrorChannel(APNSSuccess)
 
 	// Overwrite the APNS service.
 	psm := push.GetPushServiceManager()
