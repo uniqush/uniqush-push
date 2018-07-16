@@ -115,7 +115,7 @@ func asyncCreateDPQueue(wg *sync.WaitGroup, dpQueue chan<- *push.DeliveryPoint, 
 	wg.Done()
 }
 
-func asyncPush(wg *sync.WaitGroup, service *pushService, psp *push.PushServiceProvider, dpQueue <-chan *push.DeliveryPoint, resQueue chan<- *push.PushResult, notif *push.Notification) {
+func asyncPush(wg *sync.WaitGroup, service *pushService, psp *push.PushServiceProvider, dpQueue <-chan *push.DeliveryPoint, resQueue chan<- *push.Result, notif *push.Notification) {
 	service.Push(psp, dpQueue, resQueue, notif)
 	wg.Done()
 }
@@ -127,7 +127,7 @@ func TestPushSingle(t *testing.T) {
 
 	psp, _, service, errChan := commonAPNSMocks(APNSSuccess)
 
-	resQueue := make(chan *push.PushResult)
+	resQueue := make(chan *push.Result)
 	notif := createNotification(expectedContentID, "helloworld", "Hello World")
 
 	wg := new(sync.WaitGroup)
@@ -167,7 +167,7 @@ func TestPushMultiple(t *testing.T) {
 
 	psp, _, service, _ := commonAPNSMocks(APNSSuccess)
 
-	resQueues := make([]chan *push.PushResult, pushes)
+	resQueues := make([]chan *push.Result, pushes)
 	notifs := make([]*push.Notification, pushes)
 
 	wg := new(sync.WaitGroup)
@@ -178,7 +178,7 @@ func TestPushMultiple(t *testing.T) {
 		go asyncCreateDPQueue(wg, dpQueue, expectedToken, "unusedsubscriber2")
 		notif := createNotification(expectedContentID, fmt.Sprintf("helloworld%d", i), fmt.Sprintf("Hello World%d", i))
 		notifs[i] = notif
-		resQueue := make(chan *push.PushResult)
+		resQueue := make(chan *push.Result)
 		resQueues[i] = resQueue
 		go asyncPush(wg, service, psp, dpQueue, resQueue, notif)
 	}
@@ -215,7 +215,7 @@ func TestPushUnsubscribe(t *testing.T) {
 
 	psp, _, service, errChan := commonAPNSMocks(APNSUnsubscribe)
 
-	resQueue := make(chan *push.PushResult)
+	resQueue := make(chan *push.Result)
 	notif := createNotification(expectedContentID, "helloworld", "Hello World")
 
 	wg := new(sync.WaitGroup)

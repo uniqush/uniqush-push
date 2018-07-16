@@ -19,27 +19,27 @@ package push
 
 import "fmt"
 
-type PushResult struct {
+type Result struct {
 	Provider    *PushServiceProvider
 	Destination *DeliveryPoint
 	Content     *Notification
-	MsgId       string
+	MsgID       string
 	Err         Error
 }
 
-func (r *PushResult) IsError() bool {
+func (r *Result) IsError() bool {
 	if r.Err == nil {
 		return false
 	}
 	return true
 }
 
-func (r *PushResult) Error() string {
+func (r *Result) Error() string {
 	if !r.IsError() {
-		return fmt.Sprintf("PushServiceProvider=%v DeliveryPoint=%v MsgId=%v Succsess!",
+		return fmt.Sprintf("PushServiceProvider=%v DeliveryPoint=%v MsgID=%v Success!",
 			r.Provider.Name(),
 			r.Destination.Name(),
-			r.MsgId)
+			r.MsgID)
 	}
 
 	ret := fmt.Sprintf("Failed PushServiceProvider=%s DeliveryPoint=%s %v",
@@ -66,9 +66,9 @@ type PushServiceType interface {
 	// to report error. (For example, it cannot fork a new goroutine
 	// and use this channel in this goroutine after the function returns.)
 	//
-	// Any implementation MUST close the second channel (chan<- *PushResult)
+	// Any implementation MUST close the second channel (chan<- *Result)
 	// once the works done.
-	Push(*PushServiceProvider, <-chan *DeliveryPoint, chan<- *PushResult, *Notification)
+	Push(*PushServiceProvider, <-chan *DeliveryPoint, chan<- *Result, *Notification)
 
 	// Preview the bytes of a notification, for placeholder subscriber data. This makes no service/database calls.
 	Preview(*Notification) ([]byte, Error)

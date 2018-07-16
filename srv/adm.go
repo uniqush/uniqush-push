@@ -421,14 +421,14 @@ func (adm *admPushService) Preview(notif *push.Notification) ([]byte, push.Error
 	return adm.notifToJSON(notif)
 }
 
-func (adm *admPushService) Push(psp *push.PushServiceProvider, dpQueue <-chan *push.DeliveryPoint, resQueue chan<- *push.PushResult, notif *push.Notification) {
+func (adm *admPushService) Push(psp *push.PushServiceProvider, dpQueue <-chan *push.DeliveryPoint, resQueue chan<- *push.Result, notif *push.Notification) {
 	defer close(resQueue)
 	defer func() {
 		for range dpQueue {
 		}
 	}()
 
-	res := new(push.PushResult)
+	res := new(push.Result)
 	res.Content = notif
 	res.Provider = psp
 
@@ -454,7 +454,7 @@ func (adm *admPushService) Push(psp *push.PushServiceProvider, dpQueue <-chan *p
 
 	for dp := range dpQueue {
 		wg.Add(1)
-		res := new(push.PushResult)
+		res := new(push.Result)
 		res.Content = notif
 		res.Provider = psp
 		res.Destination = dp

@@ -210,7 +210,7 @@ func (self *PushBackEnd) fixError(reqId string, remoteAddr string, event error, 
 	return nil
 }
 
-func (self *PushBackEnd) collectResult(reqId string, remoteAddr string, service string, resChan <-chan *push.PushResult, logger log.Logger, after time.Duration, handler ApiResponseHandler) {
+func (self *PushBackEnd) collectResult(reqId string, remoteAddr string, service string, resChan <-chan *push.Result, logger log.Logger, after time.Duration, handler ApiResponseHandler) {
 	for res := range resChan {
 		var sub string
 		ok := false
@@ -354,7 +354,7 @@ func (self *PushBackEnd) pushImpl(reqId string, remoteAddr string, service strin
 			if dpQueue, ok = dpChanMap[psp.Name()]; !ok {
 				dpQueue = make(chan *push.DeliveryPoint)
 				dpChanMap[psp.Name()] = dpQueue
-				resChan := make(chan *push.PushResult)
+				resChan := make(chan *push.Result)
 				wg.Add(1)
 				note := notif
 				if len(perdp) > 0 {

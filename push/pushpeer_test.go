@@ -62,7 +62,7 @@ func (pst *testPushServiceType) BuildDeliveryPointFromMap(kv map[string]string, 
 	return nil
 }
 
-func (pst *testPushServiceType) Push(*PushServiceProvider, <-chan *DeliveryPoint, chan<- *PushResult, *Notification) {
+func (pst *testPushServiceType) Push(*PushServiceProvider, <-chan *DeliveryPoint, chan<- *Result, *Notification) {
 	fmt.Println("Push!")
 }
 

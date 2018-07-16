@@ -264,9 +264,9 @@ func extractRegIds(dpList []*push.DeliveryPoint) []string {
 	return regIds
 }
 
-func sendErrToEachDP(psp *push.PushServiceProvider, dpList []*push.DeliveryPoint, resQueue chan<- *push.PushResult, notif *push.Notification, err push.Error) {
+func sendErrToEachDP(psp *push.PushServiceProvider, dpList []*push.DeliveryPoint, resQueue chan<- *push.Result, notif *push.Notification, err push.Error) {
 	for _, dp := range dpList {
-		res := new(push.PushResult)
+		res := new(push.Result)
 		res.Provider = psp
 		res.Content = notif
 
@@ -276,7 +276,7 @@ func sendErrToEachDP(psp *push.PushServiceProvider, dpList []*push.DeliveryPoint
 	}
 }
 
-func (psb *PushServiceBase) multicast(psp *push.PushServiceProvider, dpList []*push.DeliveryPoint, resQueue chan<- *push.PushResult, notif *push.Notification) {
+func (psb *PushServiceBase) multicast(psp *push.PushServiceProvider, dpList []*push.DeliveryPoint, resQueue chan<- *push.Result, notif *push.Notification) {
 	if len(dpList) == 0 {
 		return
 	}
@@ -312,7 +312,7 @@ func (psb *PushServiceBase) multicast(psp *push.PushServiceProvider, dpList []*p
 	// TODO: Move this into two steps: sending and processing result
 	if e2 != nil {
 		for _, dp := range dpList {
-			res := new(push.PushResult)
+			res := new(push.Result)
 			res.Provider = psp
 			res.Content = notif
 
@@ -339,7 +339,7 @@ func (psb *PushServiceBase) multicast(psp *push.PushServiceProvider, dpList []*p
 	newAuthToken := r.Header.Get("Update-Client-Auth")
 	if newAuthToken != "" && apikey != newAuthToken {
 		psp.VolatileData["apikey"] = newAuthToken
-		res := new(push.PushResult)
+		res := new(push.Result)
 		res.Provider = psp
 		res.Content = notif
 		res.Err = push.NewPushServiceProviderUpdate(psp)
@@ -351,7 +351,7 @@ func (psb *PushServiceBase) multicast(psp *push.PushServiceProvider, dpList []*p
 		/* TODO extract the retry after field */
 		after := 0 * time.Second
 		for _, dp := range dpList {
-			res := new(push.PushResult)
+			res := new(push.Result)
 			res.Provider = psp
 			res.Content = notif
 			res.Destination = dp
@@ -362,7 +362,7 @@ func (psb *PushServiceBase) multicast(psp *push.PushServiceProvider, dpList []*p
 		return
 	case 401:
 		err := push.NewBadPushServiceProvider(psp)
-		res := new(push.PushResult)
+		res := new(push.Result)
 		res.Provider = psp
 		res.Content = notif
 		res.Err = err
@@ -370,7 +370,7 @@ func (psb *PushServiceBase) multicast(psp *push.PushServiceProvider, dpList []*p
 		return
 	case 400:
 		err := push.NewBadNotification()
-		res := new(push.PushResult)
+		res := new(push.Result)
 		res.Provider = psp
 		res.Content = notif
 		res.Err = err
@@ -380,7 +380,7 @@ func (psb *PushServiceBase) multicast(psp *push.PushServiceProvider, dpList []*p
 
 	contents, err := ioutil.ReadAll(r.Body)
 	if err != nil {
-		res := new(push.PushResult)
+		res := new(push.Result)
 		res.Provider = psp
 		res.Content = notif
 		res.Err = push.NewErrorf("Failed to read %s response: %v", psb.initialism, err)
@@ -392,7 +392,7 @@ func (psb *PushServiceBase) multicast(psp *push.PushServiceProvider, dpList []*p
 	err = json.Unmarshal(contents, &result)
 
 	if err != nil {
-		res := new(push.PushResult)
+		res := new(push.Result)
 		res.Provider = psp
 		res.Content = notif
 		res.Err = push.NewErrorf("Failed to decode %s response: %v", psb.initialism, err)
@@ -403,7 +403,7 @@ func (psb *PushServiceBase) multicast(psp *push.PushServiceProvider, dpList []*p
 	psb.handleCMMulticastResults(psp, dpList, resQueue, notif, result.Results)
 }
 
-func (psb *PushServiceBase) handleCMMulticastResults(psp *push.PushServiceProvider, dpList []*push.DeliveryPoint, resQueue chan<- *push.PushResult, notif *push.Notification, results []map[string]string) {
+func (psb *PushServiceBase) handleCMMulticastResults(psp *push.PushServiceProvider, dpList []*push.DeliveryPoint, resQueue chan<- *push.Result, notif *push.Notification, results []map[string]string) {
 	for i, r := range results {
 		if i >= len(dpList) {
 			break
@@ -413,27 +413,27 @@ func (psb *PushServiceBase) handleCMMulticastResults(psp *push.PushServiceProvid
 			switch errmsg {
 			case "Unavailable":
 				after, _ := time.ParseDuration("2s")
-				res := new(push.PushResult)
+				res := new(push.Result)
 				res.Provider = psp
 				res.Content = notif
 				res.Destination = dp
 				res.Err = push.NewRetryError(psp, dp, notif, after)
 				resQueue <- res
 			case "NotRegistered":
-				res := new(push.PushResult)
+				res := new(push.Result)
 				res.Provider = psp
 				res.Err = push.NewUnsubscribeUpdate(psp, dp)
 				res.Content = notif
 				res.Destination = dp
 				resQueue <- res
 			case "InvalidRegistration":
-				res := new(push.PushResult)
+				res := new(push.Result)
 				res.Err = push.NewInvalidRegistrationUpdate(psp, dp)
 				res.Content = notif
 				res.Destination = dp
 				resQueue <- res
 			default:
-				res := new(push.PushResult)
+				res := new(push.Result)
 				res.Err = push.NewErrorf("FCMError: %v", errmsg)
 				res.Provider = psp
 				res.Content = notif
@@ -443,7 +443,7 @@ func (psb *PushServiceBase) handleCMMulticastResults(psp *push.PushServiceProvid
 		}
 		if newregid, ok := r["registration_id"]; ok {
 			dp.VolatileData["regid"] = newregid
-			res := new(push.PushResult)
+			res := new(push.Result)
 			res.Err = push.NewDeliveryPointUpdate(dp)
 			res.Provider = psp
 			res.Content = notif
@@ -451,7 +451,7 @@ func (psb *PushServiceBase) handleCMMulticastResults(psp *push.PushServiceProvid
 			resQueue <- res
 		}
 		if msgid, ok := r["message_id"]; ok {
-			res := new(push.PushResult)
+			res := new(push.Result)
 			res.Provider = psp
 			res.Content = notif
 			res.Destination = dp
@@ -462,13 +462,13 @@ func (psb *PushServiceBase) handleCMMulticastResults(psp *push.PushServiceProvid
 }
 
 // Push sends a push notification to 1 or more delivery points in dpQueue asynchronously, and sends results on resQueue.
-func (psb *PushServiceBase) Push(psp *push.PushServiceProvider, dpQueue <-chan *push.DeliveryPoint, resQueue chan<- *push.PushResult, notif *push.Notification) {
+func (psb *PushServiceBase) Push(psp *push.PushServiceProvider, dpQueue <-chan *push.DeliveryPoint, resQueue chan<- *push.Result, notif *push.Notification) {
 
 	maxNrDst := 1000
 	dpList := make([]*push.DeliveryPoint, 0, maxNrDst)
 	for dp := range dpQueue {
 		if psp.PushServiceName() != dp.PushServiceName() || psp.PushServiceName() != psb.pushServiceName {
-			res := new(push.PushResult)
+			res := new(push.Result)
 			res.Provider = psp
 			res.Destination = dp
 			res.Content = notif
@@ -482,7 +482,7 @@ func (psb *PushServiceBase) Push(psp *push.PushServiceProvider, dpQueue <-chan *
 			dp.VolatileData["regid"] = regid
 			dpList = append(dpList, dp)
 		} else {
-			res := new(push.PushResult)
+			res := new(push.Result)
 			res.Provider = psp
 			res.Destination = dp
 			res.Content = notif

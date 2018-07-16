@@ -230,7 +230,7 @@ func (ps *pushService) Preview(notif *push.Notification) ([]byte, push.Error) {
 
 // Push will read all of the delivery points to send to from dpQueue and send responses on resQueue before closing the channel. If the notification data is invalid,
 // it will send only one response.
-func (ps *pushService) Push(psp *push.PushServiceProvider, dpQueue <-chan *push.DeliveryPoint, resQueue chan<- *push.PushResult, notif *push.Notification) {
+func (ps *pushService) Push(psp *push.PushServiceProvider, dpQueue <-chan *push.DeliveryPoint, resQueue chan<- *push.Result, notif *push.Notification) {
 	defer close(resQueue)
 	// Profiling
 	// ps.updateCheckPoint("")
@@ -266,7 +266,7 @@ func (ps *pushService) Push(psp *push.PushServiceProvider, dpQueue <-chan *push.
 			for range dpQueue {
 			}
 		}()
-		res := new(push.PushResult)
+		res := new(push.Result)
 		res.Provider = psp
 		res.Content = notif
 		res.Err = push.NewErrorf("Failed to create push: %v", err)
@@ -299,7 +299,7 @@ func (ps *pushService) Push(psp *push.PushServiceProvider, dpQueue <-chan *push.
 	dpList := make([]*push.DeliveryPoint, 0, 10)
 
 	for dp := range dpQueue {
-		res := new(push.PushResult)
+		res := new(push.Result)
 		res.Destination = dp
 		res.Provider = psp
 		res.Content = notif
@@ -338,7 +338,7 @@ func (ps *pushService) Push(psp *push.PushServiceProvider, dpQueue <-chan *push.
 	// errChan closed means the message(s) is/are sent successfully to the APNs.
 	// However, we may have not yet receieved responses from APNS - those are sent on resChan
 	for err = range errChan {
-		res := new(push.PushResult)
+		res := new(push.Result)
 		res.Provider = psp
 		res.Content = notif
 		if _, ok := err.(*push.ErrorReport); ok {
@@ -357,7 +357,7 @@ func (ps *pushService) Push(psp *push.PushServiceProvider, dpQueue <-chan *push.
 
 	for i, dp := range dpList {
 		if dp != nil {
-			r := new(push.PushResult)
+			r := new(push.Result)
 			r.Provider = psp
 			r.Content = notif
 			r.Destination = dp

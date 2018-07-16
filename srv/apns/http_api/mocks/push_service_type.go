@@ -28,7 +28,7 @@ func (pst *MockPushServiceType) BuildDeliveryPointFromMap(map[string]string, *pu
 func (pst *MockPushServiceType) Name() string {
 	return "apns"
 }
-func (pst *MockPushServiceType) Push(*push.PushServiceProvider, <-chan *push.DeliveryPoint, chan<- *push.PushResult, *push.Notification) {
+func (pst *MockPushServiceType) Push(*push.PushServiceProvider, <-chan *push.DeliveryPoint, chan<- *push.Result, *push.Notification) {
 	panic("Not implemented")
 }
 func (pst *MockPushServiceType) Preview(*push.Notification) ([]byte, push.Error) {

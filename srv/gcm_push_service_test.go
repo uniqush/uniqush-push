@@ -68,7 +68,7 @@ func asyncCreateDPQueue(wg *sync.WaitGroup, dpQueue chan<- *push.DeliveryPoint, 
 	wg.Done()
 }
 
-func asyncPush(wg *sync.WaitGroup, service *gcmPushService, psp *push.PushServiceProvider, dpQueue <-chan *push.DeliveryPoint, resQueue chan<- *push.PushResult, notif *push.Notification) {
+func asyncPush(wg *sync.WaitGroup, service *gcmPushService, psp *push.PushServiceProvider, dpQueue <-chan *push.DeliveryPoint, resQueue chan<- *push.Result, notif *push.Notification) {
 	service.Push(psp, dpQueue, resQueue, notif)
 	wg.Done()
 }
@@ -84,7 +84,7 @@ func TestPushSingle(t *testing.T) {
 	mockHTTPResponse := []byte(`{"multicast_id":777,"canonical_ids":1,"success":1,"failure":0,"results":[{"message_id":"UID12345"}]}`)
 	psp, mockCMHTTPClient, service, errChan := commonGCMMocks(200, mockHTTPResponse, map[string]string{}, nil)
 	dpQueue := make(chan *push.DeliveryPoint)
-	resQueue := make(chan *push.PushResult)
+	resQueue := make(chan *push.Result)
 	wg := new(sync.WaitGroup)
 	wg.Add(2)
 	go asyncCreateDPQueue(wg, dpQueue, expectedRegID, "unusedsubscriber1")
@@ -133,7 +133,7 @@ func TestPushSingleError(t *testing.T) {
 	mockHTTPResponse := []byte(`HTTP/401 error mock response`)
 	psp, mockCMHTTPClient, service, errChan := commonGCMMocks(401, mockHTTPResponse, map[string]string{}, nil)
 	dpQueue := make(chan *push.DeliveryPoint)
-	resQueue := make(chan *push.PushResult)
+	resQueue := make(chan *push.Result)
 	wg := new(sync.WaitGroup)
 	wg.Add(2)
 	go asyncCreateDPQueue(wg, dpQueue, expectedRegID, "unusedsubscriber1")

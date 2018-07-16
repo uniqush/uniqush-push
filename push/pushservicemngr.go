@@ -179,7 +179,7 @@ func (m *PushServiceManager) BuildDeliveryPointFromBytes(value []byte) (*Deliver
 	return dp, nil
 }
 
-func (m *PushServiceManager) Push(psp *PushServiceProvider, dpQueue <-chan *DeliveryPoint, resQueue chan<- *PushResult, notif *Notification) {
+func (m *PushServiceManager) Push(psp *PushServiceProvider, dpQueue <-chan *DeliveryPoint, resQueue chan<- *Result, notif *Notification) {
 	wg := new(sync.WaitGroup)
 
 	if psp.pushServiceType != nil {
@@ -189,7 +189,7 @@ func (m *PushServiceManager) Push(psp *PushServiceProvider, dpQueue <-chan *Deli
 			wg.Done()
 		}()
 	} else {
-		r := new(PushResult)
+		r := new(Result)
 		r.Provider = psp
 		r.Destination = nil
 		r.MsgId = ""
