@@ -83,11 +83,11 @@ var validSubscriberPattern *regexp.Regexp
 
 func init() {
 	var err error
-	validServicePattern, err = regexp.Compile("^[a-zA-z\\.0-9-_@]+$")
+	validServicePattern, err = regexp.Compile(`^[a-zA-z.0-9-_@]+$`)
 	if err != nil {
 		validServicePattern = nil
 	}
-	validSubscriberPattern, err = regexp.Compile("^[a-zA-z\\.0-9-_@]+$")
+	validSubscriberPattern, err = regexp.Compile(`^[a-zA-z.0-9-_@]+$`)
 	if err != nil {
 		validSubscriberPattern = nil
 	}
@@ -346,7 +346,6 @@ func apiBytesToObject(data []byte) interface{} {
 	// currently, all types are JSON. In the future, there may be non-JSON payloads in a protocol.
 	// Either return a string or an object (to be converted to JSON again by the API)
 	var obj interface{}
-	obj = nil
 	err := json.Unmarshal(data, &obj)
 	if err != nil || obj == nil {
 		return string(data)
@@ -362,7 +361,6 @@ func (api *RestAPI) stop(w io.Writer, remoteAddr string) {
 		fmt.Fprintf(w, "Stopped\r\n")
 	}
 	api.stopChan <- true
-	return
 }
 
 func (api *RestAPI) numberOfDeliveryPoints(kv map[string][]string, logger log.Logger, remoteAddr string) int {
@@ -524,7 +522,7 @@ func (api *RestAPI) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		details := api.preview(rid, kv, api.loggers[LoggerPreview], remoteAddr)
 		bytes, err := json.Marshal(details)
 		if err != nil {
-			fmt.Fprintf(w, "%s\r\n", string(err.Error()))
+			fmt.Fprintf(w, "%s\r\n", err.Error())
 			return
 		}
 		fmt.Fprintf(w, "%s\r\n", string(bytes))
@@ -595,5 +593,4 @@ func (api *RestAPI) Run(addr string, stopChan chan<- bool) {
 	if err != nil {
 		api.loggers[LoggerWeb].Fatalf("HTTPServerError \"%v\"", err)
 	}
-	return
 }
