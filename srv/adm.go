@@ -39,7 +39,7 @@ const (
 )
 
 type pspLockResponse struct {
-	err push.PushError
+	err push.Error
 	psp *push.PushServiceProvider
 }
 
@@ -74,7 +74,7 @@ func (adm *admPushService) Finalize() {}
 func (adm *admPushService) Name() string {
 	return "adm"
 }
-func (adm *admPushService) SetErrorReportChan(errChan chan<- push.PushError) {
+func (adm *admPushService) SetErrorReportChan(errChan chan<- push.Error) {
 	return
 }
 func (adm *admPushService) SetPushServiceConfig(c *push.PushServiceConfig) {
@@ -161,7 +161,7 @@ type tokenFailObj struct {
 	Description string `json:"error_description"`
 }
 
-func requestToken(psp *push.PushServiceProvider) push.PushError {
+func requestToken(psp *push.PushServiceProvider) push.Error {
 	var ok bool
 	var clientid string
 	var cserect string
@@ -245,7 +245,7 @@ type admMessage struct {
 	MD5      string            `json:"md5,omitempty"`
 }
 
-func notifToMessage(notif *push.Notification) (msg *admMessage, err push.PushError) {
+func notifToMessage(notif *push.Notification) (msg *admMessage, err push.Error) {
 	if notif == nil || len(notif.Data) == 0 {
 		err = push.NewBadNotificationWithDetails("empty notification")
 		return
@@ -286,7 +286,7 @@ func notifToMessage(notif *push.Notification) (msg *admMessage, err push.PushErr
 	return
 }
 
-func admURL(dp *push.DeliveryPoint) (url string, err push.PushError) {
+func admURL(dp *push.DeliveryPoint) (url string, err push.Error) {
 	if dp == nil {
 		err = push.NewError("nil dp")
 		return
@@ -299,7 +299,7 @@ func admURL(dp *push.DeliveryPoint) (url string, err push.PushError) {
 	return
 }
 
-func admNewRequest(psp *push.PushServiceProvider, dp *push.DeliveryPoint, data []byte) (req *http.Request, err push.PushError) {
+func admNewRequest(psp *push.PushServiceProvider, dp *push.DeliveryPoint, data []byte) (req *http.Request, err push.Error) {
 	var token string
 	var ok bool
 	if token, ok = psp.VolatileData["token"]; !ok {
@@ -329,7 +329,7 @@ type admPushFailResponse struct {
 	Reason string `json:"reason"`
 }
 
-func admSinglePush(psp *push.PushServiceProvider, dp *push.DeliveryPoint, data []byte, notif *push.Notification) (string, push.PushError) {
+func admSinglePush(psp *push.PushServiceProvider, dp *push.DeliveryPoint, data []byte, notif *push.Notification) (string, push.Error) {
 	client := &http.Client{}
 	req, err := admNewRequest(psp, dp, data)
 	if err != nil {
@@ -390,7 +390,7 @@ func admSinglePush(psp *push.PushServiceProvider, dp *push.DeliveryPoint, data [
 	return id, nil
 }
 
-func (adm *admPushService) lockPsp(psp *push.PushServiceProvider) (*push.PushServiceProvider, push.PushError) {
+func (adm *admPushService) lockPsp(psp *push.PushServiceProvider) (*push.PushServiceProvider, push.Error) {
 	respCh := make(chan *pspLockResponse)
 	req := &pspLockRequest{
 		psp:    psp,
@@ -404,7 +404,7 @@ func (adm *admPushService) lockPsp(psp *push.PushServiceProvider) (*push.PushSer
 	return resp.psp, resp.err
 }
 
-func (adm *admPushService) notifToJSON(notif *push.Notification) ([]byte, push.PushError) {
+func (adm *admPushService) notifToJSON(notif *push.Notification) ([]byte, push.Error) {
 	msg, err := notifToMessage(notif)
 	if err != nil {
 		return nil, err
@@ -417,7 +417,7 @@ func (adm *admPushService) notifToJSON(notif *push.Notification) ([]byte, push.P
 	return data, nil
 }
 
-func (adm *admPushService) Preview(notif *push.Notification) ([]byte, push.PushError) {
+func (adm *admPushService) Preview(notif *push.Notification) ([]byte, push.Error) {
 	return adm.notifToJSON(notif)
 }
 
@@ -432,7 +432,7 @@ func (adm *admPushService) Push(psp *push.PushServiceProvider, dpQueue <-chan *p
 	res.Content = notif
 	res.Provider = psp
 
-	var err push.PushError
+	var err push.Error
 	psp, err = adm.lockPsp(psp)
 	if err != nil {
 		res.Err = err

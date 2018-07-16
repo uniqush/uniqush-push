@@ -42,10 +42,10 @@ func (pst *MockAPNSPushServiceType) Name() string {
 func (pst *MockAPNSPushServiceType) Push(*push.PushServiceProvider, <-chan *push.DeliveryPoint, chan<- *push.PushResult, *push.Notification) {
 	panic("Not implemented")
 }
-func (pst *MockAPNSPushServiceType) Preview(*push.Notification) ([]byte, push.PushError) {
+func (pst *MockAPNSPushServiceType) Preview(*push.Notification) ([]byte, push.Error) {
 	panic("Not implemented")
 }
-func (pst *MockAPNSPushServiceType) SetErrorReportChan(errChan chan<- push.PushError) {
+func (pst *MockAPNSPushServiceType) SetErrorReportChan(errChan chan<- push.Error) {
 	panic("Not implemented")
 }
 func (pst *MockAPNSPushServiceType) SetPushServiceConfig(*push.PushServiceConfig) {
@@ -70,7 +70,7 @@ func newMockConnManager(status uint8) *MockConnManager {
 	}
 }
 
-func mockEmptyFeedbackChecker(psp *push.PushServiceProvider, dpCache *cache.SimpleCache, errChan chan<- push.PushError) {
+func mockEmptyFeedbackChecker(psp *push.PushServiceProvider, dpCache *cache.SimpleCache, errChan chan<- push.Error) {
 }
 
 func mockPSPData(serviceName string) *push.PushServiceProvider {
@@ -90,11 +90,11 @@ func mockPSPData(serviceName string) *push.PushServiceProvider {
 }
 
 // commonBinaryMocks mocks the PSP, connection manager and a feedback checker, etc, returning the mocks. This is needed for virtually every test.
-func commonBinaryMocks(requestProcessor *BinaryPushRequestProcessor, status uint8, serviceName string) (*push.PushServiceProvider, *MockConnManager, chan push.PushError) {
+func commonBinaryMocks(requestProcessor *BinaryPushRequestProcessor, status uint8, serviceName string) (*push.PushServiceProvider, *MockConnManager, chan push.Error) {
 	mockAPNSConnectionManager := newMockConnManager(status)
 	requestProcessor.overrideAPNSConnManagerMaker(mockConnManagerMaker(mockAPNSConnectionManager))
 	requestProcessor.overrideFeedbackChecker(mockEmptyFeedbackChecker)
-	errChan := make(chan push.PushError, 100)
+	errChan := make(chan push.Error, 100)
 	requestProcessor.SetErrorReportChan(errChan)
 
 	psp := mockPSPData(serviceName)
@@ -143,7 +143,7 @@ func TestPoolSize(t *testing.T) {
 	requestProcessor.Finalize()
 }
 
-func createSinglePushRequest(psp *push.PushServiceProvider) (*common.PushRequest, chan push.PushError, chan *common.APNSResult) {
+func createSinglePushRequest(psp *push.PushServiceProvider) (*common.PushRequest, chan push.Error, chan *common.APNSResult) {
 	devtoken := "01234567890abcdef01234567890abcdef01234567890abcdef01234567890abcdef"
 	dp := push.NewEmptyDeliveryPoint()
 	service, ok := psp.FixedData["service"]
@@ -155,7 +155,7 @@ func createSinglePushRequest(psp *push.PushServiceProvider) (*common.PushRequest
 	dp.FixedData["devtoken"] = devtoken
 
 	devtokens := [][]byte{[]byte(devtoken)}
-	errChan := make(chan push.PushError)
+	errChan := make(chan push.Error)
 	resChan := make(chan *common.APNSResult, len(devtokens))
 
 	req := &common.PushRequest{
@@ -193,7 +193,7 @@ func testPushForwardsErrorCode(t *testing.T, status uint8) {
 	verifyNewConnectionLogged(t, serviceErrChan)
 }
 
-func verifyRequestProcessorRespondsWithStatus(t *testing.T, status uint8, req *common.PushRequest, errChan chan push.PushError, resChan chan *common.APNSResult) {
+func verifyRequestProcessorRespondsWithStatus(t *testing.T, status uint8, req *common.PushRequest, errChan chan push.Error, resChan chan *common.APNSResult) {
 
 	for err := range errChan {
 		t.Fatalf("Expected 0 errors for successful push, got %#v", err)
@@ -210,7 +210,7 @@ func verifyRequestProcessorRespondsWithStatus(t *testing.T, status uint8, req *c
 	}
 }
 
-func verifyNewConnectionLogged(t *testing.T, serviceErrChan chan push.PushError) {
+func verifyNewConnectionLogged(t *testing.T, serviceErrChan chan push.Error) {
 	err := <-serviceErrChan
 	expectedErrMsg := "Connection to APNS opened: <nil> to <nil>"
 	if expectedErrMsg != err.Error() {

@@ -104,8 +104,8 @@ func mockAPNSRequest(requestProcessor *HTTPPushRequestProcessor, fn func(r *http
 	return mockClient
 }
 
-func newPushRequest() (*common.PushRequest, chan push.PushError, chan *common.APNSResult) {
-	errChan := make(chan push.PushError)
+func newPushRequest() (*common.PushRequest, chan push.Error, chan *common.APNSResult) {
+	errChan := make(chan push.Error)
 	resChan := make(chan *common.APNSResult, 1)
 	request := &common.PushRequest{
 		PSP:       pushServiceProvider,

@@ -31,10 +31,10 @@ func (pst *MockPushServiceType) Name() string {
 func (pst *MockPushServiceType) Push(*push.PushServiceProvider, <-chan *push.DeliveryPoint, chan<- *push.PushResult, *push.Notification) {
 	panic("Not implemented")
 }
-func (pst *MockPushServiceType) Preview(*push.Notification) ([]byte, push.PushError) {
+func (pst *MockPushServiceType) Preview(*push.Notification) ([]byte, push.Error) {
 	panic("Not implemented")
 }
-func (pst *MockPushServiceType) SetErrorReportChan(errChan chan<- push.PushError) {
+func (pst *MockPushServiceType) SetErrorReportChan(errChan chan<- push.Error) {
 	panic("Not implemented")
 }
 func (pst *MockPushServiceType) SetPushServiceConfig(*push.PushServiceConfig) {

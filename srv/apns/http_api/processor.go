@@ -129,7 +129,7 @@ func (prp *HTTPPushRequestProcessor) Finalize() {
 	}
 }
 
-func (prp *HTTPPushRequestProcessor) SetErrorReportChan(errChan chan<- push.PushError) {}
+func (prp *HTTPPushRequestProcessor) SetErrorReportChan(errChan chan<- push.Error) {}
 
 func (prp *HTTPPushRequestProcessor) SetPushServiceConfig(c *push.PushServiceConfig) {}
 
@@ -189,7 +189,7 @@ func (prp *HTTPPushRequestProcessor) sendRequests(request *common.PushRequest) {
 	wg.Wait()
 }
 
-func (prp *HTTPPushRequestProcessor) sendRequest(wg *sync.WaitGroup, client HTTPClient, request *http.Request, messageID uint32, errChan chan<- push.PushError, resChan chan<- *common.APNSResult) {
+func (prp *HTTPPushRequestProcessor) sendRequest(wg *sync.WaitGroup, client HTTPClient, request *http.Request, messageID uint32, errChan chan<- push.Error, resChan chan<- *common.APNSResult) {
 	defer wg.Done()
 
 	response, err := client.Do(request)

@@ -43,7 +43,7 @@ type ConnManager interface {
 // loggingConnManager decorates a ConnManager and logs opened connections.
 type loggingConnManager struct {
 	manager ConnManager
-	errChan chan<- push.PushError
+	errChan chan<- push.Error
 }
 
 var _ ConnManager = &loggingConnManager{}
@@ -56,7 +56,7 @@ func (cm *loggingConnManager) NewConn() (conn net.Conn, closed <-chan bool, err 
 	return
 }
 
-func newLoggingConnManager(manager ConnManager, errChan chan<- push.PushError) *loggingConnManager {
+func newLoggingConnManager(manager ConnManager, errChan chan<- push.Error) *loggingConnManager {
 	return &loggingConnManager{
 		manager: manager,
 		errChan: errChan,

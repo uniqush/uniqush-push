@@ -24,7 +24,7 @@ type PushResult struct {
 	Destination *DeliveryPoint
 	Content     *Notification
 	MsgId       string
-	Err         PushError
+	Err         Error
 }
 
 func (r *PushResult) IsError() bool {
@@ -71,12 +71,12 @@ type PushServiceType interface {
 	Push(*PushServiceProvider, <-chan *DeliveryPoint, chan<- *PushResult, *Notification)
 
 	// Preview the bytes of a notification, for placeholder subscriber data. This makes no service/database calls.
-	Preview(*Notification) ([]byte, PushError)
+	Preview(*Notification) ([]byte, Error)
 
 	// Set a channel for the push service provider so that it can report error even if
 	// there is no method call on it.
 	// The type of the errors sent may cause the push service manager to take various actions.
-	SetErrorReportChan(errChan chan<- PushError)
+	SetErrorReportChan(errChan chan<- Error)
 
 	// Set the config for the push service provider.
 	// The config for a given pushservicetype is passed to the corresponding PushServiceType

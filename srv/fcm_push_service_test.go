@@ -18,7 +18,7 @@ const (
 	FCMMockService   = "mockservice"
 )
 
-func commonFCMMocks(responseCode int, responseBody []byte, headers map[string]string, requestError error) (*push.PushServiceProvider, *mockCMHTTPClient, *fcmPushService, chan push.PushError) {
+func commonFCMMocks(responseCode int, responseBody []byte, headers map[string]string, requestError error) (*push.PushServiceProvider, *mockCMHTTPClient, *fcmPushService, chan push.Error) {
 	client := &mockCMHTTPClient{
 		status:       responseCode,
 		responseBody: responseBody,
@@ -32,7 +32,7 @@ func commonFCMMocks(responseCode int, responseBody []byte, headers map[string]st
 	psm := push.GetPushServiceManager()
 	psm.RegisterPushServiceType(service)
 
-	errChan := make(chan push.PushError, 100)
+	errChan := make(chan push.Error, 100)
 	service.SetErrorReportChan(errChan)
 
 	psp, err := psm.BuildPushServiceProviderFromMap(map[string]string{

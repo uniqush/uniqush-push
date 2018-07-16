@@ -32,7 +32,7 @@ type PushBackEnd struct {
 	psm     *push.PushServiceManager
 	db      db.PushDatabase
 	loggers []log.Logger
-	errChan chan push.PushError
+	errChan chan push.Error
 }
 
 // Finalize will save all subscriptions (and perform other cleanup) as part of the push service shutting down.
@@ -50,7 +50,7 @@ func NewPushBackEnd(psm *push.PushServiceManager, database db.PushDatabase, logg
 	ret.psm = psm
 	ret.db = database
 	ret.loggers = loggers
-	ret.errChan = make(chan push.PushError)
+	ret.errChan = make(chan push.Error)
 	go ret.processError()
 	psm.SetErrorReportChan(ret.errChan)
 	return ret
@@ -390,6 +390,6 @@ func (self *PushBackEnd) pushImpl(reqId string, remoteAddr string, service strin
 	wg.Wait()
 }
 
-func (self *PushBackEnd) Preview(ptname string, notif *push.Notification) ([]byte, push.PushError) {
+func (self *PushBackEnd) Preview(ptname string, notif *push.Notification) ([]byte, push.Error) {
 	return self.psm.Preview(ptname, notif)
 }

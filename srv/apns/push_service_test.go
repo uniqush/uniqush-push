@@ -19,7 +19,7 @@ const APNSUnsubscribe uint8 = 8
 type MockPushRequestProcessor struct {
 	status      uint8
 	didFinalize bool
-	errChan     chan<- push.PushError
+	errChan     chan<- push.Error
 }
 
 func newMockRequestProcessor(status uint8) *MockPushRequestProcessor {
@@ -53,7 +53,7 @@ func (mockPRP *MockPushRequestProcessor) Finalize() {
 	mockPRP.didFinalize = true
 }
 
-func (mockPRP *MockPushRequestProcessor) SetErrorReportChan(errChan chan<- push.PushError) {
+func (mockPRP *MockPushRequestProcessor) SetErrorReportChan(errChan chan<- push.Error) {
 	mockPRP.errChan = errChan
 }
 
@@ -67,17 +67,17 @@ func TestCreatePushService(t *testing.T) {
 	service.Finalize()
 }
 
-func newPushServiceWithErrorChannel(status uint8) (*pushService, *MockPushRequestProcessor, chan push.PushError) {
+func newPushServiceWithErrorChannel(status uint8) (*pushService, *MockPushRequestProcessor, chan push.Error) {
 	mockRequestProcessor := newMockRequestProcessor(status)
 	service := NewPushService()
 	service.binaryRequestProcessor = mockRequestProcessor
 	service.httpRequestProcessor = mockRequestProcessor
-	errChan := make(chan push.PushError, 100)
+	errChan := make(chan push.Error, 100)
 	service.SetErrorReportChan(errChan)
 	return service, mockRequestProcessor, errChan
 }
 
-func commonAPNSMocks(status uint8) (*push.PushServiceProvider, *MockPushRequestProcessor, *pushService, chan push.PushError) {
+func commonAPNSMocks(status uint8) (*push.PushServiceProvider, *MockPushRequestProcessor, *pushService, chan push.Error) {
 	service, mockRequestProcessor, errChan := newPushServiceWithErrorChannel(status)
 
 	// Overwrite the APNS service.

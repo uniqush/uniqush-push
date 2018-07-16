@@ -165,7 +165,7 @@ func (d *CMData) String() string {
 }
 
 // validateRawCMData verifies that the user-provided JSON payload is a valid JSON object.
-func validateRawCMData(payload string) (map[string]interface{}, push.PushError) {
+func validateRawCMData(payload string) (map[string]interface{}, push.Error) {
 	var data map[string]interface{}
 	err := json.Unmarshal([]byte(payload), &data)
 	if data == nil {
@@ -193,7 +193,7 @@ func (psb *PushServiceBase) Name() string {
 }
 
 // ToCMPayload will serialize notif as a push service payload
-func (psb *PushServiceBase) ToCMPayload(notif *push.Notification, regIds []string) ([]byte, push.PushError) {
+func (psb *PushServiceBase) ToCMPayload(notif *push.Notification, regIds []string) ([]byte, push.Error) {
 	postData := notif.Data
 	payload := new(CMData)
 	payload.RegIDs = regIds
@@ -264,7 +264,7 @@ func extractRegIds(dpList []*push.DeliveryPoint) []string {
 	return regIds
 }
 
-func sendErrToEachDP(psp *push.PushServiceProvider, dpList []*push.DeliveryPoint, resQueue chan<- *push.PushResult, notif *push.Notification, err push.PushError) {
+func sendErrToEachDP(psp *push.PushServiceProvider, dpList []*push.DeliveryPoint, resQueue chan<- *push.PushResult, notif *push.Notification, err push.Error) {
 	for _, dp := range dpList {
 		res := new(push.PushResult)
 		res.Provider = psp
@@ -503,11 +503,11 @@ func (psb *PushServiceBase) Push(psp *push.PushServiceProvider, dpQueue <-chan *
 	close(resQueue)
 }
 
-func (psb *PushServiceBase) Preview(notif *push.Notification) ([]byte, push.PushError) {
+func (psb *PushServiceBase) Preview(notif *push.Notification) ([]byte, push.Error) {
 	return psb.ToCMPayload(notif, []string{"placeholderRegId"})
 }
 
-func (psb *PushServiceBase) SetErrorReportChan(errChan chan<- push.PushError) {
+func (psb *PushServiceBase) SetErrorReportChan(errChan chan<- push.Error) {
 	return
 }
 

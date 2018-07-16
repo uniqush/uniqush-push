@@ -34,7 +34,7 @@ type PushRequestProcessor interface {
 	Finalize()
 
 	// SetErrorReportChan sets the error reporting channel (shared with the apnsPushService)
-	SetErrorReportChan(errChan chan<- push.PushError)
+	SetErrorReportChan(errChan chan<- push.Error)
 
 	// SetPushServiceConfig sets the config of this PushRequestProcessor when the service is registered.
 	SetPushServiceConfig(c *push.PushServiceConfig)
@@ -49,7 +49,7 @@ type PushRequest struct {
 
 	// DPList is a list of delivery points of the same length as Devtokens. DPList[i].FixedData["dev_token"] == string(Devtokens[i])
 	DPList  []*push.DeliveryPoint
-	ErrChan chan<- push.PushError
+	ErrChan chan<- push.Error
 	ResChan chan<- *APNSResult
 }
 
@@ -65,5 +65,5 @@ func (self *PushRequest) GetID(idx int) uint32 {
 type APNSResult struct {
 	MsgId  uint32
 	Status uint8
-	Err    push.PushError
+	Err    push.Error
 }

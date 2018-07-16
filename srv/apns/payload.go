@@ -29,8 +29,8 @@ import (
 )
 
 // validateRawAPNSPayload tests that the client-provided JSON payload can be sent to APNS.
-// It converts it to bytes if it is, otherwise it returns a push.PushError.
-func validateRawAPNSPayload(payload string) ([]byte, push.PushError) {
+// It converts it to bytes if it is, otherwise it returns a push.Error.
+func validateRawAPNSPayload(payload string) ([]byte, push.Error) {
 	// https://developer.apple.com/library/ios/documentation/NetworkingInternet/Conceptual/RemoteNotificationsPG/Chapters/ApplePushService.html#//apple_ref/doc/uid/TP40008194-CH100-SW1
 	var data map[string]interface{}
 	err := json.Unmarshal([]byte(payload), &data)
@@ -57,7 +57,7 @@ func validateRawAPNSPayload(payload string) ([]byte, push.PushError) {
 	return []byte(payload), nil
 }
 
-func toAPNSPayload(n *push.Notification) ([]byte, push.PushError) {
+func toAPNSPayload(n *push.Notification) ([]byte, push.Error) {
 	// If "uniqush.payload.apns" is provided, then that will be used instead of the other POST parameters.
 	if payloadJSON, ok := n.Data["uniqush.payload.apns"]; ok {
 		bytes, err := validateRawAPNSPayload(payloadJSON)

@@ -53,7 +53,7 @@ const (
 type pushService struct {
 	binaryRequestProcessor common.PushRequestProcessor
 	httpRequestProcessor   common.PushRequestProcessor
-	errChan                chan<- push.PushError
+	errChan                chan<- push.Error
 	nextMessageID          uint32
 }
 
@@ -82,7 +82,7 @@ func (ps *pushService) Finalize() {
 	ps.httpRequestProcessor.Finalize()
 }
 
-func (ps *pushService) SetErrorReportChan(errChan chan<- push.PushError) {
+func (ps *pushService) SetErrorReportChan(errChan chan<- push.Error) {
 	ps.errChan = errChan
 	ps.binaryRequestProcessor.SetErrorReportChan(errChan)
 	ps.httpRequestProcessor.SetErrorReportChan(errChan)
@@ -166,9 +166,9 @@ func (ps *pushService) BuildDeliveryPointFromMap(kv map[string]string, dp *push.
 	return nil
 }
 
-func apnsresToError(apnsres *common.APNSResult, psp *push.PushServiceProvider, dp *push.DeliveryPoint) push.PushError {
+func apnsresToError(apnsres *common.APNSResult, psp *push.PushServiceProvider, dp *push.DeliveryPoint) push.Error {
 	// TODO: If necessary, update this to account for HTTP2 result codes?
-	var err push.PushError
+	var err push.Error
 	switch apnsres.Status {
 	case common.STATUS0_SUCCESS:
 		err = nil
@@ -224,7 +224,7 @@ func (ps *pushService) waitResults(psp *push.PushServiceProvider, dpList []*push
 }
 
 // Returns a JSON APNS payload, for a dummy device token
-func (ps *pushService) Preview(notif *push.Notification) ([]byte, push.PushError) {
+func (ps *pushService) Preview(notif *push.Notification) ([]byte, push.Error) {
 	return toAPNSPayload(notif)
 }
 
@@ -234,7 +234,7 @@ func (ps *pushService) Push(psp *push.PushServiceProvider, dpQueue <-chan *push.
 	defer close(resQueue)
 	// Profiling
 	// ps.updateCheckPoint("")
-	var err push.PushError
+	var err push.Error
 	req := new(common.PushRequest)
 	req.PSP = psp
 	req.Payload, err = toAPNSPayload(notif)
@@ -328,7 +328,7 @@ func (ps *pushService) Push(psp *push.PushServiceProvider, dpQueue <-chan *push.
 	// We send this request object to be processed by pushMux goroutine, to send responses/errors back.
 	// If there are no errors, then there will be the same number of results as Devtokens.
 	// TODO: NIT: Channels could be created by AddRequest.
-	errChan := make(chan push.PushError)
+	errChan := make(chan push.Error)
 	resChan := make(chan *common.APNSResult, n)
 	req.ErrChan = errChan
 	req.ResChan = resChan

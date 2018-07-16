@@ -45,7 +45,7 @@ type pushWorkerGroupInfo struct {
 // BinaryPushRequestProcessor contains the logic for V2 of the Binary Provider API.
 type BinaryPushRequestProcessor struct {
 	reqChan    chan *common.PushRequest
-	errChan    chan<- push.PushError
+	errChan    chan<- push.Error
 	wgFinalize sync.WaitGroup
 	poolSize   int
 	reqLock    sync.RWMutex
@@ -55,7 +55,7 @@ type BinaryPushRequestProcessor struct {
 	connManagerMaker func(psp *push.PushServiceProvider, resultChan chan<- *common.APNSResult) ConnManager
 	// feedbackChecker is called once. It periodically connects to APNS's feedback servers and fetches unsubscribe updates.
 	// TODO: Should I still call feedbackChecker in the HTTP/2 API?
-	feedbackChecker func(psp *push.PushServiceProvider, dpCache *cache.SimpleCache, errChan chan<- push.PushError)
+	feedbackChecker func(psp *push.PushServiceProvider, dpCache *cache.SimpleCache, errChan chan<- push.Error)
 }
 
 var _ common.PushRequestProcessor = &BinaryPushRequestProcessor{}
@@ -96,7 +96,7 @@ func (prp *BinaryPushRequestProcessor) GetMaxPayloadSize() int {
 	return 2048
 }
 
-func (prp *BinaryPushRequestProcessor) SetErrorReportChan(errChan chan<- push.PushError) {
+func (prp *BinaryPushRequestProcessor) SetErrorReportChan(errChan chan<- push.Error) {
 	prp.errChan = errChan
 }
 
@@ -248,7 +248,7 @@ func generatePayload(payload, token []byte, expiry uint32, mid uint32) []byte {
 }
 
 // singlePush sends bytes to APNS, retrying with different connections if it failed to write bytes.
-func (prp *BinaryPushRequestProcessor) singlePush(payload, token []byte, expiry uint32, mid uint32, workerPool *Pool, errChan chan<- push.PushError) {
+func (prp *BinaryPushRequestProcessor) singlePush(payload, token []byte, expiry uint32, mid uint32, workerPool *Pool, errChan chan<- push.Error) {
 	// Generate the v2 frame payload
 	pdu := generatePayload(payload, token, expiry, mid)
 
@@ -314,7 +314,7 @@ func clearRequest(req *common.PushRequest, resChan chan<- *common.APNSResult) {
 }
 
 // overrideFeedbackChecker overrides the function used to listen for unsubscriptions from the APNS feedback servers.
-func (prp *BinaryPushRequestProcessor) overrideFeedbackChecker(newFeedbackChecker func(*push.PushServiceProvider, *cache.SimpleCache, chan<- push.PushError)) {
+func (prp *BinaryPushRequestProcessor) overrideFeedbackChecker(newFeedbackChecker func(*push.PushServiceProvider, *cache.SimpleCache, chan<- push.Error)) {
 	prp.feedbackChecker = newFeedbackChecker
 }
 

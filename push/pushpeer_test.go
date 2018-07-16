@@ -36,7 +36,7 @@ func newTestPushServiceType() *testPushServiceType {
 	return ret
 }
 
-func (pst *testPushServiceType) SetErrorReportChan(errChan chan<- PushError) {
+func (pst *testPushServiceType) SetErrorReportChan(errChan chan<- Error) {
 	return
 }
 
@@ -66,7 +66,7 @@ func (pst *testPushServiceType) Push(*PushServiceProvider, <-chan *DeliveryPoint
 	fmt.Println("Push!")
 }
 
-func (t *testPushServiceType) Preview(*Notification) ([]byte, PushError) {
+func (t *testPushServiceType) Preview(*Notification) ([]byte, Error) {
 	fmt.Println("Preview!")
 	return []byte("{}"), nil
 }

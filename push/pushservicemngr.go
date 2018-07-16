@@ -32,7 +32,7 @@ type serviceType struct {
 
 type PushServiceManager struct {
 	serviceTypes map[string]*serviceType
-	errChan      chan<- PushError
+	errChan      chan<- Error
 	configFile   *conf.ConfigFile
 }
 
@@ -201,7 +201,7 @@ func (m *PushServiceManager) Push(psp *PushServiceProvider, dpQueue <-chan *Deli
 	wg.Wait()
 }
 
-func (m *PushServiceManager) Preview(ptname string, notif *Notification) ([]byte, PushError) {
+func (m *PushServiceManager) Preview(ptname string, notif *Notification) ([]byte, Error) {
 	if pst, ok := m.serviceTypes[ptname]; ok && pst != nil {
 		return pst.pst.Preview(notif)
 	} else {
@@ -209,7 +209,7 @@ func (m *PushServiceManager) Preview(ptname string, notif *Notification) ([]byte
 	}
 }
 
-func (m *PushServiceManager) SetErrorReportChan(errChan chan<- PushError) {
+func (m *PushServiceManager) SetErrorReportChan(errChan chan<- Error) {
 	m.errChan = errChan
 	for _, t := range m.serviceTypes {
 		t.pst.SetErrorReportChan(errChan)
