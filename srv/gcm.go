@@ -55,6 +55,7 @@ func newGCMPushService() *gcmPushService {
 	}
 }
 
+// InstallGCM registers the only instance of the GCM push service. It is called only once.
 func InstallGCM() {
 	psm := push.GetPushServiceManager()
 	err := psm.RegisterPushServiceType(newGCMPushService())

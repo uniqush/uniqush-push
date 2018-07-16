@@ -32,7 +32,7 @@ type serviceType struct {
 
 type PushServiceManager struct {
 	serviceTypes map[string]*serviceType
-	errChan      chan<- PushError
+	errChan      chan<- Error
 	configFile   *conf.ConfigFile
 }
 
@@ -179,7 +179,7 @@ func (m *PushServiceManager) BuildDeliveryPointFromBytes(value []byte) (*Deliver
 	return dp, nil
 }
 
-func (m *PushServiceManager) Push(psp *PushServiceProvider, dpQueue <-chan *DeliveryPoint, resQueue chan<- *PushResult, notif *Notification) {
+func (m *PushServiceManager) Push(psp *PushServiceProvider, dpQueue <-chan *DeliveryPoint, resQueue chan<- *Result, notif *Notification) {
 	wg := new(sync.WaitGroup)
 
 	if psp.pushServiceType != nil {
@@ -189,10 +189,10 @@ func (m *PushServiceManager) Push(psp *PushServiceProvider, dpQueue <-chan *Deli
 			wg.Done()
 		}()
 	} else {
-		r := new(PushResult)
+		r := new(Result)
 		r.Provider = psp
 		r.Destination = nil
-		r.MsgId = ""
+		r.MsgID = ""
 		r.Content = notif
 		r.Err = NewError("InvalidPushServiceProvider")
 		resQueue <- r
@@ -201,15 +201,14 @@ func (m *PushServiceManager) Push(psp *PushServiceProvider, dpQueue <-chan *Deli
 	wg.Wait()
 }
 
-func (m *PushServiceManager) Preview(ptname string, notif *Notification) ([]byte, PushError) {
+func (m *PushServiceManager) Preview(ptname string, notif *Notification) ([]byte, Error) {
 	if pst, ok := m.serviceTypes[ptname]; ok && pst != nil {
 		return pst.pst.Preview(notif)
-	} else {
-		return nil, NewErrorf("No push service type %q", ptname)
 	}
+	return nil, NewErrorf("No push service type %q", ptname)
 }
 
-func (m *PushServiceManager) SetErrorReportChan(errChan chan<- PushError) {
+func (m *PushServiceManager) SetErrorReportChan(errChan chan<- Error) {
 	m.errChan = errChan
 	for _, t := range m.serviceTypes {
 		t.pst.SetErrorReportChan(errChan)

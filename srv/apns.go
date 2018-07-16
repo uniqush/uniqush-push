@@ -13,6 +13,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+
 package srv
 
 import (
@@ -22,6 +23,7 @@ import (
 	"github.com/uniqush/uniqush-push/srv/apns"
 )
 
+// InstallAPNS registers the only instance of the APNS push service. It is called only once.
 func InstallAPNS() {
 	err := push.GetPushServiceManager().RegisterPushServiceType(apns.NewPushService())
 	if err != nil {

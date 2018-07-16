@@ -111,13 +111,13 @@ var _ redisClient = &redis.Client{}
 var _ pushRawDatabase = &PushRedisDB{}
 
 const (
-	DELIVERY_POINT_PREFIX                                  string = "delivery.point:"         // STRING (prefix of)- Maps the delivery point name to a json blob of information about a delivery point.
-	PUSH_SERVICE_PROVIDER_PREFIX                           string = "push.service.provider:"  // STRING (prefix of) - Maps a push service provider name to a json blob of information about it.
-	SERVICE_SUBSCRIBER_TO_DELIVERY_POINTS_PREFIX           string = "srv.sub-2-dp:"           // SET (prefix of) - Maps a service name + subscriber to a set of delivery point names
-	SERVICE_DELIVERY_POINT_TO_PUSH_SERVICE_PROVIDER_PREFIX string = "srv.dp-2-psp:"           // STRING (prefix of) - Maps a service name + delivery point name to the push service provider
-	SERVICE_TO_PUSH_SERVICE_PROVIDERS_PREFIX               string = "srv-2-psp:"              // SET (prefix of) - Maps a service name to a set of PSP names
-	DELIVERY_POINT_COUNTER_PREFIX                          string = "delivery.point.counter:" // STRING (prefix of) - Maps a delivery point name to the number of subcribers(summed across each service).
-	SERVICES_SET                                           string = "services{0}"             // SET - This is a set of service names.
+	DeliveryPointPrefix                             string = "delivery.point:"         // STRING (prefix of)- Maps the delivery point name to a json blob of information about a delivery point.
+	PushServiceProviderPrefix                       string = "push.service.provider:"  // STRING (prefix of) - Maps a push service provider name to a json blob of information about it.
+	ServiceSubscriberToDelieryPointsPrefix          string = "srv.sub-2-dp:"           // SET (prefix of) - Maps a service name + subscriber to a set of delivery point names
+	ServiceDeliveryPointToPushServiceProviderPrefix string = "srv.dp-2-psp:"           // STRING (prefix of) - Maps a service name + delivery point name to the push service provider
+	ServiceToPushServiceProvidersPrefix             string = "srv-2-psp:"              // SET (prefix of) - Maps a service name to a set of PSP names
+	DeliveryPointCounterPrefix                      string = "delivery.point.counter:" // STRING (prefix of) - Maps a delivery point name to the number of subcribers(summed across each service).
+	ServicesSet                                     string = "services{0}"             // SET - This is a set of service names.
 )
 
 // Optionally returns a redis client for read-only operations.
@@ -253,7 +253,7 @@ func (r *PushRedisDB) mgetStrings(keys ...string) ([][]byte, error) {
 func (r *PushRedisDB) mgetRawDeliveryPoints(deliveryPointNames ...string) ([][]byte, error) {
 	var deliveryPointKeys []string
 	for _, deliveryPointName := range deliveryPointNames {
-		deliveryPointKeys = append(deliveryPointKeys, DELIVERY_POINT_PREFIX+deliveryPointName)
+		deliveryPointKeys = append(deliveryPointKeys, DeliveryPointPrefix+deliveryPointName)
 	}
 
 	deliveryPointData, err := r.mgetStrings(deliveryPointKeys...)
@@ -264,7 +264,7 @@ func (r *PushRedisDB) mgetRawDeliveryPoints(deliveryPointNames ...string) ([][]b
 }
 
 func (r *PushRedisDB) GetDeliveryPoint(name string) (*push.DeliveryPoint, error) {
-	b, err := r.client.Get(DELIVERY_POINT_PREFIX + name).Bytes()
+	b, err := r.client.Get(DeliveryPointPrefix + name).Bytes()
 	if err != nil {
 		return nil, fmt.Errorf("GetDeliveryPoint failed: %v", err)
 	}
@@ -275,12 +275,12 @@ func (r *PushRedisDB) GetDeliveryPoint(name string) (*push.DeliveryPoint, error)
 }
 
 func (r *PushRedisDB) SetDeliveryPoint(dp *push.DeliveryPoint) error {
-	err := r.client.Set(DELIVERY_POINT_PREFIX+dp.Name(), deliveryPointToValue(dp), 0).Err()
+	err := r.client.Set(DeliveryPointPrefix+dp.Name(), deliveryPointToValue(dp), 0).Err()
 	return err
 }
 
 func (r *PushRedisDB) GetPushServiceProvider(name string) (*push.PushServiceProvider, error) {
-	cmd := r.client.Get(PUSH_SERVICE_PROVIDER_PREFIX + name)
+	cmd := r.client.Get(PushServiceProviderPrefix + name)
 	b, err := cmd.Bytes()
 	if err != nil {
 		return nil, fmt.Errorf("GetPushServiceProvider failed: %v", err)
@@ -297,7 +297,7 @@ func (r *PushRedisDB) GetPushServiceProviderConfigs(names []string) ([]*push.Pus
 	}
 	keys := make([]string, len(names))
 	for i, name := range names {
-		keys[i] = PUSH_SERVICE_PROVIDER_PREFIX + name
+		keys[i] = PushServiceProviderPrefix + name
 	}
 	values, err := r.mgetStrings(keys...)
 	if err != nil {
@@ -321,14 +321,14 @@ func (r *PushRedisDB) GetPushServiceProviderConfigs(names []string) ([]*push.Pus
 }
 
 func (r *PushRedisDB) SetPushServiceProvider(psp *push.PushServiceProvider) error {
-	if err := r.client.Set(PUSH_SERVICE_PROVIDER_PREFIX+psp.Name(), pushServiceProviderToValue(psp), 0).Err(); err != nil {
+	if err := r.client.Set(PushServiceProviderPrefix+psp.Name(), pushServiceProviderToValue(psp), 0).Err(); err != nil {
 		return fmt.Errorf("SetPushServiceProvider %q failed: %v", psp.Name(), err)
 	}
 	return nil
 }
 
 func (r *PushRedisDB) RemoveDeliveryPoint(dp string) error {
-	err := r.client.Del(DELIVERY_POINT_PREFIX + dp).Err()
+	err := r.client.Del(DeliveryPointPrefix + dp).Err()
 	if err != nil {
 		return fmt.Errorf("RemoveDP %q failed: %v", dp, err)
 	}
@@ -336,7 +336,7 @@ func (r *PushRedisDB) RemoveDeliveryPoint(dp string) error {
 }
 
 func (r *PushRedisDB) RemovePushServiceProvider(psp string) error {
-	err := r.client.Del(PUSH_SERVICE_PROVIDER_PREFIX + psp).Err()
+	err := r.client.Del(PushServiceProviderPrefix + psp).Err()
 	if err != nil {
 		return fmt.Errorf("RemovePSP %q failed: %v", psp, err)
 	}
@@ -346,10 +346,10 @@ func (r *PushRedisDB) RemovePushServiceProvider(psp string) error {
 func (r *PushRedisDB) GetDeliveryPointsNameByServiceSubscriber(srv, usr string) (map[string][]string, error) {
 	keys := make([]string, 1)
 	if !strings.Contains(usr, "*") && !strings.Contains(srv, "*") {
-		keys[0] = SERVICE_SUBSCRIBER_TO_DELIVERY_POINTS_PREFIX + srv + ":" + usr
+		keys[0] = ServiceSubscriberToDelieryPointsPrefix + srv + ":" + usr
 	} else {
 		var err error
-		keys, err = r.client.Keys(SERVICE_SUBSCRIBER_TO_DELIVERY_POINTS_PREFIX + srv + ":" + usr).Result()
+		keys, err = r.client.Keys(ServiceSubscriberToDelieryPointsPrefix + srv + ":" + usr).Result()
 		if err != nil {
 			return nil, fmt.Errorf("GetDPsNameByServiceSubscriber dp lookup '%s:%s' failed: %v", srv, usr, err)
 		}
@@ -379,7 +379,7 @@ func (r *PushRedisDB) GetDeliveryPointsNameByServiceSubscriber(srv, usr string) 
 }
 
 func (r *PushRedisDB) GetPushServiceProviderNameByServiceDeliveryPoint(srv, dp string) (string, error) {
-	b, err := r.client.Get(SERVICE_DELIVERY_POINT_TO_PUSH_SERVICE_PROVIDER_PREFIX + srv + ":" + dp).Result()
+	b, err := r.client.Get(ServiceDeliveryPointToPushServiceProviderPrefix + srv + ":" + dp).Result()
 	if err != nil {
 		return "", fmt.Errorf("GetPSPNameByServiceDP failed: %v", err)
 	}
@@ -387,14 +387,14 @@ func (r *PushRedisDB) GetPushServiceProviderNameByServiceDeliveryPoint(srv, dp s
 }
 
 func (r *PushRedisDB) AddDeliveryPointToServiceSubscriber(srv, sub, dp string) error {
-	i, err := r.client.SAdd(SERVICE_SUBSCRIBER_TO_DELIVERY_POINTS_PREFIX+srv+":"+sub, dp).Result()
+	i, err := r.client.SAdd(ServiceSubscriberToDelieryPointsPrefix+srv+":"+sub, dp).Result()
 	if err != nil {
 		return fmt.Errorf("AddDPToServiceSubscriber failed: %v", err)
 	}
 	if i == 0 { // Already exists
 		return nil
 	}
-	err = r.client.Incr(DELIVERY_POINT_COUNTER_PREFIX + dp).Err()
+	err = r.client.Incr(DeliveryPointCounterPrefix + dp).Err()
 	if err != nil {
 		return fmt.Errorf("AddDPToServiceSubscriber count tracking failed: %v", err)
 	}
@@ -402,23 +402,23 @@ func (r *PushRedisDB) AddDeliveryPointToServiceSubscriber(srv, sub, dp string) e
 }
 
 func (r *PushRedisDB) RemoveDeliveryPointFromServiceSubscriber(srv, sub, dp string) error {
-	j, err := r.client.SRem(SERVICE_SUBSCRIBER_TO_DELIVERY_POINTS_PREFIX+srv+":"+sub, dp).Result()
+	j, err := r.client.SRem(ServiceSubscriberToDelieryPointsPrefix+srv+":"+sub, dp).Result()
 	if err != nil {
 		return fmt.Errorf("Removing the delivery point pointer %q from \"%s:%s\" failed", dp, srv, sub)
 	}
 	if j == 0 {
 		return nil
 	}
-	i, e := r.client.Decr(DELIVERY_POINT_COUNTER_PREFIX + dp).Result()
+	i, e := r.client.Decr(DeliveryPointCounterPrefix + dp).Result()
 	if e != nil {
 		return fmt.Errorf("Failed to decrement number of subscribers using dp %q: %v", dp, e)
 	}
 	if i <= 0 {
-		e0 := r.client.Del(DELIVERY_POINT_COUNTER_PREFIX + dp).Err()
+		e0 := r.client.Del(DeliveryPointCounterPrefix + dp).Err()
 		if e0 != nil {
 			return fmt.Errorf("Failed to remove counter for %q: %v", dp, e0)
 		}
-		e1 := r.client.Del(DELIVERY_POINT_PREFIX + dp).Err()
+		e1 := r.client.Del(DeliveryPointPrefix + dp).Err()
 		if e1 != nil {
 			return fmt.Errorf("Failed to remove delivery point info for %q: %v", dp, e1)
 		}
@@ -428,19 +428,19 @@ func (r *PushRedisDB) RemoveDeliveryPointFromServiceSubscriber(srv, sub, dp stri
 
 // removeMissingDeliveryPointFromServiceSubscriber removes any associations from a subscription list to a dp with missing subscriptions.
 func (r *PushRedisDB) removeMissingDeliveryPointFromServiceSubscriber(service, subscriber, dpName string, logger log.Logger) {
-	// Precondition: DELIVERY_POINT_PREFIX + dp was already missing. No need to remove it.
-	e0 := r.client.SRem(SERVICE_SUBSCRIBER_TO_DELIVERY_POINTS_PREFIX+service+":"+subscriber, dpName).Err()
+	// Precondition: DeliveryPointPrefix + dp was already missing. No need to remove it.
+	e0 := r.client.SRem(ServiceSubscriberToDelieryPointsPrefix+service+":"+subscriber, dpName).Err()
 	if e0 != nil {
 		logger.Errorf("Error cleaning up delivery point with missing data for dp %q service %q FROM user %q's delivery points: %v", dpName, subscriber, service, e0)
 	}
-	e1 := r.client.Del(DELIVERY_POINT_COUNTER_PREFIX + dpName).Err() // TODO: Err instead
+	e1 := r.client.Del(DeliveryPointCounterPrefix + dpName).Err() // TODO: Err instead
 	if e1 != nil {
 		logger.Errorf("Error cleaning up count for delivery point with missing data for delivery point %q (while processing subscriber %q, service %q): %v", dpName, subscriber, service, e1)
 	}
 }
 
 func (r *PushRedisDB) SetPushServiceProviderOfServiceDeliveryPoint(srv, dp, psp string) error {
-	err := r.client.Set(SERVICE_DELIVERY_POINT_TO_PUSH_SERVICE_PROVIDER_PREFIX+srv+":"+dp, psp, 0).Err()
+	err := r.client.Set(ServiceDeliveryPointToPushServiceProviderPrefix+srv+":"+dp, psp, 0).Err()
 	if err != nil {
 		return fmt.Errorf("SetPSPOfServiceDP failed for \"%s:%s\": %v", srv, dp, err)
 	}
@@ -448,7 +448,7 @@ func (r *PushRedisDB) SetPushServiceProviderOfServiceDeliveryPoint(srv, dp, psp 
 }
 
 func (r *PushRedisDB) RemovePushServiceProviderOfServiceDeliveryPoint(srv, dp string) error {
-	err := r.client.Del(SERVICE_DELIVERY_POINT_TO_PUSH_SERVICE_PROVIDER_PREFIX + srv + ":" + dp).Err()
+	err := r.client.Del(ServiceDeliveryPointToPushServiceProviderPrefix + srv + ":" + dp).Err()
 	if err != nil {
 		return fmt.Errorf("RemovePSPOfServiceDP failed for \"%s:%s\": %v", srv, dp, err)
 	}
@@ -456,7 +456,7 @@ func (r *PushRedisDB) RemovePushServiceProviderOfServiceDeliveryPoint(srv, dp st
 }
 
 func (r *PushRedisDB) GetPushServiceProvidersByService(srv string) ([]string, error) {
-	m, err := r.client.SMembers(SERVICE_TO_PUSH_SERVICE_PROVIDERS_PREFIX + srv).Result()
+	m, err := r.client.SMembers(ServiceToPushServiceProvidersPrefix + srv).Result()
 	if err != nil {
 		return nil, fmt.Errorf("GetPSPsByService failed for %q: %v", srv, err)
 	}
@@ -472,17 +472,17 @@ func (r *PushRedisDB) GetPushServiceProvidersByService(srv string) ([]string, er
 }
 
 func (r *PushRedisDB) RemovePushServiceProviderFromService(srv, psp string) error {
-	err := r.client.SRem(SERVICE_TO_PUSH_SERVICE_PROVIDERS_PREFIX+srv, psp).Err()
+	err := r.client.SRem(ServiceToPushServiceProvidersPrefix+srv, psp).Err()
 	if err != nil {
 		return fmt.Errorf("RemovePSPFromService failed for psp %q of service %q: %v", psp, srv, err)
 	}
 	// Unfortunately, a service name might be associated with multiple push service providers, so the check seems to be needed. (/addpsp allows psps with the same service name but different pushservicetypes, if I understand correctly)
-	exists, err := r.client.Exists(SERVICE_TO_PUSH_SERVICE_PROVIDERS_PREFIX + srv).Result()
+	exists, err := r.client.Exists(ServiceToPushServiceProvidersPrefix + srv).Result()
 	if err != nil {
 		return fmt.Errorf("Unable to determine if service %q still exists after removing psp %q: %v", srv, psp, err)
 	}
 	if exists == 0 {
-		err := r.client.SRem(SERVICES_SET, srv).Err() // Non-essential. Used to list services in API.
+		err := r.client.SRem(ServicesSet, srv).Err() // Non-essential. Used to list services in API.
 		if err != nil {
 			return fmt.Errorf("Unable to remove %q from set of services", srv)
 		}
@@ -492,8 +492,8 @@ func (r *PushRedisDB) RemovePushServiceProviderFromService(srv, psp string) erro
 
 func (r *PushRedisDB) AddPushServiceProviderToService(srv, psp string) error {
 	// TODO: pipelined
-	r.client.SAdd(SERVICES_SET, srv).Err() // Non-essential. Used to list services in API.
-	err := r.client.SAdd(SERVICE_TO_PUSH_SERVICE_PROVIDERS_PREFIX+srv, psp).Err()
+	r.client.SAdd(ServicesSet, srv).Err() // Non-essential. Used to list services in API.
+	err := r.client.SAdd(ServiceToPushServiceProvidersPrefix+srv, psp).Err()
 	if err != nil {
 		return fmt.Errorf("AddPSPToService failed for psp %q of service %q: %v", psp, srv, err)
 	}
@@ -501,7 +501,7 @@ func (r *PushRedisDB) AddPushServiceProviderToService(srv, psp string) error {
 }
 
 func (r *PushRedisDB) GetServiceNames() ([]string, error) {
-	serviceList, err := r.client.SMembers(SERVICES_SET).Result()
+	serviceList, err := r.client.SMembers(ServicesSet).Result()
 	if err != nil {
 		return nil, fmt.Errorf("Could not get services from redis: %v", err)
 	}
@@ -512,7 +512,7 @@ func (r *PushRedisDB) GetServiceNames() ([]string, error) {
 func (r *PushRedisDB) RebuildServiceSet() error {
 	// Run KEYS, then replace the PSP set with the result of KEYS.
 	// If any step fails, then return an error.
-	pspKeys, err := r.client.Keys(PUSH_SERVICE_PROVIDER_PREFIX + "*").Result()
+	pspKeys, err := r.client.Keys(PushServiceProviderPrefix + "*").Result()
 	if err != nil {
 		return fmt.Errorf("Failed to fetch PSPs using redis KEYS command: %v", err)
 	}
@@ -522,10 +522,10 @@ func (r *PushRedisDB) RebuildServiceSet() error {
 	}
 
 	pspNames := make([]string, len(pspKeys))
-	N := len(PUSH_SERVICE_PROVIDER_PREFIX)
+	N := len(PushServiceProviderPrefix)
 	for i, key := range pspKeys {
-		if len(key) < N || key[:N] != PUSH_SERVICE_PROVIDER_PREFIX {
-			return fmt.Errorf("KEYS %s* returned %q - this shouldn't happen", PUSH_SERVICE_PROVIDER_PREFIX, key)
+		if len(key) < N || key[:N] != PushServiceProviderPrefix {
+			return fmt.Errorf("KEYS %s* returned %q - this shouldn't happen", PushServiceProviderPrefix, key)
 		}
 		pspNames[i] = key[N:]
 	}
@@ -547,7 +547,7 @@ func (r *PushRedisDB) RebuildServiceSet() error {
 		serviceNameList = append(serviceNameList, serviceName)
 	}
 	if len(serviceNameList) > 0 {
-		err := r.client.SAdd(SERVICES_SET, serviceNameList...).Err()
+		err := r.client.SAdd(ServicesSet, serviceNameList...).Err()
 		if err != nil {
 			return err
 		}
@@ -576,7 +576,7 @@ func (r *PushRedisDB) GetSubscriptions(queryServices []string, subscriber string
 			continue
 		}
 
-		deliveryPoints, err := r.client.SMembers(SERVICE_SUBSCRIBER_TO_DELIVERY_POINTS_PREFIX + service + ":" + subscriber).Result()
+		deliveryPoints, err := r.client.SMembers(ServiceSubscriberToDelieryPointsPrefix + service + ":" + subscriber).Result()
 
 		if err != nil {
 			return nil, fmt.Errorf("Could not get subscriber information")

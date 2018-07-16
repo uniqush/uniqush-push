@@ -9,15 +9,15 @@ import (
 	"time"
 )
 
-const CLOSE_TIMEOUT = time.Hour
+const CloseTimeout = time.Hour
 
 // PermanentError is returned by a worker because of an error that can't be fixed at the moment (e.g. a connection couldn't be established)
 type PermanentError struct {
 	Err error
 }
 
-func (self *PermanentError) Error() string {
-	return fmt.Sprintf("We are unable to get a connection: %s", self.Err.Error())
+func (err *PermanentError) Error() string {
+	return fmt.Sprintf("We are unable to get a connection: %s", err.Err.Error())
 }
 
 // TemporaryError is returned by a worker for problems that can be fixed by retrying.
@@ -26,8 +26,8 @@ type TemporaryError struct {
 	Endpoint net.Addr
 }
 
-func (self *TemporaryError) Error() string {
-	return fmt.Sprintf("Error connecting to %v: %v", self.Endpoint, self.Err.Error())
+func (err *TemporaryError) Error() string {
+	return fmt.Sprintf("Error connecting to %v: %v", err.Endpoint, err.Err.Error())
 }
 
 // Pool is a fixed-size pool of workers responsible for sending payloads to APNS.
@@ -65,15 +65,15 @@ func NewPool(manager ConnManager, numWorkers int, maxWaitTime int) *Pool {
 }
 
 // Close waits for all workers to close their connections and finish executing.
-func (self *Pool) Close() {
+func (pool *Pool) Close() {
 	// Close the request, causing each of the numWorkers to call numWorkers to close
-	close(self.requests)
+	close(pool.requests)
 	// Wait for all of the worker goroutines to exit cleanly.
-	self.wg.Wait()
+	pool.wg.Wait()
 }
 
 // Push will send the push payload to APNS, and respond with nil, TemporaryError, or PermanentError.
-func (self *Pool) Push(payload []byte) error {
+func (pool *Pool) Push(payload []byte) error {
 	responseChan := make(chan error)
 	request := workerRequest{
 		Payload:  payload,
@@ -81,14 +81,14 @@ func (self *Pool) Push(payload []byte) error {
 	}
 
 	// Send a request to a worker in a blocking manner
-	self.requests <- request
+	pool.requests <- request
 	return <-responseChan
 }
 
 // poolWorker sends data to APNS. A different connection receives the APNS responses.
 func poolWorker(wg *sync.WaitGroup, manager ConnManager, requests <-chan workerRequest, maxWaitTime int) {
 	defer wg.Done()
-	var conn net.Conn = nil
+	var conn net.Conn
 	var err error
 	var closed <-chan bool
 
@@ -103,7 +103,7 @@ func poolWorker(wg *sync.WaitGroup, manager ConnManager, requests <-chan workerR
 			default:
 			}
 		}
-		if conn != nil && curTime.Sub(lastRequestTime) > CLOSE_TIMEOUT {
+		if conn != nil && curTime.Sub(lastRequestTime) > CloseTimeout {
 			// Close and re-open the connection if the connection has been inactive for over an hour.
 			conn.Close()
 			conn = nil

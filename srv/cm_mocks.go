@@ -1,6 +1,7 @@
 /**
  * Mocks used by tests of both GCM and FCM.
  */
+
 package srv
 
 import (

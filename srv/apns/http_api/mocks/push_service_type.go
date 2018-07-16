@@ -5,11 +5,13 @@ import (
 )
 
 // TODO: refactor into a common test library.
+
+// MockPushServiceType contains mocks of enough functionality of a push service type for unit testing. It panics for unimplemented functionality.
 type MockPushServiceType struct{}
 
 var _ push.PushServiceType = &MockPushServiceType{}
 
-func (self *MockPushServiceType) BuildPushServiceProviderFromMap(kv map[string]string, psp *push.PushServiceProvider) error {
+func (pst *MockPushServiceType) BuildPushServiceProviderFromMap(kv map[string]string, psp *push.PushServiceProvider) error {
 	for key, value := range kv {
 		switch key {
 		case "addr", "bundleid", "skipverify":
@@ -20,22 +22,22 @@ func (self *MockPushServiceType) BuildPushServiceProviderFromMap(kv map[string]s
 	}
 	return nil
 }
-func (self *MockPushServiceType) BuildDeliveryPointFromMap(map[string]string, *push.DeliveryPoint) error {
+func (pst *MockPushServiceType) BuildDeliveryPointFromMap(map[string]string, *push.DeliveryPoint) error {
 	panic("Not implemented")
 }
-func (self *MockPushServiceType) Name() string {
+func (pst *MockPushServiceType) Name() string {
 	return "apns"
 }
-func (self *MockPushServiceType) Push(*push.PushServiceProvider, <-chan *push.DeliveryPoint, chan<- *push.PushResult, *push.Notification) {
+func (pst *MockPushServiceType) Push(*push.PushServiceProvider, <-chan *push.DeliveryPoint, chan<- *push.Result, *push.Notification) {
 	panic("Not implemented")
 }
-func (self *MockPushServiceType) Preview(*push.Notification) ([]byte, push.PushError) {
+func (pst *MockPushServiceType) Preview(*push.Notification) ([]byte, push.Error) {
 	panic("Not implemented")
 }
-func (self *MockPushServiceType) SetErrorReportChan(errChan chan<- push.PushError) {
+func (pst *MockPushServiceType) SetErrorReportChan(errChan chan<- push.Error) {
 	panic("Not implemented")
 }
-func (self *MockPushServiceType) SetPushServiceConfig(*push.PushServiceConfig) {
+func (pst *MockPushServiceType) SetPushServiceConfig(*push.PushServiceConfig) {
 	panic("Not implemented")
 }
-func (self *MockPushServiceType) Finalize() {}
+func (pst *MockPushServiceType) Finalize() {}

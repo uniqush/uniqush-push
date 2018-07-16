@@ -43,20 +43,20 @@ type ConnManager interface {
 // loggingConnManager decorates a ConnManager and logs opened connections.
 type loggingConnManager struct {
 	manager ConnManager
-	errChan chan<- push.PushError
+	errChan chan<- push.Error
 }
 
 var _ ConnManager = &loggingConnManager{}
 
-func (self *loggingConnManager) NewConn() (conn net.Conn, closed <-chan bool, err error) {
-	conn, closed, err = self.manager.NewConn()
+func (cm *loggingConnManager) NewConn() (conn net.Conn, closed <-chan bool, err error) {
+	conn, closed, err = cm.manager.NewConn()
 	if conn != nil {
-		self.errChan <- push.NewInfof("Connection to APNS opened: %v to %v", conn.LocalAddr(), conn.RemoteAddr())
+		cm.errChan <- push.NewInfof("Connection to APNS opened: %v to %v", conn.LocalAddr(), conn.RemoteAddr())
 	}
 	return
 }
 
-func newLoggingConnManager(manager ConnManager, errChan chan<- push.PushError) *loggingConnManager {
+func newLoggingConnManager(manager ConnManager, errChan chan<- push.Error) *loggingConnManager {
 	return &loggingConnManager{
 		manager: manager,
 		errChan: errChan,
@@ -97,12 +97,12 @@ func newAPNSConnManager(psp *push.PushServiceProvider, resultChan chan<- *common
 
 // NewConn returns either a connection and a channel to signal when the receiver detects a closed connection,
 // or an error.
-func (self *connManagerImpl) NewConn() (net.Conn, <-chan bool, error) {
-	if self.err != nil {
-		return nil, nil, fmt.Errorf("Error initializing apnsConnManager: %v", self.err)
+func (cm *connManagerImpl) NewConn() (net.Conn, <-chan bool, error) {
+	if cm.err != nil {
+		return nil, nil, fmt.Errorf("Error initializing apnsConnManager: %v", cm.err)
 	}
 
-	tlsconn, err := tls.Dial("tcp", self.addr, self.conf)
+	tlsconn, err := tls.Dial("tcp", cm.addr, cm.conf)
 	if err != nil {
 		if err.Error() == "EOF" {
 			err = fmt.Errorf("Certificate is probably invalid/expired: %v", err)
@@ -110,7 +110,7 @@ func (self *connManagerImpl) NewConn() (net.Conn, <-chan bool, error) {
 		return nil, nil, err
 	}
 	closed := make(chan bool, 1) // notifies worker when reader detects socket closed. Has a buffer so adding one element is non-blocking
-	go resultCollector(self.psp, self.resultChan, tlsconn, closed)
+	go resultCollector(cm.psp, cm.resultChan, tlsconn, closed)
 	return tlsconn, closed, nil
 }
 
@@ -174,7 +174,7 @@ func resultCollector(psp *push.PushServiceProvider, resChan chan<- *common.APNSR
 		}
 
 		res := new(common.APNSResult)
-		res.MsgId = msgid
+		res.MsgID = msgid
 		res.Status = status
 		// Send this response to the connection manager, which will translate it to a result/error structure associated with the Push,
 		// and send that to the pushbackend.

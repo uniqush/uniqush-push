@@ -44,7 +44,7 @@ func isErrCausedByMissingKey(err error) bool {
 	return strings.Contains(err.Error(), "redis: nil") // redisv3 check.
 }
 
-// You may always want to use a front desk to get data from db
+// PushDatabase is an interface for any db implementation that uniqush-push can use. Currently, redis is the only supported database.
 type PushDatabase interface {
 
 	// The push service provider may by anonymous whose Name is empty string
@@ -219,7 +219,7 @@ func (f *pushDatabaseOpts) AddDeliveryPointToService(service string,
 		return nil, fmt.Errorf("Cannot list services for %s: %v", service, err)
 	}
 	if pspnames == nil {
-		return nil, errors.New(fmt.Sprintf("Cannot Find Service %s", service))
+		return nil, fmt.Errorf("Cannot Find Service %s", service)
 	}
 
 	for _, pspname := range pspnames {
@@ -246,7 +246,7 @@ func (f *pushDatabaseOpts) AddDeliveryPointToService(service string,
 			return psp, nil
 		}
 	}
-	return nil, errors.New(fmt.Sprintf("Cannot Find Push Service Provider with Type %s", delivery_point.PushServiceName()))
+	return nil, fmt.Errorf("Cannot Find Push Service Provider with Type %s", delivery_point.PushServiceName())
 }
 
 func (f *pushDatabaseOpts) RemoveDeliveryPointFromService(service string,

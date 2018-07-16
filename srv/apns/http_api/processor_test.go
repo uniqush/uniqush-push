@@ -104,8 +104,8 @@ func mockAPNSRequest(requestProcessor *HTTPPushRequestProcessor, fn func(r *http
 	return mockClient
 }
 
-func newPushRequest() (*common.PushRequest, chan push.PushError, chan *common.APNSResult) {
-	errChan := make(chan push.PushError)
+func newPushRequest() (*common.PushRequest, chan push.Error, chan *common.APNSResult) {
+	errChan := make(chan push.Error)
 	resChan := make(chan *common.APNSResult, 1)
 	request := &common.PushRequest{
 		PSP:       pushServiceProvider,
@@ -172,7 +172,7 @@ func TestAddRequestPushSuccessful(t *testing.T) {
 
 	select {
 	case res := <-resChan:
-		if res.MsgId == 0 {
+		if res.MsgID == 0 {
 			t.Fatal("Expected non-zero message id, got zero")
 		}
 	case err := <-errChan:
@@ -223,7 +223,7 @@ func TestAddRequestPushSuccessfulWhenConcurrent(t *testing.T) {
 
 			select {
 			case res := <-resChan:
-				if res.MsgId == 0 {
+				if res.MsgID == 0 {
 					t.Fatal("Expected non-zero message id, got zero")
 				}
 				wg.Done()
@@ -286,7 +286,7 @@ func TestAddRequestPushFailNotificationError(t *testing.T) {
 		if res.Status != common.STATUS8_UNSUBSCRIBE {
 			t.Fatalf("Expected 8 (unsubscribe), got %d", res.Status)
 		}
-		if res.MsgId == 0 {
+		if res.MsgID == 0 {
 			t.Fatal("Expected non-zero message id, got zero")
 		}
 	case err := <-errChan:

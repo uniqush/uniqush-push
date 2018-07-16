@@ -6,6 +6,7 @@ import (
 	"time"
 )
 
+// status codes for REST APIs with simple responses
 const (
 	STATUS_SUCCESS = iota
 	STATUS_FAILURE

@@ -34,7 +34,7 @@ type PushRequestProcessor interface {
 	Finalize()
 
 	// SetErrorReportChan sets the error reporting channel (shared with the apnsPushService)
-	SetErrorReportChan(errChan chan<- push.PushError)
+	SetErrorReportChan(errChan chan<- push.Error)
 
 	// SetPushServiceConfig sets the config of this PushRequestProcessor when the service is registered.
 	SetPushServiceConfig(c *push.PushServiceConfig)
@@ -44,26 +44,26 @@ type PushRequest struct {
 	PSP       *push.PushServiceProvider
 	Devtokens [][]byte
 	Payload   []byte
-	MaxMsgId  uint32
+	MaxMsgID  uint32
 	Expiry    uint32
 
 	// DPList is a list of delivery points of the same length as Devtokens. DPList[i].FixedData["dev_token"] == string(Devtokens[i])
 	DPList  []*push.DeliveryPoint
-	ErrChan chan<- push.PushError
+	ErrChan chan<- push.Error
 	ResChan chan<- *APNSResult
 }
 
-// Used by binary protocol.
-func (self *PushRequest) GetId(idx int) uint32 {
-	if idx < 0 || idx >= len(self.Devtokens) {
+// GetID determines the message id associated with a given dev token's index. This is used by the binary protocol.
+func (request *PushRequest) GetID(idx int) uint32 {
+	if idx < 0 || idx >= len(request.Devtokens) {
 		return 0
 	}
-	startId := self.MaxMsgId - uint32(len(self.Devtokens))
+	startId := request.MaxMsgID - uint32(len(request.Devtokens))
 	return startId + uint32(idx)
 }
 
 type APNSResult struct {
-	MsgId  uint32
+	MsgID  uint32
 	Status uint8
-	Err    push.PushError
+	Err    push.Error
 }

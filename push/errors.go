@@ -22,8 +22,8 @@ import (
 	"time"
 )
 
-// PushError is a specialized error. It is used for errors which cause the push backend to take actions.
-type PushError interface {
+// Error is a specialized error. It is used for errors which cause the push backend to take actions.
+type Error interface {
 	error
 	isPushError() // Placeholder function to distinguish these from error class
 }
@@ -32,19 +32,19 @@ type implementsPushError struct{}
 
 func (*implementsPushError) isPushError() {}
 
-var _ PushError = &InfoReport{}
-var _ PushError = &ErrorReport{}
-var _ PushError = &RetryError{}
-var _ PushError = &PushServiceProviderUpdate{}
-var _ PushError = &DeliveryPointUpdate{}
-var _ PushError = &IncompatibleError{}
-var _ PushError = &BadDeliveryPoint{}
-var _ PushError = &BadPushServiceProvider{}
-var _ PushError = &UnsubscribeUpdate{}
-var _ PushError = &InvalidRegistrationUpdate{}
-var _ PushError = &ConnectionError{}
+var _ Error = &InfoReport{}
+var _ Error = &ErrorReport{}
+var _ Error = &RetryError{}
+var _ Error = &PushServiceProviderUpdate{}
+var _ Error = &DeliveryPointUpdate{}
+var _ Error = &IncompatibleError{}
+var _ Error = &BadDeliveryPoint{}
+var _ Error = &BadPushServiceProvider{}
+var _ Error = &UnsubscribeUpdate{}
+var _ Error = &InvalidRegistrationUpdate{}
+var _ Error = &ConnectionError{}
 
-// This is not an actual error.
+// InfoReport is not an actual error.
 // But it is worthy to be reported to the user.
 type InfoReport struct {
 	implementsPushError

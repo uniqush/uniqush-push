@@ -39,7 +39,7 @@ const (
 )
 
 type pspLockResponse struct {
-	err push.PushError
+	err push.Error
 	psp *push.PushServiceProvider
 }
 
@@ -61,6 +61,7 @@ func newADMPushService() *admPushService {
 	return ret
 }
 
+// InstallADM registers the only instance of the ADM push service. It is called only once.
 func InstallADM() {
 	psm := push.GetPushServiceManager()
 	err := psm.RegisterPushServiceType(newADMPushService())
@@ -69,18 +70,18 @@ func InstallADM() {
 	}
 }
 
-func (self *admPushService) Finalize() {}
-func (self *admPushService) Name() string {
+func (adm *admPushService) Finalize() {}
+func (adm *admPushService) Name() string {
 	return "adm"
 }
-func (self *admPushService) SetErrorReportChan(errChan chan<- push.PushError) {
+func (adm *admPushService) SetErrorReportChan(errChan chan<- push.Error) {
 	return
 }
-func (self *admPushService) SetPushServiceConfig(c *push.PushServiceConfig) {
+func (adm *admPushService) SetPushServiceConfig(c *push.PushServiceConfig) {
 	return
 }
 
-func (self *admPushService) BuildPushServiceProviderFromMap(kv map[string]string, psp *push.PushServiceProvider) error {
+func (adm *admPushService) BuildPushServiceProviderFromMap(kv map[string]string, psp *push.PushServiceProvider) error {
 	if service, ok := kv["service"]; ok && len(service) > 0 {
 		psp.FixedData["service"] = service
 	} else {
@@ -102,7 +103,7 @@ func (self *admPushService) BuildPushServiceProviderFromMap(kv map[string]string
 	return nil
 }
 
-func (self *admPushService) BuildDeliveryPointFromMap(kv map[string]string, dp *push.DeliveryPoint) error {
+func (adm *admPushService) BuildDeliveryPointFromMap(kv map[string]string, dp *push.DeliveryPoint) error {
 	err := dp.AddCommonData(kv)
 	if err != nil {
 		return err
@@ -160,7 +161,7 @@ type tokenFailObj struct {
 	Description string `json:"error_description"`
 }
 
-func requestToken(psp *push.PushServiceProvider) push.PushError {
+func requestToken(psp *push.PushServiceProvider) push.Error {
 	var ok bool
 	var clientid string
 	var cserect string
@@ -244,7 +245,7 @@ type admMessage struct {
 	MD5      string            `json:"md5,omitempty"`
 }
 
-func notifToMessage(notif *push.Notification) (msg *admMessage, err push.PushError) {
+func notifToMessage(notif *push.Notification) (msg *admMessage, err push.Error) {
 	if notif == nil || len(notif.Data) == 0 {
 		err = push.NewBadNotificationWithDetails("empty notification")
 		return
@@ -285,7 +286,7 @@ func notifToMessage(notif *push.Notification) (msg *admMessage, err push.PushErr
 	return
 }
 
-func admURL(dp *push.DeliveryPoint) (url string, err push.PushError) {
+func admURL(dp *push.DeliveryPoint) (url string, err push.Error) {
 	if dp == nil {
 		err = push.NewError("nil dp")
 		return
@@ -298,7 +299,7 @@ func admURL(dp *push.DeliveryPoint) (url string, err push.PushError) {
 	return
 }
 
-func admNewRequest(psp *push.PushServiceProvider, dp *push.DeliveryPoint, data []byte) (req *http.Request, err push.PushError) {
+func admNewRequest(psp *push.PushServiceProvider, dp *push.DeliveryPoint, data []byte) (req *http.Request, err push.Error) {
 	var token string
 	var ok bool
 	if token, ok = psp.VolatileData["token"]; !ok {
@@ -328,7 +329,7 @@ type admPushFailResponse struct {
 	Reason string `json:"reason"`
 }
 
-func admSinglePush(psp *push.PushServiceProvider, dp *push.DeliveryPoint, data []byte, notif *push.Notification) (string, push.PushError) {
+func admSinglePush(psp *push.PushServiceProvider, dp *push.DeliveryPoint, data []byte, notif *push.Notification) (string, push.Error) {
 	client := &http.Client{}
 	req, err := admNewRequest(psp, dp, data)
 	if err != nil {
@@ -389,21 +390,21 @@ func admSinglePush(psp *push.PushServiceProvider, dp *push.DeliveryPoint, data [
 	return id, nil
 }
 
-func (self *admPushService) lockPsp(psp *push.PushServiceProvider) (*push.PushServiceProvider, push.PushError) {
+func (adm *admPushService) lockPsp(psp *push.PushServiceProvider) (*push.PushServiceProvider, push.Error) {
 	respCh := make(chan *pspLockResponse)
 	req := &pspLockRequest{
 		psp:    psp,
 		respCh: respCh,
 	}
 
-	self.pspLock <- req
+	adm.pspLock <- req
 
 	resp := <-respCh
 
 	return resp.psp, resp.err
 }
 
-func (self *admPushService) notifToJSON(notif *push.Notification) ([]byte, push.PushError) {
+func (adm *admPushService) notifToJSON(notif *push.Notification) ([]byte, push.Error) {
 	msg, err := notifToMessage(notif)
 	if err != nil {
 		return nil, err
@@ -416,23 +417,23 @@ func (self *admPushService) notifToJSON(notif *push.Notification) ([]byte, push.
 	return data, nil
 }
 
-func (self *admPushService) Preview(notif *push.Notification) ([]byte, push.PushError) {
-	return self.notifToJSON(notif)
+func (adm *admPushService) Preview(notif *push.Notification) ([]byte, push.Error) {
+	return adm.notifToJSON(notif)
 }
 
-func (self *admPushService) Push(psp *push.PushServiceProvider, dpQueue <-chan *push.DeliveryPoint, resQueue chan<- *push.PushResult, notif *push.Notification) {
+func (adm *admPushService) Push(psp *push.PushServiceProvider, dpQueue <-chan *push.DeliveryPoint, resQueue chan<- *push.Result, notif *push.Notification) {
 	defer close(resQueue)
 	defer func() {
 		for range dpQueue {
 		}
 	}()
 
-	res := new(push.PushResult)
+	res := new(push.Result)
 	res.Content = notif
 	res.Provider = psp
 
-	var err push.PushError
-	psp, err = self.lockPsp(psp)
+	var err push.Error
+	psp, err = adm.lockPsp(psp)
 	if err != nil {
 		res.Err = err
 		resQueue <- res
@@ -440,7 +441,7 @@ func (self *admPushService) Push(psp *push.PushServiceProvider, dpQueue <-chan *
 			return
 		}
 	}
-	data, err := self.notifToJSON(notif)
+	data, err := adm.notifToJSON(notif)
 
 	if err != nil {
 		res.Err = err
@@ -453,12 +454,12 @@ func (self *admPushService) Push(psp *push.PushServiceProvider, dpQueue <-chan *
 
 	for dp := range dpQueue {
 		wg.Add(1)
-		res := new(push.PushResult)
+		res := new(push.Result)
 		res.Content = notif
 		res.Provider = psp
 		res.Destination = dp
 		go func(dp *push.DeliveryPoint) {
-			res.MsgId, res.Err = admSinglePush(psp, dp, data, notif)
+			res.MsgID, res.Err = admSinglePush(psp, dp, data, notif)
 			resQueue <- res
 			wg.Done()
 		}(dp)

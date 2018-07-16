@@ -19,27 +19,27 @@ package push
 
 import "fmt"
 
-type PushResult struct {
+type Result struct {
 	Provider    *PushServiceProvider
 	Destination *DeliveryPoint
 	Content     *Notification
-	MsgId       string
-	Err         PushError
+	MsgID       string
+	Err         Error
 }
 
-func (r *PushResult) IsError() bool {
+func (r *Result) IsError() bool {
 	if r.Err == nil {
 		return false
 	}
 	return true
 }
 
-func (r *PushResult) Error() string {
+func (r *Result) Error() string {
 	if !r.IsError() {
-		return fmt.Sprintf("PushServiceProvider=%v DeliveryPoint=%v MsgId=%v Succsess!",
+		return fmt.Sprintf("PushServiceProvider=%v DeliveryPoint=%v MsgID=%v Success!",
 			r.Provider.Name(),
 			r.Destination.Name(),
-			r.MsgId)
+			r.MsgID)
 	}
 
 	ret := fmt.Sprintf("Failed PushServiceProvider=%s DeliveryPoint=%s %v",
@@ -66,17 +66,17 @@ type PushServiceType interface {
 	// to report error. (For example, it cannot fork a new goroutine
 	// and use this channel in this goroutine after the function returns.)
 	//
-	// Any implementation MUST close the second channel (chan<- *PushResult)
+	// Any implementation MUST close the second channel (chan<- *Result)
 	// once the works done.
-	Push(*PushServiceProvider, <-chan *DeliveryPoint, chan<- *PushResult, *Notification)
+	Push(*PushServiceProvider, <-chan *DeliveryPoint, chan<- *Result, *Notification)
 
 	// Preview the bytes of a notification, for placeholder subscriber data. This makes no service/database calls.
-	Preview(*Notification) ([]byte, PushError)
+	Preview(*Notification) ([]byte, Error)
 
 	// Set a channel for the push service provider so that it can report error even if
 	// there is no method call on it.
 	// The type of the errors sent may cause the push service manager to take various actions.
-	SetErrorReportChan(errChan chan<- PushError)
+	SetErrorReportChan(errChan chan<- Error)
 
 	// Set the config for the push service provider.
 	// The config for a given pushservicetype is passed to the corresponding PushServiceType
