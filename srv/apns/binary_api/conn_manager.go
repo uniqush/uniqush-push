@@ -174,7 +174,7 @@ func resultCollector(psp *push.PushServiceProvider, resChan chan<- *common.APNSR
 		}
 
 		res := new(common.APNSResult)
-		res.MsgId = msgid
+		res.MsgID = msgid
 		res.Status = status
 		// Send this response to the connection manager, which will translate it to a result/error structure associated with the Push,
 		// and send that to the pushbackend.

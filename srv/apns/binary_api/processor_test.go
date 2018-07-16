@@ -162,7 +162,7 @@ func createSinglePushRequest(psp *push.PushServiceProvider) (*common.PushRequest
 		PSP:       psp,
 		Devtokens: devtokens,
 		Payload:   []byte("{}"),
-		MaxMsgId:  7,
+		MaxMsgID:  7,
 		Expiry:    0,
 		DPList:    []*push.DeliveryPoint{dp},
 		ErrChan:   errChan,
@@ -201,9 +201,9 @@ func verifyRequestProcessorRespondsWithStatus(t *testing.T, status uint8, req *c
 
 	res := <-resChan
 	close(resChan)
-	expectedMsgID := req.MaxMsgId - 1
-	if expectedMsgID != res.MsgId {
-		t.Errorf("Expected only msgid to be %d, got %d", expectedMsgID, res.MsgId)
+	expectedMsgID := req.MaxMsgID - 1
+	if expectedMsgID != res.MsgID {
+		t.Errorf("Expected only msgid to be %d, got %d", expectedMsgID, res.MsgID)
 	}
 	if res.Status != status {
 		t.Errorf("Expected status code to be %d, got %d", status, res.Status)

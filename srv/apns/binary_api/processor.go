@@ -304,7 +304,7 @@ func clearRequest(req *common.PushRequest, resChan chan<- *common.APNSResult) {
 
 	for i := range req.Devtokens {
 		res := new(common.APNSResult)
-		res.MsgId = req.GetID(i)
+		res.MsgID = req.GetID(i)
 		// TODO: Should this instead indicate that the request timed out?
 		res.Status = uint8(0)
 		res.Err = nil
@@ -346,9 +346,9 @@ func (prp *BinaryPushRequestProcessor) pushWorkerGroup(psp *push.PushServiceProv
 
 	// Callback for handling responses - used both in processing and when shutting down.
 	handleResponse := func(res *common.APNSResult) {
-		// Process the first result that is received for each MsgId, forwarding it to the requester.
-		if req, ok := reqMap[res.MsgId]; ok {
-			delete(reqMap, res.MsgId)
+		// Process the first result that is received for each MsgID, forwarding it to the requester.
+		if req, ok := reqMap[res.MsgID]; ok {
+			delete(reqMap, res.MsgID)
 			req.ResChan <- res
 		} else if res.Err != nil {
 			prp.errChan <- res.Err

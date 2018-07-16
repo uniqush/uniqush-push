@@ -206,7 +206,7 @@ func (ps *pushService) waitResults(psp *push.PushServiceProvider, dpList []*push
 		return
 	}
 	for res := range resChan {
-		idx := res.MsgId - lastID + uint32(n)
+		idx := res.MsgID - lastID + uint32(n)
 		if idx >= uint32(len(dpList)) || idx < 0 {
 			continue
 		}
@@ -322,7 +322,7 @@ func (ps *pushService) Push(psp *push.PushServiceProvider, dpQueue <-chan *push.
 
 	n := len(req.Devtokens)
 	lastID := ps.getMessageIds(n)
-	req.MaxMsgId = lastID
+	req.MaxMsgID = lastID
 	req.DPList = dpList
 
 	// We send this request object to be processed by pushMux goroutine, to send responses/errors back.
@@ -362,7 +362,7 @@ func (ps *pushService) Push(psp *push.PushServiceProvider, dpQueue <-chan *push.
 			r.Content = notif
 			r.Destination = dp
 			mid := req.GetID(i)
-			r.MsgId = fmt.Sprintf("apns:%v-%v", psp.Name(), mid)
+			r.MsgID = fmt.Sprintf("apns:%v-%v", psp.Name(), mid)
 			r.Err = nil
 			resQueue <- r
 		}

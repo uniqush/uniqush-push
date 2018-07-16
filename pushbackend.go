@@ -36,12 +36,12 @@ type PushBackEnd struct {
 }
 
 // Finalize will save all subscriptions (and perform other cleanup) as part of the push service shutting down.
-func (self *PushBackEnd) Finalize() {
+func (backend *PushBackEnd) Finalize() {
 	// TODO: Add an option to prevent calling SAVE in implementations such as redis.
 	// Users may want this if saving is time-consuming or already configured to happen periodically.
-	self.db.FlushCache()
-	close(self.errChan)
-	self.psm.Finalize()
+	backend.db.FlushCache()
+	close(backend.errChan)
+	backend.psm.Finalize()
 }
 
 // NewPushBackEnd creates and sets up the only instance of the push implementation.
@@ -57,44 +57,44 @@ func NewPushBackEnd(psm *push.PushServiceManager, database db.PushDatabase, logg
 }
 
 // AddPushServiceProvider is used by /addpsp to add a push service provider (for a service+push type) to the database.
-func (self *PushBackEnd) AddPushServiceProvider(service string, psp *push.PushServiceProvider) error {
-	return self.db.AddPushServiceProviderToService(service, psp)
+func (backend *PushBackEnd) AddPushServiceProvider(service string, psp *push.PushServiceProvider) error {
+	return backend.db.AddPushServiceProviderToService(service, psp)
 }
 
 // RemovePushServiceProvider is used by /rmpsp to remove a push service provider (for a service+push type) from the database.
-func (self *PushBackEnd) RemovePushServiceProvider(service string, psp *push.PushServiceProvider) error {
-	return self.db.RemovePushServiceProviderFromService(service, psp)
+func (backend *PushBackEnd) RemovePushServiceProvider(service string, psp *push.PushServiceProvider) error {
+	return backend.db.RemovePushServiceProviderFromService(service, psp)
 }
 
-func (self *PushBackEnd) GetPushServiceProviderConfigs() ([]*push.PushServiceProvider, error) {
-	return self.db.GetPushServiceProviderConfigs()
+func (backend *PushBackEnd) GetPushServiceProviderConfigs() ([]*push.PushServiceProvider, error) {
+	return backend.db.GetPushServiceProviderConfigs()
 }
 
-func (self *PushBackEnd) Subscribe(service, sub string, dp *push.DeliveryPoint) (*push.PushServiceProvider, error) {
-	return self.db.AddDeliveryPointToService(service, sub, dp)
+func (backend *PushBackEnd) Subscribe(service, sub string, dp *push.DeliveryPoint) (*push.PushServiceProvider, error) {
+	return backend.db.AddDeliveryPointToService(service, sub, dp)
 }
 
-func (self *PushBackEnd) Unsubscribe(service, sub string, dp *push.DeliveryPoint) error {
-	return self.db.RemoveDeliveryPointFromService(service, sub, dp)
+func (backend *PushBackEnd) Unsubscribe(service, sub string, dp *push.DeliveryPoint) error {
+	return backend.db.RemoveDeliveryPointFromService(service, sub, dp)
 }
 
-func (self *PushBackEnd) processError() {
-	for err := range self.errChan {
+func (backend *PushBackEnd) processError() {
+	for err := range backend.errChan {
 		rid := randomUniqId()
 		nullHandler := &NullApiResponseHandler{}
-		e := self.fixError(rid, "", err, self.loggers[LoggerPush], 0*time.Second, nullHandler)
+		e := backend.fixError(rid, "", err, backend.loggers[LoggerPush], 0*time.Second, nullHandler)
 		if e != nil {
 			switch e0 := e.(type) {
 			case *push.InfoReport:
-				self.loggers[LoggerPush].Infof("%v", e0)
+				backend.loggers[LoggerPush].Infof("%v", e0)
 			default: // Includes *ErrorReport
-				self.loggers[LoggerPush].Errorf("Error: %v", e0)
+				backend.loggers[LoggerPush].Errorf("Error: %v", e0)
 			}
 		}
 	}
 }
 
-func (self *PushBackEnd) fixError(reqId string, remoteAddr string, event error, logger log.Logger, after time.Duration, handler ApiResponseHandler) error {
+func (backend *PushBackEnd) fixError(reqId string, remoteAddr string, event error, logger log.Logger, after time.Duration, handler ApiResponseHandler) error {
 	var service string
 	var sub string
 	var ok bool
@@ -128,7 +128,7 @@ func (self *PushBackEnd) fixError(reqId string, remoteAddr string, event error, 
 			subs := make([]string, 1)
 			subs[0] = sub
 			after = 2 * after
-			self.pushImpl(reqId, remoteAddr, service, subs, nil, err.Content, nil, self.loggers[LoggerPush], err.Provider, err.Destination, after, handler)
+			backend.pushImpl(reqId, remoteAddr, service, subs, nil, err.Content, nil, backend.loggers[LoggerPush], err.Provider, err.Destination, after, handler)
 		}()
 	case *push.PushServiceProviderUpdate:
 		if err.Provider == nil {
@@ -138,7 +138,7 @@ func (self *PushBackEnd) fixError(reqId string, remoteAddr string, event error, 
 			return nil
 		}
 		psp := err.Provider
-		e := self.db.ModifyPushServiceProvider(psp)
+		e := backend.db.ModifyPushServiceProvider(psp)
 		pspName := psp.Name()
 		if e != nil {
 			logger.Errorf("RequestID=%v Service=%v PushServiceProvider=%v Update Failed: %v", reqId, service, pspName, e)
@@ -155,7 +155,7 @@ func (self *PushBackEnd) fixError(reqId string, remoteAddr string, event error, 
 			return nil
 		}
 		dp := err.Destination
-		e := self.db.ModifyDeliveryPoint(dp)
+		e := backend.db.ModifyDeliveryPoint(dp)
 		dpName := dp.Name()
 		if e != nil {
 			logger.Errorf("Subscriber=%v DeliveryPoint=%v Update Failed: %v", sub, dpName, e)
@@ -175,7 +175,7 @@ func (self *PushBackEnd) fixError(reqId string, remoteAddr string, event error, 
 			return nil
 		}
 		dp := err.Destination
-		e := self.Unsubscribe(service, sub, dp)
+		e := backend.Unsubscribe(service, sub, dp)
 		dpName := dp.Name()
 		if e != nil {
 			logger.Errorf("Service=%v Subscriber=%v DeliveryPoint=%v Removing invalid reg failed: %v", service, sub, dpName, e)
@@ -195,7 +195,7 @@ func (self *PushBackEnd) fixError(reqId string, remoteAddr string, event error, 
 			return nil
 		}
 		dp := err.Destination
-		e := self.Unsubscribe(service, sub, dp)
+		e := backend.Unsubscribe(service, sub, dp)
 		dpName := dp.Name()
 		if e != nil {
 			logger.Errorf("Service=%v Subscriber=%v DeliveryPoint=%v Unsubscribe failed: %v", service, sub, dpName, e)
@@ -210,7 +210,7 @@ func (self *PushBackEnd) fixError(reqId string, remoteAddr string, event error, 
 	return nil
 }
 
-func (self *PushBackEnd) collectResult(reqId string, remoteAddr string, service string, resChan <-chan *push.Result, logger log.Logger, after time.Duration, handler ApiResponseHandler) {
+func (backend *PushBackEnd) collectResult(reqId string, remoteAddr string, service string, resChan <-chan *push.Result, logger log.Logger, after time.Duration, handler ApiResponseHandler) {
 	for res := range resChan {
 		var sub string
 		ok := false
@@ -234,12 +234,12 @@ func (self *PushBackEnd) collectResult(reqId string, remoteAddr string, service 
 		if res.Err == nil {
 			providerName := res.Provider.Name()
 			destinationName := res.Destination.Name()
-			msgId := res.MsgId
-			logger.Infof("RequestID=%v Service=%v Subscriber=%v PushServiceProvider=%v DeliveryPoint=%v MsgId=%v Success!", reqId, service, subRepr, providerName, destinationName, msgId)
+			msgId := res.MsgID
+			logger.Infof("RequestID=%v Service=%v Subscriber=%v PushServiceProvider=%v DeliveryPoint=%v MsgID=%v Success!", reqId, service, subRepr, providerName, destinationName, msgId)
 			handler.AddDetailsToHandler(ApiResponseDetails{RequestId: &reqId, From: &remoteAddr, Service: &service, Subscriber: &sub, PushServiceProvider: &providerName, DeliveryPoint: &destinationName, MessageId: &msgId, Code: UNIQUSH_SUCCESS})
 			continue
 		}
-		err := self.fixError(reqId, remoteAddr, res.Err, logger, after, handler)
+		err := backend.fixError(reqId, remoteAddr, res.Err, logger, after, handler)
 		if err != nil {
 			pspName := "Unknown"
 			dpName := "Unknown"
@@ -255,8 +255,8 @@ func (self *PushBackEnd) collectResult(reqId string, remoteAddr string, service 
 	}
 }
 
-func (self *PushBackEnd) NumberOfDeliveryPoints(service, sub string, logger log.Logger) int {
-	pspDpList, err := self.db.GetPushServiceProviderDeliveryPointPairs(service, sub, nil)
+func (backend *PushBackEnd) NumberOfDeliveryPoints(service, sub string, logger log.Logger) int {
+	pspDpList, err := backend.db.GetPushServiceProviderDeliveryPointPairs(service, sub, nil)
 	if err != nil {
 		logger.Errorf("Query=NumberOfDeliveryPoints Service=%v Subscriber=%v Failed: Database Error %v", service, sub, err)
 		return 0
@@ -264,7 +264,7 @@ func (self *PushBackEnd) NumberOfDeliveryPoints(service, sub string, logger log.
 	return len(pspDpList)
 }
 
-func (self *PushBackEnd) Subscriptions(services []string, subscriber string, logger log.Logger, fetchIds bool) []map[string]string {
+func (backend *PushBackEnd) Subscriptions(services []string, subscriber string, logger log.Logger, fetchIds bool) []map[string]string {
 	emptyResult := []map[string]string{}
 
 	log := func(msg string, err error) {
@@ -280,7 +280,7 @@ func (self *PushBackEnd) Subscriptions(services []string, subscriber string, log
 		return emptyResult
 	}
 
-	subscriptions, err := self.db.GetSubscriptions(services, subscriber, logger)
+	subscriptions, err := backend.db.GetSubscriptions(services, subscriber, logger)
 	if err != nil {
 		log("", err)
 		return emptyResult
@@ -294,17 +294,17 @@ func (self *PushBackEnd) Subscriptions(services []string, subscriber string, log
 	return subscriptions
 }
 
-func (self *PushBackEnd) RebuildServiceSet() error {
-	return self.db.RebuildServiceSet()
+func (backend *PushBackEnd) RebuildServiceSet() error {
+	return backend.db.RebuildServiceSet()
 }
 
-func (self *PushBackEnd) Push(reqId string, remoteAddr string, service string, subs []string, dpNamesRequested []string, notif *push.Notification, perdp map[string][]string, logger log.Logger, handler ApiResponseHandler) {
-	self.pushImpl(reqId, remoteAddr, service, subs, dpNamesRequested, notif, perdp, logger, nil, nil, 0*time.Second, handler)
+func (backend *PushBackEnd) Push(reqId string, remoteAddr string, service string, subs []string, dpNamesRequested []string, notif *push.Notification, perdp map[string][]string, logger log.Logger, handler ApiResponseHandler) {
+	backend.pushImpl(reqId, remoteAddr, service, subs, dpNamesRequested, notif, perdp, logger, nil, nil, 0*time.Second, handler)
 }
 
 // pushImpl will fetch subscriptions and send push notifications using the corresponding service.
 // It will retry pushes if they fail (May be through sending an RetryError, or it may be within the psp implementation).
-func (self *PushBackEnd) pushImpl(reqId string, remoteAddr string, service string, subs []string, dpNamesRequested []string, notif *push.Notification, perdp map[string][]string, logger log.Logger, provider *push.PushServiceProvider, dest *push.DeliveryPoint, after time.Duration, handler ApiResponseHandler) {
+func (backend *PushBackEnd) pushImpl(reqId string, remoteAddr string, service string, subs []string, dpNamesRequested []string, notif *push.Notification, perdp map[string][]string, logger log.Logger, provider *push.PushServiceProvider, dest *push.DeliveryPoint, after time.Duration, handler ApiResponseHandler) {
 	// dpChanMap maps a PushServiceProvider(by name) to a list of delivery points to send data to (from various subscriptions).
 	// If there are multiple subscriptions, lazily adding to a channel is probably faster than passing a list,
 	// because you'd need to fetch all subscriptions from the DB before starting to push otherwise.
@@ -322,7 +322,7 @@ func (self *PushBackEnd) pushImpl(reqId string, remoteAddr string, service strin
 			pspDpList[0].DeliveryPoint = dest
 		} else {
 			var err error
-			pspDpList, err = self.db.GetPushServiceProviderDeliveryPointPairs(service, sub, dpNamesRequested)
+			pspDpList, err = backend.db.GetPushServiceProviderDeliveryPointPairs(service, sub, dpNamesRequested)
 			if err != nil {
 				logger.Errorf("RequestID=%v Service=%v Subscriber=%v Failed: Database Error: %v", reqId, service, sub, err)
 				handler.AddDetailsToHandler(ApiResponseDetails{RequestId: &reqId, From: &remoteAddr, Service: &service, Subscriber: &sub, Code: UNIQUSH_ERROR_DATABASE, ErrorMsg: strPtrOfErr(err)})
@@ -367,13 +367,13 @@ func (self *PushBackEnd) pushImpl(reqId string, remoteAddr string, service strin
 				}
 				// Make the pushservicemanager send to (each delivery point of) the PSP asyncronously
 				go func() {
-					self.psm.Push(psp, dpQueue, resChan, note)
+					backend.psm.Push(psp, dpQueue, resChan, note)
 					wg.Done()
 				}()
 				wg.Add(1)
 				// Wait for the response from the PSP asynchronously
 				go func() {
-					self.collectResult(reqId, remoteAddr, service, resChan, logger, after, handler)
+					backend.collectResult(reqId, remoteAddr, service, resChan, logger, after, handler)
 					wg.Done()
 				}()
 			}
@@ -390,6 +390,6 @@ func (self *PushBackEnd) pushImpl(reqId string, remoteAddr string, service strin
 	wg.Wait()
 }
 
-func (self *PushBackEnd) Preview(ptname string, notif *push.Notification) ([]byte, push.Error) {
-	return self.psm.Preview(ptname, notif)
+func (backend *PushBackEnd) Preview(ptname string, notif *push.Notification) ([]byte, push.Error) {
+	return backend.psm.Preview(ptname, notif)
 }

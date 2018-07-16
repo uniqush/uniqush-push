@@ -213,7 +213,7 @@ func (prp *HTTPPushRequestProcessor) sendRequest(wg *sync.WaitGroup, client HTTP
 		// Reason is "Unregistered"
 		// > The device token is inactive for the specified topic.
 		resChan <- &common.APNSResult{
-			MsgId:  messageID,
+			MsgID:  messageID,
 			Status: common.STATUS8_UNSUBSCRIBE,
 		}
 		return
@@ -235,7 +235,7 @@ func (prp *HTTPPushRequestProcessor) sendRequest(wg *sync.WaitGroup, client HTTP
 		case "BadDeviceToken": // Status code is 400
 			// > The specified device token was bad. Verify that the request contains a valid token and that the token matches the environment.
 			resChan <- &common.APNSResult{
-				MsgId:  messageID,
+				MsgID:  messageID,
 				Status: common.STATUS8_UNSUBSCRIBE,
 			}
 			return
@@ -251,7 +251,7 @@ func (prp *HTTPPushRequestProcessor) sendRequest(wg *sync.WaitGroup, client HTTP
 		// It must be 200 to be successful.
 		if response.StatusCode == 200 {
 			resChan <- &common.APNSResult{
-				MsgId:  messageID,
+				MsgID:  messageID,
 				Status: common.STATUS0_SUCCESS,
 			}
 		} else {

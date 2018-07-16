@@ -455,7 +455,7 @@ func (psb *PushServiceBase) handleCMMulticastResults(psp *push.PushServiceProvid
 			res.Provider = psp
 			res.Content = notif
 			res.Destination = dp
-			res.MsgId = fmt.Sprintf("%v:%v", psp.Name(), msgid)
+			res.MsgID = fmt.Sprintf("%v:%v", psp.Name(), msgid)
 			resQueue <- res
 		}
 	}

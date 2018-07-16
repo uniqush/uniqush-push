@@ -48,13 +48,13 @@ func (self *ApiPushResponseHandler) AddDetailsToHandler(v ApiResponseDetails) {
 	self.mutex.Lock()
 	if v.Code == UNIQUSH_SUCCESS {
 		self.response.SuccessDetails = append(self.response.SuccessDetails, v)
-		self.response.SuccessCount += 1
+		self.response.SuccessCount++
 	} else if v.Code == UNIQUSH_UPDATE_UNSUBSCRIBE || v.Code == UNIQUSH_REMOVE_INVALID_REG {
 		self.response.DroppedDetails = append(self.response.DroppedDetails, v)
-		self.response.DroppedCount += 1
+		self.response.DroppedCount++
 	} else {
 		self.response.FailureDetails = append(self.response.FailureDetails, v)
-		self.response.FailureCount += 1
+		self.response.FailureCount++
 	}
 	self.mutex.Unlock()
 }

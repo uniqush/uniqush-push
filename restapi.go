@@ -51,7 +51,7 @@ func randomUniqId() string {
 	return fmt.Sprintf("%x-%v", time.Now().Unix(), base64.URLEncoding.EncodeToString(d[:]))
 }
 
-// loggers: sequence is web, add
+// NewRestAPI constructs the data structures for the singleton REST API of uniqush-push
 func NewRestAPI(psm *push.PushServiceManager, loggers []log.Logger, version string, backend *PushBackEnd) *RestAPI {
 	ret := new(RestAPI)
 	ret.psm = psm
@@ -62,6 +62,7 @@ func NewRestAPI(psm *push.PushServiceManager, loggers []log.Logger, version stri
 	return ret
 }
 
+// Constants for the paths of the REST API
 const (
 	ADD_PUSH_SERVICE_PROVIDER_TO_SERVICE_URL    = "/addpsp"
 	REMOVE_PUSH_SERVICE_PROVIDER_TO_SERVICE_URL = "/rmpsp"
@@ -178,8 +179,8 @@ func getServiceFromMap(kv map[string]string, validate bool) (service string, err
 	return
 }
 
-func (self *RestAPI) changePushServiceProvider(kv map[string]string, logger log.Logger, remoteAddr string, add bool) ApiResponseDetails {
-	psp, err := self.psm.BuildPushServiceProviderFromMap(kv)
+func (api *RestAPI) changePushServiceProvider(kv map[string]string, logger log.Logger, remoteAddr string, add bool) ApiResponseDetails {
+	psp, err := api.psm.BuildPushServiceProviderFromMap(kv)
 	if err != nil {
 		logger.Errorf("From=%v Cannot build push service provider: %v", remoteAddr, err)
 		return ApiResponseDetails{From: &remoteAddr, Code: UNIQUSH_ERROR_BUILD_PUSH_SERVICE_PROVIDER, ErrorMsg: strPtrOfErr(err)}
@@ -190,9 +191,9 @@ func (self *RestAPI) changePushServiceProvider(kv map[string]string, logger log.
 		return ApiResponseDetails{From: &remoteAddr, Service: &service, Code: UNIQUSH_ERROR_CANNOT_GET_SERVICE, ErrorMsg: strPtrOfErr(err)}
 	}
 	if add {
-		err = self.backend.AddPushServiceProvider(service, psp)
+		err = api.backend.AddPushServiceProvider(service, psp)
 	} else {
-		err = self.backend.RemovePushServiceProvider(service, psp)
+		err = api.backend.RemovePushServiceProvider(service, psp)
 	}
 	if err != nil {
 		logger.Errorf("From=%v Failed: %v", remoteAddr, err)
@@ -203,8 +204,8 @@ func (self *RestAPI) changePushServiceProvider(kv map[string]string, logger log.
 	return ApiResponseDetails{From: &remoteAddr, Service: &service, PushServiceProvider: &pspName, Code: UNIQUSH_SUCCESS}
 }
 
-func (self *RestAPI) changeSubscription(kv map[string]string, logger log.Logger, remoteAddr string, issub bool) ApiResponseDetails {
-	dp, err := self.psm.BuildDeliveryPointFromMap(kv)
+func (api *RestAPI) changeSubscription(kv map[string]string, logger log.Logger, remoteAddr string, issub bool) ApiResponseDetails {
+	dp, err := api.psm.BuildDeliveryPointFromMap(kv)
 	if err != nil {
 		logger.Errorf("Cannot build delivery point: %v", err)
 		return ApiResponseDetails{From: &remoteAddr, Code: UNIQUSH_ERROR_BUILD_DELIVERY_POINT, ErrorMsg: strPtrOfErr(err)}
@@ -222,9 +223,9 @@ func (self *RestAPI) changeSubscription(kv map[string]string, logger log.Logger,
 
 	var psp *push.PushServiceProvider
 	if issub {
-		psp, err = self.backend.Subscribe(service, subs[0], dp)
+		psp, err = api.backend.Subscribe(service, subs[0], dp)
 	} else {
-		err = self.backend.Unsubscribe(service, subs[0], dp)
+		err = api.backend.Unsubscribe(service, subs[0], dp)
 	}
 	if err != nil {
 		logger.Errorf("From=%v Failed: %v", remoteAddr, err)
@@ -241,7 +242,7 @@ func (self *RestAPI) changeSubscription(kv map[string]string, logger log.Logger,
 	}
 }
 
-func (self *RestAPI) buildNotificationFromKV(reqId string, kv map[string]string, logger log.Logger, remoteAddr string, service string, subs []string) (notif *push.Notification, details *ApiResponseDetails, err error) {
+func (api *RestAPI) buildNotificationFromKV(reqId string, kv map[string]string, logger log.Logger, remoteAddr string, service string, subs []string) (notif *push.Notification, details *ApiResponseDetails, err error) {
 	notif = push.NewEmptyNotification()
 
 	for k, v := range kv {
@@ -276,7 +277,7 @@ func (self *RestAPI) buildNotificationFromKV(reqId string, kv map[string]string,
 	return notif, nil, nil
 }
 
-func (self *RestAPI) pushNotification(reqId string, kv map[string]string, perdp map[string][]string, logger log.Logger, remoteAddr string, handler ApiResponseHandler) {
+func (api *RestAPI) pushNotification(reqId string, kv map[string]string, perdp map[string][]string, logger log.Logger, remoteAddr string, handler ApiResponseHandler) {
 	service, err := getServiceFromMap(kv, true)
 	if err != nil {
 		logger.Errorf("RequestId=%v From=%v Cannot get service name: %v; %v", reqId, remoteAddr, service, err)
@@ -306,7 +307,7 @@ func (self *RestAPI) pushNotification(reqId string, kv map[string]string, perdp 
 		return
 	}
 
-	notif, details, err := self.buildNotificationFromKV(reqId, kv, logger, remoteAddr, service, subs)
+	notif, details, err := api.buildNotificationFromKV(reqId, kv, logger, remoteAddr, service, subs)
 	if err != nil {
 		handler.AddDetailsToHandler(*details)
 		return
@@ -314,18 +315,18 @@ func (self *RestAPI) pushNotification(reqId string, kv map[string]string, perdp 
 
 	logger.Infof("RequestId=%v From=%v Service=%v NrSubscribers=%v Subscribers=\"%+v\"", reqId, remoteAddr, service, len(subs), subs)
 
-	self.backend.Push(reqId, remoteAddr, service, subs, dpIds, notif, perdp, logger, handler)
+	api.backend.Push(reqId, remoteAddr, service, subs, dpIds, notif, perdp, logger, handler)
 }
 
 // preview takes key-value pairs (pushservicetype, plus data for building the payload), a logger, and logging data.
-func (self *RestAPI) preview(reqId string, kv map[string]string, logger log.Logger, remoteAddr string) PreviewApiResponseDetails {
+func (api *RestAPI) preview(reqId string, kv map[string]string, logger log.Logger, remoteAddr string) PreviewApiResponseDetails {
 	ptname, ok := kv["pushservicetype"]
 	if !ok || ptname == "" {
 		msg := "Must specify a known pushservicetype"
 		return PreviewApiResponseDetails{Code: UNIQUSH_ERROR_NO_PUSH_SERVICE_TYPE, ErrorMsg: &msg}
 	}
 	delete(kv, "pushservicetype") // Some modules don't filter this out.
-	notif, details, err := self.buildNotificationFromKV(reqId, kv, logger, remoteAddr, "placeholderservice", []string{})
+	notif, details, err := api.buildNotificationFromKV(reqId, kv, logger, remoteAddr, "placeholderservice", []string{})
 	if err != nil {
 		return PreviewApiResponseDetails{
 			Code:     details.Code,
@@ -333,7 +334,7 @@ func (self *RestAPI) preview(reqId string, kv map[string]string, logger log.Logg
 		}
 	}
 
-	data, err := self.backend.Preview(ptname, notif)
+	data, err := api.backend.Preview(ptname, notif)
 	if err != nil {
 		errmsg := err.Error()
 		return PreviewApiResponseDetails{Code: UNIQUSH_ERROR_GENERIC, ErrorMsg: &errmsg}
@@ -353,18 +354,18 @@ func apiBytesToObject(data []byte) interface{} {
 	return obj
 }
 
-func (self *RestAPI) stop(w io.Writer, remoteAddr string) {
-	self.waitGroup.Wait()
-	self.backend.Finalize()
-	self.loggers[LoggerWeb].Infof("stopped by %v", remoteAddr)
+func (api *RestAPI) stop(w io.Writer, remoteAddr string) {
+	api.waitGroup.Wait()
+	api.backend.Finalize()
+	api.loggers[LoggerWeb].Infof("stopped by %v", remoteAddr)
 	if w != nil {
 		fmt.Fprintf(w, "Stopped\r\n")
 	}
-	self.stopChan <- true
+	api.stopChan <- true
 	return
 }
 
-func (self *RestAPI) numberOfDeliveryPoints(kv map[string][]string, logger log.Logger, remoteAddr string) int {
+func (api *RestAPI) numberOfDeliveryPoints(kv map[string][]string, logger log.Logger, remoteAddr string) int {
 	ret := 0
 	ss, ok := kv["service"]
 	if !ok {
@@ -382,11 +383,11 @@ func (self *RestAPI) numberOfDeliveryPoints(kv map[string][]string, logger log.L
 		return ret
 	}
 	sub := subs[0]
-	ret = self.backend.NumberOfDeliveryPoints(service, sub, logger)
+	ret = api.backend.NumberOfDeliveryPoints(service, sub, logger)
 	return ret
 }
 
-func (self *RestAPI) querySubscriptions(kv map[string][]string, logger log.Logger) []byte {
+func (api *RestAPI) querySubscriptions(kv map[string][]string, logger log.Logger) []byte {
 	// "subscriber" is a required parameter
 	subscriberParam, ok := kv["subscriber"]
 	if !ok || len(subscriberParam) == 0 {
@@ -403,7 +404,7 @@ func (self *RestAPI) querySubscriptions(kv map[string][]string, logger log.Logge
 	if v, ok := kv["include_delivery_point_ids"]; ok && len(v) > 0 && v[0] == "1" {
 		includeDPIds = true
 	}
-	subscriptions := self.backend.Subscriptions(services, subscriberParam[0], logger, includeDPIds)
+	subscriptions := api.backend.Subscriptions(services, subscriberParam[0], logger, includeDPIds)
 	json, err := json.Marshal(subscriptions)
 	if err != nil {
 		logger.Errorf("Service=%v Subscriber=%v %s", services, subscriberParam[0], err)
@@ -425,8 +426,8 @@ func encodePSPForAPI(psp *push.PushServiceProvider) map[string]string {
 }
 
 // queryPSPs returns JSON describing the set of all PSPs stored in Uniqush. This API is intended for debugging/verifying that uniqush is set up properly.
-func (self *RestAPI) queryPSPs(logger log.Logger) []byte {
-	psps, err := self.backend.GetPushServiceProviderConfigs()
+func (api *RestAPI) queryPSPs(logger log.Logger) []byte {
+	psps, err := api.backend.GetPushServiceProviderConfigs()
 	type responseType struct {
 		Services     map[string][]map[string]string `json:"services"`
 		ErrorMessage *string                        `json:"errorMsg,omitempty"`
@@ -454,8 +455,8 @@ func (self *RestAPI) queryPSPs(logger log.Logger) []byte {
 }
 
 // rebuildServiceSet is used to make sure that the /subscriptions and /psps APIs work properly, on uniqush setups created before those APIs existed.
-func (self *RestAPI) rebuildServiceSet(logger log.Logger) []byte {
-	err := self.backend.RebuildServiceSet()
+func (api *RestAPI) rebuildServiceSet(logger log.Logger) []byte {
+	err := api.backend.RebuildServiceSet()
 	var details ApiResponseDetails
 	if err != nil {
 		logger.Errorf("Error in /rebuildserviceset: %v", err)
@@ -493,34 +494,34 @@ func parseKV(form url.Values) (kv map[string]string, perdp map[string][]string) 
 	return kv, perdp
 }
 
-func (self *RestAPI) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+func (api *RestAPI) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	defer r.Body.Close()
 	remoteAddr := r.RemoteAddr
 
 	switch r.URL.Path {
 	case QUERY_SUBSCRIPTIONS_URL:
 		r.ParseForm()
-		n := self.querySubscriptions(r.Form, self.loggers[LoggerSubscriptions])
+		n := api.querySubscriptions(r.Form, api.loggers[LoggerSubscriptions])
 		fmt.Fprintf(w, "%s\r\n", n)
 		return
 	case QUERY_PUSH_SERVICE_PROVIDERS:
-		n := self.queryPSPs(self.loggers[LoggerPSPs])
+		n := api.queryPSPs(api.loggers[LoggerPSPs])
 		fmt.Fprintf(w, "%s\r\n", n)
 		return
 	case REBUILD_SERVICE_SET_URL:
-		n := self.rebuildServiceSet(self.loggers[LoggerServices])
+		n := api.rebuildServiceSet(api.loggers[LoggerServices])
 		fmt.Fprintf(w, "%s\r\n", n)
 		return
 	case QUERY_NUMBER_OF_DELIVERY_POINTS_URL:
 		r.ParseForm()
-		n := self.numberOfDeliveryPoints(r.Form, self.loggers[LoggerWeb], remoteAddr)
+		n := api.numberOfDeliveryPoints(r.Form, api.loggers[LoggerWeb], remoteAddr)
 		fmt.Fprintf(w, "%v\r\n", n)
 		return
 	case PREVIEW_PUSH_NOTIFICATION_URL:
 		r.ParseForm()
 		kv, _ := parseKV(r.Form)
 		rid := randomUniqId()
-		details := self.preview(rid, kv, self.loggers[LoggerPreview], remoteAddr)
+		details := api.preview(rid, kv, api.loggers[LoggerPreview], remoteAddr)
 		bytes, err := json.Marshal(details)
 		if err != nil {
 			fmt.Fprintf(w, "%s\r\n", string(err.Error()))
@@ -529,70 +530,70 @@ func (self *RestAPI) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		fmt.Fprintf(w, "%s\r\n", string(bytes))
 		return
 	case VERSION_INFO_URL:
-		fmt.Fprintf(w, "%v\r\n", self.version)
-		self.loggers[LoggerWeb].Infof("Checked version from %v", remoteAddr)
+		fmt.Fprintf(w, "%v\r\n", api.version)
+		api.loggers[LoggerWeb].Infof("Checked version from %v", remoteAddr)
 		return
 	case STOP_PROGRAM_URL:
-		self.stop(w, remoteAddr)
+		api.stop(w, remoteAddr)
 		return
 	}
 	r.ParseForm()
 	kv, perdp := parseKV(r.Form)
 
-	self.waitGroup.Add(1)
-	defer self.waitGroup.Done()
+	api.waitGroup.Add(1)
+	defer api.waitGroup.Done()
 	var handler ApiResponseHandler = nil
 	var details ApiResponseDetails
 	switch r.URL.Path {
 	case ADD_PUSH_SERVICE_PROVIDER_TO_SERVICE_URL:
-		handler = newSimpleResponseHandler(self.loggers[LoggerAddPSP], "AddPushServiceProvider")
-		details = self.changePushServiceProvider(kv, self.loggers[LoggerAddPSP], remoteAddr, true)
+		handler = newSimpleResponseHandler(api.loggers[LoggerAddPSP], "AddPushServiceProvider")
+		details = api.changePushServiceProvider(kv, api.loggers[LoggerAddPSP], remoteAddr, true)
 		handler.AddDetailsToHandler(details)
 	case REMOVE_PUSH_SERVICE_PROVIDER_TO_SERVICE_URL:
-		handler = newSimpleResponseHandler(self.loggers[LoggerRemovePSP], "RemovePushServiceProvider")
-		details = self.changePushServiceProvider(kv, self.loggers[LoggerRemovePSP], remoteAddr, false)
+		handler = newSimpleResponseHandler(api.loggers[LoggerRemovePSP], "RemovePushServiceProvider")
+		details = api.changePushServiceProvider(kv, api.loggers[LoggerRemovePSP], remoteAddr, false)
 		handler.AddDetailsToHandler(details)
 	case ADD_DELIVERY_POINT_TO_SERVICE_URL:
-		handler = newSimpleResponseHandler(self.loggers[LoggerSub], "Subscribe")
-		details = self.changeSubscription(kv, self.loggers[LoggerSub], remoteAddr, true)
+		handler = newSimpleResponseHandler(api.loggers[LoggerSub], "Subscribe")
+		details = api.changeSubscription(kv, api.loggers[LoggerSub], remoteAddr, true)
 		handler.AddDetailsToHandler(details)
 	case REMOVE_DELIVERY_POINT_FROM_SERVICE_URL:
-		handler = newSimpleResponseHandler(self.loggers[LoggerUnsub], "Unsubscribe")
-		details = self.changeSubscription(kv, self.loggers[LoggerUnsub], remoteAddr, false)
+		handler = newSimpleResponseHandler(api.loggers[LoggerUnsub], "Unsubscribe")
+		details = api.changeSubscription(kv, api.loggers[LoggerUnsub], remoteAddr, false)
 		handler.AddDetailsToHandler(details)
 	case PUSH_NOTIFICATION_URL:
-		handler = newPushResponseHandler(self.loggers[LoggerPush])
+		handler = newPushResponseHandler(api.loggers[LoggerPush])
 		rid := randomUniqId()
-		self.pushNotification(rid, kv, perdp, self.loggers[LoggerPush], remoteAddr, handler)
+		api.pushNotification(rid, kv, perdp, api.loggers[LoggerPush], remoteAddr, handler)
 	}
 	if handler != nil {
 		// Be consistent about ending responses in \r\n
 		_, err := fmt.Fprintf(w, "%s\r\n", string(handler.ToJSON()))
 		if err != nil {
-			self.loggers[LoggerWeb].Errorf("Failed to write http response: %v", err)
+			api.loggers[LoggerWeb].Errorf("Failed to write http response: %v", err)
 		}
 	}
 }
 
-func (self *RestAPI) Run(addr string, stopChan chan<- bool) {
-	self.loggers[LoggerWeb].Infof("[Start] %s", addr)
-	self.loggers[LoggerWeb].Debugf("[Version] %s", self.version)
-	http.Handle(STOP_PROGRAM_URL, self)
-	http.Handle(VERSION_INFO_URL, self)
-	http.Handle(ADD_PUSH_SERVICE_PROVIDER_TO_SERVICE_URL, self)
-	http.Handle(ADD_DELIVERY_POINT_TO_SERVICE_URL, self)
-	http.Handle(REMOVE_DELIVERY_POINT_FROM_SERVICE_URL, self)
-	http.Handle(REMOVE_PUSH_SERVICE_PROVIDER_TO_SERVICE_URL, self)
-	http.Handle(PUSH_NOTIFICATION_URL, self)
-	http.Handle(PREVIEW_PUSH_NOTIFICATION_URL, self)
-	http.Handle(QUERY_NUMBER_OF_DELIVERY_POINTS_URL, self)
-	http.Handle(QUERY_SUBSCRIPTIONS_URL, self)
-	http.Handle(QUERY_PUSH_SERVICE_PROVIDERS, self)
-	http.Handle(REBUILD_SERVICE_SET_URL, self)
-	self.stopChan = stopChan
+func (api *RestAPI) Run(addr string, stopChan chan<- bool) {
+	api.loggers[LoggerWeb].Infof("[Start] %s", addr)
+	api.loggers[LoggerWeb].Debugf("[Version] %s", api.version)
+	http.Handle(STOP_PROGRAM_URL, api)
+	http.Handle(VERSION_INFO_URL, api)
+	http.Handle(ADD_PUSH_SERVICE_PROVIDER_TO_SERVICE_URL, api)
+	http.Handle(ADD_DELIVERY_POINT_TO_SERVICE_URL, api)
+	http.Handle(REMOVE_DELIVERY_POINT_FROM_SERVICE_URL, api)
+	http.Handle(REMOVE_PUSH_SERVICE_PROVIDER_TO_SERVICE_URL, api)
+	http.Handle(PUSH_NOTIFICATION_URL, api)
+	http.Handle(PREVIEW_PUSH_NOTIFICATION_URL, api)
+	http.Handle(QUERY_NUMBER_OF_DELIVERY_POINTS_URL, api)
+	http.Handle(QUERY_SUBSCRIPTIONS_URL, api)
+	http.Handle(QUERY_PUSH_SERVICE_PROVIDERS, api)
+	http.Handle(REBUILD_SERVICE_SET_URL, api)
+	api.stopChan = stopChan
 	err := http.ListenAndServe(addr, nil)
 	if err != nil {
-		self.loggers[LoggerWeb].Fatalf("HTTPServerError \"%v\"", err)
+		api.loggers[LoggerWeb].Fatalf("HTTPServerError \"%v\"", err)
 	}
 	return
 }

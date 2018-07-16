@@ -25,8 +25,8 @@ type Notification struct {
 	Data map[string]string
 }
 
-func (self *Notification) String() string {
-	ret, _ := json.Marshal(self.Data)
+func (n *Notification) String() string {
+	ret, _ := json.Marshal(n.Data)
 	return string(ret)
 }
 func NewEmptyNotification() *Notification {

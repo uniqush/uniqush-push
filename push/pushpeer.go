@@ -27,8 +27,8 @@ import (
 	"sync"
 )
 
+// Fields in FixedData, found in each DeliveryPoint.
 const (
-	// Fields in FixedData, found in each DeliveryPoint.
 	SERVICE    = "service"
 	SUBSCRIBER = "subscriber"
 	// Fields which may or may not be in VolatileData of any DeliveryPoint
@@ -234,7 +234,7 @@ func UnserializeSubscription(data []byte) (map[string]string, error) {
 	parts := strings.SplitN(string(data), ":", 2)
 
 	if len(parts) != 2 {
-		return nil, fmt.Errorf("UnserializeSubscription() Bad data, no ':' to split on.")
+		return nil, fmt.Errorf("UnserializeSubscription() Bad data, no ':' to split on")
 	}
 
 	var f []map[string]string

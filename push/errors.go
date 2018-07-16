@@ -44,7 +44,7 @@ var _ Error = &UnsubscribeUpdate{}
 var _ Error = &InvalidRegistrationUpdate{}
 var _ Error = &ConnectionError{}
 
-// This is not an actual error.
+// InfoReport is not an actual error.
 // But it is worthy to be reported to the user.
 type InfoReport struct {
 	implementsPushError

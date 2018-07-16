@@ -36,7 +36,7 @@ func (mockPRP *MockPushRequestProcessor) AddRequest(request *common.PushRequest)
 	go func() {
 		for i := range request.DPList {
 			request.ResChan <- &common.APNSResult{
-				MsgId:  request.GetID(i),
+				MsgID:  request.GetID(i),
 				Status: mockPRP.status,
 				Err:    nil,
 			}
