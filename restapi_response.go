@@ -32,7 +32,7 @@ const (
 	UNIQUSH_ERROR_NO_PUSH_SERVICE_TYPE     = "UNIQUSH_ERROR_NO_PUSH_SERVICE_TYPE"
 )
 
-type ApiResponseDetails struct {
+type APIResponseDetails struct {
 	RequestId           *string `json:"requestId,omitempty"`
 	Service             *string `json:"service,omitempty"`
 	From                *string `json:"from,omitempty"`
@@ -45,7 +45,7 @@ type ApiResponseDetails struct {
 	ModifiedDp          bool    `json:"modifiedDp,omitempty"`
 }
 
-type PreviewApiResponseDetails struct {
+type PreviewAPIResponseDetails struct {
 	Code     string      `json:"code"`
 	Payload  interface{} `json:"payload,omitempty"`
 	ErrorMsg *string     `json:"errorMsg,omitempty"`
@@ -59,17 +59,17 @@ func strPtrOfErr(e error) *string {
 	return &s
 }
 
-type ApiResponseHandler interface {
-	AddDetailsToHandler(v ApiResponseDetails)
+type APIResponseHandler interface {
+	AddDetailsToHandler(v APIResponseDetails)
 	ToJSON() []byte
 }
 
-type NullApiResponseHandler struct{}
+type NullAPIResponseHandler struct{}
 
-var _ ApiResponseHandler = (*NullApiResponseHandler)(nil)
+var _ APIResponseHandler = (*NullAPIResponseHandler)(nil)
 
-func (self *NullApiResponseHandler) AddDetailsToHandler(v ApiResponseDetails) {}
+func (handler *NullAPIResponseHandler) AddDetailsToHandler(v APIResponseDetails) {}
 
-func (self *NullApiResponseHandler) ToJSON() []byte {
+func (handler *NullAPIResponseHandler) ToJSON() []byte {
 	return []byte{}
 }

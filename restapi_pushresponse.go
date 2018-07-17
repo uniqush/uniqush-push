@@ -8,43 +8,43 @@ import (
 	"github.com/uniqush/log"
 )
 
-type ApiPushResponseHandler struct {
-	response ApiPushResponse
+type APIPushResponseHandler struct {
+	response APIPushResponse
 	logger   log.Logger
 	mutex    sync.Mutex
 }
 
-var _ ApiResponseHandler = (*ApiPushResponseHandler)(nil)
+var _ APIResponseHandler = (*APIPushResponseHandler)(nil)
 
-type ApiPushResponse struct {
+type APIPushResponse struct {
 	Type           string               `json:"type"`
 	Date           int64                `json:"date"`
 	SuccessCount   int                  `json:"successCount"`
 	FailureCount   int                  `json:"failureCount"`
 	DroppedCount   int                  `json:"droppedCount"`
-	SuccessDetails []ApiResponseDetails `json:"successDetails"`
-	FailureDetails []ApiResponseDetails `json:"failureDetails"`
-	DroppedDetails []ApiResponseDetails `json:"droppedDetails"`
+	SuccessDetails []APIResponseDetails `json:"successDetails"`
+	FailureDetails []APIResponseDetails `json:"failureDetails"`
+	DroppedDetails []APIResponseDetails `json:"droppedDetails"`
 }
 
-func newPushResponseHandler(logger log.Logger) *ApiPushResponseHandler {
-	return &ApiPushResponseHandler{
-		response: newApiPushResponse(),
+func newPushResponseHandler(logger log.Logger) *APIPushResponseHandler {
+	return &APIPushResponseHandler{
+		response: newAPIPushResponse(),
 		logger:   logger,
 	}
 }
 
-func newApiPushResponse() ApiPushResponse {
-	return ApiPushResponse{
+func newAPIPushResponse() APIPushResponse {
+	return APIPushResponse{
 		Type:           "Push",
 		Date:           time.Now().Unix(),
-		SuccessDetails: make([]ApiResponseDetails, 0),
-		FailureDetails: make([]ApiResponseDetails, 0),
-		DroppedDetails: make([]ApiResponseDetails, 0),
+		SuccessDetails: make([]APIResponseDetails, 0),
+		FailureDetails: make([]APIResponseDetails, 0),
+		DroppedDetails: make([]APIResponseDetails, 0),
 	}
 }
 
-func (self *ApiPushResponseHandler) AddDetailsToHandler(v ApiResponseDetails) {
+func (self *APIPushResponseHandler) AddDetailsToHandler(v APIResponseDetails) {
 	self.mutex.Lock()
 	if v.Code == UNIQUSH_SUCCESS {
 		self.response.SuccessDetails = append(self.response.SuccessDetails, v)
@@ -59,7 +59,7 @@ func (self *ApiPushResponseHandler) AddDetailsToHandler(v ApiResponseDetails) {
 	self.mutex.Unlock()
 }
 
-func (self *ApiPushResponseHandler) ToJSON() []byte {
+func (self *APIPushResponseHandler) ToJSON() []byte {
 	json, err := json.Marshal(self.response)
 	if err != nil {
 		self.logger.Errorf("Failed to marshal json [%v] as string: %v", self.response, err)

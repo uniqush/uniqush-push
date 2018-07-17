@@ -471,11 +471,7 @@ func (r *PushRedisDB) GetPushServiceProvidersByService(srv string) ([]string, er
 	if m == nil {
 		return nil, nil
 	}
-	ret := make([]string, len(m))
-	for i, bm := range m {
-		ret[i] = string(bm)
-	}
-
+	ret := append([]string{}, m...)
 	return ret, nil
 }
 
@@ -500,8 +496,11 @@ func (r *PushRedisDB) RemovePushServiceProviderFromService(srv, psp string) erro
 
 func (r *PushRedisDB) AddPushServiceProviderToService(srv, psp string) error {
 	// TODO: pipelined
-	r.client.SAdd(ServicesSet, srv).Err() // Non-essential. Used to list services in API.
-	err := r.client.SAdd(ServiceToPushServiceProvidersPrefix+srv, psp).Err()
+	err := r.client.SAdd(ServicesSet, srv).Err() // Used to list services in API.
+	if err != nil {
+		return fmt.Errorf("Unable to add %q to set of services", srv)
+	}
+	err = r.client.SAdd(ServiceToPushServiceProvidersPrefix+srv, psp).Err()
 	if err != nil {
 		return fmt.Errorf("AddPSPToService failed for psp %q of service %q: %v", psp, srv, err)
 	}

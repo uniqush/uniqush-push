@@ -37,7 +37,6 @@ func newTestPushServiceType() *testPushServiceType {
 }
 
 func (pst *testPushServiceType) SetErrorReportChan(errChan chan<- Error) {
-	return
 }
 
 func (pst *testPushServiceType) Name() string {
@@ -45,7 +44,6 @@ func (pst *testPushServiceType) Name() string {
 }
 
 func (pst *testPushServiceType) Finalize() {
-	return
 }
 
 func (pst *testPushServiceType) BuildPushServiceProviderFromMap(kv map[string]string, psp *PushServiceProvider) error {
@@ -66,13 +64,12 @@ func (pst *testPushServiceType) Push(*PushServiceProvider, <-chan *DeliveryPoint
 	fmt.Println("Push!")
 }
 
-func (t *testPushServiceType) Preview(*Notification) ([]byte, Error) {
+func (pst *testPushServiceType) Preview(*Notification) ([]byte, Error) {
 	fmt.Println("Preview!")
 	return []byte("{}"), nil
 }
 
 func (pst *testPushServiceType) SetPushServiceConfig(c *PushServiceConfig) {
-	return
 }
 
 func TestPushPeer(t *testing.T) {

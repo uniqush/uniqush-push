@@ -12,7 +12,6 @@ import (
 	"net"
 	"strings"
 	"sync"
-	_ "testing"
 	"time"
 )
 

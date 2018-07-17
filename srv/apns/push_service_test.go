@@ -312,7 +312,7 @@ func TestToAPNSPayloadWithKey(t *testing.T) {
 }
 
 func TestToAPNSPayloadCreatesUnescapedJSON(t *testing.T) {
-	expectedJson := `{"aps":{"alert":{"body":"hello world <&>"}}}`
+	expectedJSON := `{"aps":{"alert":{"body":"hello world <&>"}}}`
 	notification := &push.Notification{
 		Data: map[string]string{"msg": "hello world <&>"},
 	}
@@ -320,8 +320,8 @@ func TestToAPNSPayloadCreatesUnescapedJSON(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if !bytes.Equal([]byte(expectedJson), payload) {
-		t.Errorf("Expected %v(%s), Got %v(%s)", []byte(expectedJson), expectedJson, payload, string(payload))
+	if !bytes.Equal([]byte(expectedJSON), payload) {
+		t.Errorf("Expected %v(%s), Got %v(%s)", []byte(expectedJSON), expectedJSON, payload, string(payload))
 	}
 }
 

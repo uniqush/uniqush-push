@@ -291,7 +291,7 @@ func (f *pushDatabaseOpts) GetPushServiceProviderDeliveryPointPairs(service stri
 
 	for srv, dpList := range dpnames {
 		for _, dpName := range dpList {
-			if len(dpNamesSubset) != 0 && dpNamesSubset[dpName] != true {
+			if len(dpNamesSubset) != 0 && !dpNamesSubset[dpName] {
 				// If we request a subset of delivery points, don't fetch or return data for the ones that weren't requested.
 				continue
 			}

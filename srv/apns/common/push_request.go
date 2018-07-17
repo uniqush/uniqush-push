@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-// package common contains common interfaces and data types for abstractions of apns request/response push protocols.
+// Package common contains common interfaces and data types for abstractions of apns request/response push protocols.
 package common
 
 import (
@@ -58,8 +58,8 @@ func (request *PushRequest) GetID(idx int) uint32 {
 	if idx < 0 || idx >= len(request.Devtokens) {
 		return 0
 	}
-	startId := request.MaxMsgID - uint32(len(request.Devtokens))
-	return startId + uint32(idx)
+	startID := request.MaxMsgID - uint32(len(request.Devtokens))
+	return startID + uint32(idx)
 }
 
 type APNSResult struct {

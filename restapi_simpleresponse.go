@@ -13,48 +13,48 @@ const (
 	STATUS_UNKNOWN
 )
 
-type ApiSimpleResponseHandler struct {
-	response ApiSimpleResponse
+type APISimpleResponseHandler struct {
+	response APISimpleResponse
 	logger   log.Logger
 }
 
-var _ ApiResponseHandler = (*ApiSimpleResponseHandler)(nil)
+var _ APIResponseHandler = (*APISimpleResponseHandler)(nil)
 
-type ApiSimpleResponse struct {
+type APISimpleResponse struct {
 	Type    string             `json:"type"`
 	Date    int64              `json:"date"`
 	Status  int                `json:"status"`
-	Details ApiResponseDetails `json:"details"`
+	Details APIResponseDetails `json:"details"`
 }
 
-func newSimpleResponseHandler(logger log.Logger, apiType string) *ApiSimpleResponseHandler {
-	return &ApiSimpleResponseHandler{
-		response: newApiSimpleResponse(apiType),
+func newSimpleResponseHandler(logger log.Logger, apiType string) *APISimpleResponseHandler {
+	return &APISimpleResponseHandler{
+		response: newAPISimpleResponse(apiType),
 		logger:   logger,
 	}
 }
 
-func newApiSimpleResponse(apiType string) ApiSimpleResponse {
-	return ApiSimpleResponse{
+func newAPISimpleResponse(apiType string) APISimpleResponse {
+	return APISimpleResponse{
 		Type:   apiType,
 		Date:   time.Now().Unix(),
 		Status: STATUS_UNKNOWN,
 	}
 }
 
-func (self *ApiSimpleResponseHandler) AddDetailsToHandler(v ApiResponseDetails) {
+func (handler *APISimpleResponseHandler) AddDetailsToHandler(v APIResponseDetails) {
 	if v.Code == UNIQUSH_SUCCESS {
-		self.response.Status = STATUS_SUCCESS
+		handler.response.Status = STATUS_SUCCESS
 	} else {
-		self.response.Status = STATUS_FAILURE
+		handler.response.Status = STATUS_FAILURE
 	}
-	self.response.Details = v
+	handler.response.Details = v
 }
 
-func (self *ApiSimpleResponseHandler) ToJSON() []byte {
-	json, err := json.Marshal(self.response)
+func (handler *APISimpleResponseHandler) ToJSON() []byte {
+	json, err := json.Marshal(handler.response)
 	if err != nil {
-		self.logger.Errorf("Failed to marshal json [%v] as string: %v", self.response, err)
+		handler.logger.Errorf("Failed to marshal json [%v] as string: %v", handler.response, err)
 		return nil
 	}
 	return json

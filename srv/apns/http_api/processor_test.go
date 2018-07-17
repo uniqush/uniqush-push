@@ -2,7 +2,6 @@ package http_api
 
 import (
 	"bytes"
-	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -25,7 +24,6 @@ var (
 	pushServiceProvider = initPSP()
 	devToken            = []byte("test_device_token")
 	payload             = []byte(`{"alert":"test_message"}`)
-	apiURL              = fmt.Sprintf("%s/3/device/%s", pushServiceProvider.VolatileData["addr"], hex.EncodeToString(devToken))
 )
 
 func initPSP() *push.PushServiceProvider {
