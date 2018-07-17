@@ -17,11 +17,8 @@ import (
 )
 
 const (
-	authToken  = "test_auth_token"
-	authToken2 = "update_auth_token"
-	keyID      = "FD8789SD9"
-	teamID     = "JVNS20943"
-	bundleID   = "com.example.test"
+	bundleID        = "com.example.test"
+	mockServiceName = "myService"
 )
 
 var (
@@ -29,7 +26,6 @@ var (
 	devToken            = []byte("test_device_token")
 	payload             = []byte(`{"alert":"test_message"}`)
 	apiURL              = fmt.Sprintf("%s/3/device/%s", pushServiceProvider.VolatileData["addr"], hex.EncodeToString(devToken))
-	mockServiceName     = "myService"
 )
 
 func initPSP() *push.PushServiceProvider {

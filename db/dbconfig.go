@@ -22,6 +22,7 @@ import (
 	"github.com/uniqush/uniqush-push/push"
 )
 
+// DatabaseConfig represents all of the configuration for a database implementation. Currently, the only db implementation is redis.
 type DatabaseConfig struct {
 	Engine    string
 	Name      string

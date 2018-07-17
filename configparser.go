@@ -65,6 +65,14 @@ func extractLogLevel(loglevel string) (int, string) {
 	return level, warningMsg
 }
 
+func getStringOrDefaultIfEmptyOrInvalid(c *conf.ConfigFile, field, key, defaultValue string) string {
+	value, err := c.GetString(field, key)
+	if err != nil || value == "" {
+		return defaultValue
+	}
+	return value
+}
+
 func loadLogger(writer io.Writer, c *conf.ConfigFile, field string, prefix string) (log.Logger, error) {
 	var loglevel string
 	var logswitch bool
@@ -103,35 +111,24 @@ func loadLogger(writer io.Writer, c *conf.ConfigFile, field string, prefix strin
 func LoadDatabaseConfig(cf *conf.ConfigFile) (*db.DatabaseConfig, error) {
 	var err error
 	c := new(db.DatabaseConfig)
+
+	getDbConfigString := func(key, defaultValue string) string {
+		return getStringOrDefaultIfEmptyOrInvalid(cf, "Database", key, defaultValue)
+	}
 	c.PushServiceManager = push.GetPushServiceManager()
-	c.Engine, err = cf.GetString("Database", "engine")
-	if err != nil || c.Engine == "" {
-		c.Engine = "redis"
-	}
-	c.Name, err = cf.GetString("Database", "name")
-	if err != nil || c.Name == "" {
-		c.Name = "0"
-	}
+	c.Engine = getDbConfigString("engine", "redis")
+	c.Name = getDbConfigString("name", "0")
 	c.Port, err = cf.GetInt("Database", "port")
 	if err != nil || c.Port <= 0 {
 		c.Port = -1
 	}
-	c.Host, err = cf.GetString("Database", "host")
-	if err != nil || c.Host == "" {
-		c.Host = "localhost"
-	}
+	c.Host = getDbConfigString("host", "localhost")
 	c.SlavePort, err = cf.GetInt("Database", "slave_port")
 	if err != nil || c.SlavePort <= 0 {
 		c.SlavePort = -1
 	}
-	c.SlaveHost, err = cf.GetString("Database", "slave_host")
-	if err != nil || c.SlaveHost == "" {
-		c.SlaveHost = ""
-	}
-	c.Password, err = cf.GetString("Database", "password")
-	if err != nil {
-		c.Password = ""
-	}
+	c.SlaveHost = getDbConfigString("slave_host", "")
+	c.Password = getDbConfigString("password", "")
 	i, e := cf.GetInt("Database", "everysec")
 	// TODO: Change condition to < 60 or change assignment to c.EverySec = 60?
 	c.EverySec = int64(i)
@@ -168,7 +165,7 @@ func OpenConfig(filename string) (c *conf.ConfigFile, err error) {
 
 // LoadLoggers will return an array of loggers, for each type in the enum.
 // The log level of individual loggers vary based on the config.
-func LoadLoggers(c *conf.ConfigFile) (loggers []log.Logger, err error) {
+func LoadLoggers(c *conf.ConfigFile) ([]log.Logger, error) {
 	var logfile io.Writer
 
 	logfilename, err := c.GetString("default", "logfile")
@@ -181,66 +178,28 @@ func LoadLoggers(c *conf.ConfigFile) (loggers []log.Logger, err error) {
 		logfile = os.Stderr
 	}
 
-	loggers = make([]log.Logger, NumberOfLoggers)
-	loggers[LoggerWeb], err = loadLogger(logfile, c, "WebFrontend", "[WebFrontend]")
-	if err != nil {
-		loggers = nil
-		return
+	loggers := make([]log.Logger, NumberOfLoggers)
+
+	loggerConfigs := map[int]string{
+		LoggerWeb:           "WebFrontend",
+		LoggerAddPSP:        "AddPushServiceProvider",
+		LoggerRemovePSP:     "RemovePushServiceProvider",
+		LoggerPSPs:          "PSPs",
+		LoggerSub:           "Subscribe",
+		LoggerUnsub:         "Unsubscribe",
+		LoggerPush:          "Push",
+		LoggerSubscriptions: "Subscriptions",
+		LoggerServices:      "Services",
+		LoggerPreview:       "Preview",
+	}
+	for loggerIndex, loggerName := range loggerConfigs {
+		loggers[loggerIndex], err = loadLogger(logfile, c, loggerName, fmt.Sprintf("[%s]", loggerName))
+		if err != nil {
+			return nil, err
+		}
 	}
 
-	loggers[LoggerAddPSP], err = loadLogger(logfile, c, "AddPushServiceProvider", "[AddPushServiceProvider]")
-	if err != nil {
-		loggers = nil
-		return
-	}
-
-	loggers[LoggerRemovePSP], err = loadLogger(logfile, c, "RemovePushServiceProvider", "[RemovePushServiceProvider]")
-	if err != nil {
-		loggers = nil
-		return
-	}
-
-	loggers[LoggerPSPs], err = loadLogger(logfile, c, "PSPs", "[PSPs]")
-	if err != nil {
-		loggers = nil
-		return
-	}
-
-	loggers[LoggerSub], err = loadLogger(logfile, c, "Subscribe", "[Subscribe]")
-	if err != nil {
-		loggers = nil
-		return
-	}
-
-	loggers[LoggerUnsub], err = loadLogger(logfile, c, "Unsubscribe", "[Unsubscribe]")
-	if err != nil {
-		loggers = nil
-		return
-	}
-
-	loggers[LoggerPush], err = loadLogger(logfile, c, "Push", "[Push]")
-	if err != nil {
-		loggers = nil
-		return
-	}
-
-	loggers[LoggerSubscriptions], err = loadLogger(logfile, c, "Subscriptions", "[Subscriptions]")
-	if err != nil {
-		loggers = nil
-		return
-	}
-	loggers[LoggerServices], err = loadLogger(logfile, c, "Services", "[Services]")
-	if err != nil {
-		loggers = nil
-		return
-	}
-
-	loggers[LoggerPreview], err = loadLogger(logfile, c, "Preview", "[Preview]")
-	if err != nil {
-		loggers = nil
-		return
-	}
-	return
+	return loggers, nil
 }
 
 // LoadRestAddr returns the address to listen to HTTP requests on, or returns an error.

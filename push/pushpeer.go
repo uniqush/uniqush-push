@@ -72,12 +72,7 @@ func (p *PushPeer) String() string {
 	return ret
 }
 
-func newPushPeer() *PushPeer {
-	ret := new(PushPeer)
-	ret.InitPushPeer()
-	return ret
-}
-
+// InitPushPeer initializes fields of the base struct PushPeer
 func (p *PushPeer) InitPushPeer() {
 	p.pushServiceType = nil
 	p.VolatileData = make(map[string]string, 2)

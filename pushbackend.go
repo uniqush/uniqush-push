@@ -295,6 +295,20 @@ func (backend *PushBackEnd) fixUnsubscribeUpdate(
 	}
 }
 
+func getDeliveryPointNameOrUnknown(dp *push.DeliveryPoint) string {
+	if dp != nil {
+		return dp.Name()
+	}
+	return "Unknown"
+}
+
+func getProviderNameOrUnknown(provider *push.PushServiceProvider) string {
+	if provider != nil {
+		return provider.Name()
+	}
+	return "Unknown"
+}
+
 func (backend *PushBackEnd) collectResult(
 	reqID string,
 	remoteAddr string,
@@ -325,23 +339,17 @@ func (backend *PushBackEnd) collectResult(
 			subRepr = "Unknown"
 		}
 		if res.Err == nil {
-			providerName := res.Provider.Name()
-			destinationName := res.Destination.Name()
-			msgId := res.MsgID
-			logger.Infof("RequestID=%v Service=%v Subscriber=%v PushServiceProvider=%v DeliveryPoint=%v MsgID=%v Success!", reqID, service, subRepr, providerName, destinationName, msgId)
-			handler.AddDetailsToHandler(ApiResponseDetails{RequestId: &reqID, From: &remoteAddr, Service: &service, Subscriber: &sub, PushServiceProvider: &providerName, DeliveryPoint: &destinationName, MessageId: &msgId, Code: UNIQUSH_SUCCESS})
+			dpName := getDeliveryPointNameOrUnknown(res.Destination)
+			pspName := getProviderNameOrUnknown(res.Provider)
+			msgID := res.MsgID
+			logger.Infof("RequestID=%v Service=%v Subscriber=%v PushServiceProvider=%v DeliveryPoint=%v MsgID=%v Success!", reqID, service, subRepr, pspName, dpName, msgID)
+			handler.AddDetailsToHandler(ApiResponseDetails{RequestId: &reqID, From: &remoteAddr, Service: &service, Subscriber: &sub, PushServiceProvider: &pspName, DeliveryPoint: &dpName, MessageId: &msgID, Code: UNIQUSH_SUCCESS})
 			continue
 		}
 		err := backend.fixError(reqID, remoteAddr, res.Err, logger, after, handler)
 		if err != nil {
-			pspName := "Unknown"
-			dpName := "Unknown"
-			if res.Provider != nil {
-				pspName = res.Provider.Name()
-			}
-			if res.Destination != nil {
-				dpName = res.Destination.Name()
-			}
+			dpName := getDeliveryPointNameOrUnknown(res.Destination)
+			pspName := getProviderNameOrUnknown(res.Provider)
 			logger.Errorf("RequestID=%v Service=%v Subscriber=%v PushServiceProvider=%v DeliveryPoint=%v Failed: %v", reqID, service, subRepr, pspName, dpName, err)
 			handler.AddDetailsToHandler(ApiResponseDetails{RequestId: &reqID, From: &remoteAddr, Service: &service, Subscriber: &sub, PushServiceProvider: &pspName, DeliveryPoint: &dpName, Code: UNIQUSH_ERROR_GENERIC, ErrorMsg: strPtrOfErr(err)})
 		}

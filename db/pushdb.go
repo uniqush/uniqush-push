@@ -50,13 +50,13 @@ type PushDatabase interface {
 	// The push service provider may by anonymous whose Name is empty string
 	// For anonymous push service provider, it will be added to database
 	// and its Name will be set
-	RemovePushServiceProviderFromService(service string, push_service_provider *push.PushServiceProvider) error
+	RemovePushServiceProviderFromService(service string, pushServiceProvider *push.PushServiceProvider) error
 
 	// The push service provider may by anonymous whose Name is empty string
 	// For anonymous push service provider, it will be added to database
 	// and its Name will be set
 	AddPushServiceProviderToService(service string,
-		push_service_provider *push.PushServiceProvider) error
+		pushServiceProvider *push.PushServiceProvider) error
 
 	ModifyPushServiceProvider(psp *push.PushServiceProvider) error
 
@@ -111,6 +111,7 @@ func NewPushDatabaseOpts(conf *DatabaseConfig) (PushDatabase, error) {
 }
 */
 
+// NewPushDatabaseWithoutCache creates a push database implementation communicating with redis without any in-memory caching
 func NewPushDatabaseWithoutCache(conf *DatabaseConfig) (PushDatabase, error) {
 	var err error
 	f := new(pushDatabaseOpts)
@@ -121,14 +122,15 @@ func NewPushDatabaseWithoutCache(conf *DatabaseConfig) (PushDatabase, error) {
 	return f, nil
 }
 
+// FlushCache will save PSPs and subscriptions. NOTE: This is unnecessary if the database used is configured to auto-save.
 func (f *pushDatabaseOpts) FlushCache() error {
 	f.dblock.Lock()
 	defer f.dblock.Unlock()
 	return f.db.FlushCache()
 }
 
-func (f *pushDatabaseOpts) RemovePushServiceProviderFromService(service string, push_service_provider *push.PushServiceProvider) error {
-	name := push_service_provider.Name()
+func (f *pushDatabaseOpts) RemovePushServiceProviderFromService(service string, pushServiceProvider *push.PushServiceProvider) error {
+	name := pushServiceProvider.Name()
 	if name == "" {
 		return errors.New("InvalidPushServiceProvider")
 	}
@@ -146,11 +148,11 @@ func (f *pushDatabaseOpts) RemovePushServiceProviderFromService(service string, 
 	return nil
 }
 
-func (f *pushDatabaseOpts) AddPushServiceProviderToService(service string, push_service_provider *push.PushServiceProvider) error {
-	if push_service_provider == nil {
+func (f *pushDatabaseOpts) AddPushServiceProviderToService(service string, pushServiceProvider *push.PushServiceProvider) error {
+	if pushServiceProvider == nil {
 		return nil
 	}
-	name := push_service_provider.Name()
+	name := pushServiceProvider.Name()
 	if len(name) == 0 {
 		return errors.New("InvalidPushServiceProvider")
 	}
@@ -176,7 +178,7 @@ func (f *pushDatabaseOpts) AddPushServiceProviderToService(service string, push_
 			return fmt.Errorf("Error in AddPushServiceProviderToService retrieving existing PSP %s for service %s with name: %v", pspitem, service, perr)
 		}
 		// Check if the existing PSP has the same push service type
-		if pushpsp.PushServiceName() == push_service_provider.PushServiceName() {
+		if pushpsp.PushServiceName() == pushServiceProvider.PushServiceName() {
 			/*
 			 * The service already has a PSP of the same push service type.
 			 *
@@ -186,21 +188,21 @@ func (f *pushDatabaseOpts) AddPushServiceProviderToService(service string, push_
 			 * Because the psp's fixed data currently is used to generate a unique pushpeer name,
 			 * we directly compare the Name() of pushpeer and reject the new PSP if the name is different.
 			 */
-			if pushpsp.PushPeer.Name() != push_service_provider.PushPeer.Name() {
+			if pushpsp.PushPeer.Name() != pushServiceProvider.PushPeer.Name() {
 				return fmt.Errorf(
 					"A different PSP for service %s already exists with different fixed data as push service type %s (It has a separate subscriber list). Please double check the list of current PSPs with the /psps API. Note that this error could be worked around by removing the old PSP, but that would delete subscriptions.",
 					service,
-					push_service_provider.PushServiceName(),
+					pushServiceProvider.PushServiceName(),
 				)
 			}
 		}
 	}
 
-	e := f.db.SetPushServiceProvider(push_service_provider)
+	e := f.db.SetPushServiceProvider(pushServiceProvider)
 	if e != nil {
 		return fmt.Errorf("Error associating psp with name: %v", e)
 	}
-	return f.db.AddPushServiceProviderToService(service, push_service_provider.Name())
+	return f.db.AddPushServiceProviderToService(service, pushServiceProvider.Name())
 }
 
 func (f *pushDatabaseOpts) AddDeliveryPointToService(service string,

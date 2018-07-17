@@ -25,8 +25,6 @@ import (
 	"github.com/uniqush/uniqush-push/test_util"
 )
 
-var dbconf *DatabaseConfig
-
 func getTestDatabaseConfig() *DatabaseConfig {
 	return &DatabaseConfig{
 		Host:   "localhost",
@@ -40,12 +38,12 @@ func connectDatabase() (db PushDatabase, err error) {
 	return NewPushDatabaseWithoutCache(getTestDatabaseConfig())
 }
 
-const SERVICE_NAME = "pushdb_test_service"
-const OTHER_SERVICE_NAME = "pushdb_other_test_service"
+const ServiceName = "pushdb_test_service"
+const OtherServiceName = "pushdb_other_test_service"
 
 func defaultMockPSPData() map[string]string {
 	return map[string]string{
-		"service":         SERVICE_NAME,
+		"service":         ServiceName,
 		"pushservicetype": "apns",
 		"cert":            "fakecert.cert",
 		"key":             "fakecert.key",
@@ -86,11 +84,11 @@ func TestInsertAndGetPushServiceProviders(t *testing.T) {
 		t.Fatalf("Could not create a mock PSP: %v", err)
 	}
 
-	err = client.AddPushServiceProviderToService(SERVICE_NAME, psp)
+	err = client.AddPushServiceProviderToService(ServiceName, psp)
 	if err != nil {
 		t.Fatalf("Could not add the mock PSP: %v", err)
 	}
-	storedServicesNames, err := client.(*pushDatabaseOpts).db.GetPushServiceProvidersByService(SERVICE_NAME)
+	storedServicesNames, err := client.(*pushDatabaseOpts).db.GetPushServiceProvidersByService(ServiceName)
 	if err != nil {
 		t.Fatalf("Failed to fetch stored_services_names from the db")
 	}
@@ -118,11 +116,11 @@ func TestInsertPushServiceProvidersDifferentServices(t *testing.T) {
 			t.Fatalf("Could not create a mock PSP: %v", err)
 		}
 
-		err = client.AddPushServiceProviderToService(SERVICE_NAME, psp)
+		err = client.AddPushServiceProviderToService(ServiceName, psp)
 		if err != nil {
 			t.Fatalf("Could not add the mock PSP: %v", err)
 		}
-		storedServicesNames, err := client.(*pushDatabaseOpts).db.GetPushServiceProvidersByService(SERVICE_NAME)
+		storedServicesNames, err := client.(*pushDatabaseOpts).db.GetPushServiceProvidersByService(ServiceName)
 		if err != nil {
 			t.Fatalf("Failed to fetch stored_services_names from the db")
 		}
@@ -133,7 +131,7 @@ func TestInsertPushServiceProvidersDifferentServices(t *testing.T) {
 
 	{
 		otherPSPData := defaultMockPSPData()
-		otherPSPData["service"] = OTHER_SERVICE_NAME
+		otherPSPData["service"] = OtherServiceName
 		otherPSPData["cert"] = "otherfakecert.cert"
 		otherPSPData["key"] = "otherfakecert.key"
 		otherPSP, err := psm.BuildPushServiceProviderFromMap(otherPSPData)
@@ -141,11 +139,11 @@ func TestInsertPushServiceProvidersDifferentServices(t *testing.T) {
 			t.Fatalf("Could not create a mock PSP: %v", err)
 		}
 
-		err = client.AddPushServiceProviderToService(OTHER_SERVICE_NAME, otherPSP)
+		err = client.AddPushServiceProviderToService(OtherServiceName, otherPSP)
 		if err != nil {
 			t.Fatalf("Could not add the mock PSP: %v", err)
 		}
-		storedServicesNames, err := client.(*pushDatabaseOpts).db.GetPushServiceProvidersByService(OTHER_SERVICE_NAME)
+		storedServicesNames, err := client.(*pushDatabaseOpts).db.GetPushServiceProvidersByService(OtherServiceName)
 		if err != nil {
 			t.Fatalf("Failed to fetch stored_services_names from the db")
 		}
@@ -182,11 +180,11 @@ func TestInsertPushServiceProvidersConflictSameService(t *testing.T) {
 			t.Fatalf("Could not create a mock PSP: %v", err)
 		}
 
-		err = client.AddPushServiceProviderToService(SERVICE_NAME, psp)
+		err = client.AddPushServiceProviderToService(ServiceName, psp)
 		if err != nil {
 			t.Fatalf("Could not add the mock PSP: %v", err)
 		}
-		storedServicesNames, err := client.(*pushDatabaseOpts).db.GetPushServiceProvidersByService(SERVICE_NAME)
+		storedServicesNames, err := client.(*pushDatabaseOpts).db.GetPushServiceProvidersByService(ServiceName)
 		if err != nil {
 			t.Fatalf("Failed to fetch stored_services_names from the db")
 		}
@@ -207,7 +205,7 @@ func TestInsertPushServiceProvidersConflictSameService(t *testing.T) {
 			t.Fatalf("Could not create a mock PSP: %v", err)
 		}
 
-		err = client.AddPushServiceProviderToService(SERVICE_NAME, otherPSP)
+		err = client.AddPushServiceProviderToService(ServiceName, otherPSP)
 		if err == nil {
 			t.Fatalf("Expected an error adding the conflicting mock PSP")
 		}
@@ -219,7 +217,7 @@ func TestInsertPushServiceProvidersConflictSameService(t *testing.T) {
 		)
 		otherPSPName := otherPSP.Name()
 		test_util.ExpectStringEquals(t, "apns:c5de2508902f441a5252c60044745915df2f7368", otherPSPName, "should have deterministic PSP name")
-		storedServicesNames, err := client.(*pushDatabaseOpts).db.GetPushServiceProvidersByService(SERVICE_NAME)
+		storedServicesNames, err := client.(*pushDatabaseOpts).db.GetPushServiceProvidersByService(ServiceName)
 		if err != nil {
 			t.Fatalf("Failed to fetch stored_services_names from the db")
 		}

@@ -111,16 +111,23 @@ var _ redisClient = &redis.Client{}
 var _ pushRawDatabase = &PushRedisDB{}
 
 const (
-	DeliveryPointPrefix                             string = "delivery.point:"         // STRING (prefix of)- Maps the delivery point name to a json blob of information about a delivery point.
-	PushServiceProviderPrefix                       string = "push.service.provider:"  // STRING (prefix of) - Maps a push service provider name to a json blob of information about it.
-	ServiceSubscriberToDelieryPointsPrefix          string = "srv.sub-2-dp:"           // SET (prefix of) - Maps a service name + subscriber to a set of delivery point names
-	ServiceDeliveryPointToPushServiceProviderPrefix string = "srv.dp-2-psp:"           // STRING (prefix of) - Maps a service name + delivery point name to the push service provider
-	ServiceToPushServiceProvidersPrefix             string = "srv-2-psp:"              // SET (prefix of) - Maps a service name to a set of PSP names
-	DeliveryPointCounterPrefix                      string = "delivery.point.counter:" // STRING (prefix of) - Maps a delivery point name to the number of subcribers(summed across each service).
-	ServicesSet                                     string = "services{0}"             // SET - This is a set of service names.
+	// DeliveryPointPrefix is the prefix of keys for a redis STRING - Maps the delivery point name to a json blob of information about a delivery point.
+	DeliveryPointPrefix string = "delivery.point:"
+	// PushServiceProviderPrefix is the prefix of keys for a redis STRING - Maps a push service provider name to a json blob of information about it.
+	PushServiceProviderPrefix string = "push.service.provider:"
+	// ServiceSubscriberToDeliveryPointsPrefix is the prefix of keys for a redis SET - Maps a service name + subscriber to a set of delivery point names
+	ServiceSubscriberToDeliveryPointsPrefix string = "srv.sub-2-dp:"
+	// ServiceDeliveryPointToPushServiceProviderPrefix is the prefix of keys for a redis STRING - Maps a service name + delivery point name to the push service provider
+	ServiceDeliveryPointToPushServiceProviderPrefix string = "srv.dp-2-psp:"
+	// ServiceToPushServiceProvidersPrefix is the prefix of keys for a redis SET - Maps a service name to a set of PSP names
+	ServiceToPushServiceProvidersPrefix string = "srv-2-psp:"
+	// DeliveryPointCounterPrefix is the prefix of keys for a redis STRING - Maps a delivery point name to the number of subcribers(summed across each service).
+	DeliveryPointCounterPrefix string = "delivery.point.counter:"
+	// ServicesSet is the key for a redis SET - This is a set of service names.
+	ServicesSet string = "services{0}"
 )
 
-// Optionally returns a redis client for read-only operations.
+// buildRedisSlaveClient will optionally returns a redis client for uniqush-push to use for read-only operations (such as fetching subscriptions and services).
 func buildRedisSlaveClient(c *DatabaseConfig) (*redis.Client, error) {
 	host := c.SlaveHost
 	port := c.SlavePort
@@ -145,6 +152,7 @@ func buildRedisSlaveClient(c *DatabaseConfig) (*redis.Client, error) {
 	return ret, nil
 }
 
+// buildRedisClient will build the client used to fetch and update subscriptions, services, etc.
 func buildRedisClient(c *DatabaseConfig) (redisClient, error) {
 	if c == nil {
 		return nil, errors.New("Invalid Database Config")
@@ -346,10 +354,10 @@ func (r *PushRedisDB) RemovePushServiceProvider(psp string) error {
 func (r *PushRedisDB) GetDeliveryPointsNameByServiceSubscriber(srv, usr string) (map[string][]string, error) {
 	keys := make([]string, 1)
 	if !strings.Contains(usr, "*") && !strings.Contains(srv, "*") {
-		keys[0] = ServiceSubscriberToDelieryPointsPrefix + srv + ":" + usr
+		keys[0] = ServiceSubscriberToDeliveryPointsPrefix + srv + ":" + usr
 	} else {
 		var err error
-		keys, err = r.client.Keys(ServiceSubscriberToDelieryPointsPrefix + srv + ":" + usr).Result()
+		keys, err = r.client.Keys(ServiceSubscriberToDeliveryPointsPrefix + srv + ":" + usr).Result()
 		if err != nil {
 			return nil, fmt.Errorf("GetDPsNameByServiceSubscriber dp lookup '%s:%s' failed: %v", srv, usr, err)
 		}
@@ -387,7 +395,7 @@ func (r *PushRedisDB) GetPushServiceProviderNameByServiceDeliveryPoint(srv, dp s
 }
 
 func (r *PushRedisDB) AddDeliveryPointToServiceSubscriber(srv, sub, dp string) error {
-	i, err := r.client.SAdd(ServiceSubscriberToDelieryPointsPrefix+srv+":"+sub, dp).Result()
+	i, err := r.client.SAdd(ServiceSubscriberToDeliveryPointsPrefix+srv+":"+sub, dp).Result()
 	if err != nil {
 		return fmt.Errorf("AddDPToServiceSubscriber failed: %v", err)
 	}
@@ -402,7 +410,7 @@ func (r *PushRedisDB) AddDeliveryPointToServiceSubscriber(srv, sub, dp string) e
 }
 
 func (r *PushRedisDB) RemoveDeliveryPointFromServiceSubscriber(srv, sub, dp string) error {
-	j, err := r.client.SRem(ServiceSubscriberToDelieryPointsPrefix+srv+":"+sub, dp).Result()
+	j, err := r.client.SRem(ServiceSubscriberToDeliveryPointsPrefix+srv+":"+sub, dp).Result()
 	if err != nil {
 		return fmt.Errorf("Removing the delivery point pointer %q from \"%s:%s\" failed", dp, srv, sub)
 	}
@@ -429,7 +437,7 @@ func (r *PushRedisDB) RemoveDeliveryPointFromServiceSubscriber(srv, sub, dp stri
 // removeMissingDeliveryPointFromServiceSubscriber removes any associations from a subscription list to a dp with missing subscriptions.
 func (r *PushRedisDB) removeMissingDeliveryPointFromServiceSubscriber(service, subscriber, dpName string, logger log.Logger) {
 	// Precondition: DeliveryPointPrefix + dp was already missing. No need to remove it.
-	e0 := r.client.SRem(ServiceSubscriberToDelieryPointsPrefix+service+":"+subscriber, dpName).Err()
+	e0 := r.client.SRem(ServiceSubscriberToDeliveryPointsPrefix+service+":"+subscriber, dpName).Err()
 	if e0 != nil {
 		logger.Errorf("Error cleaning up delivery point with missing data for dp %q service %q FROM user %q's delivery points: %v", dpName, subscriber, service, e0)
 	}
@@ -508,7 +516,7 @@ func (r *PushRedisDB) GetServiceNames() ([]string, error) {
 	return serviceList, nil
 }
 
-// RebuildServiceSet builds the set of unique service
+// RebuildServiceSet builds the set of unique service. It should only be needed for migrating from old uniqush installations.
 func (r *PushRedisDB) RebuildServiceSet() error {
 	// Run KEYS, then replace the PSP set with the result of KEYS.
 	// If any step fails, then return an error.
@@ -576,7 +584,7 @@ func (r *PushRedisDB) GetSubscriptions(queryServices []string, subscriber string
 			continue
 		}
 
-		deliveryPoints, err := r.client.SMembers(ServiceSubscriberToDelieryPointsPrefix + service + ":" + subscriber).Result()
+		deliveryPoints, err := r.client.SMembers(ServiceSubscriberToDeliveryPointsPrefix + service + ":" + subscriber).Result()
 
 		if err != nil {
 			return nil, fmt.Errorf("Could not get subscriber information")

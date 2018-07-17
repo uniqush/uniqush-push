@@ -59,14 +59,6 @@ func (m *PushServiceManager) ClearAllPushServiceTypesForUnitTest() {
 	m.serviceTypes = make(map[string]*serviceType, 5)
 }
 
-func newPushServiceProvider() interface{} {
-	return NewEmptyPushServiceProvider()
-}
-
-func newDeliveryPoint() interface{} {
-	return NewEmptyDeliveryPoint()
-}
-
 func (m *PushServiceManager) RegisterPushServiceType(pt PushServiceType) error {
 	name := pt.Name()
 	pair := new(serviceType)

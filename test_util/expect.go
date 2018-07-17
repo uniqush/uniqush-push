@@ -6,6 +6,7 @@ import (
 	"testing"
 )
 
+// ExpectEquals will report a test error if reflect.DeepEqual(expected, actual) is false.
 func ExpectEquals(t *testing.T, expected interface{}, actual interface{}, msg string) {
 	t.Helper()
 	if !reflect.DeepEqual(expected, actual) {
@@ -13,6 +14,7 @@ func ExpectEquals(t *testing.T, expected interface{}, actual interface{}, msg st
 	}
 }
 
+// ExpectEquals will report a test error if the strings expected and actual differ.
 func ExpectStringEquals(t *testing.T, expected string, actual string, msg string) {
 	t.Helper()
 	if expected != actual {

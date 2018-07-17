@@ -27,7 +27,7 @@ func TestMarshalJSONUnescaped(t *testing.T) {
 		if err != nil {
 			t.Fatalf("Invalid test value %q: %v", testValue, err)
 		}
-		reencoded, err := MarshalJSONUnescaped(data)
+		reencoded, _ := MarshalJSONUnescaped(data)
 		if !bytes.Equal(reencoded, originalBytes) {
 			t.Errorf("Expected %v(%s), got %v(%s)", originalBytes, testValue, reencoded, string(reencoded))
 		}

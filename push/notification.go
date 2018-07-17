@@ -29,24 +29,24 @@ func (n *Notification) String() string {
 	ret, _ := json.Marshal(n.Data)
 	return string(ret)
 }
+
+// NewEmptyNotification returns an initialized notification with no data.
 func NewEmptyNotification() *Notification {
-	n := new(Notification)
-	n.Data = make(map[string]string, 10)
-	return n
+	return &Notification{
+		Data: make(map[string]string, 10),
+	}
 }
 
+// Clone returns a clone of this notification
 func (n *Notification) Clone() *Notification {
-	ret := new(Notification)
-	ret.Data = make(map[string]string, len(n.Data))
+	Data := make(map[string]string, len(n.Data))
 	for k, v := range n.Data {
-		ret.Data[k] = v
+		Data[k] = v
 	}
-	return ret
+	return &Notification{Data: Data}
 }
 
+// IsEmpty returns true if there are fields in this notification
 func (n *Notification) IsEmpty() bool {
-	if len(n.Data) == 0 {
-		return true
-	}
-	return false
+	return len(n.Data) == 0
 }
