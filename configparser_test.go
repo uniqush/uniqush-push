@@ -17,9 +17,9 @@ func TestOpenConfig(t *testing.T) {
 	}
 	fmt.Printf("c: %#v\n", c)
 	getString := func(section, setting string) string {
-		s, err := c.GetString(section, setting)
-		if err != nil {
-			t.Errorf("Failed to get section %q setting %q: %v", section, setting, err)
+		s, loadErr := c.GetString(section, setting)
+		if loadErr != nil {
+			t.Errorf("Failed to get section %q setting %q: %v", section, setting, loadErr)
 		}
 		return s
 	}

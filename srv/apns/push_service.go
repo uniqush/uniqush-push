@@ -86,7 +86,6 @@ func (ps *pushService) SetErrorReportChan(errChan chan<- push.Error) {
 	ps.errChan = errChan
 	ps.binaryRequestProcessor.SetErrorReportChan(errChan)
 	ps.httpRequestProcessor.SetErrorReportChan(errChan)
-	return
 }
 
 // SetPushServiceConfig sets the config for this and the requestProcessor when the service is registered.
@@ -207,7 +206,7 @@ func (ps *pushService) waitResults(psp *push.PushServiceProvider, dpList []*push
 	}
 	for res := range resChan {
 		idx := res.MsgID - lastID + uint32(n)
-		if idx >= uint32(len(dpList)) || idx < 0 {
+		if idx >= uint32(len(dpList)) {
 			continue
 		}
 		dp := dpList[idx]

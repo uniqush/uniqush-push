@@ -99,6 +99,7 @@ func (e *RetryError) Error() string {
 	return fmt.Sprintf("Retry")
 }
 
+// NewRetryErrorWithReason builds a RetryError with the associated error causing uniqush-push to retry
 func NewRetryErrorWithReason(psp *PushServiceProvider, dp *DeliveryPoint, notif *Notification, after time.Duration, reason error) *RetryError {
 	return &RetryError{
 		After:       after,
@@ -109,6 +110,7 @@ func NewRetryErrorWithReason(psp *PushServiceProvider, dp *DeliveryPoint, notif 
 	}
 }
 
+// NewRetryError builds a RetryError with no associated reason
 func NewRetryError(psp *PushServiceProvider, dp *DeliveryPoint, notif *Notification, after time.Duration) *RetryError {
 	return &RetryError{
 		After:       after,

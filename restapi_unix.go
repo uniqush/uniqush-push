@@ -23,9 +23,9 @@ import (
 	"syscall"
 )
 
-func (self *RestAPI) signalSetup() {
+func (api *RestAPI) signalSetup() {
 	ch := make(chan os.Signal, 1)
 	signal.Notify(ch, syscall.SIGTERM, os.Kill)
 	<-ch
-	self.stop(nil, "SIGTERM")
+	api.stop(nil, "SIGTERM")
 }

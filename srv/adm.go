@@ -75,10 +75,8 @@ func (adm *admPushService) Name() string {
 	return "adm"
 }
 func (adm *admPushService) SetErrorReportChan(errChan chan<- push.Error) {
-	return
 }
 func (adm *admPushService) SetPushServiceConfig(c *push.PushServiceConfig) {
-	return
 }
 
 func (adm *admPushService) BuildPushServiceProviderFromMap(kv map[string]string, psp *push.PushServiceProvider) error {

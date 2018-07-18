@@ -6,11 +6,10 @@ import (
 	"fmt"
 	"sync"
 	"testing"
-)
 
-import (
 	"github.com/uniqush/uniqush-push/push"
 	"github.com/uniqush/uniqush-push/srv/apns/common"
+	"github.com/uniqush/uniqush-push/test_util"
 )
 
 const APNSSuccess uint8 = 0
@@ -271,9 +270,7 @@ func TestValidateRawAPNSPayload(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Error decoding payload: %v", err)
 	}
-	if string(payload) != json {
-		t.Errorf("Unexpected payload: want %s, got %s", json, string(payload))
-	}
+	test_util.ExpectJSONIsEquivalent(t, []byte(json), payload)
 }
 
 func TestValidateSilentPayload(t *testing.T) {
@@ -282,9 +279,7 @@ func TestValidateSilentPayload(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Error decoding payload: %v", err)
 	}
-	if string(payload) != json {
-		t.Errorf("Unexpected payload: want %s, got %s", json, string(payload))
-	}
+	test_util.ExpectJSONIsEquivalent(t, []byte(json), payload)
 }
 
 func TestRejectInvalidAPNSPayload(t *testing.T) {
@@ -317,7 +312,7 @@ func TestToAPNSPayloadWithKey(t *testing.T) {
 }
 
 func TestToAPNSPayloadCreatesUnescapedJSON(t *testing.T) {
-	expectedJson := `{"aps":{"alert":{"body":"hello world <&>"}}}`
+	expectedJSON := `{"aps":{"alert":{"body":"hello world <&>"}}}`
 	notification := &push.Notification{
 		Data: map[string]string{"msg": "hello world <&>"},
 	}
@@ -325,8 +320,8 @@ func TestToAPNSPayloadCreatesUnescapedJSON(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if !bytes.Equal([]byte(expectedJson), payload) {
-		t.Errorf("Expected %v(%s), Got %v(%s)", []byte(expectedJson), expectedJson, payload, string(payload))
+	if !bytes.Equal([]byte(expectedJSON), payload) {
+		t.Errorf("Expected %v(%s), Got %v(%s)", []byte(expectedJSON), expectedJSON, payload, string(payload))
 	}
 }
 
@@ -368,9 +363,7 @@ func TestToAPNSPayloadAllParams(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if !bytes.Equal([]byte(expectedJSON), payload) {
-		t.Errorf("Expected %s, Got %s", expectedJSON, string(payload))
-	}
+	test_util.ExpectJSONIsEquivalent(t, []byte(expectedJSON), payload)
 }
 
 func TestPreview(t *testing.T) {
@@ -399,9 +392,7 @@ func TestPreview(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if !bytes.Equal([]byte(expectedJSON), payload) {
-		t.Errorf("Expected %s, Got %s", expectedJSON, string(payload))
-	}
+	test_util.ExpectJSONIsEquivalent(t, []byte(expectedJSON), payload)
 }
 
 func expectMapEquals(t *testing.T, expected map[string]string, actual map[string]string, description string) {

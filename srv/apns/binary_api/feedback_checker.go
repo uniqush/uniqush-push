@@ -55,7 +55,7 @@ func connectFeedback(psp *push.PushServiceProvider) (net.Conn, error) {
 		}
 	}
 
-	addr := "feedback.sandbox.push.apple.com:2196"
+	var addr string
 	if psp.VolatileData["addr"] == "gateway.push.apple.com:2195" {
 		addr = "feedback.push.apple.com:2196"
 	} else if psp.VolatileData["addr"] == "gateway.sandbox.push.apple.com:2195" {

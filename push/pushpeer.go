@@ -72,28 +72,11 @@ func (p *PushPeer) String() string {
 	return ret
 }
 
-func newPushPeer() *PushPeer {
-	ret := new(PushPeer)
-	ret.InitPushPeer()
-	return ret
-}
-
+// InitPushPeer initializes fields of the base struct PushPeer
 func (p *PushPeer) InitPushPeer() {
 	p.pushServiceType = nil
 	p.VolatileData = make(map[string]string, 2)
 	p.FixedData = make(map[string]string, 2)
-}
-
-func (p *PushPeer) copyPushPeer(dst *PushPeer) {
-	dst.pushServiceType = p.pushServiceType
-	dst.VolatileData = make(map[string]string, len(p.VolatileData))
-	dst.FixedData = make(map[string]string, len(p.FixedData))
-	for k, v := range p.VolatileData {
-		dst.VolatileData[k] = v
-	}
-	for k, v := range p.FixedData {
-		dst.FixedData[k] = v
-	}
 }
 
 func (p *PushPeer) Name() string {
@@ -113,18 +96,6 @@ func (p *PushPeer) Name() string {
 		p.pushServiceType.Name(),
 		hash.Sum(h))
 	return p.name
-}
-
-func (p *PushPeer) clear() {
-	p.m.Lock()
-	defer p.m.Unlock()
-	for k := range p.FixedData {
-		delete(p.FixedData, k)
-	}
-	for k := range p.VolatileData {
-		delete(p.VolatileData, k)
-	}
-	p.name = ""
 }
 
 func (p *PushPeer) Marshal() []byte {
@@ -189,7 +160,7 @@ func (dp *DeliveryPoint) AddCommonData(kv map[string]string) error {
 
 	if subscribeDate, ok := kv[SUBSCRIBE_DATE]; ok && len(subscribeDate) > 0 {
 		if _, err := strconv.ParseFloat(subscribeDate, 64); err != nil {
-			return errors.New(fmt.Sprintf("Invalid subscribe_date %q, expected a unix timestamp: %v", subscribeDate, err))
+			return fmt.Errorf("Invalid subscribe_date %q, expected a unix timestamp: %v", subscribeDate, err)
 		}
 		dp.VolatileData[SUBSCRIBE_DATE] = subscribeDate
 	}

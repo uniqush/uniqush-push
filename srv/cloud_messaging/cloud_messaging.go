@@ -508,9 +508,7 @@ func (psb *PushServiceBase) Preview(notif *push.Notification) ([]byte, push.Erro
 }
 
 func (psb *PushServiceBase) SetErrorReportChan(errChan chan<- push.Error) {
-	return
 }
 
 func (psb *PushServiceBase) SetPushServiceConfig(c *push.PushServiceConfig) {
-	return
 }

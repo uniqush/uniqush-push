@@ -28,10 +28,7 @@ type Result struct {
 }
 
 func (r *Result) IsError() bool {
-	if r.Err == nil {
-		return false
-	}
-	return true
+	return r.Err != nil
 }
 
 func (r *Result) Error() string {
@@ -42,11 +39,10 @@ func (r *Result) Error() string {
 			r.MsgID)
 	}
 
-	ret := fmt.Sprintf("Failed PushServiceProvider=%s DeliveryPoint=%s %v",
+	return fmt.Sprintf("Failed PushServiceProvider=%s DeliveryPoint=%s %v",
 		r.Provider.Name(),
 		r.Destination.Name(),
 		r.Err)
-	return ret
 }
 
 type PushServiceType interface {

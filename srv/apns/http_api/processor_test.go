@@ -2,7 +2,6 @@ package http_api
 
 import (
 	"bytes"
-	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -17,19 +16,14 @@ import (
 )
 
 const (
-	authToken  = "test_auth_token"
-	authToken2 = "update_auth_token"
-	keyID      = "FD8789SD9"
-	teamID     = "JVNS20943"
-	bundleID   = "com.example.test"
+	bundleID        = "com.example.test"
+	mockServiceName = "myService"
 )
 
 var (
 	pushServiceProvider = initPSP()
 	devToken            = []byte("test_device_token")
 	payload             = []byte(`{"alert":"test_message"}`)
-	apiURL              = fmt.Sprintf("%s/3/device/%s", pushServiceProvider.VolatileData["addr"], hex.EncodeToString(devToken))
-	mockServiceName     = "myService"
 )
 
 func initPSP() *push.PushServiceProvider {
@@ -156,7 +150,7 @@ func TestAddRequestPushSuccessful(t *testing.T) {
 		if err != nil {
 			t.Error("Error reading request body:", err)
 		}
-		if bytes.Compare(requestBody, payload) != 0 {
+		if !bytes.Equal(requestBody, payload) {
 			t.Errorf("Wrong message payload, expected `%v`, got `%v`", payload, requestBody)
 		}
 		// Return empty body
@@ -204,7 +198,7 @@ func TestAddRequestPushSuccessfulWhenConcurrent(t *testing.T) {
 		if err != nil {
 			t.Error("Error reading request body:", err)
 		}
-		if bytes.Compare(requestBody, payload) != 0 {
+		if !bytes.Equal(requestBody, payload) {
 			t.Errorf("Wrong message payload, expected `%v`, got `%v`", payload, requestBody)
 		}
 		// Return empty body
@@ -224,11 +218,12 @@ func TestAddRequestPushSuccessfulWhenConcurrent(t *testing.T) {
 			select {
 			case res := <-resChan:
 				if res.MsgID == 0 {
-					t.Fatal("Expected non-zero message id, got zero")
+					t.Error("Expected non-zero message id, got zero")
 				}
 				wg.Done()
 			case err := <-errChan:
-				t.Fatalf("Response was unexpectedly an error: %v\n", err) // terminates test
+				t.Errorf("Response was unexpectedly an error: %v\n", err)
+				wg.Done()
 			}
 		}()
 	}

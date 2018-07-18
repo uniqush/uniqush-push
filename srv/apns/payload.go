@@ -68,19 +68,13 @@ func toAPNSPayload(n *push.Notification) ([]byte, push.Error) {
 	alert := make(map[string]interface{})
 	for k, v := range n.Data {
 		switch k {
-		case "title":
-			alert["title"] = v
 		case "msg":
 			alert["body"] = v
-		case "action-loc-key":
+		case "title", "action-loc-key", "loc-key", "title-loc-key":
 			alert[k] = v
-		case "loc-key":
-			alert[k] = v
-		case "loc-args":
-			alert[k] = parseList(v)
-		case "title-loc-key":
-			alert[k] = v
-		case "title-loc-args":
+		case "sound":
+			aps[k] = v
+		case "loc-args", "title-loc-args":
 			alert[k] = parseList(v)
 		case "badge", "content-available":
 			b, err := strconv.Atoi(v)
@@ -89,15 +83,9 @@ func toAPNSPayload(n *push.Notification) ([]byte, push.Error) {
 			} else {
 				aps[k] = b
 			}
-		case "sound":
-			aps["sound"] = v
 		case "img":
 			alert["launch-image"] = v
-		case "id":
-			continue
-		case "expiry":
-			continue
-		case "ttl":
+		case "id", "expiry", "ttl":
 			continue
 		default:
 			if strings.HasPrefix(k, "uniqush.") { // keys beginning with "uniqush." are reserved by uniqush.
