@@ -1,12 +1,13 @@
 uniqush-push NEWS
 
-?? ??? 2018, uniqush-push 2.6.0 (dev)
+18 Jul 2018, uniqush-push 2.6.0
 -------------------------------
 
 - Maintenance: Update GCM push URL to the equivalent https://fcm.googleapis.com/fcm/ endpoint (#210)
   Applications using GCM are unaffected by this change.
   (The old URL stop working in April 2019)
 - Maintenance: Upgrade go-redis from v5 to v6.
+- Get rid of excessive database locking when fetching subscriptions for a user.
 - Make the APNS pool size configurable at runtime
 - Stop overriding Gomaxprocs (removes a call to `runtime.GOMAXPROCS(runtime.NumCPU() + 1)`).
   This allows users to override this setting.
