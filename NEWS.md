@@ -1,5 +1,15 @@
 uniqush-push NEWS
 
+?? ??? 2018, uniqush-push 2.6.1 (dev)
+-------------------------------
+
+- Maintenance: Fix various code style warnings from code linters.
+- Bugfix: Fix "No device" errors seen when retrying a push. (PR #222)
+- Bugfix: Fix the regular expression used as a sanity check of subscriptions and services. (PR #222)
+  The intended accepted characters for use in services and subscriptions were `a-z, A-Z, 0-9, -, _, @ or .`
+
+  Forbid using the backtick in service and subscription names (this was accidentally permitted by the invalid regex).
+
 18 Jul 2018, uniqush-push 2.6.0
 -------------------------------
 
