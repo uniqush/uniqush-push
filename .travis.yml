@@ -25,8 +25,11 @@ branches:
 script:
   - go build
   - go tool vet -printfuncs debugf,infof,configf,warnf,errorf,alertf,fatalf .
-  - go test ./... -race
+  - go test ./... -race -coverprofile=coverage.txt -covermode=atomic
   # run gometalinter checks from .gometalinter.json
   - go get -u github.com/alecthomas/gometalinter
   - gometalinter --install
   - gometalinter ./...
+
+after_success:
+  - bash <(curl -s https://codecov.io/bash)
