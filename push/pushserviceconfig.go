@@ -15,16 +15,16 @@ func NewPushServiceConfig(c *conf.ConfigFile, name string) *PushServiceConfig {
 	}
 }
 
-func (self *PushServiceConfig) GetString(option string) (string, error) {
-	if self.c == nil {
+func (config *PushServiceConfig) GetString(option string) (string, error) {
+	if config.c == nil {
 		return "", errors.New("No config")
 	}
-	return self.c.GetString(self.name, option)
+	return config.c.GetString(config.name, option)
 }
 
-func (self *PushServiceConfig) GetInt(option string) (int, error) {
-	if self.c == nil {
+func (config *PushServiceConfig) GetInt(option string) (int, error) {
+	if config.c == nil {
 		return 0, errors.New("No config")
 	}
-	return self.c.GetInt(self.name, option)
+	return config.c.GetInt(config.name, option)
 }

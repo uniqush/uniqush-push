@@ -227,13 +227,18 @@ func (prp *HTTPPushRequestProcessor) sendRequest(wg *sync.WaitGroup, client HTTP
 		break
 	}
 
+	prp.handlePushResponseBody(response, responseBody, messageID, errChan, resChan)
+}
+
+// handle the response body of an HTTP/2 push attempt to APNS.
+func (prp *HTTPPushRequestProcessor) handlePushResponseBody(response *http.Response, responseBody []byte, messageID uint32, errChan chan<- push.Error, resChan chan<- *common.APNSResult) {
 	if len(responseBody) > 0 {
 		// Successful request should return empty response body
 		apnsError := new(APNSErrorResponse)
 		err := json.Unmarshal(responseBody, apnsError)
 		switch apnsError.Reason {
 		case "BadDeviceToken": // Status code is 400
-			// > The specified device token was bad. Verify that the request contains a valid token and that the token matches the environment.
+			// > The specified device token was bad. If this error is seen, then clients of uniqush should verify that the request contains a valid token and that the token matches the environment (sandbox/prod).
 			resChan <- &common.APNSResult{
 				MsgID:  messageID,
 				Status: common.STATUS8_UNSUBSCRIBE,

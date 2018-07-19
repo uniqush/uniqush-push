@@ -147,6 +147,16 @@ func NewEmptyDeliveryPoint() *DeliveryPoint {
 
 // AddCommonData adds both mandatory and optional data, which could be present in a delivery point for any push service type. On failure, returns an error.
 func (dp *DeliveryPoint) AddCommonData(kv map[string]string) error {
+	err := dp.addFixedData(kv)
+	if err != nil {
+		return err
+	}
+
+	return dp.addVolatileData(kv)
+}
+
+// addFixedData adds mandatory data which could be present in a delivery point for any push service type. On failure, returns an error.
+func (dp *DeliveryPoint) addFixedData(kv map[string]string) error {
 	if service, ok := kv["service"]; ok && len(service) > 0 {
 		dp.FixedData["service"] = service
 	} else {
@@ -157,14 +167,19 @@ func (dp *DeliveryPoint) AddCommonData(kv map[string]string) error {
 	} else {
 		return errors.New("NoSubscriber")
 	}
+	return nil
+}
 
+// addVolatileData adds optional data which could be present in a delivery point for any push service type. On failure, returns an error.
+func (dp *DeliveryPoint) addVolatileData(kv map[string]string) error {
+	// Add subscribe_date, which must be a unix timestamp
 	if subscribeDate, ok := kv[SUBSCRIBE_DATE]; ok && len(subscribeDate) > 0 {
 		if _, err := strconv.ParseFloat(subscribeDate, 64); err != nil {
 			return fmt.Errorf("Invalid subscribe_date %q, expected a unix timestamp: %v", subscribeDate, err)
 		}
 		dp.VolatileData[SUBSCRIBE_DATE] = subscribeDate
 	}
-	// Volatile fields with no validation
+	// Add any volatile fields with no validation
 	for _, field := range []string{DEVICE_ID, OLD_DEVICE_ID, APP_VERSION, LOCALE} {
 		if value, ok := kv[field]; ok && len(value) > 0 {
 			dp.VolatileData[field] = value

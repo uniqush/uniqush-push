@@ -106,7 +106,7 @@ func (cm *MockConnManager) NewConn() (net.Conn, <-chan bool, error) {
 	mockedConn := mocks.NewMockNetConn()
 	go mocks.SimulateStableAPNSServer(mockedConn, cm.status)
 	didClose := make(chan bool, 1)
-	go resultCollector(cm.psp, cm.resChan, mockedConn, didClose)
+	go resultCollector(cm.resChan, mockedConn, didClose)
 	cm.mutex.Lock()
 	defer cm.mutex.Unlock()
 	cm.mockedConns = append(cm.mockedConns, mockedConn)

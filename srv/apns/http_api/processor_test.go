@@ -139,9 +139,9 @@ func TestAddRequestPushSuccessful(t *testing.T) {
 
 	request, errChan, resChan := newPushRequest()
 	mockClient := mockAPNSRequest(requestProcessor, func(r *http.Request) (*http.Response, *mockResponse, error) {
-		if auth, ok := r.Header["authorization"]; ok {
+		if auth, ok := r.Header["Authorization"]; ok {
 			// temporarily disabled
-			t.Errorf("Unexpected authorization header %v", auth)
+			t.Errorf("Unexpected Authorization header %v", auth)
 		}
 		expectHeaderToHaveValue(t, r, "apns-expiration", "0") // Specific to fork, would need to mock time or TTL otherwise
 		expectHeaderToHaveValue(t, r, "apns-priority", "10")
@@ -187,9 +187,9 @@ func TestAddRequestPushSuccessfulWhenConcurrent(t *testing.T) {
 	wg.Add(iterationCount)
 
 	mockClient := mockAPNSRequest(requestProcessor, func(r *http.Request) (*http.Response, *mockResponse, error) {
-		if auth, ok := r.Header["authorization"]; ok {
+		if auth, ok := r.Header["Authorization"]; ok {
 			// temporarily disabled
-			t.Errorf("Unexpected authorization header %v", auth)
+			t.Errorf("Unexpected Authorization header %v", auth)
 		}
 		expectHeaderToHaveValue(t, r, "apns-expiration", "0") // Specific to fork, would need to mock time or TTL otherwise
 		expectHeaderToHaveValue(t, r, "apns-priority", "10")

@@ -213,7 +213,7 @@ func newPushRedisDB(c *DatabaseConfig) (*PushRedisDB, error) {
 	return ret, nil
 }
 
-func (r *PushRedisDB) keyValueToDeliveryPoint(name string, value []byte) (dp *push.DeliveryPoint, err error) {
+func (r *PushRedisDB) keyValueToDeliveryPoint(value []byte) (dp *push.DeliveryPoint, err error) {
 	psm := r.psm
 	dp, err = psm.BuildDeliveryPointFromBytes(value)
 	if err != nil {
@@ -222,7 +222,7 @@ func (r *PushRedisDB) keyValueToDeliveryPoint(name string, value []byte) (dp *pu
 	return
 }
 
-func (r *PushRedisDB) keyValueToPushServiceProvider(name string, value []byte) (psp *push.PushServiceProvider, err error) {
+func (r *PushRedisDB) keyValueToPushServiceProvider(value []byte) (psp *push.PushServiceProvider, err error) {
 	psm := r.psm
 	psp, err = psm.BuildPushServiceProviderFromBytes(value)
 	if err != nil {
@@ -279,7 +279,7 @@ func (r *PushRedisDB) GetDeliveryPoint(name string) (*push.DeliveryPoint, error)
 	if len(b) == 0 {
 		return nil, nil
 	}
-	return r.keyValueToDeliveryPoint(name, b)
+	return r.keyValueToDeliveryPoint(b)
 }
 
 func (r *PushRedisDB) SetDeliveryPoint(dp *push.DeliveryPoint) error {
@@ -296,7 +296,7 @@ func (r *PushRedisDB) GetPushServiceProvider(name string) (*push.PushServiceProv
 	if len(b) == 0 {
 		return nil, nil
 	}
-	return r.keyValueToPushServiceProvider(name, b)
+	return r.keyValueToPushServiceProvider(b)
 }
 
 func (r *PushRedisDB) GetPushServiceProviderConfigs(names []string) ([]*push.PushServiceProvider, []error) {
@@ -318,7 +318,7 @@ func (r *PushRedisDB) GetPushServiceProviderConfigs(names []string) ([]*push.Pus
 			errors = append(errors, fmt.Errorf("Missing a PushServiceProvider for %q, key %q", names[i], keys[i]))
 			continue
 		}
-		psp, err := r.keyValueToPushServiceProvider(names[i], value)
+		psp, err := r.keyValueToPushServiceProvider(value)
 		if err != nil {
 			errors = append(errors, fmt.Errorf("Invalid psp for %s: %v", names[i], err))
 		} else {

@@ -64,7 +64,6 @@ func newLoggingConnManager(manager ConnManager, errChan chan<- push.Error) *logg
 }
 
 type connManagerImpl struct {
-	psp        *push.PushServiceProvider
 	cert       tls.Certificate
 	conf       *tls.Config
 	err        error
@@ -110,14 +109,14 @@ func (cm *connManagerImpl) NewConn() (net.Conn, <-chan bool, error) {
 		return nil, nil, err
 	}
 	closed := make(chan bool, 1) // notifies worker when reader detects socket closed. Has a buffer so adding one element is non-blocking
-	go resultCollector(cm.psp, cm.resultChan, tlsconn, closed)
+	go resultCollector(cm.resultChan, tlsconn, closed)
 	return tlsconn, closed, nil
 }
 
 // resultCollector processes the 6-byte APNS responses for each of our push notifications.
 // One resultCollector goroutine is automatically created for each connection established by NewConn (used by worker pools)
 // Visible for testing.
-func resultCollector(psp *push.PushServiceProvider, resChan chan<- *common.APNSResult, c io.ReadCloser, closed chan<- bool) {
+func resultCollector(resChan chan<- *common.APNSResult, c io.ReadCloser, closed chan<- bool) {
 	defer func() {
 		// Optimization: If listening socket notices that the channel is closed, notify the sending socket so that it can reopen it.
 		closed <- true

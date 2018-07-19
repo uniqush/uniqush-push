@@ -28,7 +28,8 @@ import (
 )
 
 const (
-	DELIVERY_POINT_ID = "delivery_point_id" // temporary variable in Subscription responses. This is the internal identifier for a delivery point(subscription).
+	// DELIVERY_POINT_ID is the internal identifier for a delivery point(subscription) in Subscription() responses, which may be returned to clients if include_delivery_point_ids=1.
+	DELIVERY_POINT_ID = "delivery_point_id"
 )
 
 type PushServiceProviderDeliveryPointPair struct {

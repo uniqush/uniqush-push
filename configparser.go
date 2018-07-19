@@ -65,14 +65,6 @@ func extractLogLevel(loglevel string) (int, string) {
 	return level, warningMsg
 }
 
-func getStringOrDefaultIfEmptyOrInvalid(c *conf.ConfigFile, field, key, defaultValue string) string {
-	value, err := c.GetString(field, key)
-	if err != nil || value == "" {
-		return defaultValue
-	}
-	return value
-}
-
 func loadLogger(writer io.Writer, c *conf.ConfigFile, field string, prefix string) (log.Logger, error) {
 	var loglevel string
 	var logswitch bool
@@ -109,12 +101,16 @@ func loadLogger(writer io.Writer, c *conf.ConfigFile, field string, prefix strin
 
 // LoadDatabaseConfig returns a representation of the [Database] section from uniqush.conf, or an error
 func LoadDatabaseConfig(cf *conf.ConfigFile) (*db.DatabaseConfig, error) {
-	var err error
 	c := new(db.DatabaseConfig)
 
 	getDbConfigString := func(key, defaultValue string) string {
-		return getStringOrDefaultIfEmptyOrInvalid(cf, "Database", key, defaultValue)
+		value, err := cf.GetString("Database", key)
+		if err != nil || value == "" {
+			return defaultValue
+		}
+		return value
 	}
+	var err error
 	c.PushServiceManager = push.GetPushServiceManager()
 	c.Engine = getDbConfigString("engine", "redis")
 	c.Name = getDbConfigString("name", "0")

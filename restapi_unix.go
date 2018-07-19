@@ -25,7 +25,8 @@ import (
 
 func (api *RestAPI) signalSetup() {
 	ch := make(chan os.Signal, 1)
-	signal.Notify(ch, syscall.SIGTERM, os.Kill)
+	// TODO: Figure out what the equivalent should be on Windows.
+	signal.Notify(ch, syscall.SIGTERM, os.Kill) // nolint: megacheck
 	<-ch
 	api.stop(nil, "SIGTERM")
 }
