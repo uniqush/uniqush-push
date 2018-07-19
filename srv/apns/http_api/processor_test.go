@@ -134,6 +134,19 @@ func expectHeaderToHaveValue(t *testing.T, r *http.Request, headerName string, e
 	}
 }
 
+func handleAPNSResultOrEmitTestError(t *testing.T, resChan <-chan *common.APNSResult, errChan <-chan push.Error, resultHandler func(*common.APNSResult)) {
+	select {
+	case res := <-resChan:
+		resultHandler(res)
+	case err := <-errChan:
+		if err != nil {
+			t.Fatalf("Response was unexpectedly an error: %v\n", err)
+			return
+		}
+		res := <-resChan
+		resultHandler(res)
+	}
+}
 func TestAddRequestPushSuccessful(t *testing.T) {
 	requestProcessor := newHTTPRequestProcessor()
 
@@ -164,14 +177,12 @@ func TestAddRequestPushSuccessful(t *testing.T) {
 
 	requestProcessor.AddRequest(request)
 
-	select {
-	case res := <-resChan:
+	handleAPNSResultOrEmitTestError(t, resChan, errChan, func(res *common.APNSResult) {
 		if res.MsgID == 0 {
 			t.Fatal("Expected non-zero message id, got zero")
 		}
-	case err := <-errChan:
-		t.Fatalf("Response was unexpectedly an error: %v\n", err)
-	}
+	})
+
 	actualPerformed := len(mockClient.performed)
 	if actualPerformed != 1 {
 		t.Fatalf("Expected 1 request to be performed, but %d were", actualPerformed)
@@ -215,16 +226,13 @@ func TestAddRequestPushSuccessfulWhenConcurrent(t *testing.T) {
 
 			requestProcessor.AddRequest(request)
 
-			select {
-			case res := <-resChan:
+			defer wg.Done()
+
+			handleAPNSResultOrEmitTestError(t, resChan, errChan, func(res *common.APNSResult) {
 				if res.MsgID == 0 {
 					t.Error("Expected non-zero message id, got zero")
 				}
-				wg.Done()
-			case err := <-errChan:
-				t.Errorf("Response was unexpectedly an error: %v\n", err)
-				wg.Done()
-			}
+			})
 		}()
 	}
 	wg.Wait()
@@ -276,17 +284,14 @@ func TestAddRequestPushFailNotificationError(t *testing.T) {
 
 	requestProcessor.AddRequest(request)
 
-	select {
-	case res := <-resChan:
+	handleAPNSResultOrEmitTestError(t, resChan, errChan, func(res *common.APNSResult) {
 		if res.Status != common.STATUS8_UNSUBSCRIBE {
 			t.Fatalf("Expected 8 (unsubscribe), got %d", res.Status)
 		}
 		if res.MsgID == 0 {
 			t.Fatal("Expected non-zero message id, got zero")
 		}
-	case err := <-errChan:
-		t.Fatalf("Expected status code on resChan, got error from errChan: %v", err)
-	}
+	})
 }
 
 // TODO: Add test of decoding error response with timestamp
