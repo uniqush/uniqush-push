@@ -154,18 +154,16 @@ func getDeliveryPointIdsFromMap(kv map[string]string) (deliveryPointNames []stri
 	return
 }
 
-func getServiceFromMap(kv map[string]string, validate bool) (service string, err error) {
+func getServiceFromMap(kv map[string]string) (service string, err error) {
 	var ok bool
 	if service, ok = kv["service"]; !ok {
 		err = fmt.Errorf("NoService")
 		return
 	}
-	if validate {
-		err = validateService(service)
-		if err != nil {
-			service = ""
-			return
-		}
+	err = validateService(service)
+	if err != nil {
+		service = ""
+		return
 	}
 	return
 }
@@ -176,7 +174,7 @@ func (api *RestAPI) changePushServiceProvider(kv map[string]string, logger log.L
 		logger.Errorf("From=%v Cannot build push service provider: %v", remoteAddr, err)
 		return APIResponseDetails{From: &remoteAddr, Code: UNIQUSH_ERROR_BUILD_PUSH_SERVICE_PROVIDER, ErrorMsg: strPtrOfErr(err)}
 	}
-	service, err := getServiceFromMap(kv, true)
+	service, err := getServiceFromMap(kv)
 	if err != nil {
 		logger.Errorf("From=%v Cannot get service name: %v; %v", remoteAddr, service, err)
 		return APIResponseDetails{From: &remoteAddr, Service: &service, Code: UNIQUSH_ERROR_CANNOT_GET_SERVICE, ErrorMsg: strPtrOfErr(err)}
@@ -201,7 +199,7 @@ func (api *RestAPI) changeSubscription(kv map[string]string, logger log.Logger, 
 		logger.Errorf("Cannot build delivery point: %v", err)
 		return APIResponseDetails{From: &remoteAddr, Code: UNIQUSH_ERROR_BUILD_DELIVERY_POINT, ErrorMsg: strPtrOfErr(err)}
 	}
-	service, err := getServiceFromMap(kv, true)
+	service, err := getServiceFromMap(kv)
 	if err != nil {
 		logger.Errorf("From=%v Cannot get service name: %v; %v", remoteAddr, service, err)
 		return APIResponseDetails{From: &remoteAddr, Service: &service, Code: UNIQUSH_ERROR_CANNOT_GET_SERVICE, ErrorMsg: strPtrOfErr(err)}
@@ -226,11 +224,10 @@ func (api *RestAPI) changeSubscription(kv map[string]string, logger log.Logger, 
 	if psp == nil {
 		logger.Infof("From=%v Service=%v Subscriber=%v DeliveryPoint=%v Success!", remoteAddr, service, subs[0], dpName)
 		return APIResponseDetails{From: &remoteAddr, Service: &service, Subscriber: &subs[0], DeliveryPoint: &dpName, Code: UNIQUSH_SUCCESS}
-	} else {
-		pspName := psp.Name()
-		logger.Infof("From=%v Service=%v Subscriber=%v PushServiceProvider=%v DeliveryPoint=%v Success!", remoteAddr, service, subs[0], pspName, dpName)
-		return APIResponseDetails{From: &remoteAddr, Service: &service, Subscriber: &subs[0], DeliveryPoint: &dpName, PushServiceProvider: &pspName, Code: UNIQUSH_SUCCESS}
 	}
+	pspName := psp.Name()
+	logger.Infof("From=%v Service=%v Subscriber=%v PushServiceProvider=%v DeliveryPoint=%v Success!", remoteAddr, service, subs[0], pspName, dpName)
+	return APIResponseDetails{From: &remoteAddr, Service: &service, Subscriber: &subs[0], DeliveryPoint: &dpName, PushServiceProvider: &pspName, Code: UNIQUSH_SUCCESS}
 }
 
 func (api *RestAPI) buildNotificationFromKV(reqID string, kv map[string]string, logger log.Logger, remoteAddr string, service string, subs []string) (notif *push.Notification, details *APIResponseDetails, err error) {
@@ -269,7 +266,7 @@ func (api *RestAPI) buildNotificationFromKV(reqID string, kv map[string]string, 
 }
 
 func (api *RestAPI) pushNotification(reqID string, kv map[string]string, perdp map[string][]string, logger log.Logger, remoteAddr string, handler APIResponseHandler) {
-	service, err := getServiceFromMap(kv, true)
+	service, err := getServiceFromMap(kv)
 	if err != nil {
 		logger.Errorf("RequestId=%v From=%v Cannot get service name: %v; %v", reqID, remoteAddr, service, err)
 		handler.AddDetailsToHandler(APIResponseDetails{RequestId: &reqID, From: &remoteAddr, Service: &service, Code: UNIQUSH_ERROR_CANNOT_GET_SERVICE})
@@ -354,7 +351,7 @@ func (api *RestAPI) stop(w io.Writer, remoteAddr string) {
 	api.stopChan <- true
 }
 
-func (api *RestAPI) numberOfDeliveryPoints(kv map[string][]string, logger log.Logger, remoteAddr string) int {
+func (api *RestAPI) numberOfDeliveryPoints(kv map[string][]string, logger log.Logger) int {
 	ret := 0
 	ss, ok := kv["service"]
 	if !ok {
@@ -431,6 +428,7 @@ func (api *RestAPI) queryPSPs(logger log.Logger) []byte {
 	}
 	if err != nil {
 		errorMsg := err.Error()
+		logger.Errorf("Error querying PSPs in /psps: %v", err)
 		r.Code = UNIQUSH_ERROR_DATABASE
 		r.ErrorMessage = &errorMsg
 	} else {
@@ -503,7 +501,7 @@ func (api *RestAPI) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	case QUERY_NUMBER_OF_DELIVERY_POINTS_URL:
 		r.ParseForm()
-		n := api.numberOfDeliveryPoints(r.Form, api.loggers[LoggerWeb], remoteAddr)
+		n := api.numberOfDeliveryPoints(r.Form, api.loggers[LoggerWeb])
 		fmt.Fprintf(w, "%v\r\n", n)
 		return
 	case PREVIEW_PUSH_NOTIFICATION_URL:
@@ -531,7 +529,7 @@ func (api *RestAPI) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	api.waitGroup.Add(1)
 	defer api.waitGroup.Done()
-	var handler APIResponseHandler = nil
+	var handler APIResponseHandler
 	var details APIResponseDetails
 	switch r.URL.Path {
 	case ADD_PUSH_SERVICE_PROVIDER_TO_SERVICE_URL:

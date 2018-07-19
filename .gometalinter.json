@@ -1,0 +1,17 @@
+{
+    "Enable": [
+        "deadcode",
+        "gofmt",
+        "gotype",
+        "gotypex",
+        "ineffassign",
+        "megacheck",
+        "misspell",
+        "structcheck",
+        "unconvert",
+        "unparam",
+        "varcheck",
+        "vet",
+        "vetshadow"
+    ]
+}

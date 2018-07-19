@@ -165,7 +165,7 @@ func requestToken(psp *push.PushServiceProvider) push.Error {
 	var cserect string
 
 	if _, ok = psp.VolatileData["token"]; ok {
-		if exp, ok := psp.VolatileData["expire"]; ok {
+		if exp, expOK := psp.VolatileData["expire"]; expOK {
 			unixsec, err := strconv.ParseInt(exp, 10, 64)
 			if err == nil {
 				deadline := time.Unix(unixsec, int64(0))
