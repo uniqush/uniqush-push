@@ -393,7 +393,7 @@ func (backend *PushBackEnd) Subscriptions(services []string, subscriber string, 
 	}
 	if !fetchIds {
 		for _, v := range subscriptions {
-			delete(v, db.DELIVERY_POINT_ID)
+			delete(v, db.DeliveryPointID)
 		}
 	}
 

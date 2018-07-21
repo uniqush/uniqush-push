@@ -79,6 +79,8 @@ func (p *PushPeer) InitPushPeer() {
 	p.FixedData = make(map[string]string, 2)
 }
 
+// Name returns a deterministic name based on the JSON encoded FixedData value.
+// This will not change unexpectedly between uniqush-push releases.
 func (p *PushPeer) Name() string {
 	p.m.Lock()
 	defer p.m.Unlock()
@@ -89,12 +91,14 @@ func (p *PushPeer) Name() string {
 	if p.FixedData == nil {
 		return ""
 	}
+	// https://golang.org/pkg/encoding/json/#Marshal says that this is deterministic:
+	//
+	// > The map's key type must either be a string, an integer type, or implement encoding.TextMarshaler.
+	// > The map keys are sorted and used as JSON object keys
 	b, _ := json.Marshal(p.FixedData)
 	hash.Write(b)
 	h := make([]byte, 0, 64)
-	p.name = fmt.Sprintf("%s:%x",
-		p.pushServiceType.Name(),
-		hash.Sum(h))
+	p.name = fmt.Sprintf("%s:%x", p.pushServiceType.Name(), hash.Sum(h))
 	return p.name
 }
 

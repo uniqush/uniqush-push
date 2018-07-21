@@ -1,5 +1,6 @@
 package main
 
+// These are constants with codes for a uniqush response type.
 const (
 	/* Not errors */
 
@@ -32,6 +33,7 @@ const (
 	UNIQUSH_ERROR_NO_PUSH_SERVICE_TYPE     = "UNIQUSH_ERROR_NO_PUSH_SERVICE_TYPE"
 )
 
+// APIResponseDetails is used to represent responses of various APIs. Different APIs use different subsets of fields.
 type APIResponseDetails struct {
 	RequestId           *string `json:"requestId,omitempty"`
 	Service             *string `json:"service,omitempty"`
@@ -45,6 +47,7 @@ type APIResponseDetails struct {
 	ModifiedDp          bool    `json:"modifiedDp,omitempty"`
 }
 
+// PreviewAPIResponseDetails respresents the response of /preview. It contains a representation of the payload that would be sent to externalpush services
 type PreviewAPIResponseDetails struct {
 	Code     string      `json:"code"`
 	Payload  interface{} `json:"payload,omitempty"`
@@ -59,17 +62,21 @@ func strPtrOfErr(e error) *string {
 	return &s
 }
 
+// APIResponseHandler is interface for collecting API responses
 type APIResponseHandler interface {
 	AddDetailsToHandler(v APIResponseDetails)
 	ToJSON() []byte
 }
 
+// NullAPIResponseHandler is an APIResponseHandler implementation that does nothing.
 type NullAPIResponseHandler struct{}
 
-var _ APIResponseHandler = (*NullAPIResponseHandler)(nil)
+var _ APIResponseHandler = &NullAPIResponseHandler{}
 
+// AddDetailsToHandler does nothing for NullAPIResponseHandler
 func (handler *NullAPIResponseHandler) AddDetailsToHandler(v APIResponseDetails) {}
 
+// ToJSON returns an empty list for NullAPIResponseHandler
 func (handler *NullAPIResponseHandler) ToJSON() []byte {
 	return []byte{}
 }

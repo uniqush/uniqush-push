@@ -62,6 +62,7 @@ func (handler *APIPushResponseHandler) AddDetailsToHandler(v APIResponseDetails)
 	handler.mutex.Unlock()
 }
 
+// ToJSON serializes this push response as JSON to send to the client of uniqush-push.
 func (handler *APIPushResponseHandler) ToJSON() []byte {
 	json, err := json.Marshal(handler.response)
 	if err != nil {

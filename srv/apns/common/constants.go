@@ -2,13 +2,13 @@ package common
 
 // Status codes for the binary API
 const (
-	STATUS0_SUCCESS              = 0
-	STATUS1_PROCESSING_ERROR     = 1
-	STATUS2_MISSING_DEVICE_TOKEN = 2
-	STATUS3_MISSING_TOPIC        = 3
-	STATUS4_MISSING_PAYLOAD      = 4
-	STATUS5_INVALID_TOKEN_SIZE   = 5
-	STATUS6_INVALID_TOPIC_SIZE   = 6
-	STATUS7_INVALID_PAYLOAD_SIZE = 7
-	STATUS8_UNSUBSCRIBE          = 8
+	Status0Success            = 0
+	Status1ProcessingError    = 1
+	Status2MissingDeviceToken = 2
+	Status3MissingTopic       = 3
+	Status4MissingPayload     = 4
+	Status5InvalidTokenSize   = 5
+	Status6InvalidTopicSize   = 6
+	Status7InvalidPayloadSize = 7
+	Status8Unsubscribe        = 8
 )
