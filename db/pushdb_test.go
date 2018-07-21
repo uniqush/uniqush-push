@@ -78,8 +78,8 @@ func TestInsertAndGetPushServiceProviders(t *testing.T) {
 		panic(err)
 	}
 
-	psp_data := defaultMockPSPData()
-	psp, err := psm.BuildPushServiceProviderFromMap(psp_data)
+	pspData := defaultMockPSPData()
+	psp, err := psm.BuildPushServiceProviderFromMap(pspData)
 	if err != nil {
 		t.Fatalf("Could not create a mock PSP: %v", err)
 	}
@@ -211,7 +211,7 @@ func TestInsertPushServiceProvidersConflictSameService(t *testing.T) {
 		}
 		test_util.ExpectStringEquals(
 			t,
-			"A different PSP for service pushdb_test_service already exists with different fixed data as push service type apns (It has a separate subscriber list). Please double check the list of current PSPs with the /psps API. Note that this error could be worked around by removing the old PSP, but that would delete subscriptions.",
+			"A different PSP for service pushdb_test_service already exists with different fixed data as push service type apns (It has a separate subscriber list). Please double check the list of current PSPs with the /psps API. Note that this error could be worked around by removing the old PSP, but that would delete subscriptions",
 			err.Error(),
 			"error message should describe the conflict",
 		)

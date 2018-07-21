@@ -36,6 +36,7 @@ import (
 	"github.com/uniqush/uniqush-push/push"
 )
 
+// RestAPI implements uniqush's REST API (/push, /subscribe, /addpsp, etc).
 type RestAPI struct {
 	psm       *push.PushServiceManager
 	loggers   []log.Logger
@@ -64,18 +65,18 @@ func NewRestAPI(psm *push.PushServiceManager, loggers []log.Logger, version stri
 
 // Constants for the paths of the REST API
 const (
-	ADD_PUSH_SERVICE_PROVIDER_TO_SERVICE_URL    = "/addpsp"
-	REMOVE_PUSH_SERVICE_PROVIDER_TO_SERVICE_URL = "/rmpsp"
-	ADD_DELIVERY_POINT_TO_SERVICE_URL           = "/subscribe"
-	REMOVE_DELIVERY_POINT_FROM_SERVICE_URL      = "/unsubscribe"
-	PUSH_NOTIFICATION_URL                       = "/push"
-	PREVIEW_PUSH_NOTIFICATION_URL               = "/previewpush"
-	STOP_PROGRAM_URL                            = "/stop"
-	VERSION_INFO_URL                            = "/version"
-	QUERY_NUMBER_OF_DELIVERY_POINTS_URL         = "/nrdp"
-	QUERY_SUBSCRIPTIONS_URL                     = "/subscriptions"
-	QUERY_PUSH_SERVICE_PROVIDERS                = "/psps"
-	REBUILD_SERVICE_SET_URL                     = "/rebuildserviceset"
+	AddPushServiceProviderToServiceURL      = "/addpsp"
+	RemovePushServiceProviderFromServiceURL = "/rmpsp"
+	AddDeliveryPointToServiceURL            = "/subscribe"
+	RemoveDeliveryPointFromServiceURL       = "/unsubscribe"
+	PushNotificationURL                     = "/push"
+	PreviewPushNotificationURL              = "/previewpush"
+	StopProgramURL                          = "/stop"
+	VersionInfoURL                          = "/version"
+	QueryNumberOfDeliveryPointsURL          = "/nrdp"
+	QuerySubscriptionsURL                   = "/subscriptions"
+	QueryPushServiceProviders               = "/psps"
+	RebuildServiceSetURL                    = "/rebuildserviceset"
 )
 
 // TODO: Switch to the stricter regex in a subsequent release.
@@ -308,8 +309,8 @@ func (api *RestAPI) pushNotification(reqID string, kv map[string]string, perdp m
 
 // preview takes key-value pairs (pushservicetype, plus data for building the payload), a logger, and logging data.
 func (api *RestAPI) preview(reqID string, kv map[string]string, logger log.Logger, remoteAddr string) PreviewAPIResponseDetails {
-	ptname, ok := kv["pushservicetype"]
-	if !ok || ptname == "" {
+	pushServiceType, ok := kv["pushservicetype"]
+	if !ok || pushServiceType == "" {
 		msg := "Must specify a known pushservicetype"
 		return PreviewAPIResponseDetails{Code: UNIQUSH_ERROR_NO_PUSH_SERVICE_TYPE, ErrorMsg: &msg}
 	}
@@ -322,7 +323,7 @@ func (api *RestAPI) preview(reqID string, kv map[string]string, logger log.Logge
 		}
 	}
 
-	data, err := api.backend.Preview(ptname, notif)
+	data, err := api.backend.Preview(pushServiceType, notif)
 	if err != nil {
 		errmsg := err.Error()
 		return PreviewAPIResponseDetails{Code: UNIQUSH_ERROR_GENERIC, ErrorMsg: &errmsg}
@@ -486,25 +487,25 @@ func (api *RestAPI) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	remoteAddr := r.RemoteAddr
 
 	switch r.URL.Path {
-	case QUERY_SUBSCRIPTIONS_URL:
+	case QuerySubscriptionsURL:
 		r.ParseForm()
 		n := api.querySubscriptions(r.Form, api.loggers[LoggerSubscriptions])
 		fmt.Fprintf(w, "%s\r\n", n)
 		return
-	case QUERY_PUSH_SERVICE_PROVIDERS:
+	case QueryPushServiceProviders:
 		n := api.queryPSPs(api.loggers[LoggerPSPs])
 		fmt.Fprintf(w, "%s\r\n", n)
 		return
-	case REBUILD_SERVICE_SET_URL:
+	case RebuildServiceSetURL:
 		n := api.rebuildServiceSet(api.loggers[LoggerServices])
 		fmt.Fprintf(w, "%s\r\n", n)
 		return
-	case QUERY_NUMBER_OF_DELIVERY_POINTS_URL:
+	case QueryNumberOfDeliveryPointsURL:
 		r.ParseForm()
 		n := api.numberOfDeliveryPoints(r.Form, api.loggers[LoggerWeb])
 		fmt.Fprintf(w, "%v\r\n", n)
 		return
-	case PREVIEW_PUSH_NOTIFICATION_URL:
+	case PreviewPushNotificationURL:
 		r.ParseForm()
 		kv, _ := parseKV(r.Form)
 		rid := randomUniqID()
@@ -516,11 +517,11 @@ func (api *RestAPI) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 		fmt.Fprintf(w, "%s\r\n", string(bytes))
 		return
-	case VERSION_INFO_URL:
+	case VersionInfoURL:
 		fmt.Fprintf(w, "%v\r\n", api.version)
 		api.loggers[LoggerWeb].Infof("Checked version from %v", remoteAddr)
 		return
-	case STOP_PROGRAM_URL:
+	case StopProgramURL:
 		api.stop(w, remoteAddr)
 		return
 	}
@@ -532,23 +533,23 @@ func (api *RestAPI) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	var handler APIResponseHandler
 	var details APIResponseDetails
 	switch r.URL.Path {
-	case ADD_PUSH_SERVICE_PROVIDER_TO_SERVICE_URL:
+	case AddPushServiceProviderToServiceURL:
 		handler = newSimpleResponseHandler(api.loggers[LoggerAddPSP], "AddPushServiceProvider")
 		details = api.changePushServiceProvider(kv, api.loggers[LoggerAddPSP], remoteAddr, true)
 		handler.AddDetailsToHandler(details)
-	case REMOVE_PUSH_SERVICE_PROVIDER_TO_SERVICE_URL:
+	case RemovePushServiceProviderFromServiceURL:
 		handler = newSimpleResponseHandler(api.loggers[LoggerRemovePSP], "RemovePushServiceProvider")
 		details = api.changePushServiceProvider(kv, api.loggers[LoggerRemovePSP], remoteAddr, false)
 		handler.AddDetailsToHandler(details)
-	case ADD_DELIVERY_POINT_TO_SERVICE_URL:
+	case AddDeliveryPointToServiceURL:
 		handler = newSimpleResponseHandler(api.loggers[LoggerSub], "Subscribe")
 		details = api.changeSubscription(kv, api.loggers[LoggerSub], remoteAddr, true)
 		handler.AddDetailsToHandler(details)
-	case REMOVE_DELIVERY_POINT_FROM_SERVICE_URL:
+	case RemoveDeliveryPointFromServiceURL:
 		handler = newSimpleResponseHandler(api.loggers[LoggerUnsub], "Unsubscribe")
 		details = api.changeSubscription(kv, api.loggers[LoggerUnsub], remoteAddr, false)
 		handler.AddDetailsToHandler(details)
-	case PUSH_NOTIFICATION_URL:
+	case PushNotificationURL:
 		handler = newPushResponseHandler(api.loggers[LoggerPush])
 		rid := randomUniqID()
 		api.pushNotification(rid, kv, perdp, api.loggers[LoggerPush], remoteAddr, handler)
@@ -562,21 +563,24 @@ func (api *RestAPI) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+// Run will start the API service, listening for requests on the address addr
 func (api *RestAPI) Run(addr string, stopChan chan<- bool) {
 	api.loggers[LoggerWeb].Infof("[Start] %s", addr)
 	api.loggers[LoggerWeb].Debugf("[Version] %s", api.version)
-	http.Handle(STOP_PROGRAM_URL, api)
-	http.Handle(VERSION_INFO_URL, api)
-	http.Handle(ADD_PUSH_SERVICE_PROVIDER_TO_SERVICE_URL, api)
-	http.Handle(ADD_DELIVERY_POINT_TO_SERVICE_URL, api)
-	http.Handle(REMOVE_DELIVERY_POINT_FROM_SERVICE_URL, api)
-	http.Handle(REMOVE_PUSH_SERVICE_PROVIDER_TO_SERVICE_URL, api)
-	http.Handle(PUSH_NOTIFICATION_URL, api)
-	http.Handle(PREVIEW_PUSH_NOTIFICATION_URL, api)
-	http.Handle(QUERY_NUMBER_OF_DELIVERY_POINTS_URL, api)
-	http.Handle(QUERY_SUBSCRIPTIONS_URL, api)
-	http.Handle(QUERY_PUSH_SERVICE_PROVIDERS, api)
-	http.Handle(REBUILD_SERVICE_SET_URL, api)
+
+	http.Handle(StopProgramURL, api)
+	http.Handle(VersionInfoURL, api)
+	http.Handle(AddPushServiceProviderToServiceURL, api)
+	http.Handle(AddDeliveryPointToServiceURL, api)
+	http.Handle(RemoveDeliveryPointFromServiceURL, api)
+	http.Handle(RemovePushServiceProviderFromServiceURL, api)
+	http.Handle(PushNotificationURL, api)
+	http.Handle(PreviewPushNotificationURL, api)
+	http.Handle(QueryNumberOfDeliveryPointsURL, api)
+	http.Handle(QuerySubscriptionsURL, api)
+	http.Handle(QueryPushServiceProviders, api)
+	http.Handle(RebuildServiceSetURL, api)
+
 	api.stopChan = stopChan
 	err := http.ListenAndServe(addr, nil)
 	if err != nil {

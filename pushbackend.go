@@ -66,14 +66,17 @@ func (backend *PushBackEnd) RemovePushServiceProvider(service string, psp *push.
 	return backend.db.RemovePushServiceProviderFromService(service, psp)
 }
 
+// GetPushServiceProviderConfigs lists all known push service providers for /psps.
 func (backend *PushBackEnd) GetPushServiceProviderConfigs() ([]*push.PushServiceProvider, error) {
 	return backend.db.GetPushServiceProviderConfigs()
 }
 
+// Subscribe adds a new delivery point (subscription) for a service+subscriber to the database.
 func (backend *PushBackEnd) Subscribe(service, sub string, dp *push.DeliveryPoint) (*push.PushServiceProvider, error) {
 	return backend.db.AddDeliveryPointToService(service, sub, dp)
 }
 
+// Unsubscribe removes a delivery point (subscription) for a service+subscriber from the database.
 func (backend *PushBackEnd) Unsubscribe(service, sub string, dp *push.DeliveryPoint) error {
 	return backend.db.RemoveDeliveryPointFromService(service, sub, dp)
 }
@@ -356,6 +359,7 @@ func (backend *PushBackEnd) collectResult(
 	}
 }
 
+// NumberOfDeliveryPoints returns the number of delivery points for a given service+subscriber.
 func (backend *PushBackEnd) NumberOfDeliveryPoints(service, sub string, logger log.Logger) int {
 	pspDpList, err := backend.db.GetPushServiceProviderDeliveryPointPairs(service, sub, nil)
 	if err != nil {
@@ -365,6 +369,7 @@ func (backend *PushBackEnd) NumberOfDeliveryPoints(service, sub string, logger l
 	return len(pspDpList)
 }
 
+// Subscriptions returns the subscriptions for a subscriber name and a list of services.
 func (backend *PushBackEnd) Subscriptions(services []string, subscriber string, logger log.Logger, fetchIds bool) []map[string]string {
 	emptyResult := []map[string]string{}
 
@@ -388,17 +393,19 @@ func (backend *PushBackEnd) Subscriptions(services []string, subscriber string, 
 	}
 	if !fetchIds {
 		for _, v := range subscriptions {
-			delete(v, db.DELIVERY_POINT_ID)
+			delete(v, db.DeliveryPointID)
 		}
 	}
 
 	return subscriptions
 }
 
+// RebuildServiceSet is necessary for querying the list of services (for installations predating 2.2.0)
 func (backend *PushBackEnd) RebuildServiceSet() error {
 	return backend.db.RebuildServiceSet()
 }
 
+// Push will send a push notification to the given subscriber(s) of a push service.
 func (backend *PushBackEnd) Push(reqID string, remoteAddr string, service string, subs []string, dpNamesRequested []string, notif *push.Notification, perdp map[string][]string, logger log.Logger, handler APIResponseHandler) {
 	backend.pushImpl(reqID, remoteAddr, service, subs, dpNamesRequested, notif, perdp, logger, nil, nil, 0*time.Second, handler)
 }
@@ -506,6 +513,7 @@ func (backend *PushBackEnd) pushImpl(
 	wg.Wait()
 }
 
-func (backend *PushBackEnd) Preview(ptname string, notif *push.Notification) ([]byte, push.Error) {
-	return backend.psm.Preview(ptname, notif)
+// Preview will return the payload data (usually JSON) that would be sent to the given push service type for the given API params.
+func (backend *PushBackEnd) Preview(pushServiceType string, notif *push.Notification) ([]byte, push.Error) {
+	return backend.psm.Preview(pushServiceType, notif)
 }

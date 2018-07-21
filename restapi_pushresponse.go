@@ -8,14 +8,16 @@ import (
 	"github.com/uniqush/log"
 )
 
+// APIPushResponseHandler records information about push notification attempts to generate a JSON response.
 type APIPushResponseHandler struct {
 	response APIPushResponse
 	logger   log.Logger
 	mutex    sync.Mutex
 }
 
-var _ APIResponseHandler = (*APIPushResponseHandler)(nil)
+var _ APIResponseHandler = &APIPushResponseHandler{}
 
+// APIPushResponse represents the push response data that will be returned to the uniqush client.
 type APIPushResponse struct {
 	Type           string               `json:"type"`
 	Date           int64                `json:"date"`
@@ -44,25 +46,27 @@ func newAPIPushResponse() APIPushResponse {
 	}
 }
 
-func (self *APIPushResponseHandler) AddDetailsToHandler(v APIResponseDetails) {
-	self.mutex.Lock()
+// AddDetailsToHandler will record information about one response (of one or more responses) to an individual push attempt to a psp.
+func (handler *APIPushResponseHandler) AddDetailsToHandler(v APIResponseDetails) {
+	handler.mutex.Lock()
 	if v.Code == UNIQUSH_SUCCESS {
-		self.response.SuccessDetails = append(self.response.SuccessDetails, v)
-		self.response.SuccessCount++
+		handler.response.SuccessDetails = append(handler.response.SuccessDetails, v)
+		handler.response.SuccessCount++
 	} else if v.Code == UNIQUSH_UPDATE_UNSUBSCRIBE || v.Code == UNIQUSH_REMOVE_INVALID_REG {
-		self.response.DroppedDetails = append(self.response.DroppedDetails, v)
-		self.response.DroppedCount++
+		handler.response.DroppedDetails = append(handler.response.DroppedDetails, v)
+		handler.response.DroppedCount++
 	} else {
-		self.response.FailureDetails = append(self.response.FailureDetails, v)
-		self.response.FailureCount++
+		handler.response.FailureDetails = append(handler.response.FailureDetails, v)
+		handler.response.FailureCount++
 	}
-	self.mutex.Unlock()
+	handler.mutex.Unlock()
 }
 
-func (self *APIPushResponseHandler) ToJSON() []byte {
-	json, err := json.Marshal(self.response)
+// ToJSON serializes this push response as JSON to send to the client of uniqush-push.
+func (handler *APIPushResponseHandler) ToJSON() []byte {
+	json, err := json.Marshal(handler.response)
 	if err != nil {
-		self.logger.Errorf("Failed to marshal json [%v] as string: %v", self.response, err)
+		handler.logger.Errorf("Failed to marshal json [%v] as string: %v", handler.response, err)
 		return nil
 	}
 	return json

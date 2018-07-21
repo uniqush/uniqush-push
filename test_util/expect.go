@@ -14,7 +14,7 @@ func ExpectEquals(t *testing.T, expected interface{}, actual interface{}, msg st
 	}
 }
 
-// ExpectEquals will report a test error if the strings expected and actual differ.
+// ExpectStringEquals will report a test error if the strings expected and actual differ.
 func ExpectStringEquals(t *testing.T, expected string, actual string, msg string) {
 	t.Helper()
 	if expected != actual {

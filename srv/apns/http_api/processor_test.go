@@ -285,7 +285,7 @@ func TestAddRequestPushFailNotificationError(t *testing.T) {
 	requestProcessor.AddRequest(request)
 
 	handleAPNSResultOrEmitTestError(t, resChan, errChan, func(res *common.APNSResult) {
-		if res.Status != common.STATUS8_UNSUBSCRIBE {
+		if res.Status != common.Status8Unsubscribe {
 			t.Fatalf("Expected 8 (unsubscribe), got %d", res.Status)
 		}
 		if res.MsgID == 0 {

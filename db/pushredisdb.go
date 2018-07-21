@@ -29,6 +29,8 @@ import (
 	"github.com/uniqush/uniqush-push/push"
 )
 
+// PushRedisDB is currently the only uniqush pushRawDatabase implementation.
+// It stores push service providers, delivery points, etc. in redis.
 type PushRedisDB struct {
 	client redisClient
 	psm    *push.PushServiceManager
@@ -271,6 +273,7 @@ func (r *PushRedisDB) mgetRawDeliveryPoints(deliveryPointNames ...string) ([][]b
 	return deliveryPointData, nil
 }
 
+// GetDeliveryPoint fetches the delivery point with a given generated name.
 func (r *PushRedisDB) GetDeliveryPoint(name string) (*push.DeliveryPoint, error) {
 	b, err := r.client.Get(DeliveryPointPrefix + name).Bytes()
 	if err != nil {
@@ -282,11 +285,13 @@ func (r *PushRedisDB) GetDeliveryPoint(name string) (*push.DeliveryPoint, error)
 	return r.keyValueToDeliveryPoint(b)
 }
 
+// SetDeliveryPoint sets (adds or updates) the delivery point representation in the database.
 func (r *PushRedisDB) SetDeliveryPoint(dp *push.DeliveryPoint) error {
 	err := r.client.Set(DeliveryPointPrefix+dp.Name(), deliveryPointToValue(dp), 0).Err()
 	return err
 }
 
+// GetPushServiceProvider will fetch and unserialize the push service provider with the given name.
 func (r *PushRedisDB) GetPushServiceProvider(name string) (*push.PushServiceProvider, error) {
 	cmd := r.client.Get(PushServiceProviderPrefix + name)
 	b, err := cmd.Bytes()
@@ -299,6 +304,7 @@ func (r *PushRedisDB) GetPushServiceProvider(name string) (*push.PushServiceProv
 	return r.keyValueToPushServiceProvider(b)
 }
 
+// GetPushServiceProviderConfigs will fetch and unserialize the push service providers with the given names.
 func (r *PushRedisDB) GetPushServiceProviderConfigs(names []string) ([]*push.PushServiceProvider, []error) {
 	if len(names) == 0 {
 		return nil, nil
@@ -328,6 +334,7 @@ func (r *PushRedisDB) GetPushServiceProviderConfigs(names []string) ([]*push.Pus
 	return psps, errors
 }
 
+// SetPushServiceProvider will add or update the push service provider psp. The redis key is based on a hash of FixedData.
 func (r *PushRedisDB) SetPushServiceProvider(psp *push.PushServiceProvider) error {
 	if err := r.client.Set(PushServiceProviderPrefix+psp.Name(), pushServiceProviderToValue(psp), 0).Err(); err != nil {
 		return fmt.Errorf("SetPushServiceProvider %q failed: %v", psp.Name(), err)
@@ -335,6 +342,7 @@ func (r *PushRedisDB) SetPushServiceProvider(psp *push.PushServiceProvider) erro
 	return nil
 }
 
+// RemoveDeliveryPoint will remove the data for a delivery point.
 func (r *PushRedisDB) RemoveDeliveryPoint(dp string) error {
 	err := r.client.Del(DeliveryPointPrefix + dp).Err()
 	if err != nil {
@@ -343,6 +351,7 @@ func (r *PushRedisDB) RemoveDeliveryPoint(dp string) error {
 	return nil
 }
 
+// RemovePushServiceProvider will remove a push service provider's configuration
 func (r *PushRedisDB) RemovePushServiceProvider(psp string) error {
 	err := r.client.Del(PushServiceProviderPrefix + psp).Err()
 	if err != nil {
@@ -351,15 +360,16 @@ func (r *PushRedisDB) RemovePushServiceProvider(psp string) error {
 	return nil
 }
 
-func (r *PushRedisDB) GetDeliveryPointsNameByServiceSubscriber(srv, usr string) (map[string][]string, error) {
+// GetDeliveryPointsNameByServiceSubscriber will get the delivery point for a service and it's subscriber
+func (r *PushRedisDB) GetDeliveryPointsNameByServiceSubscriber(srv, sub string) (map[string][]string, error) {
 	keys := make([]string, 1)
-	if !strings.Contains(usr, "*") && !strings.Contains(srv, "*") {
-		keys[0] = ServiceSubscriberToDeliveryPointsPrefix + srv + ":" + usr
+	if !strings.Contains(sub, "*") && !strings.Contains(srv, "*") {
+		keys[0] = ServiceSubscriberToDeliveryPointsPrefix + srv + ":" + sub
 	} else {
 		var err error
-		keys, err = r.client.Keys(ServiceSubscriberToDeliveryPointsPrefix + srv + ":" + usr).Result()
+		keys, err = r.client.Keys(ServiceSubscriberToDeliveryPointsPrefix + srv + ":" + sub).Result()
 		if err != nil {
-			return nil, fmt.Errorf("GetDPsNameByServiceSubscriber dp lookup '%s:%s' failed: %v", srv, usr, err)
+			return nil, fmt.Errorf("GetDPsNameByServiceSubscriber dp lookup '%s:%s' failed: %v", srv, sub, err)
 		}
 	}
 
@@ -620,8 +630,8 @@ func (r *PushRedisDB) GetSubscriptions(queryServices []string, subscriber string
 				logger.Errorf("Error unserializing subscription for delivery point data for dp %q user %q service %q data %v: %v", dpName, subscriber, service, subscriptionData, err)
 				continue
 			}
-			// DELIVERY_POINT_ID is for use by clients which wish to remove subscriptions unambiguously
-			subscriptionData[DELIVERY_POINT_ID] = dpName
+			// DeliveryPointID is for use by clients which wish to remove subscriptions unambiguously
+			subscriptionData[DeliveryPointID] = dpName
 			subscriptions = append(subscriptions, subscriptionData)
 		} else {
 			logger.Errorf("Redis error fetching subscriber delivery point data for dp %q user %q service %q, removing...", dpName, subscriber, service)

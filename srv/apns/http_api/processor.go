@@ -214,7 +214,7 @@ func (prp *HTTPPushRequestProcessor) sendRequest(wg *sync.WaitGroup, client HTTP
 		// > The device token is inactive for the specified topic.
 		resChan <- &common.APNSResult{
 			MsgID:  messageID,
-			Status: common.STATUS8_UNSUBSCRIBE,
+			Status: common.Status8Unsubscribe,
 		}
 		return
 	case 400:
@@ -241,7 +241,7 @@ func (prp *HTTPPushRequestProcessor) handlePushResponseBody(response *http.Respo
 			// > The specified device token was bad. If this error is seen, then clients of uniqush should verify that the request contains a valid token and that the token matches the environment (sandbox/prod).
 			resChan <- &common.APNSResult{
 				MsgID:  messageID,
-				Status: common.STATUS8_UNSUBSCRIBE,
+				Status: common.Status8Unsubscribe,
 			}
 			return
 		default:
@@ -257,7 +257,7 @@ func (prp *HTTPPushRequestProcessor) handlePushResponseBody(response *http.Respo
 		if response.StatusCode == 200 {
 			resChan <- &common.APNSResult{
 				MsgID:  messageID,
-				Status: common.STATUS0_SUCCESS,
+				Status: common.Status0Success,
 			}
 		} else {
 			errChan <- push.NewErrorf("Unknown error. No response body, HTTP status code is %d", response.StatusCode)

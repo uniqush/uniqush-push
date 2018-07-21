@@ -28,10 +28,11 @@ import (
 )
 
 const (
-	// DELIVERY_POINT_ID is the internal identifier for a delivery point(subscription) in Subscription() responses, which may be returned to clients if include_delivery_point_ids=1.
-	DELIVERY_POINT_ID = "delivery_point_id"
+	// DeliveryPointID is the internal identifier for a delivery point(subscription) in Subscription() responses, which may be returned to clients if include_delivery_point_ids=1.
+	DeliveryPointID = "delivery_point_id"
 )
 
+// PushServiceProviderDeliveryPointPair is a pair of a push service provider and a delivery point belonging to that PSP.
 type PushServiceProviderDeliveryPointPair struct {
 	PushServiceProvider *push.PushServiceProvider
 	DeliveryPoint       *push.DeliveryPoint
@@ -72,14 +73,14 @@ type PushDatabase interface {
 	// Return value: selected push service provider, error
 	AddDeliveryPointToService(service string,
 		subscriber string,
-		delivery_point *push.DeliveryPoint) (*push.PushServiceProvider, error)
+		deliveryPoint *push.DeliveryPoint) (*push.PushServiceProvider, error)
 
 	// The delivery point may be anonymous whose Name is empty string
 	// For anonymous delivery point, it will be added to database and its Name will be set
 	// Return value: selected push service provider, error
 	RemoveDeliveryPointFromService(service string,
 		subscriber string,
-		delivery_point *push.DeliveryPoint) error
+		deliveryPoint *push.DeliveryPoint) error
 
 	ModifyDeliveryPoint(dp *push.DeliveryPoint) error
 
@@ -191,7 +192,7 @@ func (f *pushDatabaseOpts) AddPushServiceProviderToService(service string, pushS
 			 */
 			if pushpsp.PushPeer.Name() != pushServiceProvider.PushPeer.Name() {
 				return fmt.Errorf(
-					"A different PSP for service %s already exists with different fixed data as push service type %s (It has a separate subscriber list). Please double check the list of current PSPs with the /psps API. Note that this error could be worked around by removing the old PSP, but that would delete subscriptions.",
+					"A different PSP for service %s already exists with different fixed data as push service type %s (It has a separate subscriber list). Please double check the list of current PSPs with the /psps API. Note that this error could be worked around by removing the old PSP, but that would delete subscriptions",
 					service,
 					pushServiceProvider.PushServiceName(),
 				)
@@ -208,11 +209,11 @@ func (f *pushDatabaseOpts) AddPushServiceProviderToService(service string, pushS
 
 func (f *pushDatabaseOpts) AddDeliveryPointToService(service string,
 	subscriber string,
-	delivery_point *push.DeliveryPoint) (*push.PushServiceProvider, error) {
-	if delivery_point == nil {
+	deliveryPoint *push.DeliveryPoint) (*push.PushServiceProvider, error) {
+	if deliveryPoint == nil {
 		return nil, nil
 	}
-	if len(delivery_point.Name()) == 0 {
+	if len(deliveryPoint.Name()) == 0 {
 		return nil, errors.New("InvalidDeliveryPoint")
 	}
 	f.dblock.Lock()
@@ -233,38 +234,38 @@ func (f *pushDatabaseOpts) AddDeliveryPointToService(service string,
 		if psp == nil {
 			continue
 		}
-		if psp.PushServiceName() == delivery_point.PushServiceName() {
-			err = f.db.SetDeliveryPoint(delivery_point)
+		if psp.PushServiceName() == deliveryPoint.PushServiceName() {
+			err = f.db.SetDeliveryPoint(deliveryPoint)
 			if err != nil {
 				return nil, fmt.Errorf("Failed to save new info for delivery point: %v", err)
 			}
-			err = f.db.AddDeliveryPointToServiceSubscriber(service, subscriber, delivery_point.Name())
+			err = f.db.AddDeliveryPointToServiceSubscriber(service, subscriber, deliveryPoint.Name())
 			if err != nil {
 				return nil, fmt.Errorf("Failed to add delivery point to subscriber: %v", err)
 			}
-			err = f.db.SetPushServiceProviderOfServiceDeliveryPoint(service, delivery_point.Name(), psp.Name())
+			err = f.db.SetPushServiceProviderOfServiceDeliveryPoint(service, deliveryPoint.Name(), psp.Name())
 			if err != nil {
 				return nil, fmt.Errorf("Failed to set psp of delivery point: %v", err)
 			}
 			return psp, nil
 		}
 	}
-	return nil, fmt.Errorf("Cannot Find Push Service Provider with Type %s", delivery_point.PushServiceName())
+	return nil, fmt.Errorf("Cannot Find Push Service Provider with Type %s", deliveryPoint.PushServiceName())
 }
 
 func (f *pushDatabaseOpts) RemoveDeliveryPointFromService(service string,
 	subscriber string,
-	delivery_point *push.DeliveryPoint) error {
-	if delivery_point.Name() == "" {
+	deliveryPoint *push.DeliveryPoint) error {
+	if deliveryPoint.Name() == "" {
 		return errors.New("InvalidDeliveryPoint")
 	}
 	f.dblock.Lock()
 	defer f.dblock.Unlock()
-	err := f.db.RemoveDeliveryPointFromServiceSubscriber(service, subscriber, delivery_point.Name())
+	err := f.db.RemoveDeliveryPointFromServiceSubscriber(service, subscriber, deliveryPoint.Name())
 	if err != nil {
 		return fmt.Errorf("Failed to remove delivery point: %v", err)
 	}
-	err = f.db.RemovePushServiceProviderOfServiceDeliveryPoint(service, delivery_point.Name())
+	err = f.db.RemovePushServiceProviderOfServiceDeliveryPoint(service, deliveryPoint.Name())
 	if err != nil {
 		return fmt.Errorf("Failed to remove psp info for delivery point: %v", err)
 	}

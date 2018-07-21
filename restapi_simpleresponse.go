@@ -8,17 +8,18 @@ import (
 
 // status codes for REST APIs with simple responses
 const (
-	STATUS_SUCCESS = iota
-	STATUS_FAILURE
-	STATUS_UNKNOWN
+	StatusSuccess = iota
+	StatusFailure
+	StatusUnknown
 )
 
+// APISimpleResponseHandler is a handler that expects exactly one response to be added
 type APISimpleResponseHandler struct {
 	response APISimpleResponse
 	logger   log.Logger
 }
 
-var _ APIResponseHandler = (*APISimpleResponseHandler)(nil)
+var _ APIResponseHandler = &APISimpleResponseHandler{}
 
 type APISimpleResponse struct {
 	Type    string             `json:"type"`
@@ -38,19 +39,21 @@ func newAPISimpleResponse(apiType string) APISimpleResponse {
 	return APISimpleResponse{
 		Type:   apiType,
 		Date:   time.Now().Unix(),
-		Status: STATUS_UNKNOWN,
+		Status: StatusUnknown,
 	}
 }
 
+// AddDetailsToHandler will set the only response's status and details.
 func (handler *APISimpleResponseHandler) AddDetailsToHandler(v APIResponseDetails) {
 	if v.Code == UNIQUSH_SUCCESS {
-		handler.response.Status = STATUS_SUCCESS
+		handler.response.Status = StatusSuccess
 	} else {
-		handler.response.Status = STATUS_FAILURE
+		handler.response.Status = StatusFailure
 	}
 	handler.response.Details = v
 }
 
+// ToJSON will return the serialization of the only response.
 func (handler *APISimpleResponseHandler) ToJSON() []byte {
 	json, err := json.Marshal(handler.response)
 	if err != nil {
