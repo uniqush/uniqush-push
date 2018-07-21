@@ -77,13 +77,13 @@ func (m *PushServiceManager) RegisterPushServiceType(pt PushServiceType) error {
 }
 
 func (m *PushServiceManager) BuildPushServiceProviderFromMap(kv map[string]string) (psp *PushServiceProvider, err error) {
-	ptname, ok := kv["pushservicetype"]
+	pushServiceType, ok := kv["pushservicetype"]
 	if !ok {
 		return nil, errors.New("No Push Service Type Specified")
 	}
-	pair, ok := m.serviceTypes[ptname]
+	pair, ok := m.serviceTypes[pushServiceType]
 	if !ok {
-		return nil, fmt.Errorf("BuildPushServiceProviderFromMap: Unknown Push Service Type: %v", ptname)
+		return nil, fmt.Errorf("BuildPushServiceProviderFromMap: Unknown Push Service Type: %v", pushServiceType)
 	}
 	psp = NewEmptyPushServiceProvider()
 	pst := pair.pst
@@ -106,10 +106,10 @@ func (m *PushServiceManager) BuildPushServiceProviderFromBytes(value []byte) (ps
 	if len(parts) < 2 {
 		return nil, errors.New("BuildPushServiceProviderFromBytes: No Push Service Type Specified")
 	}
-	ptname := parts[0]
-	pair, ok := m.serviceTypes[ptname]
+	pushServiceType := parts[0]
+	pair, ok := m.serviceTypes[pushServiceType]
 	if !ok {
-		return nil, fmt.Errorf("BuildPushServiceProviderFromBytes: Unknown Push Service Type: %v", ptname)
+		return nil, fmt.Errorf("BuildPushServiceProviderFromBytes: Unknown Push Service Type: %v", pushServiceType)
 	}
 
 	psp = NewEmptyPushServiceProvider()
@@ -128,13 +128,13 @@ func (m *PushServiceManager) BuildPushServiceProviderFromBytes(value []byte) (ps
 }
 
 func (m *PushServiceManager) BuildDeliveryPointFromMap(kv map[string]string) (*DeliveryPoint, error) {
-	ptname, ok := kv["pushservicetype"]
+	pushServiceType, ok := kv["pushservicetype"]
 	if !ok {
 		return nil, errors.New("BuildDeliveryPointFromMap: No Push Service Type Specified")
 	}
-	pair, ok := m.serviceTypes[ptname]
+	pair, ok := m.serviceTypes[pushServiceType]
 	if !ok {
-		return nil, fmt.Errorf("BuildDeliveryPointFromMap: Unknown Push Service Type: %v", ptname)
+		return nil, fmt.Errorf("BuildDeliveryPointFromMap: Unknown Push Service Type: %v", pushServiceType)
 	}
 	dp := NewEmptyDeliveryPoint()
 	pst := pair.pst
@@ -155,10 +155,10 @@ func (m *PushServiceManager) BuildDeliveryPointFromBytes(value []byte) (*Deliver
 	if len(parts) < 2 {
 		return nil, errors.New("BuildDeliveryPointFromBytes: No Push Service Type Specified")
 	}
-	ptname := parts[0]
-	pair, ok := m.serviceTypes[ptname]
+	pushServiceType := parts[0]
+	pair, ok := m.serviceTypes[pushServiceType]
 	if !ok {
-		return nil, fmt.Errorf("BuildDeliveryPointFromBytes: Unknown Push Service Type: %v", ptname)
+		return nil, fmt.Errorf("BuildDeliveryPointFromBytes: Unknown Push Service Type: %v", pushServiceType)
 	}
 
 	dp := NewEmptyDeliveryPoint()
@@ -193,11 +193,11 @@ func (m *PushServiceManager) Push(psp *PushServiceProvider, dpQueue <-chan *Deli
 	wg.Wait()
 }
 
-func (m *PushServiceManager) Preview(ptname string, notif *Notification) ([]byte, Error) {
-	if pst, ok := m.serviceTypes[ptname]; ok && pst != nil {
+func (m *PushServiceManager) Preview(pushServiceType string, notif *Notification) ([]byte, Error) {
+	if pst, ok := m.serviceTypes[pushServiceType]; ok && pst != nil {
 		return pst.pst.Preview(notif)
 	}
-	return nil, NewErrorf("No push service type %q", ptname)
+	return nil, NewErrorf("No push service type %q", pushServiceType)
 }
 
 func (m *PushServiceManager) SetErrorReportChan(errChan chan<- Error) {
