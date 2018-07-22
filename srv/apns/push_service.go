@@ -26,6 +26,7 @@
  * > Specify zero to indicate that the notification expires immediately and that APNs should not store the notification at all.
  */
 
+// Package apns implements sending pushes to (and receiving feedback from) APNs.
 package apns
 
 import (

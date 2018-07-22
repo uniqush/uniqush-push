@@ -22,7 +22,7 @@ import (
 
 	"github.com/uniqush/uniqush-push/push"
 	apns_mocks "github.com/uniqush/uniqush-push/srv/apns/http_api/mocks"
-	"github.com/uniqush/uniqush-push/test_util"
+	"github.com/uniqush/uniqush-push/testutil"
 )
 
 func getTestDatabaseConfig() *DatabaseConfig {
@@ -93,8 +93,8 @@ func TestInsertAndGetPushServiceProviders(t *testing.T) {
 		t.Fatalf("Failed to fetch stored_services_names from the db")
 	}
 	pspName := psp.Name()
-	test_util.ExpectStringEquals(t, "apns:3c82df754225cdf5fc5379402952ebeeb2a9e6b0", pspName, "should have deterministic psp name")
-	test_util.ExpectEquals(t, []string{pspName}, storedServicesNames, "should be able to fetch the new service from the db")
+	testutil.ExpectStringEquals(t, "apns:3c82df754225cdf5fc5379402952ebeeb2a9e6b0", pspName, "should have deterministic psp name")
+	testutil.ExpectEquals(t, []string{pspName}, storedServicesNames, "should be able to fetch the new service from the db")
 }
 
 func TestInsertPushServiceProvidersDifferentServices(t *testing.T) {
@@ -125,8 +125,8 @@ func TestInsertPushServiceProvidersDifferentServices(t *testing.T) {
 			t.Fatalf("Failed to fetch stored_services_names from the db")
 		}
 		pspName := psp.Name()
-		test_util.ExpectStringEquals(t, "apns:3c82df754225cdf5fc5379402952ebeeb2a9e6b0", pspName, "should have deterministic PSP name")
-		test_util.ExpectEquals(t, []string{pspName}, storedServicesNames, "should be able to fetch the new service from the db")
+		testutil.ExpectStringEquals(t, "apns:3c82df754225cdf5fc5379402952ebeeb2a9e6b0", pspName, "should have deterministic PSP name")
+		testutil.ExpectEquals(t, []string{pspName}, storedServicesNames, "should be able to fetch the new service from the db")
 	}
 
 	{
@@ -148,8 +148,8 @@ func TestInsertPushServiceProvidersDifferentServices(t *testing.T) {
 			t.Fatalf("Failed to fetch stored_services_names from the db")
 		}
 		otherPSPName := otherPSP.Name()
-		test_util.ExpectStringEquals(t, "apns:ce1f6634c47c49f0b5d9c5d609e55544979d2172", otherPSPName, "should have deterministic PSP name")
-		test_util.ExpectEquals(t, []string{otherPSPName}, storedServicesNames, "should be able to fetch the new service from the db")
+		testutil.ExpectStringEquals(t, "apns:ce1f6634c47c49f0b5d9c5d609e55544979d2172", otherPSPName, "should have deterministic PSP name")
+		testutil.ExpectEquals(t, []string{otherPSPName}, storedServicesNames, "should be able to fetch the new service from the db")
 	}
 }
 
@@ -166,7 +166,7 @@ func TestInsertPushServiceProvidersConflictSameService(t *testing.T) {
 
 	pst := &apns_mocks.MockPushServiceType{}
 	err := psm.RegisterPushServiceType(pst)
-	test_util.ExpectStringEquals(t, "apns", pst.Name(), "sanity check")
+	testutil.ExpectStringEquals(t, "apns", pst.Name(), "sanity check")
 	if err != nil {
 		t.Fatalf("apns PST already exists: %v", err)
 	}
@@ -189,9 +189,9 @@ func TestInsertPushServiceProvidersConflictSameService(t *testing.T) {
 			t.Fatalf("Failed to fetch stored_services_names from the db")
 		}
 		pspName = psp.Name()
-		test_util.ExpectStringEquals(t, "apns:3c82df754225cdf5fc5379402952ebeeb2a9e6b0", pspName, "should have deterministic PSP name")
+		testutil.ExpectStringEquals(t, "apns:3c82df754225cdf5fc5379402952ebeeb2a9e6b0", pspName, "should have deterministic PSP name")
 
-		test_util.ExpectEquals(t, []string{pspName}, storedServicesNames, "should be able to fetch the old service from the db")
+		testutil.ExpectEquals(t, []string{pspName}, storedServicesNames, "should be able to fetch the old service from the db")
 	}
 
 	{
@@ -209,18 +209,18 @@ func TestInsertPushServiceProvidersConflictSameService(t *testing.T) {
 		if err == nil {
 			t.Fatalf("Expected an error adding the conflicting mock PSP")
 		}
-		test_util.ExpectStringEquals(
+		testutil.ExpectStringEquals(
 			t,
 			"A different PSP for service pushdb_test_service already exists with different fixed data as push service type apns (It has a separate subscriber list). Please double check the list of current PSPs with the /psps API. Note that this error could be worked around by removing the old PSP, but that would delete subscriptions",
 			err.Error(),
 			"error message should describe the conflict",
 		)
 		otherPSPName := otherPSP.Name()
-		test_util.ExpectStringEquals(t, "apns:c5de2508902f441a5252c60044745915df2f7368", otherPSPName, "should have deterministic PSP name")
+		testutil.ExpectStringEquals(t, "apns:c5de2508902f441a5252c60044745915df2f7368", otherPSPName, "should have deterministic PSP name")
 		storedServicesNames, err := client.(*pushDatabaseOpts).db.GetPushServiceProvidersByService(ServiceName)
 		if err != nil {
 			t.Fatalf("Failed to fetch stored_services_names from the db")
 		}
-		test_util.ExpectEquals(t, []string{pspName}, storedServicesNames, "should be able to fetch the originally added service (not the new service) from the db")
+		testutil.ExpectEquals(t, []string{pspName}, storedServicesNames, "should be able to fetch the originally added service (not the new service) from the db")
 	}
 }

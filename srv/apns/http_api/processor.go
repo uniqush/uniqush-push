@@ -1,3 +1,4 @@
+// Package http_api implements a client for the new APNs HTTP/2 API (over an encrypted HTTP/2 connection to APNs)
 package http_api
 
 import (
@@ -18,14 +19,16 @@ import (
 	"github.com/uniqush/uniqush-push/srv/apns/common"
 )
 
-// HTTPClient is a mockable interface for the parts of http.Client used by the APNS HTTP2 module.
+// HTTPClient is a mockable interface for the parts of http.Client used by the APNs HTTP2 module.
+// The underlying implementation contains a connection pool, to tolerate spurious network errors.
 type HTTPClient interface {
 	Do(*http.Request) (*http.Response, error)
 }
 
+// ClientFactory is an abstraction to create HTTPClient instances (one for each push service provider). The value is overridden for testing.
 type ClientFactory func(*http.Transport) HTTPClient
 
-// HTTPPushRequestProcessor sends push notification requests to APNS using HTTP API
+// HTTPPushRequestProcessor sends push notification requests to APNs using HTTP API
 type HTTPPushRequestProcessor struct {
 	clients       map[string]HTTPClient
 	clientsLock   sync.RWMutex
@@ -40,14 +43,17 @@ func NewRequestProcessor() common.PushRequestProcessor {
 	}
 }
 
+// AddRequest will asynchronously process the request to send a push notification to APNs over HTTP/2
 func (prp *HTTPPushRequestProcessor) AddRequest(request *common.PushRequest) {
 	go prp.sendRequests(request)
 }
 
+// GetMaxPayloadSize will return the max JSON payload size for HTTP/2 pushes (which is larger than the binary API)
 func (prp *HTTPPushRequestProcessor) GetMaxPayloadSize() int {
 	return 4096
 }
 
+// GetClient will return the only HTTP client instance for the given psp. That instance uses the credentials and endpoint associated with the given psp.
 func (prp *HTTPPushRequestProcessor) GetClient(psp *push.PushServiceProvider) (HTTPClient, error) {
 	pspName := psp.Name()
 	if client := prp.TryGetClient(pspName); client != nil {
@@ -72,11 +78,10 @@ func (prp *HTTPPushRequestProcessor) GetClient(psp *push.PushServiceProvider) (H
 		MaxIdleConnsPerHost:   20,
 		TLSHandshakeTimeout:   10 * time.Second,
 		ExpectContinueTimeout: 1 * time.Second,
-		// Because TLSClientConfig is provided, have to manually configure this client for http2 support.
+		// Because TLSClientConfig is provided, we have to manually configure this client for http2 support.
 		TLSClientConfig: tlsClientConfig,
 	}
 
-	// Requires Go 1.6 or later
 	err = http2.ConfigureTransport(transport)
 	if err != nil {
 		return nil, fmt.Errorf("GetClient failed, couldn't configure for http2: %v", err)
@@ -107,6 +112,7 @@ func createTLSConfig(psp *push.PushServiceProvider) (*tls.Config, error) {
 	return conf, nil
 }
 
+// TryGetClient will
 func (prp *HTTPPushRequestProcessor) TryGetClient(pspName string) HTTPClient {
 	prp.clientsLock.RLock()
 	defer prp.clientsLock.RUnlock()
@@ -116,6 +122,7 @@ func (prp *HTTPPushRequestProcessor) TryGetClient(pspName string) HTTPClient {
 	return nil
 }
 
+// Finalize will shut down all of the connections owned by HTTP/2 clients for each PSP.
 func (prp *HTTPPushRequestProcessor) Finalize() {
 	prp.clientsLock.Lock()
 	for _, client := range prp.clients {
@@ -129,10 +136,13 @@ func (prp *HTTPPushRequestProcessor) Finalize() {
 	}
 }
 
+// SetErrorReportChan will set the report chan used for asynchronous feedback that is not associated with a request. (not needed when using APNs's HTTP/2 API, but needed for the binary API)
 func (prp *HTTPPushRequestProcessor) SetErrorReportChan(errChan chan<- push.Error) {}
 
+// SetPushServiceConfig is called during initialization to provide the unserialized contents of uniqush.conf. (does nothing for cloud messaging)
 func (prp *HTTPPushRequestProcessor) SetPushServiceConfig(c *push.PushServiceConfig) {}
 
+// sendRequests will send a push to one or more device tokens. It will send the response over ResChan or ErrChan.
 func (prp *HTTPPushRequestProcessor) sendRequests(request *common.PushRequest) {
 	defer close(request.ErrChan)
 
@@ -230,7 +240,7 @@ func (prp *HTTPPushRequestProcessor) sendRequest(wg *sync.WaitGroup, client HTTP
 	prp.handlePushResponseBody(response, responseBody, messageID, errChan, resChan)
 }
 
-// handle the response body of an HTTP/2 push attempt to APNS.
+// handle the response body of an HTTP/2 push attempt to APNs.
 func (prp *HTTPPushRequestProcessor) handlePushResponseBody(response *http.Response, responseBody []byte, messageID uint32, errChan chan<- push.Error, resChan chan<- *common.APNSResult) {
 	if len(responseBody) > 0 {
 		// Successful request should return empty response body

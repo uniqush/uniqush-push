@@ -1,4 +1,5 @@
-package test_util
+// Package testutil contains reusable utilities for uniqush-push's unit tests (such as ExpectEquals).
+package testutil
 
 import (
 	"encoding/json"

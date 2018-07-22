@@ -9,7 +9,7 @@ import (
 
 	"github.com/uniqush/uniqush-push/push"
 	"github.com/uniqush/uniqush-push/srv/apns/common"
-	"github.com/uniqush/uniqush-push/test_util"
+	"github.com/uniqush/uniqush-push/testutil"
 )
 
 const APNSSuccess uint8 = 0
@@ -270,7 +270,7 @@ func TestValidateRawAPNSPayload(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Error decoding payload: %v", err)
 	}
-	test_util.ExpectJSONIsEquivalent(t, []byte(json), payload)
+	testutil.ExpectJSONIsEquivalent(t, []byte(json), payload)
 }
 
 func TestValidateSilentPayload(t *testing.T) {
@@ -279,7 +279,7 @@ func TestValidateSilentPayload(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Error decoding payload: %v", err)
 	}
-	test_util.ExpectJSONIsEquivalent(t, []byte(json), payload)
+	testutil.ExpectJSONIsEquivalent(t, []byte(json), payload)
 }
 
 func TestRejectInvalidAPNSPayload(t *testing.T) {
@@ -363,7 +363,7 @@ func TestToAPNSPayloadAllParams(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	test_util.ExpectJSONIsEquivalent(t, []byte(expectedJSON), payload)
+	testutil.ExpectJSONIsEquivalent(t, []byte(expectedJSON), payload)
 }
 
 func TestPreview(t *testing.T) {
@@ -392,7 +392,7 @@ func TestPreview(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	test_util.ExpectJSONIsEquivalent(t, []byte(expectedJSON), payload)
+	testutil.ExpectJSONIsEquivalent(t, []byte(expectedJSON), payload)
 }
 
 func expectMapEquals(t *testing.T, expected map[string]string, actual map[string]string, description string) {

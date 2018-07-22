@@ -15,6 +15,7 @@
  *
  */
 
+// Package push contains generic abstractions for working with push service providers, delivery points, etc.
 package push
 
 import (

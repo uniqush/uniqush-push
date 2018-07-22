@@ -16,7 +16,7 @@
  * See https://developer.apple.com/library/content/documentation/NetworkingInternet/Conceptual/RemoteNotificationsPG/BinaryProviderAPI.html#//apple_ref/doc/uid/TP40008194-CH13-SW1
  */
 
-// Package binary_api supports version 2 of the old APNS binary protocol (over an encrypted TCP socket)
+// Package binary_api implements a client for the old APNs binary protocol (over an encrypted TCP socket)
 package binary_api
 
 import (

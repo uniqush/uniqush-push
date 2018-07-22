@@ -18,6 +18,7 @@
  * Implementation details common to GCM and FCM are kept in srv/cloud_messaging
  */
 
+// Package srv contains implementations of push services with code to send pushes to, receive responses from, and manage delivery points for the various external push service providers (ADM, APNS, GCM, and FCM)
 package srv
 
 import (

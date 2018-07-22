@@ -143,6 +143,7 @@ type CMEmptyData struct {
 	Data map[string]interface{} `json:"data"`
 }
 
+// MarshalSafe will generate a pushable GCM/FCM notification. This does not check the notification length.
 func (d *CMData) MarshalSafe() ([]byte, error) {
 	if len(d.Data) == 0 && len(d.Notification) == 0 {
 		// extremely rare case
@@ -188,6 +189,7 @@ type CMResult struct {
 	Results []map[string]string `json:"results"`
 }
 
+// Name will return the name of the implementing push service (either "gcm" or "fcm")
 func (psb *PushServiceBase) Name() string {
 	return psb.pushServiceName
 }
@@ -503,12 +505,15 @@ func (psb *PushServiceBase) Push(psp *push.PushServiceProvider, dpQueue <-chan *
 	close(resQueue)
 }
 
+// Preview will return the JSON payload that this will push to GCM/FCM for previewing (with a placeholder reg ids)
 func (psb *PushServiceBase) Preview(notif *push.Notification) ([]byte, push.Error) {
 	return psb.ToCMPayload(notif, []string{"placeholderRegId"})
 }
 
+// SetErrorReportChan will set the report chan used for asynchronous feedback that is not associated with a request. (does nothing for cloud messaging)
 func (psb *PushServiceBase) SetErrorReportChan(errChan chan<- push.Error) {
 }
 
+// SetPushServiceConfig is called during initialization to provide the unserialized contents of uniqush.conf. (does nothing for cloud messaging)
 func (psb *PushServiceBase) SetPushServiceConfig(c *push.PushServiceConfig) {
 }

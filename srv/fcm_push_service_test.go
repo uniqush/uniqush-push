@@ -8,7 +8,7 @@ import (
 	"testing"
 
 	"github.com/uniqush/uniqush-push/push"
-	"github.com/uniqush/uniqush-push/test_util"
+	"github.com/uniqush/uniqush-push/testutil"
 )
 
 const (
@@ -196,7 +196,7 @@ func assertExpectedFCMRequest(t *testing.T, request *http.Request, expectedRegID
 		t.Fatalf("Unexpected error reading body: %v", err)
 	}
 	expectedBody := fmt.Sprintf(`{"registration_ids":[%q],"data":%s,"time_to_live":3600}`, expectedRegID, expectedPayload)
-	test_util.ExpectJSONIsEquivalent(t, []byte(expectedBody), actualBodyBytes)
+	testutil.ExpectJSONIsEquivalent(t, []byte(expectedBody), actualBodyBytes)
 }
 
 // Overlaps with TestToFCMPayload, since Preview just calls toFCMPayload.
@@ -222,5 +222,5 @@ func TestFCMPreviewWithCommonParameters(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Encountered error %v\n", err)
 	}
-	test_util.ExpectJSONIsEquivalent(t, []byte(expectedPayload), payload)
+	testutil.ExpectJSONIsEquivalent(t, []byte(expectedPayload), payload)
 }

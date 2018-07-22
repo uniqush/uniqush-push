@@ -21,6 +21,7 @@ import (
 	"encoding/json"
 )
 
+// Notification is an abstraction of the push notification request from a client of uniqush-push.
 type Notification struct {
 	Data map[string]string
 }
