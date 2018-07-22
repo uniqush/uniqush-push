@@ -1,3 +1,4 @@
+// Package util contains miscellaneous utilities that are used throughout uniqush-push.
 package util
 
 import (

@@ -1,3 +1,4 @@
+// Package mocks implements mocks for unit testing APNs and the HTTP/2 API.
 package mocks
 
 import (

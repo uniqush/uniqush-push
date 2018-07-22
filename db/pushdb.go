@@ -15,6 +15,7 @@
  * limitations under the License.
  */
 
+// Package db contains the database implementation for uniqush-push, for managing Push Service Providers, Delivery Points, services, etc. Currently, this only supports redis.
 package db
 
 import (
