@@ -1,5 +1,5 @@
 // Package http_api implements a client for the new APNs HTTP/2 API (over an encrypted HTTP/2 connection to APNs)
-package http_api
+package http_api // nolint: golint
 
 import (
 	"bytes"

@@ -49,7 +49,7 @@ func (r *Result) Error() string {
 }
 
 // PushServiceType instances contain abstractions for working with a single push service type (ADM, APNS, GCM, FCM).
-type PushServiceType interface {
+type PushServiceType interface { // nolint: golint
 
 	// BuildPushServiceProviderFromMap will add generic and service-specific fields to the given PushServiceProvider instances.
 	BuildPushServiceProviderFromMap(map[string]string, *PushServiceProvider) error

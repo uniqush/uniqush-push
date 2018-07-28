@@ -40,6 +40,7 @@ type PushRequestProcessor interface {
 	SetPushServiceConfig(c *push.PushServiceConfig)
 }
 
+// PushRequest contains the data needed for an push attempt to APNS for the given list of delivery points (for both HTTP/2 and binary APIs).
 type PushRequest struct {
 	PSP       *push.PushServiceProvider
 	Devtokens [][]byte
@@ -62,8 +63,13 @@ func (request *PushRequest) GetID(idx int) uint32 {
 	return startID + uint32(idx)
 }
 
+// APNSResult represents the response from the push request to APNs (either from the binary API or HTTP/2)
 type APNSResult struct {
-	MsgID  uint32
+	// MsgID is a unique identifier for the given push attempt to APNs (it is unique within a reasonable time window).
+	// This is used by the binary API to associate asynchronous errors with the push request.
+	MsgID uint32
+	// Status is a status code for the binary API. The HTTP/2 errors are also translated to those status codes.
 	Status uint8
-	Err    push.Error
+	// Err will be handled by the error handler for APNS differently based on the type implementing this interface.
+	Err push.Error
 }

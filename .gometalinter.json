@@ -2,6 +2,7 @@
     "Enable": [
         "deadcode",
         "gofmt",
+        "golint",
         "gotype",
         "gotypex",
         "ineffassign",

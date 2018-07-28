@@ -396,6 +396,7 @@ func (r *PushRedisDB) GetDeliveryPointsNameByServiceSubscriber(srv, sub string) 
 	return ret, nil
 }
 
+// GetPushServiceProviderNameByServiceDeliveryPoint returns the push service provider name of a delivery point belonging to a given service name.
 func (r *PushRedisDB) GetPushServiceProviderNameByServiceDeliveryPoint(srv, dp string) (string, error) {
 	b, err := r.client.Get(ServiceDeliveryPointToPushServiceProviderPrefix + srv + ":" + dp).Result()
 	if err != nil {
@@ -404,6 +405,7 @@ func (r *PushRedisDB) GetPushServiceProviderNameByServiceDeliveryPoint(srv, dp s
 	return b, nil
 }
 
+// AddDeliveryPointToServiceSubscriber will associate the name of the given delivery point with the given service name and subscriber name.
 func (r *PushRedisDB) AddDeliveryPointToServiceSubscriber(srv, sub, dp string) error {
 	i, err := r.client.SAdd(ServiceSubscriberToDeliveryPointsPrefix+srv+":"+sub, dp).Result()
 	if err != nil {
@@ -419,6 +421,7 @@ func (r *PushRedisDB) AddDeliveryPointToServiceSubscriber(srv, sub, dp string) e
 	return nil
 }
 
+// RemoveDeliveryPointFromServiceSubscriber will remove the given delivery point's name from the subscriber of the provided service.
 func (r *PushRedisDB) RemoveDeliveryPointFromServiceSubscriber(srv, sub, dp string) error {
 	j, err := r.client.SRem(ServiceSubscriberToDeliveryPointsPrefix+srv+":"+sub, dp).Result()
 	if err != nil {
@@ -457,6 +460,8 @@ func (r *PushRedisDB) removeMissingDeliveryPointFromServiceSubscriber(service, s
 	}
 }
 
+// SetPushServiceProviderOfServiceDeliveryPoint will set the name of the push service provider
+// to use when sending pushes to the given delivery point of this service name.
 func (r *PushRedisDB) SetPushServiceProviderOfServiceDeliveryPoint(srv, dp, psp string) error {
 	err := r.client.Set(ServiceDeliveryPointToPushServiceProviderPrefix+srv+":"+dp, psp, 0).Err()
 	if err != nil {
@@ -465,6 +470,7 @@ func (r *PushRedisDB) SetPushServiceProviderOfServiceDeliveryPoint(srv, dp, psp 
 	return nil
 }
 
+// RemovePushServiceProviderOfServiceDeliveryPoint is used when removing a push service provider, to clean up the association to the name of the push service provider for the delivery point+service name.
 func (r *PushRedisDB) RemovePushServiceProviderOfServiceDeliveryPoint(srv, dp string) error {
 	err := r.client.Del(ServiceDeliveryPointToPushServiceProviderPrefix + srv + ":" + dp).Err()
 	if err != nil {
@@ -473,6 +479,7 @@ func (r *PushRedisDB) RemovePushServiceProviderOfServiceDeliveryPoint(srv, dp st
 	return err
 }
 
+// GetPushServiceProvidersByService will return a list of the names of push service providers belonging to the given service name
 func (r *PushRedisDB) GetPushServiceProvidersByService(srv string) ([]string, error) {
 	m, err := r.client.SMembers(ServiceToPushServiceProvidersPrefix + srv).Result()
 	if err != nil {
@@ -485,12 +492,14 @@ func (r *PushRedisDB) GetPushServiceProvidersByService(srv string) ([]string, er
 	return ret, nil
 }
 
+// RemovePushServiceProviderFromService will remove the given push service provider from the list of services (and remove the service from the list of services, if this results in the service having 0 subscriptions)
 func (r *PushRedisDB) RemovePushServiceProviderFromService(srv, psp string) error {
 	err := r.client.SRem(ServiceToPushServiceProvidersPrefix+srv, psp).Err()
 	if err != nil {
 		return fmt.Errorf("RemovePSPFromService failed for psp %q of service %q: %v", psp, srv, err)
 	}
-	// Unfortunately, a service name might be associated with multiple push service providers, so the check seems to be needed. (/addpsp allows psps with the same service name but different pushservicetypes, if I understand correctly)
+	// A service name can be associated with multiple push service providers, so we must first check if there are no more push service providers of that type
+	// The API /addpsp allows psps with the same service name but different pushservicetypes (e.g. gcm, apns).
 	exists, err := r.client.Exists(ServiceToPushServiceProvidersPrefix + srv).Result()
 	if err != nil {
 		return fmt.Errorf("Unable to determine if service %q still exists after removing psp %q: %v", srv, psp, err)
@@ -504,6 +513,7 @@ func (r *PushRedisDB) RemovePushServiceProviderFromService(srv, psp string) erro
 	return nil
 }
 
+// AddPushServiceProviderToService will add the push service provider's name to the list of PSPs for this service.
 func (r *PushRedisDB) AddPushServiceProviderToService(srv, psp string) error {
 	// TODO: pipelined
 	err := r.client.SAdd(ServicesSet, srv).Err() // Used to list services in API.
@@ -517,6 +527,7 @@ func (r *PushRedisDB) AddPushServiceProviderToService(srv, psp string) error {
 	return nil
 }
 
+// GetServiceNames will return the list of all services that have 1 or more push service providers.
 func (r *PushRedisDB) GetServiceNames() ([]string, error) {
 	serviceList, err := r.client.SMembers(ServicesSet).Result()
 	if err != nil {
@@ -572,10 +583,14 @@ func (r *PushRedisDB) RebuildServiceSet() error {
 	return nil
 }
 
+// FlushCache will ensure that redis data has been saved to disk.
 func (r *PushRedisDB) FlushCache() error {
+	// TODO: Make this configurable, allow uniqush configs to prevent redis flushes, e.g. if redis backups are set up already.
 	return r.client.Save().Err()
 }
 
+// GetSubscriptions will fetch the subscriptions of the given subscriber belonging to the given service list.
+// If queryServices is empty, then this will fetch subscriptions from all known services.
 func (r *PushRedisDB) GetSubscriptions(queryServices []string, subscriber string, logger log.Logger) ([]map[string]string, error) {
 	if len(queryServices) == 0 {
 		definedServices, err := r.GetServiceNames()
