@@ -1,6 +1,7 @@
 package main
 
 // These are constants with codes for a uniqush response type.
+// nolint: golint
 const (
 	/* Not errors */
 
@@ -35,13 +36,13 @@ const (
 
 // APIResponseDetails is used to represent responses of various APIs. Different APIs use different subsets of fields.
 type APIResponseDetails struct {
-	RequestId           *string `json:"requestId,omitempty"`
+	RequestID           *string `json:"requestId,omitempty"`
 	Service             *string `json:"service,omitempty"`
 	From                *string `json:"from,omitempty"`
 	Subscriber          *string `json:"subscriber,omitempty"`
 	PushServiceProvider *string `json:"pushServiceProvider,omitempty"`
 	DeliveryPoint       *string `json:"deliveryPoint,omitempty"`
-	MessageId           *string `json:"messageId,omitempty"`
+	MessageID           *string `json:"messageId,omitempty"`
 	Code                string  `json:"code"`
 	ErrorMsg            *string `json:"errorMsg,omitempty"`
 	ModifiedDp          bool    `json:"modifiedDp,omitempty"`

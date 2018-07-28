@@ -159,7 +159,7 @@ func (backend *PushBackEnd) fixRetryError(
 	destinationName := err.Destination.Name()
 	if after > 1*time.Minute {
 		logger.Errorf("RequestID=%v Service=%v Subscriber=%v PushServiceProvider=%v DeliveryPoint=%v Failed after retry", reqID, service, sub, providerName, destinationName)
-		handler.AddDetailsToHandler(APIResponseDetails{RequestId: &reqID, From: &remoteAddr, Service: &service, Subscriber: &sub, PushServiceProvider: &providerName, DeliveryPoint: &destinationName, Code: UNIQUSH_ERROR_FAILED_RETRY})
+		handler.AddDetailsToHandler(APIResponseDetails{RequestID: &reqID, From: &remoteAddr, Service: &service, Subscriber: &sub, PushServiceProvider: &providerName, DeliveryPoint: &destinationName, Code: UNIQUSH_ERROR_FAILED_RETRY})
 		return
 	}
 	logger.Infof("RequestID=%v Service=%v Subscriber=%v PushServiceProvider=%v DeliveryPoint=%v Retry after %v", reqID, service, sub, providerName, destinationName, after)
@@ -193,10 +193,10 @@ func (backend *PushBackEnd) fixPushServiceProviderUpdate(
 	pspName := psp.Name()
 	if e != nil {
 		logger.Errorf("RequestID=%v Service=%v PushServiceProvider=%v Update Failed: %v", reqID, service, pspName, e)
-		handler.AddDetailsToHandler(APIResponseDetails{RequestId: &reqID, From: &remoteAddr, Service: &service, PushServiceProvider: &pspName, Code: UNIQUSH_ERROR_UPDATE_PUSH_SERVICE_PROVIDER, ErrorMsg: strPtrOfErr(e)})
+		handler.AddDetailsToHandler(APIResponseDetails{RequestID: &reqID, From: &remoteAddr, Service: &service, PushServiceProvider: &pspName, Code: UNIQUSH_ERROR_UPDATE_PUSH_SERVICE_PROVIDER, ErrorMsg: strPtrOfErr(e)})
 	} else {
 		logger.Infof("RequestID=%v Service=%v PushServiceProvider=%v Update Success", reqID, service, pspName)
-		handler.AddDetailsToHandler(APIResponseDetails{RequestId: &reqID, From: &remoteAddr, Service: &service, PushServiceProvider: &pspName, Code: UNIQUSH_SUCCESS})
+		handler.AddDetailsToHandler(APIResponseDetails{RequestID: &reqID, From: &remoteAddr, Service: &service, PushServiceProvider: &pspName, Code: UNIQUSH_SUCCESS})
 	}
 }
 
@@ -226,10 +226,10 @@ func (backend *PushBackEnd) fixDeliveryPointUpdate(
 	dpName := dp.Name()
 	if e != nil {
 		logger.Errorf("Subscriber=%v DeliveryPoint=%v Update Failed: %v", sub, dpName, e)
-		handler.AddDetailsToHandler(APIResponseDetails{RequestId: &reqID, From: &remoteAddr, Subscriber: &sub, Service: &service, DeliveryPoint: &dpName, Code: UNIQUSH_ERROR_UPDATE_DELIVERY_POINT, ErrorMsg: strPtrOfErr(e)})
+		handler.AddDetailsToHandler(APIResponseDetails{RequestID: &reqID, From: &remoteAddr, Subscriber: &sub, Service: &service, DeliveryPoint: &dpName, Code: UNIQUSH_ERROR_UPDATE_DELIVERY_POINT, ErrorMsg: strPtrOfErr(e)})
 	} else {
 		logger.Infof("Service=%v Subscriber=%v DeliveryPoint=%v Update Success", service, sub, dpName)
-		handler.AddDetailsToHandler(APIResponseDetails{RequestId: &reqID, From: &remoteAddr, Subscriber: &sub, Service: &service, DeliveryPoint: &dpName, Code: UNIQUSH_SUCCESS, ModifiedDp: true})
+		handler.AddDetailsToHandler(APIResponseDetails{RequestID: &reqID, From: &remoteAddr, Subscriber: &sub, Service: &service, DeliveryPoint: &dpName, Code: UNIQUSH_SUCCESS, ModifiedDp: true})
 	}
 }
 
@@ -259,10 +259,10 @@ func (backend *PushBackEnd) fixInvalidRegistrationUpdate(
 	dpName := dp.Name()
 	if e != nil {
 		logger.Errorf("Service=%v Subscriber=%v DeliveryPoint=%v Removing invalid reg failed: %v", service, sub, dpName, e)
-		handler.AddDetailsToHandler(APIResponseDetails{RequestId: &reqID, From: &remoteAddr, Service: &service, Subscriber: &sub, DeliveryPoint: &dpName, Code: UNIQUSH_REMOVE_INVALID_REG, ErrorMsg: strPtrOfErr(e)})
+		handler.AddDetailsToHandler(APIResponseDetails{RequestID: &reqID, From: &remoteAddr, Service: &service, Subscriber: &sub, DeliveryPoint: &dpName, Code: UNIQUSH_REMOVE_INVALID_REG, ErrorMsg: strPtrOfErr(e)})
 	} else {
 		logger.Infof("Service=%v Subscriber=%v DeliveryPoint=%v Invalid registration removed", service, sub, dpName)
-		handler.AddDetailsToHandler(APIResponseDetails{RequestId: &reqID, From: &remoteAddr, Service: &service, Subscriber: &sub, DeliveryPoint: &dpName, Code: UNIQUSH_REMOVE_INVALID_REG})
+		handler.AddDetailsToHandler(APIResponseDetails{RequestID: &reqID, From: &remoteAddr, Service: &service, Subscriber: &sub, DeliveryPoint: &dpName, Code: UNIQUSH_REMOVE_INVALID_REG})
 	}
 }
 
@@ -291,10 +291,10 @@ func (backend *PushBackEnd) fixUnsubscribeUpdate(
 	dpName := dp.Name()
 	if e != nil {
 		logger.Errorf("Service=%v Subscriber=%v DeliveryPoint=%v Unsubscribe failed: %v", service, sub, dpName, e)
-		handler.AddDetailsToHandler(APIResponseDetails{RequestId: &reqID, From: &remoteAddr, Service: &service, Subscriber: &sub, DeliveryPoint: &dpName, Code: UNIQUSH_UPDATE_UNSUBSCRIBE, ErrorMsg: strPtrOfErr(e)})
+		handler.AddDetailsToHandler(APIResponseDetails{RequestID: &reqID, From: &remoteAddr, Service: &service, Subscriber: &sub, DeliveryPoint: &dpName, Code: UNIQUSH_UPDATE_UNSUBSCRIBE, ErrorMsg: strPtrOfErr(e)})
 	} else {
 		logger.Infof("Service=%v Subscriber=%v DeliveryPoint=%v Unsubscribe success", service, sub, dpName)
-		handler.AddDetailsToHandler(APIResponseDetails{RequestId: &reqID, From: &remoteAddr, Service: &service, Subscriber: &sub, DeliveryPoint: &dpName, Code: UNIQUSH_UPDATE_UNSUBSCRIBE})
+		handler.AddDetailsToHandler(APIResponseDetails{RequestID: &reqID, From: &remoteAddr, Service: &service, Subscriber: &sub, DeliveryPoint: &dpName, Code: UNIQUSH_UPDATE_UNSUBSCRIBE})
 	}
 }
 
@@ -331,7 +331,7 @@ func (backend *PushBackEnd) collectResult(
 			if !ok {
 				destinationName := res.Destination.Name()
 				logger.Errorf("RequestID=%v Subscriber=%v DeliveryPoint=%v Bad Delivery Point: No subscriber", reqID, sub, destinationName)
-				handler.AddDetailsToHandler(APIResponseDetails{RequestId: &reqID, From: &remoteAddr, Service: &service, Subscriber: &sub, DeliveryPoint: &destinationName, Code: UNIQUSH_ERROR_BAD_DELIVERY_POINT})
+				handler.AddDetailsToHandler(APIResponseDetails{RequestID: &reqID, From: &remoteAddr, Service: &service, Subscriber: &sub, DeliveryPoint: &destinationName, Code: UNIQUSH_ERROR_BAD_DELIVERY_POINT})
 				continue
 			}
 		}
@@ -346,7 +346,7 @@ func (backend *PushBackEnd) collectResult(
 			pspName := getProviderNameOrUnknown(res.Provider)
 			msgID := res.MsgID
 			logger.Infof("RequestID=%v Service=%v Subscriber=%v PushServiceProvider=%v DeliveryPoint=%v MsgID=%v Success!", reqID, service, subRepr, pspName, dpName, msgID)
-			handler.AddDetailsToHandler(APIResponseDetails{RequestId: &reqID, From: &remoteAddr, Service: &service, Subscriber: &sub, PushServiceProvider: &pspName, DeliveryPoint: &dpName, MessageId: &msgID, Code: UNIQUSH_SUCCESS})
+			handler.AddDetailsToHandler(APIResponseDetails{RequestID: &reqID, From: &remoteAddr, Service: &service, Subscriber: &sub, PushServiceProvider: &pspName, DeliveryPoint: &dpName, MessageID: &msgID, Code: UNIQUSH_SUCCESS})
 			continue
 		}
 		err := backend.fixError(reqID, remoteAddr, res.Err, logger, after, handler)
@@ -354,7 +354,7 @@ func (backend *PushBackEnd) collectResult(
 			dpName := getDeliveryPointNameOrUnknown(res.Destination)
 			pspName := getProviderNameOrUnknown(res.Provider)
 			logger.Errorf("RequestID=%v Service=%v Subscriber=%v PushServiceProvider=%v DeliveryPoint=%v Failed: %v", reqID, service, subRepr, pspName, dpName, err)
-			handler.AddDetailsToHandler(APIResponseDetails{RequestId: &reqID, From: &remoteAddr, Service: &service, Subscriber: &sub, PushServiceProvider: &pspName, DeliveryPoint: &dpName, Code: UNIQUSH_ERROR_GENERIC, ErrorMsg: strPtrOfErr(err)})
+			handler.AddDetailsToHandler(APIResponseDetails{RequestID: &reqID, From: &remoteAddr, Service: &service, Subscriber: &sub, PushServiceProvider: &pspName, DeliveryPoint: &dpName, Code: UNIQUSH_ERROR_GENERIC, ErrorMsg: strPtrOfErr(err)})
 		}
 	}
 }
@@ -447,14 +447,14 @@ func (backend *PushBackEnd) pushImpl(
 			pspDpList, err = backend.db.GetPushServiceProviderDeliveryPointPairs(service, sub, dpNamesRequested)
 			if err != nil {
 				logger.Errorf("RequestID=%v Service=%v Subscriber=%v Failed: Database Error: %v", reqID, service, sub, err)
-				handler.AddDetailsToHandler(APIResponseDetails{RequestId: &reqID, From: &remoteAddr, Service: &service, Subscriber: &sub, Code: UNIQUSH_ERROR_DATABASE, ErrorMsg: strPtrOfErr(err)})
+				handler.AddDetailsToHandler(APIResponseDetails{RequestID: &reqID, From: &remoteAddr, Service: &service, Subscriber: &sub, Code: UNIQUSH_ERROR_DATABASE, ErrorMsg: strPtrOfErr(err)})
 				continue
 			}
 		}
 
 		if len(pspDpList) == 0 {
 			logger.Errorf("RequestID=%v Service=%v Subscriber=%v Failed: No device", reqID, service, sub)
-			handler.AddDetailsToHandler(APIResponseDetails{RequestId: &reqID, From: &remoteAddr, Service: &service, Subscriber: &sub, Code: UNIQUSH_ERROR_NO_DEVICE})
+			handler.AddDetailsToHandler(APIResponseDetails{RequestID: &reqID, From: &remoteAddr, Service: &service, Subscriber: &sub, Code: UNIQUSH_ERROR_NO_DEVICE})
 			continue
 		}
 
@@ -463,12 +463,12 @@ func (backend *PushBackEnd) pushImpl(
 			dp := pair.DeliveryPoint
 			if psp == nil {
 				logger.Errorf("RequestID=%v Service=%v Subscriber=%v Failed once: nil Push Service Provider", reqID, service, sub)
-				handler.AddDetailsToHandler(APIResponseDetails{RequestId: &reqID, From: &remoteAddr, Service: &service, Subscriber: &sub, Code: UNIQUSH_ERROR_NO_PUSH_SERVICE_PROVIDER})
+				handler.AddDetailsToHandler(APIResponseDetails{RequestID: &reqID, From: &remoteAddr, Service: &service, Subscriber: &sub, Code: UNIQUSH_ERROR_NO_PUSH_SERVICE_PROVIDER})
 				continue
 			}
 			if dp == nil {
 				logger.Errorf("RequestID=%v Service=%v Subscriber=%v Failed once: nil Delivery Point", reqID, service, sub)
-				handler.AddDetailsToHandler(APIResponseDetails{RequestId: &reqID, From: &remoteAddr, Service: &service, Subscriber: &sub, Code: UNIQUSH_ERROR_NO_DELIVERY_POINT})
+				handler.AddDetailsToHandler(APIResponseDetails{RequestID: &reqID, From: &remoteAddr, Service: &service, Subscriber: &sub, Code: UNIQUSH_ERROR_NO_DELIVERY_POINT})
 				continue
 			}
 			var dpQueue chan *push.DeliveryPoint

@@ -100,6 +100,7 @@ func (m *PushServiceManager) BuildPushServiceProviderFromMap(kv map[string]strin
 	return
 }
 
+// BuildPushServiceProviderFromBytes will unserialize the passed in push service name+JSON (e.g. "apns:{...}") into a push service provider, or return an error.
 func (m *PushServiceManager) BuildPushServiceProviderFromBytes(value []byte) (psp *PushServiceProvider, err error) {
 	s := string(value)
 	parts := strings.SplitN(s, ":", 2)
@@ -149,6 +150,7 @@ func (m *PushServiceManager) BuildDeliveryPointFromMap(kv map[string]string) (*D
 	return dp, nil
 }
 
+// BuildDeliveryPointFromBytes will unserialize the passed in push service name+JSON (e.g. "apns:{...}") into a delivery point, or return an error.
 func (m *PushServiceManager) BuildDeliveryPointFromBytes(value []byte) (*DeliveryPoint, error) {
 	s := string(value)
 	parts := strings.SplitN(s, ":", 2)
@@ -171,6 +173,7 @@ func (m *PushServiceManager) BuildDeliveryPointFromBytes(value []byte) (*Deliver
 	return dp, nil
 }
 
+// Push will send a push to each delivery point received over the channel dpQueue, and send success/error responses over resQueue.
 func (m *PushServiceManager) Push(psp *PushServiceProvider, dpQueue <-chan *DeliveryPoint, resQueue chan<- *Result, notif *Notification) {
 	wg := new(sync.WaitGroup)
 
@@ -193,6 +196,7 @@ func (m *PushServiceManager) Push(psp *PushServiceProvider, dpQueue <-chan *Deli
 	wg.Wait()
 }
 
+// Preview will return the bytes of the serialized payload that will be sent to an external service for the given uniqush API parameters in 'notif' (adding placeholders where needed).
 func (m *PushServiceManager) Preview(pushServiceType string, notif *Notification) ([]byte, Error) {
 	if pst, ok := m.serviceTypes[pushServiceType]; ok && pst != nil {
 		return pst.pst.Preview(notif)

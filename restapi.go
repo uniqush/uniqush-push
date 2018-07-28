@@ -92,7 +92,7 @@ var validSubscriberPattern = regexp.MustCompile(`^[a-zA-Z.0-9_@-\[\]^\\\\-]+$`)
 func validateSubscribers(subs []string) error {
 	for _, sub := range subs {
 		if !validSubscriberPattern.MatchString(sub) {
-			return fmt.Errorf("invalid subscriber name: %q. Accepted characters: a-z, A-Z, 0-9, -, _, @ or .", sub)
+			return fmt.Errorf("invalid subscriber name: %q. Accepted characters: a-z, A-Z, 0-9, -, _, @ or .", sub) // nolint: golint
 		}
 	}
 	return nil
@@ -100,7 +100,7 @@ func validateSubscribers(subs []string) error {
 
 func validateService(service string) error {
 	if !validServicePattern.MatchString(service) {
-		return fmt.Errorf("invalid service name: %q. Accepted characters: a-z, A-Z, 0-9, -, _, @ or .", service)
+		return fmt.Errorf("invalid service name: %q. Accepted characters: a-z, A-Z, 0-9, -, _, @ or .", service) // nolint: golint
 	}
 	return nil
 }
@@ -259,8 +259,8 @@ func (api *RestAPI) buildNotificationFromKV(reqID string, kv map[string]string, 
 	}
 
 	if notif.IsEmpty() {
-		logger.Errorf("RequestId=%v From=%v Service=%v NrSubscribers=%v Subscribers=\"%+v\" EmptyNotification", reqID, remoteAddr, service, len(subs), subs)
-		details = &APIResponseDetails{RequestId: &reqID, From: &remoteAddr, Service: &service, Code: UNIQUSH_ERROR_EMPTY_NOTIFICATION}
+		logger.Errorf("RequestID=%v From=%v Service=%v NrSubscribers=%v Subscribers=\"%+v\" EmptyNotification", reqID, remoteAddr, service, len(subs), subs)
+		details = &APIResponseDetails{RequestID: &reqID, From: &remoteAddr, Service: &service, Code: UNIQUSH_ERROR_EMPTY_NOTIFICATION}
 		return nil, details, errors.New("empty notification")
 	}
 	return notif, nil, nil
@@ -269,30 +269,30 @@ func (api *RestAPI) buildNotificationFromKV(reqID string, kv map[string]string, 
 func (api *RestAPI) pushNotification(reqID string, kv map[string]string, perdp map[string][]string, logger log.Logger, remoteAddr string, handler APIResponseHandler) {
 	service, err := getServiceFromMap(kv)
 	if err != nil {
-		logger.Errorf("RequestId=%v From=%v Cannot get service name: %v; %v", reqID, remoteAddr, service, err)
-		handler.AddDetailsToHandler(APIResponseDetails{RequestId: &reqID, From: &remoteAddr, Service: &service, Code: UNIQUSH_ERROR_CANNOT_GET_SERVICE})
+		logger.Errorf("RequestID=%v From=%v Cannot get service name: %v; %v", reqID, remoteAddr, service, err)
+		handler.AddDetailsToHandler(APIResponseDetails{RequestID: &reqID, From: &remoteAddr, Service: &service, Code: UNIQUSH_ERROR_CANNOT_GET_SERVICE})
 		return
 	}
 	subs, err := getSubscribersFromMap(kv, false)
 	if err != nil {
-		logger.Errorf("RequestId=%v From=%v Service=%v Cannot get subscriber: %v", reqID, remoteAddr, service, err)
-		handler.AddDetailsToHandler(APIResponseDetails{RequestId: &reqID, From: &remoteAddr, Service: &service, Code: UNIQUSH_ERROR_CANNOT_GET_SUBSCRIBER})
+		logger.Errorf("RequestID=%v From=%v Service=%v Cannot get subscriber: %v", reqID, remoteAddr, service, err)
+		handler.AddDetailsToHandler(APIResponseDetails{RequestID: &reqID, From: &remoteAddr, Service: &service, Code: UNIQUSH_ERROR_CANNOT_GET_SUBSCRIBER})
 		return
 	}
 	if len(subs) == 0 {
-		logger.Errorf("RequestId=%v From=%v Service=%v NoSubscriber", reqID, remoteAddr, service)
-		handler.AddDetailsToHandler(APIResponseDetails{RequestId: &reqID, From: &remoteAddr, Service: &service, Code: UNIQUSH_ERROR_NO_SUBSCRIBER})
+		logger.Errorf("RequestID=%v From=%v Service=%v NoSubscriber", reqID, remoteAddr, service)
+		handler.AddDetailsToHandler(APIResponseDetails{RequestID: &reqID, From: &remoteAddr, Service: &service, Code: UNIQUSH_ERROR_NO_SUBSCRIBER})
 		return
 	}
 	dpIds, err := getDeliveryPointIdsFromMap(kv)
 	if err != nil {
-		logger.Errorf("RequestId=%v From=%v Service=%v Cannot get delivery point ids: %v", reqID, remoteAddr, service, err)
-		handler.AddDetailsToHandler(APIResponseDetails{RequestId: &reqID, From: &remoteAddr, Service: &service, Code: UNIQUSH_ERROR_CANNOT_GET_DELIVERY_POINT_ID})
+		logger.Errorf("RequestID=%v From=%v Service=%v Cannot get delivery point ids: %v", reqID, remoteAddr, service, err)
+		handler.AddDetailsToHandler(APIResponseDetails{RequestID: &reqID, From: &remoteAddr, Service: &service, Code: UNIQUSH_ERROR_CANNOT_GET_DELIVERY_POINT_ID})
 		return
 	}
 	if len(subs) == 0 {
-		logger.Errorf("RequestId=%v From=%v Service=%v NoSubscriber", reqID, remoteAddr, service)
-		handler.AddDetailsToHandler(APIResponseDetails{RequestId: &reqID, From: &remoteAddr, Service: &service, Code: UNIQUSH_ERROR_NO_SUBSCRIBER})
+		logger.Errorf("RequestID=%v From=%v Service=%v NoSubscriber", reqID, remoteAddr, service)
+		handler.AddDetailsToHandler(APIResponseDetails{RequestID: &reqID, From: &remoteAddr, Service: &service, Code: UNIQUSH_ERROR_NO_SUBSCRIBER})
 		return
 	}
 
@@ -302,7 +302,7 @@ func (api *RestAPI) pushNotification(reqID string, kv map[string]string, perdp m
 		return
 	}
 
-	logger.Infof("RequestId=%v From=%v Service=%v NrSubscribers=%v Subscribers=\"%+v\"", reqID, remoteAddr, service, len(subs), subs)
+	logger.Infof("RequestID=%v From=%v Service=%v NrSubscribers=%v Subscribers=\"%+v\"", reqID, remoteAddr, service, len(subs), subs)
 
 	api.backend.Push(reqID, remoteAddr, service, subs, dpIds, notif, perdp, logger, handler)
 }

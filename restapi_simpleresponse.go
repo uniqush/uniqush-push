@@ -21,6 +21,7 @@ type APISimpleResponseHandler struct {
 
 var _ APIResponseHandler = &APISimpleResponseHandler{}
 
+// APISimpleResponse serializes an API response containing a single response details object.
 type APISimpleResponse struct {
 	Type    string             `json:"type"`
 	Date    int64              `json:"date"`

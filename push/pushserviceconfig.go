@@ -3,13 +3,13 @@ package push
 import "errors"
 import "github.com/uniqush/goconf/conf"
 
-// PushServiceConfig accesses the section 'name' of the given ConfigFile
-type PushServiceConfig struct {
+// PushServiceConfig accesses the section for 'name' of the given ConfigFile.
+type PushServiceConfig struct { // nolint: golint
 	c    *conf.ConfigFile
 	name string
 }
 
-// NewPushServiceConfig returns an accessor for the given section 'name' of the unserialized config file
+// NewPushServiceConfig returns an accessor for the given section name of the unserialized config file (for the push service with that name, e.g. "apns").
 func NewPushServiceConfig(c *conf.ConfigFile, name string) *PushServiceConfig {
 	return &PushServiceConfig{
 		c:    c,

@@ -363,7 +363,7 @@ func (psb *PushServiceBase) multicast(psp *push.PushServiceProvider, dpList []*p
 		}
 		return
 	case 401:
-		err := push.NewBadPushServiceProvider(psp)
+		err := push.NewBadPushServiceProviderWithDetails(psp, fmt.Sprintf("push service credentials rejected by %s", psb.initialism))
 		res := new(push.Result)
 		res.Provider = psp
 		res.Content = notif
@@ -371,7 +371,7 @@ func (psb *PushServiceBase) multicast(psp *push.PushServiceProvider, dpList []*p
 		resQueue <- res
 		return
 	case 400:
-		err := push.NewBadNotification()
+		err := push.NewBadNotificationWithDetails(fmt.Sprintf("push notification payload rejected by %s", psb.initialism))
 		res := new(push.Result)
 		res.Provider = psp
 		res.Content = notif
@@ -488,7 +488,7 @@ func (psb *PushServiceBase) Push(psp *push.PushServiceProvider, dpQueue <-chan *
 			res.Provider = psp
 			res.Destination = dp
 			res.Content = notif
-			res.Err = push.NewBadDeliveryPoint(dp)
+			res.Err = push.NewBadDeliveryPointWithDetails(dp, fmt.Sprintf("uniqush delivery point for %s is missing regid", psb.initialism))
 			resQueue <- res
 			continue
 		}

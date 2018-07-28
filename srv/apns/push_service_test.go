@@ -450,10 +450,10 @@ func TestBuildPushServiceProviderFromMapExtraData(t *testing.T) {
 		"service":             "mockservice",
 		"subscriber":          "mocksubscriber",
 		"devtoken":            "303f3f3f",
-		push.DEVICE_ID:        "ADEVICE11",
-		push.APP_VERSION:      "5.3.1",
-		push.LOCALE:           "fr_FR",
-		push.SUBSCRIBE_DATE:   "1234567890",
+		push.DeviceID:         "ADEVICE11",
+		push.AppVersion:       "5.3.1",
+		push.Locale:           "fr_FR",
+		push.SubscribeDate:    "1234567890",
 		"invalidIgnoredField": "SOMETHING", // For compatibility with other versions, this should ignore DeliveryPoint fields that aren't implemented.
 	})
 	if err != nil {
@@ -465,10 +465,10 @@ func TestBuildPushServiceProviderFromMapExtraData(t *testing.T) {
 		"devtoken":   "303f3f3f",
 	}
 	expectedVolatileData := map[string]string{
-		push.DEVICE_ID:      "ADEVICE11",
-		push.APP_VERSION:    "5.3.1",
-		push.LOCALE:         "fr_FR",
-		push.SUBSCRIBE_DATE: "1234567890",
+		push.DeviceID:      "ADEVICE11",
+		push.AppVersion:    "5.3.1",
+		push.Locale:        "fr_FR",
+		push.SubscribeDate: "1234567890",
 	}
 	expectMapEquals(t, expectedFixedData, dp.FixedData, "dp.FixedData")
 	expectMapEquals(t, expectedVolatileData, dp.VolatileData, "dp.VolatileData")
