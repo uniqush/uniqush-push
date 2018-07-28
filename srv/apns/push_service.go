@@ -61,7 +61,7 @@ type pushService struct {
 var _ push.PushServiceType = &pushService{}
 
 // NewPushService creates a new APNS push service.
-func NewPushService() *pushService {
+func NewPushService() push.PushServiceType {
 	return &pushService{
 		binaryRequestProcessor: binary_api.NewRequestProcessor(maxNrConn),
 		httpRequestProcessor:   http_api.NewRequestProcessor(),

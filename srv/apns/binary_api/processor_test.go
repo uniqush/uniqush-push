@@ -1,4 +1,4 @@
-package binary_api
+package binary_api // nolint:golint
 
 import (
 	"net"

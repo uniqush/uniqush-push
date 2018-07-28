@@ -17,7 +17,7 @@
  */
 
 // Package binary_api implements a client for the old APNs binary protocol (over an encrypted TCP socket)
-package binary_api
+package binary_api // nolint: golint
 
 import (
 	"bytes"
@@ -60,6 +60,7 @@ type BinaryPushRequestProcessor struct {
 
 var _ common.PushRequestProcessor = &BinaryPushRequestProcessor{}
 
+// NewRequestProcessor will instantiate a worker pool for processing push attempts, with a total of poolSize workers, each maintaining at most one active encrypted TCP connection to APNs at a time.
 func NewRequestProcessor(poolSize int) *BinaryPushRequestProcessor {
 	ret := &BinaryPushRequestProcessor{
 		reqChan: make(chan *common.PushRequest),
@@ -77,6 +78,7 @@ func NewRequestProcessor(poolSize int) *BinaryPushRequestProcessor {
 	return ret
 }
 
+// Finalize will stop all workers, and return once all workers are finished and all resources used by this BinaryPushRequestProcessor are freed.
 func (prp *BinaryPushRequestProcessor) Finalize() {
 	prp.reqLock.Lock()
 	wasFinished := prp.finished
@@ -90,16 +92,20 @@ func (prp *BinaryPushRequestProcessor) Finalize() {
 	prp.wgFinalize.Wait()
 }
 
+// GetMaxPayloadSize returns 2048 (2 kilobytes), the largest payload size supported by the APNs binary provider API.
 func (prp *BinaryPushRequestProcessor) GetMaxPayloadSize() int {
 	// https://developer.apple.com/library/archive/documentation/NetworkingInternet/Conceptual/RemoteNotificationsPG/BinaryProviderAPI.html#//apple_ref/doc/uid/TP40008194-CH13-SW1
 	// > Variable length, less than or equal to 2 kilobytes
 	return 2048
 }
 
+// SetErrorReportChan returns a channel to use for asynchronously reporting PushError to be handled by the backend (e.g. changes to delivery point credentials, etc.)
 func (prp *BinaryPushRequestProcessor) SetErrorReportChan(errChan chan<- push.Error) {
 	prp.errChan = errChan
 }
 
+// SetPushServiceConfig passes in the contents of the "apns" section the config file.
+// This is called before attempting to send pushes.
 func (prp *BinaryPushRequestProcessor) SetPushServiceConfig(c *push.PushServiceConfig) {
 	// This uses the fact that registration takes place before any requests are sent, so pools aren't created yet.
 
@@ -111,6 +117,7 @@ func (prp *BinaryPushRequestProcessor) SetPushServiceConfig(c *push.PushServiceC
 	}
 }
 
+// AddRequest will asynchronously send the requested pushes to the external push service.
 func (prp *BinaryPushRequestProcessor) AddRequest(req *common.PushRequest) {
 	prp.reqLock.RLock()
 	defer prp.reqLock.RUnlock()

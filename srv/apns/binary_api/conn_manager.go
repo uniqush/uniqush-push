@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-package binary_api
+package binary_api // nolint: golint
 
 // This file contains a connection manager, which creates new connections to apns based on a config.
 // The connections allow writing raw bytes to apns. The responses from Apple are parsed by a goroutine and added to a channel.

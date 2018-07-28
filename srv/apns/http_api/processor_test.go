@@ -1,4 +1,4 @@
-package http_api
+package http_api // nolint: golint
 
 import (
 	"bytes"

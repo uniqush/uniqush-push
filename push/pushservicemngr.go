@@ -26,11 +26,13 @@ import (
 	"github.com/uniqush/goconf/conf"
 )
 
+// serviceType encapsulates the objects associated with the name of a push service type.
 type serviceType struct {
 	pst PushServiceType
 }
 
-type PushServiceManager struct {
+// PushServiceManager is a singleton which stores all of the push service implementations.
+type PushServiceManager struct { // nolint: golint
 	serviceTypes map[string]*serviceType
 	errChan      chan<- Error
 	configFile   *conf.ConfigFile
@@ -48,6 +50,7 @@ func newPushServiceManager() *PushServiceManager {
 	return ret
 }
 
+// GetPushServiceManager will return the singleton push service manager, instantiating it if this is the first time this method is called.
 func GetPushServiceManager() *PushServiceManager {
 	once.Do(func() {
 		pushServiceManager = newPushServiceManager()
@@ -55,10 +58,13 @@ func GetPushServiceManager() *PushServiceManager {
 	return pushServiceManager
 }
 
+// ClearAllPushServiceTypesForUnitTest will clear the registered push service types of this singleton. This is only public for unit testing purposes.
 func (m *PushServiceManager) ClearAllPushServiceTypesForUnitTest() {
 	m.serviceTypes = make(map[string]*serviceType, 5)
 }
 
+// RegisterPushServiceType is called during initialization to register a given push service type, and will record the push service type in this singleton.
+// RegisterPushServiceType will set the configuration for that type and the global error reporting channel.
 func (m *PushServiceManager) RegisterPushServiceType(pt PushServiceType) error {
 	name := pt.Name()
 	pair := new(serviceType)
@@ -76,6 +82,7 @@ func (m *PushServiceManager) RegisterPushServiceType(pt PushServiceType) error {
 	return nil
 }
 
+// BuildPushServiceProviderFromMap will build a push service provider from provided the map of key-value pairs. (Some fields are globally required, and others are specific to the push service type)
 func (m *PushServiceManager) BuildPushServiceProviderFromMap(kv map[string]string) (psp *PushServiceProvider, err error) {
 	pushServiceType, ok := kv["pushservicetype"]
 	if !ok {
@@ -128,6 +135,7 @@ func (m *PushServiceManager) BuildPushServiceProviderFromBytes(value []byte) (ps
 	return
 }
 
+// BuildDeliveryPointFromMap will build a delivery point from the given key-value pairs (some fields are globally required, other fields are required by the push service type)
 func (m *PushServiceManager) BuildDeliveryPointFromMap(kv map[string]string) (*DeliveryPoint, error) {
 	pushServiceType, ok := kv["pushservicetype"]
 	if !ok {
@@ -204,6 +212,8 @@ func (m *PushServiceManager) Preview(pushServiceType string, notif *Notification
 	return nil, NewErrorf("No push service type %q", pushServiceType)
 }
 
+// SetErrorReportChan will set the global error report chan used by all registered push service types.
+// This must be called after all push service types are registered.
 func (m *PushServiceManager) SetErrorReportChan(errChan chan<- Error) {
 	m.errChan = errChan
 	for _, t := range m.serviceTypes {
@@ -211,6 +221,8 @@ func (m *PushServiceManager) SetErrorReportChan(errChan chan<- Error) {
 	}
 }
 
+// SetConfigFile will pass in the corresponding configuration sections of the given ConfigFile to each push service type.
+// This must be called after all push service types are registered.
 func (m *PushServiceManager) SetConfigFile(c *conf.ConfigFile) {
 	m.configFile = c
 	for _, t := range m.serviceTypes {
@@ -218,7 +230,9 @@ func (m *PushServiceManager) SetConfigFile(c *conf.ConfigFile) {
 	}
 }
 
+// Finalize will finalize each of the push service types before shutting down.
 func (m *PushServiceManager) Finalize() {
+	// TODO: Could use a WaitGroup to do this in parallel, but that isn't high priority.
 	for _, t := range m.serviceTypes {
 		t.pst.Finalize()
 	}

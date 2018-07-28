@@ -1,4 +1,4 @@
-package binary_api
+package binary_api // nolint: golint
 
 // Worker pool implementation for apns.
 import (
@@ -9,6 +9,8 @@ import (
 	"time"
 )
 
+// CloseTimeout is the timeout for closing inactive APNs binary API (encrypted TCP) connections.
+// If the last push attempt exceeds this timeout, then we close the connection and open a new one before attempting a push.
 const CloseTimeout = time.Hour
 
 // PermanentError is returned by a worker because of an error that can't be fixed at the moment (e.g. a connection couldn't be established)

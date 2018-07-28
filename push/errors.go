@@ -60,7 +60,7 @@ func NewInfo(msg string) *InfoReport {
 	return &InfoReport{info: msg}
 }
 
-// NewInfo returns an InfoReport for the given format string and arguments to be reported to the user (with a severity of 'info')
+// NewInfof returns an InfoReport for the given format string and arguments to be reported to the user (with a severity of 'info')
 func NewInfof(f string, v ...interface{}) *InfoReport {
 	return &InfoReport{info: fmt.Sprintf(f, v...)}
 }
@@ -80,7 +80,7 @@ func NewError(msg string) *ErrorReport {
 	return &ErrorReport{msg: msg}
 }
 
-// NewError returns an ErrorReport for the given format string and arguments to be reported to the user (with a severity of 'error')
+// NewErrorf returns an ErrorReport for the given format string and arguments to be reported to the user (with a severity of 'error')
 func NewErrorf(f string, v ...interface{}) *ErrorReport {
 	return &ErrorReport{msg: fmt.Sprintf(f, v...)}
 }

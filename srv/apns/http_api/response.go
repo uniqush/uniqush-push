@@ -1,4 +1,4 @@
-package http_api
+package http_api // nolint: golint
 
 // APNSErrorResponse is struct to represent JSON data returned by APNS HTTP API
 // if push request is not successful
