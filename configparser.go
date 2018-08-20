@@ -169,6 +169,12 @@ func LoadLoggers(c *conf.ConfigFile) ([]log.Logger, error) {
 		logfile, err = os.OpenFile(logfilename, os.O_WRONLY|os.O_APPEND|os.O_CREATE, 0600)
 		if err != nil {
 			logfile = os.Stderr
+			fmt.Fprintf(
+				logfile,
+				"Failed to open the configured logfile %q (err=%q). uniqush-push will write all logs to stderr instead...\n",
+				logfilename,
+				err,
+			)
 		}
 	} else {
 		logfile = os.Stderr
