@@ -26,7 +26,7 @@ func TestToFCMPayloadWithRawPayload(t *testing.T) {
 	postData := map[string]string{
 		"msggroup":            "somegroup",
 		"uniqush.payload.fcm": `{"message":{"key": {},"x":"y"},"other":{}}`,
-		"foo": "bar",
+		"foo":                 "bar",
 	}
 	regIds := []string{"CAFE1-FF", "42-607"}
 	expectedPayload := `{"registration_ids":["CAFE1-FF","42-607"],"collapse_key":"somegroup","time_to_live":3600,"data":{"message":{"key":{},"x":"y"},"other":{}}}`
@@ -47,7 +47,7 @@ func TestToFCMPayloadWithRawUnescapedPayload(t *testing.T) {
 	postData := map[string]string{
 		"msggroup":            "somegroup",
 		"uniqush.payload.fcm": `{"message":{"key": {},"x":"<a☃?>\"'"},"other":{}}`,
-		"foo": "bar",
+		"foo":                 "bar",
 	}
 	regIds := []string{"CAFE1-FF", "42-607"}
 	expectedPayload := `{"registration_ids":["CAFE1-FF","42-607"],"collapse_key":"somegroup","time_to_live":3600,"data":{"message":{"key":{},"x":"<a☃?>\"'"},"other":{}}}`

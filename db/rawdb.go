@@ -46,7 +46,7 @@ import (
 //
 
 // Danger: writing wrong data may leads to inconsistent
-type pushRawDatabaseWriter interface {
+type pushRawDatabaseWriter interface { // nolint: megacheck
 	// SetDeliveryPoint serializes the delivery point, and saves the serialized delivery point based on its name.
 	SetDeliveryPoint(dp *push.DeliveryPoint) error
 	SetPushServiceProvider(psp *push.PushServiceProvider) error
@@ -66,7 +66,7 @@ type pushRawDatabaseWriter interface {
 }
 
 // These methods should be fast!
-type pushRawDatabaseReader interface {
+type pushRawDatabaseReader interface { // nolint: megacheck
 	GetDeliveryPoint(name string) (*push.DeliveryPoint, error)
 	GetPushServiceProvider(name string) (*push.PushServiceProvider, error)
 	GetServiceNames() ([]string, error)

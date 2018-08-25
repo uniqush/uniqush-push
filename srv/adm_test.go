@@ -37,7 +37,7 @@ func TestADMNotifToMessageWithRawPayload(t *testing.T) {
 func TestADMNotifToMessageWithRawPayloadAndTTL(t *testing.T) {
 	postData := map[string]string{
 		"uniqush.payload.adm": `{"foo":"bar"}`,
-		"ttl": "100",
+		"ttl":                 "100",
 	}
 	expectedPayload := `{"data":{"foo":"bar"},"expiresAfter":100}`
 	testADMNotifToMessage(t, postData, expectedPayload)
