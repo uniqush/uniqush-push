@@ -27,7 +27,7 @@ func TestToGCMPayloadWithRawPayload(t *testing.T) {
 	postData := map[string]string{
 		"msggroup":            "somegroup",
 		"uniqush.payload.gcm": `{"message":{"key": {},"x":"y"},"other":{}}`,
-		"foo": "bar", // ignored
+		"foo":                 "bar", // ignored
 	}
 	regIds := []string{"CAFE1-FF", "42-607"}
 	expectedPayload := `{"registration_ids":["CAFE1-FF","42-607"],"collapse_key":"somegroup","time_to_live":3600,"data":{"message":{"key":{},"x":"y"},"other":{}}}`
@@ -48,7 +48,7 @@ func TestToGCMPayloadWithRawUnescapedPayload(t *testing.T) {
 	postData := map[string]string{
 		"msggroup":            "somegroup",
 		"uniqush.payload.gcm": `{"message":{"key": {},"x":"<a☃?>\"'"},"other":{}}`,
-		"foo": "bar",
+		"foo":                 "bar",
 	}
 	regIds := []string{"CAFE1-FF", "42-607"}
 	expectedPayload := `{"registration_ids":["CAFE1-FF","42-607"],"collapse_key":"somegroup","time_to_live":3600,"data":{"message":{"key":{},"x":"<a☃?>\"'"},"other":{}}}`
@@ -59,7 +59,7 @@ func TestToGCMPayloadWithCommonParameters(t *testing.T) {
 	postData := map[string]string{
 		"msggroup":            "somegroup",
 		"uniqush.payload.gcm": `{"message":{"key": {},"x":"<a☃?>\"'"},"other":{}}`,
-		"foo": "bar",
+		"foo":                 "bar",
 	}
 	regIds := []string{"CAFE1-FF", "42-607"}
 	expectedPayload := `{"registration_ids":["CAFE1-FF","42-607"],"collapse_key":"somegroup","time_to_live":3600,"data":{"message":{"key":{},"x":"<a☃?>\"'"},"other":{}}}`
