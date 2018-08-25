@@ -12,7 +12,7 @@ services:
 
 # Compile with go 1.10 (or newer). It takes a long time to install `tip`
 go:
-  - 1.10.x
+  - 1.11.x
 
 # Only compute the build status for PRs in travis
 branches:
