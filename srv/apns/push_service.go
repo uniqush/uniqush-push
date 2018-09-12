@@ -336,7 +336,7 @@ func (ps *pushService) Push(psp *push.PushServiceProvider, dpQueue <-chan *push.
 	requestProcessor.AddRequest(req)
 
 	// errChan closed means the message(s) is/are sent successfully to the APNs.
-	// However, we may have not yet receieved responses from APNS - those are sent on resChan
+	// However, we may have not yet received responses from APNS - those are sent on resChan
 	for err = range errChan {
 		res := new(push.Result)
 		res.Provider = psp
@@ -368,7 +368,7 @@ func (ps *pushService) Push(psp *push.PushServiceProvider, dpQueue <-chan *push.
 		}
 	}
 
-	// Wait for the unserialized responses from APNS asyncronously - these will not affect what we send our clients for this request, but will affect subsequent requests.
+	// Wait for the unserialized responses from APNS asynchronously - these will not affect what we send our clients for this request, but will affect subsequent requests.
 	// TODO: With HTTP/2, this can be refactored to become synchronous (not in this PR, not while binary provider is supported for a PSP). The map[string]T can be removed.
 	go ps.waitResults(psp, dpList, lastID, resChan)
 }
