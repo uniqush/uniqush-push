@@ -23,7 +23,7 @@ import (
 
 // PushRequestProcessor abstracts the different network protocols Apple has for sending push notifications.
 type PushRequestProcessor interface {
-	// AddRequest adds a push request, and asyncronously processes it.
+	// AddRequest adds a push request, and asynchronously processes it.
 	// The APNSRequestProcessor will first add errors it encountered sending to add responses and errors to the respective channels and close channels.
 	AddRequest(request *PushRequest)
 
