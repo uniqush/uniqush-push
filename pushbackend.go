@@ -487,7 +487,7 @@ func (backend *PushBackEnd) pushImpl(
 					}
 					dpidx++
 				}
-				// Make the pushservicemanager send to (each delivery point of) the PSP asyncronously
+				// Make the pushservicemanager send to (each delivery point of) the PSP asynchronously
 				go func() {
 					backend.psm.Push(psp, dpQueue, resChan, note)
 					wg.Done()
