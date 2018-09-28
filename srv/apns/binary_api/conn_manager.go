@@ -31,7 +31,7 @@ import (
 	"github.com/uniqush/uniqush-push/srv/apns/common"
 )
 
-// ConnManager abstracts creating TLS sockets to send push payloads to APNS.
+// ConnManager abstracts creating TLS sockets to send push payloads to APNs.
 type ConnManager interface {
 	// Used to create a new connection.
 	// It will be called if a worker needs to open a different connection
@@ -113,7 +113,7 @@ func (cm *connManagerImpl) NewConn() (net.Conn, <-chan bool, error) {
 	return tlsconn, closed, nil
 }
 
-// resultCollector processes the 6-byte APNS responses for each of our push notifications.
+// resultCollector processes the 6-byte APNs responses for each of our push notifications.
 // One resultCollector goroutine is automatically created for each connection established by NewConn (used by worker pools)
 // Visible for testing.
 func resultCollector(resChan chan<- *common.APNSResult, c io.ReadCloser, closed chan<- bool) {
@@ -133,7 +133,7 @@ func resultCollector(resChan chan<- *common.APNSResult, c io.ReadCloser, closed 
 			buf[i] = 0
 		}
 
-		// Read 6 bytes of data from APNS response.
+		// Read 6 bytes of data from APNs response.
 		_, err := io.ReadFull(c, buf)
 		if err != nil {
 			if nerr, ok := err.(net.Error); ok && nerr.Timeout() {
@@ -177,7 +177,7 @@ func resultCollector(resChan chan<- *common.APNSResult, c io.ReadCloser, closed 
 		res.Status = status
 		// Send this response to the connection manager, which will translate it to a result/error structure associated with the Push,
 		// and send that to the pushbackend.
-		// Because APNS pushes don't wait for APNS to respond with bytes, this won't be part of the uniqush response, but will be used to update the DB.
+		// Because APNs pushes don't wait for APNs to respond with bytes, this won't be part of the uniqush response, but will be used to update the DB.
 		resChan <- res
 
 		// A status code of 10 indicates that the APNs server closed the connection.

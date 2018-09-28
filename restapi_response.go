@@ -48,7 +48,7 @@ type APIResponseDetails struct {
 	ModifiedDp          bool    `json:"modifiedDp,omitempty"`
 }
 
-// PreviewAPIResponseDetails respresents the response of /preview. It contains a representation of the payload that would be sent to externalpush services
+// PreviewAPIResponseDetails represents the response of /preview. It contains a representation of the payload that would be sent to external push services
 type PreviewAPIResponseDetails struct {
 	Code     string      `json:"code"`
 	Payload  interface{} `json:"payload,omitempty"`

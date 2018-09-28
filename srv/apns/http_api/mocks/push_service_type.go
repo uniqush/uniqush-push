@@ -12,7 +12,7 @@ type MockPushServiceType struct{}
 
 var _ push.PushServiceType = &MockPushServiceType{}
 
-// BuildPushServiceProviderFromMap unserializes a push service provider from kv, for this mock of the APNS push service type.
+// BuildPushServiceProviderFromMap unserializes a push service provider from kv, for this mock of the APNs push service type.
 func (pst *MockPushServiceType) BuildPushServiceProviderFromMap(kv map[string]string, psp *push.PushServiceProvider) error {
 	for key, value := range kv {
 		switch key {

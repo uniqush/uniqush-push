@@ -79,7 +79,7 @@ func newPushServiceWithErrorChannel(status uint8) (*pushService, *MockPushReques
 func commonAPNSMocks(status uint8) (*push.PushServiceProvider, *MockPushRequestProcessor, *pushService, chan push.Error) {
 	service, mockRequestProcessor, errChan := newPushServiceWithErrorChannel(status)
 
-	// Overwrite the APNS service.
+	// Overwrite the APNs service.
 	psm := push.GetPushServiceManager()
 	psm.RegisterPushServiceType(service)
 
@@ -415,7 +415,7 @@ func expectMapEquals(t *testing.T, expected map[string]string, actual map[string
 func TestBuildPushServiceProviderFromMap(t *testing.T) {
 	service, _, _ := newPushServiceWithErrorChannel(APNSSuccess)
 
-	// Overwrite the APNS service.
+	// Overwrite the APNs service.
 	psm := push.GetPushServiceManager()
 	psm.RegisterPushServiceType(service)
 
@@ -441,7 +441,7 @@ func TestBuildPushServiceProviderFromMap(t *testing.T) {
 func TestBuildPushServiceProviderFromMapExtraData(t *testing.T) {
 	service, _, _ := newPushServiceWithErrorChannel(APNSSuccess)
 
-	// Overwrite the APNS service.
+	// Overwrite the APNs service.
 	psm := push.GetPushServiceManager()
 	psm.RegisterPushServiceType(service)
 

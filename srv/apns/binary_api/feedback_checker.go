@@ -129,7 +129,7 @@ func processFeedback(psp *push.PushServiceProvider, dpCache *cache.SimpleCache, 
 	}
 }
 
-// feedbackChecker periodically connects to the APNS feedback servers to get a list of unsubscriptions.
+// feedbackChecker periodically connects to the APNs feedback servers to get a list of unsubscriptions.
 func feedbackChecker(psp *push.PushServiceProvider, dpCache *cache.SimpleCache, errChan chan<- push.Error) {
 	for {
 		time.Sleep(time.Duration(feedbackCheckPeriod) * time.Minute)

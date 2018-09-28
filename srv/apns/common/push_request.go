@@ -40,7 +40,7 @@ type PushRequestProcessor interface {
 	SetPushServiceConfig(c *push.PushServiceConfig)
 }
 
-// PushRequest contains the data needed for an push attempt to APNS for the given list of delivery points (for both HTTP/2 and binary APIs).
+// PushRequest contains the data needed for an push attempt to APNs for the given list of delivery points (for both HTTP/2 and binary APIs).
 type PushRequest struct {
 	PSP       *push.PushServiceProvider
 	Devtokens [][]byte
@@ -70,6 +70,6 @@ type APNSResult struct {
 	MsgID uint32
 	// Status is a status code for the binary API. The HTTP/2 errors are also translated to those status codes.
 	Status uint8
-	// Err will be handled by the error handler for APNS differently based on the type implementing this interface.
+	// Err will be handled by the error handler for APNs differently based on the type implementing this interface.
 	Err push.Error
 }
