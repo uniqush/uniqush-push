@@ -27,7 +27,7 @@ func commonGCMMocks(responseCode int, responseBody []byte, headers map[string]st
 	service := newGCMPushService()
 	service.OverrideClient(client)
 
-	// Overwrite the APNS service.
+	// Overwrite the APNs service.
 	psm := push.GetPushServiceManager()
 	psm.RegisterPushServiceType(service)
 

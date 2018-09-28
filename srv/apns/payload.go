@@ -28,7 +28,7 @@ import (
 	"github.com/uniqush/uniqush-push/util"
 )
 
-// validateRawAPNSPayload tests that the client-provided JSON payload can be sent to APNS.
+// validateRawAPNSPayload tests that the client-provided JSON payload can be sent to APNs.
 // It converts it to bytes if it is, otherwise it returns a push.Error.
 func validateRawAPNSPayload(payload string) ([]byte, push.Error) {
 	// https://developer.apple.com/library/ios/documentation/NetworkingInternet/Conceptual/RemoteNotificationsPG/Chapters/ApplePushService.html#//apple_ref/doc/uid/TP40008194-CH100-SW1

@@ -67,7 +67,7 @@ func LoadDatabaseConfig(filename string) (conf *DatabaseConfig, err os.Error) {
 */
 
 func (c *DatabaseConfig) String() string {
-	ret := fmt.Sprintf("engine: %v;\nname: %v;\nuser: %v;\npassowrd: %v;\nhost: %v\nport: %d\n",
+	ret := fmt.Sprintf("engine: %v;\nname: %v;\nuser: %v;\npassword: %v;\nhost: %v\nport: %d\n",
 		c.Engine, c.Name, c.User, c.Password, c.Host, c.Port)
 
 	return ret

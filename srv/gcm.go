@@ -18,7 +18,7 @@
  * Implementation details common to GCM and FCM are kept in srv/cloud_messaging
  */
 
-// Package srv contains implementations of push services with code to send pushes to, receive responses from, and manage delivery points for the various external push service providers (ADM, APNS, GCM, and FCM)
+// Package srv contains implementations of push services with code to send pushes to, receive responses from, and manage delivery points for the various external push service providers (ADM, APNs, GCM, and FCM)
 package srv
 
 import (
@@ -30,7 +30,7 @@ import (
 )
 
 const (
-	// GCM endpoint (FCM can be used to push GCM subscriptions. gcm-http.googleapis.com/gcm/ will be decommissioned in april 2019)
+	// GCM endpoint (FCM can be used to push GCM subscriptions. gcm-http.googleapis.com/gcm/ will be decommissioned in April 2019)
 	gcmServiceURL string = "https://fcm.googleapis.com/fcm/send"
 	// payload key to extract from push requests to uniqush. The corresponding value is a JSON blob for a GCM data
 	// (silent, unless the app has logic to extract information to display notifications on the device)

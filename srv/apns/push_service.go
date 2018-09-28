@@ -38,7 +38,7 @@ import (
 	"sync/atomic"
 	"time"
 
-	// There are two different protocols we use to connect to APNS: binary and HTTP2.
+	// There are two different protocols we use to connect to APNs: binary and HTTP2.
 	// TODO: Make this configurable.
 	"github.com/uniqush/uniqush-push/push"
 	"github.com/uniqush/uniqush-push/srv/apns/binary_api"
@@ -50,7 +50,7 @@ const (
 	maxNrConn int = 13
 )
 
-// pushService is the APNS push service. It implements the two network protocols for sending requests to APNS and getting the corresponding response.
+// pushService is the APNs push service. It implements the two network protocols for sending requests to APNs and getting the corresponding response.
 type pushService struct {
 	binaryRequestProcessor common.PushRequestProcessor
 	httpRequestProcessor   common.PushRequestProcessor
@@ -60,7 +60,7 @@ type pushService struct {
 
 var _ push.PushServiceType = &pushService{}
 
-// NewPushService creates a new APNS push service.
+// NewPushService creates a new APNs push service.
 func NewPushService() push.PushServiceType {
 	return &pushService{
 		binaryRequestProcessor: binary_api.NewRequestProcessor(maxNrConn),
@@ -69,7 +69,7 @@ func NewPushService() push.PushServiceType {
 	}
 }
 
-// getMessageIds is needed for the binary API of APNS.
+// getMessageIds is needed for the binary API of APNs.
 func (ps *pushService) getMessageIds(n int) uint32 {
 	return atomic.AddUint32(&ps.nextMessageID, uint32(n))
 }
@@ -196,7 +196,7 @@ func apnsresToError(apnsres *common.APNSResult, psp *push.PushServiceProvider, d
 	return err
 }
 
-// waitResults collects all the results from APNS for a push that has already been sent (and uniqush has already replied to clients)
+// waitResults collects all the results from APNs for a push that has already been sent (and uniqush has already replied to clients)
 // and sends any UnsubscribeUpdates to the pushbackend so pushbackend can update the DB.
 func (ps *pushService) waitResults(psp *push.PushServiceProvider, dpList []*push.DeliveryPoint, lastID uint32, resChan <-chan *common.APNSResult) {
 	k := 0
@@ -223,7 +223,7 @@ func (ps *pushService) waitResults(psp *push.PushServiceProvider, dpList []*push
 	}
 }
 
-// Returns a JSON APNS payload, for a dummy device token
+// Returns a JSON APNs payload, for a dummy device token
 func (ps *pushService) Preview(notif *push.Notification) ([]byte, push.Error) {
 	return toAPNSPayload(notif)
 }
@@ -336,7 +336,7 @@ func (ps *pushService) Push(psp *push.PushServiceProvider, dpQueue <-chan *push.
 	requestProcessor.AddRequest(req)
 
 	// errChan closed means the message(s) is/are sent successfully to the APNs.
-	// However, we may have not yet received responses from APNS - those are sent on resChan
+	// However, we may have not yet received responses from APNs - those are sent on resChan
 	for err = range errChan {
 		res := new(push.Result)
 		res.Provider = psp
@@ -368,7 +368,7 @@ func (ps *pushService) Push(psp *push.PushServiceProvider, dpQueue <-chan *push.
 		}
 	}
 
-	// Wait for the unserialized responses from APNS asynchronously - these will not affect what we send our clients for this request, but will affect subsequent requests.
+	// Wait for the unserialized responses from APNs asynchronously - these will not affect what we send our clients for this request, but will affect subsequent requests.
 	// TODO: With HTTP/2, this can be refactored to become synchronous (not in this PR, not while binary provider is supported for a PSP). The map[string]T can be removed.
 	go ps.waitResults(psp, dpList, lastID, resChan)
 }

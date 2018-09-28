@@ -1,6 +1,6 @@
 package binary_api // nolint: golint
 
-// Worker pool implementation for apns.
+// Worker pool implementation for APNs
 import (
 	"fmt"
 	"io"
@@ -32,7 +32,7 @@ func (err *TemporaryError) Error() string {
 	return fmt.Sprintf("Error connecting to %v: %v", err.Endpoint, err.Err.Error())
 }
 
-// Pool is a fixed-size pool of workers responsible for sending payloads to APNS.
+// Pool is a fixed-size pool of workers responsible for sending payloads to APNs.
 type Pool struct {
 	manager ConnManager
 
@@ -43,7 +43,7 @@ type Pool struct {
 	maxWaitTime int
 }
 
-// workerRequest contains all information needed for a worker to send the payload to APNS and reply to the requester.
+// workerRequest contains all information needed for a worker to send the payload to APNs and reply to the requester.
 type workerRequest struct {
 	Payload  []byte
 	Response chan<- error
@@ -74,7 +74,7 @@ func (pool *Pool) Close() {
 	pool.wg.Wait()
 }
 
-// Push will send the push payload to APNS, and respond with nil, TemporaryError, or PermanentError.
+// Push will send the push payload to APNs, and respond with nil, TemporaryError, or PermanentError.
 func (pool *Pool) Push(payload []byte) error {
 	responseChan := make(chan error)
 	request := workerRequest{
@@ -87,7 +87,7 @@ func (pool *Pool) Push(payload []byte) error {
 	return <-responseChan
 }
 
-// poolWorker sends data to APNS. A different connection receives the APNS responses.
+// poolWorker sends data to APNs. A different connection receives the APNs responses.
 func poolWorker(wg *sync.WaitGroup, manager ConnManager, requests <-chan workerRequest, maxWaitTime int) {
 	defer wg.Done()
 	var conn net.Conn

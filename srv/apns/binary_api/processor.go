@@ -104,7 +104,7 @@ func (prp *BinaryPushRequestProcessor) SetErrorReportChan(errChan chan<- push.Er
 	prp.errChan = errChan
 }
 
-// SetPushServiceConfig passes in the contents of the "apns" section the config file.
+// SetPushServiceConfig passes in the contents of the "apns" section of the config file.
 // This is called before attempting to send pushes.
 func (prp *BinaryPushRequestProcessor) SetPushServiceConfig(c *push.PushServiceConfig) {
 	// This uses the fact that registration takes place before any requests are sent, so pools aren't created yet.
@@ -176,7 +176,7 @@ func (prp *BinaryPushRequestProcessor) pushMux() {
 	}
 }
 
-// generatePayload generates the bytes of a frame to send to APNS, for the Binary Provider API v2
+// generatePayload generates the bytes of a frame to send to APNs, for the Binary Provider API v2
 func generatePayload(payload, token []byte, expiry uint32, mid uint32) []byte {
 	// Total size for each notification:
 	// https://developer.apple.com/library/content/documentation/NetworkingInternet/Conceptual/RemoteNotificationsPG/BinaryProviderAPI.html#//apple_ref/doc/uid/TP40008194-CH13-SW1
@@ -254,15 +254,15 @@ func generatePayload(payload, token []byte, expiry uint32, mid uint32) []byte {
 	return buffer.Bytes()
 }
 
-// singlePush sends bytes to APNS, retrying with different connections if it failed to write bytes.
+// singlePush sends bytes to APNs, retrying with different connections if it failed to write bytes.
 func (prp *BinaryPushRequestProcessor) singlePush(payload, token []byte, expiry uint32, mid uint32, workerPool *Pool, errChan chan<- push.Error) {
 	// Generate the v2 frame payload
 	pdu := generatePayload(payload, token, expiry, mid)
 
-	// Send the request(frame) to APNS. err is nil if bytes were successfully written.
+	// Send the request(frame) to APNs. err is nil if bytes were successfully written.
 	err := workerPool.Push(pdu)
 
-	// Retry with lengthening randomized delays if there are errors sending bytes to APNS.
+	// Retry with lengthening randomized delays if there are errors sending bytes to APNs.
 	sleepTime := time.Duration(maxWaitTime) * time.Second
 	for nrRetries := 0; err != nil && nrRetries < 3; nrRetries++ {
 		switch err := err.(type) {
@@ -318,7 +318,7 @@ func clearRequest(req *common.PushRequest, resChan chan<- *common.APNSResult) {
 	}
 }
 
-// overrideFeedbackChecker overrides the function used to listen for unsubscriptions from the APNS feedback servers.
+// overrideFeedbackChecker overrides the function used to listen for unsubscriptions from the APNs feedback servers.
 func (prp *BinaryPushRequestProcessor) overrideFeedbackChecker(newFeedbackChecker func(*push.PushServiceProvider, *cache.SimpleCache, chan<- push.Error)) {
 	prp.feedbackChecker = newFeedbackChecker
 }
@@ -339,7 +339,7 @@ func (prp *BinaryPushRequestProcessor) pushWorkerGroup(psp *push.PushServiceProv
 	workerpool := NewPool(manager, prp.poolSize, maxWaitTime)
 	defer workerpool.Close()
 
-	workerid := fmt.Sprintf("workder-%v-%v", time.Now().Unix(), rand.Int63())
+	workerid := fmt.Sprintf("worker-%v-%v", time.Now().Unix(), rand.Int63())
 
 	dpCache := cache.NewSimple(256)
 
@@ -362,12 +362,12 @@ func (prp *BinaryPushRequestProcessor) pushWorkerGroup(psp *push.PushServiceProv
 	for {
 		select {
 		case req := <-reqChan:
-			// Accept requests from pushMux goroutine, sending pushes to APNS for each devtoken.
-			// If a response is received from APNS for a devtoken, forward it on the channel for the corresponding request.
+			// Accept requests from pushMux goroutine, sending pushes to APNs for each devtoken.
+			// If a response is received from APNs for a devtoken, forward it on the channel for the corresponding request.
 			// Otherwise, close it
 			if req == nil {
 				fmt.Printf("[%v][%v] I was told to stop (req == nil) - stopping\n", time.Now(), workerid)
-				// Finish up any remaining requests to uniqush, forwarding the responses from APNS.
+				// Finish up any remaining requests to uniqush, forwarding the responses from APNs.
 				// clearRequest should ensure that reqMap is eventually empty - this has also been tested under heavy load.
 				for {
 					if len(reqMap) == 0 {
