@@ -10,8 +10,8 @@ uniqush-push NEWS
 
   Forbid using the backtick in service and subscription names (this was accidentally permitted by the invalid regex).
 
-  Continue allowing a small number of other invalid characters for now,
-  those may be deprecated in future releases.
+  Continue allowing a few other invalid characters for now.
+  Those may be deprecated in future releases.
 
 18 Jul 2018, uniqush-push 2.6.0
 -------------------------------
@@ -29,7 +29,7 @@ uniqush-push NEWS
   This may help with scaling if the redis master (or sharded redis masters) have high load,
   by performing read operations against the redis slave instead.
 
-Changes to APIs
+Changes to APIs:
 
 - New feature: Prevent creating two **different** push service providers of the same service name and push service type in /addpsp. (#197)
   Updating mutable fields of existing PSP will continue to work.
@@ -58,7 +58,7 @@ Changes to APIs
   delivery point ids to push to, e.g.  `delivery_point_id="apns:abcdef0123456789"`
   to push to the single subscription with that delivery point id.
 
-  Knowing the delivery point id allows clients to implement custom logic to invoke `uniqush-push`'s APIs
+  Knowing the delivery point id allows clients to implement custom logic to invoke `uniqush-push`'s APIs.
 
   - For example, a client may wish to push different payloads (or not push at all)
     to endpoints running `app_version` 1.2.3 of your app or older.
@@ -74,9 +74,9 @@ Changes to APIs
 - Support larger APNS payloads.
   Support 5120 byte payloads for APNS voip pushes
   (Where the Cert is a VOIP cert and `uniqush.apns_voip=1` is part of
-  the query params in the call to /push
+  the query params in the call to `/push`)
 - Support more granular loglevel levels in uniqush config files:
-  alert, error, warn/warning, standard/verbose/info, and debug
+  alert, error, warn/warning, standard/verbose/info, and debug.
 
 07 Oct 2018, uniqush-push 2.4.0
 -------------------------------
