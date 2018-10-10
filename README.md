@@ -31,7 +31,7 @@ server side, you can send push notifications to any supported mobile platform.
 However, [Uniqush](http://uniqush.org) is different from them.
 [Uniqush](http://uniqush.org) is not a service. Instead,
 **[Uniqush](http://uniqush.org) is a system, which runs on your own
-server**. In fact, if you wish, you can use Uniqush to setup a service similar to [Urban Airship](http://urbanairship.com).
+server**. In fact, if you wish, you can use Uniqush to set up a service similar to [Urban Airship](http://urbanairship.com).
 
 - Q: OK. Then is it a library? Like
   [java-apns](https://github.com/notnoop/java-apns)?
@@ -44,7 +44,7 @@ server**. In fact, if you wish, you can use Uniqush to setup a service similar t
 - A: We are trying to make it easier. `uniqush-push` provides RESTful APIs. In
   other words, you talk with `uniqush-push` through HTTP protocol. As long as
 there's an HTTP client library for your language, you can use it and talk with
-`uniqush-push`. For details about the our RESTful APIs, see [our API
+`uniqush-push`. For details about our RESTful APIs, see [our API
 documentation](http://uniqush.org/documentation/usage.html).
 
 - Q: Then that's cool. But I noticed that you are using [Go](http://golang.org) programming language. Do I need to install [Go](http://golang.org) compiler and other stuff to run `uniqush-push`?
@@ -66,7 +66,7 @@ post](http://blog.uniqush.org/uniqush-after-go1.html). If you want to find out
 about the latest progress with *Uniqush*, please check out [our
  blog](http://blog.uniqush.org/). And, if you are really impatient, there's
  always our [our GitHub account](http://github.com/uniqush) which could have
- brand new stuff that hasn't been released yet.
+ brand-new stuff that hasn't been released yet.
 
 ## Setting Up Redis ##
 
