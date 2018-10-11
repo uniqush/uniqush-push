@@ -1,0 +1,14 @@
+[Unit]
+Description=A unified push service for server-side notification to apps on mobile devices.
+After=network.target
+
+[Service]
+PIDFile=/run/uniqush-push.pid
+ExecStart=/usr/bin/uniqush-push -config=/etc/uniqush/uniqush-push.conf
+ExecReload=/usr/bin/uniqush-push -config=/etc/uniqush/uniqush-push.conf
+ExecStop=-/sbin/start-stop-daemon --quiet --stop --retry QUIT/5 --pidfile /run/uniqush-push.pid
+TimeoutStopSec=5
+KillMode=mixed
+
+[Install]
+WantedBy=multi-user.target
