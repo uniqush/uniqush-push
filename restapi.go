@@ -235,7 +235,7 @@ func (api *RestAPI) buildNotificationFromKV(reqID string, kv map[string]string, 
 	notif = push.NewEmptyNotification()
 
 	for k, v := range kv {
-		if len(v) <= 0 {
+		if len(v) == 0 {
 			continue
 		}
 		switch k {

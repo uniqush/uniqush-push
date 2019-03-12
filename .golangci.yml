@@ -1,0 +1,5 @@
+# TODO: Re-enable errcheck
+linters:
+    # enable-all: true
+    disable:
+        - errcheck
