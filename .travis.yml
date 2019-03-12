@@ -26,10 +26,9 @@ script:
   - go build
   - go vet -printfuncs debugf,infof,configf,warnf,errorf,alertf,fatalf .
   - go test ./... -race -coverprofile=coverage.txt -covermode=atomic
-  # run gometalinter checks from .gometalinter.json
-  - go get -u github.com/alecthomas/gometalinter
-  - gometalinter --install
-  - gometalinter ./...
+  # run golangci-lint checks from .golangci.yml
+  - curl -sfL https://install.goreleaser.com/github.com/golangci/golangci-lint.sh | sh -s -- -b $(go env GOPATH)/bin v1.17.1
+  - golangci-lint run
 
 after_success:
   - bash <(curl -s https://codecov.io/bash)

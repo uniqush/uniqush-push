@@ -435,6 +435,8 @@ func (backend *PushBackEnd) pushImpl(
 
 	// Loop over all subscriptions, fetching the list of corresponding delivery points to send to from the db, starting to push and send pushes.
 	for _, sub := range subs {
+		// We take a reference to sub in handler.AddDetailsToHandler
+		sub := sub
 		dpidx := 0
 		var pspDpList []db.PushServiceProviderDeliveryPointPair
 		if provider != nil && dest != nil {

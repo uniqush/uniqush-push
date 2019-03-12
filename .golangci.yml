@@ -1,0 +1,17 @@
+# TODO: Re-enable errcheck
+linters:
+    disable:
+        - errcheck
+    enable:
+        - deadcode
+        - gofmt
+        - golint
+        - ineffassign
+        - misspell
+        - scopelint
+        - structcheck
+        - unconvert
+        - unparam
+        - varcheck
+        - vet
+        - vetshadow
