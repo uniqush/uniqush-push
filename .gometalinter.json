@@ -6,7 +6,6 @@
         "gotype",
         "gotypex",
         "ineffassign",
-        "megacheck",
         "misspell",
         "structcheck",
         "unconvert",
