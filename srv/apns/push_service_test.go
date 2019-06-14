@@ -97,7 +97,7 @@ func commonAPNSMocks(status uint8) (*push.PushServiceProvider, *MockPushRequestP
 	return psp, mockRequestProcessor, service, errChan
 }
 
-func createNotification(pushType string, msg string) *push.Notification {
+func createNotification(msg string) *push.Notification {
 	return &push.Notification{
 		Data: map[string]string{
 			"msg": "hello world",
@@ -126,7 +126,7 @@ func TestPushSingle(t *testing.T) {
 	psp, _, service, errChan := commonAPNSMocks(APNSSuccess)
 
 	resQueue := make(chan *push.Result)
-	notif := createNotification("helloworld", "Hello World")
+	notif := createNotification("Hello World")
 
 	wg := new(sync.WaitGroup)
 	wg.Add(2)
@@ -173,7 +173,7 @@ func TestPushMultiple(t *testing.T) {
 	for i := 0; i < pushes; i++ {
 		dpQueue := make(chan *push.DeliveryPoint)
 		go asyncCreateDPQueue(wg, dpQueue, expectedToken, "unusedsubscriber2")
-		notif := createNotification(fmt.Sprintf("helloworld%d", i), fmt.Sprintf("Hello World%d", i))
+		notif := createNotification(fmt.Sprintf("Hello World%d", i))
 		notifs[i] = notif
 		resQueue := make(chan *push.Result)
 		resQueues[i] = resQueue
@@ -212,7 +212,7 @@ func TestPushUnsubscribe(t *testing.T) {
 	psp, _, service, errChan := commonAPNSMocks(APNSUnsubscribe)
 
 	resQueue := make(chan *push.Result)
-	notif := createNotification("helloworld", "Hello World")
+	notif := createNotification("Hello World")
 
 	wg := new(sync.WaitGroup)
 	wg.Add(2)

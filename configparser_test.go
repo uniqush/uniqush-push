@@ -28,10 +28,7 @@ func TestOpenConfig(t *testing.T) {
 	testutil.ExpectStringEquals(t, "standard", getString("WebFrontend", "loglevel"), "unexpected data for loglevel")
 	testutil.ExpectStringEquals(t, "localhost:9898", getString("WebFrontend", "addr"), "unexpected data for addr")
 
-	dbConf, err := LoadDatabaseConfig(c)
-	if err != nil {
-		t.Fatalf("Failed to load database config section: %v", err)
-	}
+	dbConf := LoadDatabaseConfig(c)
 	expectedDbConf := &db.DatabaseConfig{
 		Engine:             "redis",
 		Name:               "0",
