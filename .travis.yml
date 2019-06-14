@@ -14,6 +14,9 @@ services:
 go:
   - 1.13.x
 
+env:
+  - GO111MODULE=on
+
 # Only compute the build status for PRs in travis
 branches:
   only:
@@ -24,7 +27,7 @@ branches:
 # (Could include apns-test.sh, but that doesn't have expected output written yet)
 script:
   - go build
-  - go vet -printfuncs debugf,infof,configf,warnf,errorf,alertf,fatalf .
+  - ./govet.sh
   - go test ./... -race -coverprofile=coverage.txt -covermode=atomic
   # run golangci-lint checks from .golangci.yml
   - curl -sfL https://install.goreleaser.com/github.com/golangci/golangci-lint.sh | sh -s -- -b $(go env GOPATH)/bin v1.17.1

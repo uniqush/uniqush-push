@@ -97,7 +97,7 @@ func commonAPNSMocks(status uint8) (*push.PushServiceProvider, *MockPushRequestP
 	return psp, mockRequestProcessor, service, errChan
 }
 
-func createNotification(expectedContentID int, pushType string, msg string) *push.Notification {
+func createNotification(pushType string, msg string) *push.Notification {
 	return &push.Notification{
 		Data: map[string]string{
 			"msg": "hello world",
@@ -121,13 +121,12 @@ func asyncPush(wg *sync.WaitGroup, service *pushService, psp *push.PushServicePr
 
 // TestPushSingle tests the ability to send a single push without error, and shut down cleanly.
 func TestPushSingle(t *testing.T) {
-	expectedContentID := 2223511
 	expectedToken := hex.EncodeToString([]byte("FakeDevToken"))
 
 	psp, _, service, errChan := commonAPNSMocks(APNSSuccess)
 
 	resQueue := make(chan *push.Result)
-	notif := createNotification(expectedContentID, "helloworld", "Hello World")
+	notif := createNotification("helloworld", "Hello World")
 
 	wg := new(sync.WaitGroup)
 	wg.Add(2)
@@ -161,7 +160,6 @@ func TestPushSingle(t *testing.T) {
 
 func TestPushMultiple(t *testing.T) {
 	pushes := 3
-	expectedContentID := 2223511
 	expectedToken := hex.EncodeToString([]byte("FakeDevToken"))
 
 	psp, _, service, _ := commonAPNSMocks(APNSSuccess)
@@ -175,7 +173,7 @@ func TestPushMultiple(t *testing.T) {
 	for i := 0; i < pushes; i++ {
 		dpQueue := make(chan *push.DeliveryPoint)
 		go asyncCreateDPQueue(wg, dpQueue, expectedToken, "unusedsubscriber2")
-		notif := createNotification(expectedContentID, fmt.Sprintf("helloworld%d", i), fmt.Sprintf("Hello World%d", i))
+		notif := createNotification(fmt.Sprintf("helloworld%d", i), fmt.Sprintf("Hello World%d", i))
 		notifs[i] = notif
 		resQueue := make(chan *push.Result)
 		resQueues[i] = resQueue
@@ -209,13 +207,12 @@ func TestPushMultiple(t *testing.T) {
 
 // TestPushUnsubscribe tests that an UnsubscribeUpdate should be generated from the corresponding apns status code.
 func TestPushUnsubscribe(t *testing.T) {
-	expectedContentID := 2223511
 	expectedToken := hex.EncodeToString([]byte("FakeDevToken"))
 
 	psp, _, service, errChan := commonAPNSMocks(APNSUnsubscribe)
 
 	resQueue := make(chan *push.Result)
-	notif := createNotification(expectedContentID, "helloworld", "Hello World")
+	notif := createNotification("helloworld", "Hello World")
 
 	wg := new(sync.WaitGroup)
 	wg.Add(2)

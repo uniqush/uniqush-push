@@ -65,7 +65,7 @@ func extractLogLevel(loglevel string) (int, string) {
 	return level, warningMsg
 }
 
-func loadLogger(writer io.Writer, c *conf.ConfigFile, field string, prefix string) (log.Logger, error) {
+func loadLogger(writer io.Writer, c *conf.ConfigFile, field string, prefix string) log.Logger {
 	var loglevel string
 	var logswitch bool
 	var err error
@@ -96,7 +96,7 @@ func loadLogger(writer io.Writer, c *conf.ConfigFile, field string, prefix strin
 	if warningMsg != "" {
 		logger.Warn(warningMsg)
 	}
-	return logger, nil
+	return logger
 }
 
 // LoadDatabaseConfig returns a representation of the [Database] section from uniqush.conf, or an error
@@ -195,10 +195,7 @@ func LoadLoggers(c *conf.ConfigFile) ([]log.Logger, error) {
 		LoggerPreview:       "Preview",
 	}
 	for loggerIndex, loggerName := range loggerConfigs {
-		loggers[loggerIndex], err = loadLogger(logfile, c, loggerName, fmt.Sprintf("[%s]", loggerName))
-		if err != nil {
-			return nil, err
-		}
+		loggers[loggerIndex] = loadLogger(logfile, c, loggerName, fmt.Sprintf("[%s]", loggerName))
 	}
 
 	return loggers, nil
