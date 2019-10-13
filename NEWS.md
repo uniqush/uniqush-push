@@ -111,7 +111,7 @@ Changes to APIs:
   APNS endpoint for binary providers (including cert and key),
   in addition to providing `bundleid`.
   Currently, to make testing easy, each call to `/push` must be provided with
-  the query param value `uniqush.http=1`.
+  the query param value `uniqush.http2=1`.
   Otherwise, uniqush continues to use the APNS binary provider API.
 + Maintenance: Use unescaped payloads for GCM and FCM.
   This allows larger payloads, avoiding escaping characters such as `<` and `>`
