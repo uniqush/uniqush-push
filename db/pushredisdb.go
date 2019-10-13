@@ -40,7 +40,7 @@ type redisClient interface {
 	Decr(key string) *redis.IntCmd
 	Del(keys ...string) *redis.IntCmd
 	Exists(keys ...string) *redis.IntCmd
-	FlushDb() *redis.StatusCmd // for tests only
+	FlushDB() *redis.StatusCmd // for tests only
 	Get(key string) *redis.StringCmd
 	Incr(key string) *redis.IntCmd
 	Keys(key string) *redis.StringSliceCmd
@@ -69,8 +69,8 @@ func (mc *redisMultiClient) Exists(keys ...string) *redis.IntCmd {
 	return mc.slaveClient.Exists(keys...)
 }
 
-func (mc *redisMultiClient) FlushDb() *redis.StatusCmd {
-	return mc.masterClient.FlushDb()
+func (mc *redisMultiClient) FlushDB() *redis.StatusCmd {
+	return mc.masterClient.FlushDB()
 }
 
 func (mc *redisMultiClient) Get(key string) *redis.StringCmd {

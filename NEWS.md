@@ -1,5 +1,11 @@
 uniqush-push NEWS
 
+?? ??? 2019, uniqush-push 2.7.0 (dev)
+-------------------------------
+
+- Bugfix: Change from the deprecated `redis.FlushDb` alias to `redis.FlushDB` of go-redis (FlushDb is removed in the latest releases).
+  This may require updating the version of go-redis that `uniqush-push` is built with
+
 21 Jul 2018, uniqush-push 2.6.1
 -------------------------------
 
