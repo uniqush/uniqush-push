@@ -24,7 +24,7 @@ branches:
 # (Could include apns-test.sh, but that doesn't have expected output written yet)
 script:
   - go build
-  - go tool vet -printfuncs debugf,infof,configf,warnf,errorf,alertf,fatalf .
+  - go vet -printfuncs debugf,infof,configf,warnf,errorf,alertf,fatalf .
   - go test ./... -race -coverprofile=coverage.txt -covermode=atomic
   # run gometalinter checks from .gometalinter.json
   - go get -u github.com/alecthomas/gometalinter
