@@ -59,7 +59,7 @@ func connectDatabaseAndClearRedisData(t *testing.T) PushDatabase {
 	if err != nil {
 		t.Fatalf("Error connecting to redis for test: %v", err)
 	}
-	client.(*pushDatabaseOpts).db.(*PushRedisDB).client.FlushDb()
+	client.(*pushDatabaseOpts).db.(*PushRedisDB).client.FlushDB()
 	return client
 }
 
