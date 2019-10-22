@@ -138,10 +138,8 @@ func (ps *pushService) buildBinaryPushServiceProviderFromMap(kv map[string]strin
 	} else {
 		psp.VolatileData["bundleid"] = ""
 	}
-	if sandbox, ok := kv["sandbox"]; ok {
-		if sandbox == "true" {
-			psp.VolatileData["addr"] = "gateway.sandbox.push.apple.com:2195"
-		}
+	if sandbox, ok := kv["sandbox"]; ok && sandbox == "true" {
+		psp.VolatileData["addr"] = "gateway.sandbox.push.apple.com:2195"
 	} else {
 		if addr, ok := kv["addr"]; ok {
 			psp.VolatileData["addr"] = addr
