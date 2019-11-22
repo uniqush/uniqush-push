@@ -90,7 +90,7 @@ func mockPSPData(serviceName string) *push.PushServiceProvider {
 }
 
 // commonBinaryMocks mocks the PSP, connection manager and a feedback checker, etc, returning the mocks. This is needed for virtually every test.
-func commonBinaryMocks(requestProcessor *BinaryPushRequestProcessor, status uint8, serviceName string) (*push.PushServiceProvider, *MockConnManager, chan push.Error) {
+func commonBinaryMocks(requestProcessor *BinaryPushRequestProcessor, status uint8, serviceName string) (*push.PushServiceProvider, chan push.Error) {
 	mockAPNSConnectionManager := newMockConnManager(status)
 	requestProcessor.overrideAPNSConnManagerMaker(mockConnManagerMaker(mockAPNSConnectionManager))
 	requestProcessor.overrideFeedbackChecker(mockEmptyFeedbackChecker)
@@ -98,7 +98,7 @@ func commonBinaryMocks(requestProcessor *BinaryPushRequestProcessor, status uint
 	requestProcessor.SetErrorReportChan(errChan)
 
 	psp := mockPSPData(serviceName)
-	return psp, mockAPNSConnectionManager, errChan
+	return psp, errChan
 }
 
 // NewConn creates a mock connection which responds with a hardcoded status result for each push.
@@ -185,7 +185,7 @@ func testPushForwardsErrorCode(t *testing.T, status uint8) {
 	requestProcessor := NewRequestProcessor(MockConnectionCount)
 	defer requestProcessor.Finalize()
 	serviceName := "mockservice.apns"
-	psp, _, serviceErrChan := commonBinaryMocks(requestProcessor, status, serviceName)
+	psp, serviceErrChan := commonBinaryMocks(requestProcessor, status, serviceName)
 	req, errChan, resChan := createSinglePushRequest(psp)
 
 	requestProcessor.AddRequest(req)
@@ -221,7 +221,7 @@ func verifyNewConnectionLogged(t *testing.T, serviceErrChan chan push.Error) {
 func TestRequestAfterShutdown(t *testing.T) {
 	requestProcessor := NewRequestProcessor(MockConnectionCount)
 	serviceName := "mockservice.apns"
-	psp, _, serviceErrChan := commonBinaryMocks(requestProcessor, APNSSuccess, serviceName)
+	psp, serviceErrChan := commonBinaryMocks(requestProcessor, APNSSuccess, serviceName)
 	req, errChan, resChan := createSinglePushRequest(psp)
 	requestProcessor.AddRequest(req)
 
@@ -249,7 +249,7 @@ func TestRequestAfterShutdown(t *testing.T) {
 func TestParallelRequestAndShutdown(t *testing.T) {
 	requestProcessor := NewRequestProcessor(MockConnectionCount)
 	serviceName := "mockservice.apns"
-	psp, _, serviceErrChan := commonBinaryMocks(requestProcessor, APNSSuccess, serviceName)
+	psp, serviceErrChan := commonBinaryMocks(requestProcessor, APNSSuccess, serviceName)
 	req, errChan, resChan := createSinglePushRequest(psp)
 	doneFinalize := make(chan bool)
 

@@ -30,7 +30,7 @@ script:
   - ./govet.sh
   - go test ./... -race -coverprofile=coverage.txt -covermode=atomic
   # run golangci-lint checks from .golangci.yml
-  - curl -sfL https://install.goreleaser.com/github.com/golangci/golangci-lint.sh | sh -s -- -b $(go env GOPATH)/bin v1.17.1
+  - curl -sfL https://raw.githubusercontent.com/golangci/golangci-lint/master/install.sh | sh -s -- -b $(go env GOPATH)/bin v1.21.0
   - golangci-lint run
 
 after_success:

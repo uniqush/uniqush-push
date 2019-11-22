@@ -100,7 +100,7 @@ func commonAPNSMocks(status uint8) (*push.PushServiceProvider, *MockPushRequestP
 func createNotification(msg string) *push.Notification {
 	return &push.Notification{
 		Data: map[string]string{
-			"msg": "hello world",
+			"msg": msg,
 		},
 	}
 }
