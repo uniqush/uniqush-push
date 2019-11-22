@@ -65,7 +65,7 @@ func extractLogLevel(loglevel string) (int, string) {
 	return level, warningMsg
 }
 
-func loadLogger(writer io.Writer, c *conf.ConfigFile, field string, prefix string) (log.Logger, error) {
+func loadLogger(writer io.Writer, c *conf.ConfigFile, field string, prefix string) log.Logger {
 	var loglevel string
 	var logswitch bool
 	var err error
@@ -96,11 +96,11 @@ func loadLogger(writer io.Writer, c *conf.ConfigFile, field string, prefix strin
 	if warningMsg != "" {
 		logger.Warn(warningMsg)
 	}
-	return logger, nil
+	return logger
 }
 
-// LoadDatabaseConfig returns a representation of the [Database] section from uniqush.conf, or an error
-func LoadDatabaseConfig(cf *conf.ConfigFile) (*db.DatabaseConfig, error) {
+// LoadDatabaseConfig returns a representation of the [Database] section from uniqush.conf
+func LoadDatabaseConfig(cf *conf.ConfigFile) *db.DatabaseConfig {
 	c := new(db.DatabaseConfig)
 
 	getDbConfigString := func(key, defaultValue string) string {
@@ -140,7 +140,7 @@ func LoadDatabaseConfig(cf *conf.ConfigFile) (*db.DatabaseConfig, error) {
 		c.CacheSize = 1024
 	}
 
-	return c, nil
+	return c
 }
 
 const (
@@ -161,7 +161,7 @@ func OpenConfig(filename string) (c *conf.ConfigFile, err error) {
 
 // LoadLoggers will return an array of loggers, for each type in the enum.
 // The log level of individual loggers vary based on the config.
-func LoadLoggers(c *conf.ConfigFile) ([]log.Logger, error) {
+func LoadLoggers(c *conf.ConfigFile) []log.Logger {
 	var logfile io.Writer
 
 	logfilename, err := c.GetString("default", "logfile")
@@ -195,13 +195,10 @@ func LoadLoggers(c *conf.ConfigFile) ([]log.Logger, error) {
 		LoggerPreview:       "Preview",
 	}
 	for loggerIndex, loggerName := range loggerConfigs {
-		loggers[loggerIndex], err = loadLogger(logfile, c, loggerName, fmt.Sprintf("[%s]", loggerName))
-		if err != nil {
-			return nil, err
-		}
+		loggers[loggerIndex] = loadLogger(logfile, c, loggerName, fmt.Sprintf("[%s]", loggerName))
 	}
 
-	return loggers, nil
+	return loggers
 }
 
 // LoadRestAddr returns the address to listen to HTTP requests on, or returns an error.
@@ -222,14 +219,8 @@ func Run(conf, version string) error {
 	if err != nil {
 		return err
 	}
-	loggers, err := LoadLoggers(c)
-	if err != nil {
-		return err
-	}
-	dbconf, err := LoadDatabaseConfig(c)
-	if err != nil {
-		return err
-	}
+	loggers := LoadLoggers(c)
+	dbconf := LoadDatabaseConfig(c)
 	addr, err := LoadRestAddr(c)
 	if err != nil {
 		return err

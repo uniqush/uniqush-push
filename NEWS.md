@@ -7,6 +7,9 @@ uniqush-push NEWS
   This may require updating the version of go-redis that `uniqush-push` is built with
 - Bugfix: Properly handle values of `sandbox` other than `sandbox=true` when creating delivery points. (#249)
   (This bug is not triggered when there is no `sandbox` query param)
+- Bugfix: Fix possible incorrect subscription when sending API response for /push containing multiple subscriptions (pushes were sent correctly)
+- Maintenance: Start using go modules
+- Maintenance: Add documentation to source code
 
 21 Jul 2018, uniqush-push 2.6.1
 -------------------------------
