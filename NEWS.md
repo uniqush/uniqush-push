@@ -5,7 +5,7 @@ uniqush-push NEWS
 
 - Bugfix: Change from the deprecated `redis.FlushDb` alias to `redis.FlushDB` of go-redis (FlushDb is removed in the latest releases).
   This may require updating the version of go-redis that `uniqush-push` is built with
-- Bugfix: Properly handle values of `sandbox` other than `sandbox=true` when creating delivery points. (#249)
+- Bugfix: Properly handle values of `sandbox` other than `sandbox=true` when creating push service providers. (#249)
   (This bug is not triggered when there is no `sandbox` query param)
 - Bugfix: Fix possible incorrect subscription when sending API response for /push containing multiple subscriptions (pushes were sent correctly)
 - Maintenance: Start using go modules
