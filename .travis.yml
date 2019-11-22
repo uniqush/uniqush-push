@@ -1,8 +1,7 @@
 language: go
 
-# Compile with the latest OS image (previously 12.04, now 14.04)
 # `sudo: required` is the default for repositories enabled before 2015 (we don't need it and it's slower)
-dist: trusty
+dist: bionic
 sudo: false
 
 # https://docs.travis-ci.com/user/database-setup/
