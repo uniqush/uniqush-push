@@ -101,7 +101,7 @@ func (e *RetryError) Error() string {
 	if e.Reason != nil {
 		return fmt.Sprintf("Retry (%v)", e.Reason)
 	}
-	return fmt.Sprintf("Retry")
+	return "Retry"
 }
 
 // NewRetryErrorWithReason builds a RetryError with the associated error causing uniqush-push to retry the push after the given duration.
@@ -168,7 +168,7 @@ type IncompatibleError struct {
 }
 
 func (e *IncompatibleError) Error() string {
-	return fmt.Sprintf("Incompatible")
+	return "Incompatible"
 }
 
 // NewIncompatibleError creates an IncompatibleError.
@@ -230,7 +230,7 @@ func (e *BadNotification) Error() string {
 	if e.Details != "" {
 		return fmt.Sprintf("Bad Notification: %s", e.Details)
 	}
-	return fmt.Sprintf("Bad Notification")
+	return "Bad Notification"
 }
 
 // NewBadNotificationWithDetails returns a BadNotification with an error message.
