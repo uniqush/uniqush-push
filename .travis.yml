@@ -11,7 +11,7 @@ services:
 
 # Compile with go 1.10 (or newer). It takes a long time to install `tip`
 go:
-  - 1.13.x
+  - 1.14.x
 
 env:
   - GO111MODULE=on
@@ -29,7 +29,7 @@ script:
   - ./govet.sh
   - go test ./... -race -coverprofile=coverage.txt -covermode=atomic
   # run golangci-lint checks from .golangci.yml
-  - curl -sfL https://raw.githubusercontent.com/golangci/golangci-lint/master/install.sh | sh -s -- -b $(go env GOPATH)/bin v1.21.0
+  - curl -sfL https://raw.githubusercontent.com/golangci/golangci-lint/master/install.sh | sh -s -- -b $(go env GOPATH)/bin v1.24.0
   - golangci-lint run
 
 after_success:
