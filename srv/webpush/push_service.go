@@ -159,15 +159,9 @@ func (ps *pushService) SetPushServiceConfig(c *push.PushServiceConfig) {
 		}
 	}
 	if hosts, err := c.GetString("allowed_hosts"); err == nil && strings.TrimSpace(hosts) != "" {
-		allowed := make(map[string]bool)
-		for _, host := range strings.Split(hosts, ",") {
-			if trimmed := strings.TrimSpace(host); trimmed != "" {
-				allowed[trimmed] = true
-			}
-		}
-		if len(allowed) > 0 {
-			ps.policy.AllowedHosts = allowed
-		}
+		// SetAllowedHosts lowercases entries, since DNS hostnames are
+		// case-insensitive and a mixed-case config entry would never match.
+		ps.policy.SetAllowedHosts(strings.Split(hosts, ","))
 	}
 }
 

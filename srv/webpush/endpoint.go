@@ -30,6 +30,10 @@ type EndpointPolicy struct {
 
 	// AllowedHosts, when non-empty, is an allow-list of hostnames. Any endpoint
 	// whose host is not in the list is rejected regardless of the other checks.
+	//
+	// Keys must be lowercase. DNS hostnames are case-insensitive, so the lookup
+	// lowercases the endpoint's host before checking; an entry with any
+	// uppercase in it could never match. Use SetAllowedHosts to get this right.
 	AllowedHosts map[string]bool
 
 	// resolve is swappable for tests. Defaults to net.LookupIP.
@@ -40,6 +44,22 @@ type EndpointPolicy struct {
 // no private address ranges, no allow-list.
 func NewEndpointPolicy() *EndpointPolicy {
 	return &EndpointPolicy{resolve: net.LookupIP}
+}
+
+// SetAllowedHosts replaces the allow-list, normalising entries to lowercase and
+// discarding blanks. An empty or all-blank list clears the allow-list.
+func (p *EndpointPolicy) SetAllowedHosts(hosts []string) {
+	allowed := make(map[string]bool, len(hosts))
+	for _, host := range hosts {
+		if trimmed := strings.ToLower(strings.TrimSpace(host)); trimmed != "" {
+			allowed[trimmed] = true
+		}
+	}
+	if len(allowed) == 0 {
+		p.AllowedHosts = nil
+		return
+	}
+	p.AllowedHosts = allowed
 }
 
 // ValidateSyntax checks everything about an endpoint that can be judged without
@@ -64,7 +84,9 @@ func (p *EndpointPolicy) ValidateSyntax(endpoint string) error {
 	if parsed.Host == "" {
 		return fmt.Errorf("endpoint has no host")
 	}
-	if len(p.AllowedHosts) > 0 && !p.AllowedHosts[parsed.Hostname()] {
+	// DNS hostnames are case-insensitive, so HTTPS://NTFY.SH/... must match an
+	// allow-list entry of "ntfy.sh".
+	if len(p.AllowedHosts) > 0 && !p.AllowedHosts[strings.ToLower(parsed.Hostname())] {
 		return fmt.Errorf("endpoint host %q is not in the configured allow-list", parsed.Hostname())
 	}
 	return nil
@@ -158,14 +180,13 @@ func isGloballyRoutable(ip net.IP) bool {
 		}
 		return true
 	}
-	// IPv6. net.IP.IsPrivate already covers fc00::/7 (RFC 4193).
-	switch {
+	// IPv6. Note that IPv4-mapped addresses such as ::ffff:127.0.0.1 never reach
+	// here: To4() above returns non-nil for them, so they are judged as IPv4.
+	// IsPrivate already covers fc00::/7 (RFC 4193), and IsUnspecified,
+	// IsLoopback and the link-local checks ran earlier.
+	//
 	// 2001:db8::/32 documentation (RFC 3849)
-	case ip[0] == 0x20 && ip[1] == 0x01 && ip[2] == 0x0d && ip[3] == 0xb8:
-		return false
-	// ::ffff:0:0/96 IPv4-mapped addresses are handled by To4() above; anything
-	// reaching here with a v4-mapped prefix is malformed.
-	case ip.Equal(net.IPv6zero):
+	if ip[0] == 0x20 && ip[1] == 0x01 && ip[2] == 0x0d && ip[3] == 0xb8 {
 		return false
 	}
 	return true

@@ -51,13 +51,81 @@ func TestValidateSyntax(t *testing.T) {
 
 func TestAllowedHosts(t *testing.T) {
 	policy := NewEndpointPolicy()
-	policy.AllowedHosts = map[string]bool{"ntfy.sh": true}
+	policy.SetAllowedHosts([]string{"ntfy.sh"})
 
 	if err := policy.ValidateSyntax("https://ntfy.sh/up"); err != nil {
 		t.Errorf("Expected an allow-listed host to pass, got: %v", err)
 	}
 	if err := policy.ValidateSyntax("https://evil.example/up"); err == nil {
 		t.Error("Expected a host outside the allow-list to be rejected")
+	}
+}
+
+// TestAllowedHostsAreCaseInsensitive guards both halves of the comparison. DNS
+// hostnames are case-insensitive, so neither a mixed-case config entry nor a
+// mixed-case endpoint should cause a surprising rejection.
+func TestAllowedHostsAreCaseInsensitive(t *testing.T) {
+	t.Run("mixed-case endpoint matches a lowercase entry", func(t *testing.T) {
+		policy := NewEndpointPolicy()
+		policy.SetAllowedHosts([]string{"ntfy.sh"})
+		for _, endpoint := range []string{
+			"https://NTFY.SH/up",
+			"https://Ntfy.Sh/up",
+			"HTTPS://NTFY.SH/up",
+		} {
+			if err := policy.ValidateSyntax(endpoint); err != nil {
+				t.Errorf("Expected %s to match the allow-list, got: %v", endpoint, err)
+			}
+		}
+	})
+
+	t.Run("mixed-case config entry matches a lowercase endpoint", func(t *testing.T) {
+		policy := NewEndpointPolicy()
+		policy.SetAllowedHosts([]string{"  NTFY.SH  ", "", "  "})
+		if err := policy.ValidateSyntax("https://ntfy.sh/up"); err != nil {
+			t.Errorf("Expected a mixed-case allow-list entry to match, got: %v", err)
+		}
+		if len(policy.AllowedHosts) != 1 {
+			t.Errorf("Expected blank entries to be discarded, got %v", policy.AllowedHosts)
+		}
+	})
+
+	t.Run("an all-blank list clears the allow-list", func(t *testing.T) {
+		policy := NewEndpointPolicy()
+		policy.SetAllowedHosts([]string{"", "   "})
+		if policy.AllowedHosts != nil {
+			t.Errorf("Expected no allow-list, got %v", policy.AllowedHosts)
+		}
+		if err := policy.ValidateSyntax("https://anything.example/up"); err != nil {
+			t.Errorf("Expected no allow-list to mean no restriction, got: %v", err)
+		}
+	})
+}
+
+// TestIPv4MappedIPv6IsJudgedAsIPv4 pins down the behaviour the IPv6 branch's
+// comment relies on: net.IP.To4 returns non-nil for ::ffff:a.b.c.d, so those
+// addresses are classified by the IPv4 rules and never reach the IPv6 branch.
+func TestIPv4MappedIPv6IsJudgedAsIPv4(t *testing.T) {
+	blocked := []string{
+		"::ffff:127.0.0.1",
+		"::ffff:10.0.0.1",
+		"::ffff:169.254.169.254",
+		"::ffff:192.168.1.1",
+	}
+	for _, address := range blocked {
+		ip := net.ParseIP(address)
+		if ip == nil {
+			t.Fatalf("Could not parse %s", address)
+		}
+		if ip.To4() == nil {
+			t.Errorf("Expected %s to be treated as IPv4", address)
+		}
+		if isGloballyRoutable(ip) {
+			t.Errorf("%s should not be treated as globally routable", address)
+		}
+	}
+	if !isGloballyRoutable(net.ParseIP("::ffff:1.1.1.1")) {
+		t.Error("::ffff:1.1.1.1 should be globally routable")
 	}
 }
 

@@ -3,6 +3,7 @@ package webpush
 import (
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 )
 
@@ -61,7 +62,10 @@ func classifyStatus(statusCode int) outcome {
 // SHOULD send with a 429. Both the delay-seconds and HTTP-date forms are legal.
 // Returns 0 when absent or unparseable, leaving the caller to pick a default.
 func retryAfter(header http.Header, now time.Time) time.Duration {
-	value := header.Get("Retry-After")
+	// RFC 9110 permits optional whitespace around a field value, and some
+	// servers emit "120 ". strconv.Atoi rejects that, which would silently turn
+	// an explicit backoff into the default.
+	value := strings.TrimSpace(header.Get("Retry-After"))
 	if value == "" {
 		return 0
 	}

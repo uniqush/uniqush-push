@@ -61,6 +61,17 @@ func TestRetryAfter(t *testing.T) {
 		{name: "zero seconds", value: "0", expected: 0},
 		{name: "negative seconds", value: "-5", expected: 0},
 		{name: "unparseable", value: "soon please", expected: 0},
+		// RFC 9110 permits optional whitespace around a field value. Failing to
+		// trim it would silently downgrade an explicit backoff to the default.
+		{name: "trailing space", value: "120 ", expected: 120 * time.Second},
+		{name: "leading space", value: " 120", expected: 120 * time.Second},
+		{name: "surrounding tabs", value: "\t120\t", expected: 120 * time.Second},
+		{name: "whitespace only", value: "   ", expected: 0},
+		{
+			name:     "http date with surrounding whitespace",
+			value:    "  Fri, 07 Aug 2026 12:02:00 GMT  ",
+			expected: 2 * time.Minute,
+		},
 		{
 			name:     "http date in the future",
 			value:    "Fri, 07 Aug 2026 12:02:00 GMT",
