@@ -48,6 +48,11 @@ type PushRequest struct {
 	MaxMsgID  uint32
 	Expiry    uint32
 
+	// PushType is the value for the apns-push-type header, e.g. "alert" or
+	// "background". Only the HTTP/2 API sends it; the binary protocol has no
+	// equivalent. An empty value is treated as DefaultPushType.
+	PushType string
+
 	// DPList is a list of delivery points of the same length as Devtokens. DPList[i].FixedData["dev_token"] == string(Devtokens[i])
 	DPList  []*push.DeliveryPoint
 	ErrChan chan<- push.Error
