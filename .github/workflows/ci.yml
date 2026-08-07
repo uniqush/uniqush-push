@@ -31,7 +31,10 @@ jobs:
 
       - uses: actions/setup-go@v5
         with:
-          go-version: '1.24'
+          # Must stay >= the `go` directive in go.mod. check-latest picks up
+          # stdlib security patches, several of which govulncheck flags on
+          # older 1.25.x.
+          go-version: '1.25'
           check-latest: true
 
       - name: Build
@@ -49,6 +52,24 @@ jobs:
           files: ./coverage.txt
         continue-on-error: true
 
+  govulncheck:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.25'
+          check-latest: true
+
+      # This is how the x/net situation was found in the first place, so keep it
+      # running. Note it reports stdlib vulnerabilities against the toolchain in
+      # use, not just our dependencies.
+      - name: govulncheck
+        run: |
+          go install golang.org/x/vuln/cmd/govulncheck@latest
+          govulncheck ./...
+
   lint:
     runs-on: ubuntu-latest
     steps:
@@ -59,7 +80,10 @@ jobs:
 
       - uses: actions/setup-go@v5
         with:
-          go-version: '1.24'
+          # Must stay >= the `go` directive in go.mod. check-latest picks up
+          # stdlib security patches, several of which govulncheck flags on
+          # older 1.25.x.
+          go-version: '1.25'
           check-latest: true
 
       # Action v6 and earlier are pinned to golangci-lint v1, which cannot read
