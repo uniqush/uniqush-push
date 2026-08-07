@@ -14,28 +14,33 @@ server side, you can send push notifications to any supported mobile platform.
 
 [![CI](https://github.com/uniqush/uniqush-push/actions/workflows/ci.yml/badge.svg?branch=master)](https://github.com/uniqush/uniqush-push/actions/workflows/ci.yml)
 
-> ### ⚠️ Status: not currently usable against live push services
+> ### ⚠️ Status: read before deploying
 >
-> This project was dormant from 2020 to 2026. In that time the upstream APIs it
-> depends on were shut down, and **three of its four backends can no longer
-> deliver a notification**:
+> This project was dormant from 2020 to 2026, and in that time some of the
+> upstream APIs it depends on were shut down.
 >
-> - **GCM and FCM** post to the legacy `fcm.googleapis.com/fcm/send` endpoint,
->   which Google decommissioned on **20 June 2024**.
-> - **APNs** defaults to Apple's binary protocol, switched off on
->   **31 March 2021**. The HTTP/2 implementation works but is opt-in per push
->   request via `uniqush.http2=1`, and is missing the `apns-push-type` header
->   that iOS 13+ requires.
+> - **APNs — repaired, but not yet verified against Apple's servers.** As of the
+>   unreleased version it uses the HTTP/2 API by default and sends the
+>   `apns-push-type` header that iOS 13+ requires. Earlier releases defaulted to
+>   the binary protocol, which Apple switched off on 31 March 2021, and could
+>   not deliver at all.
+>
+>   These changes are covered by unit tests against a mocked APNs, but **nobody
+>   has yet run them against real Apple credentials and a real device**, because
+>   the current maintainer does not have an Apple developer account. If you do,
+>   a report either way would be genuinely useful — please open an issue.
+> - **GCM and FCM — cannot deliver.** Both post to the legacy
+>   `fcm.googleapis.com/fcm/send` endpoint with a server key, which Google
+>   decommissioned on **20 June 2024**. Migrating to FCM HTTP v1 is in progress.
 > - **ADM** is believed to still work, but has not been re-verified.
 >
-> Work to fix this is underway. Please do not deploy this expecting
-> notifications to arrive.
+> Building requires **Go 1.25 or newer**.
 
 ## Supported Platforms ##
 
 - [GCM](http://developer.android.com/guide/google/gcm/index.html) from Google for the Android platform — **currently broken, see above**
 - [FCM](https://firebase.google.com/docs/cloud-messaging/) from Google for the Android platform — **currently broken, see above**
-- [APNS](https://developer.apple.com/documentation/usernotifications/sending-notification-requests-to-apns) from Apple for the iOS platform — **broken by default, see above**
+- [APNS](https://developer.apple.com/documentation/usernotifications/sending-notification-requests-to-apns) from Apple for the iOS platform
 - [ADM](https://developer.amazon.com/sdk/adm.html) from Amazon for Kindle tablets
 
 ## FAQ ##
