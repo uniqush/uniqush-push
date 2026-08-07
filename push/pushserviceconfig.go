@@ -4,7 +4,7 @@ import "errors"
 import "github.com/uniqush/goconf/conf"
 
 // PushServiceConfig accesses the section for 'name' of the given ConfigFile.
-type PushServiceConfig struct { // nolint: golint
+type PushServiceConfig struct { //nolint:revive
 	c    *conf.ConfigFile
 	name string
 }

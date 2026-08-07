@@ -1,4 +1,4 @@
-package binary_api // nolint:golint
+package binary_api //nolint:revive
 
 import (
 	"net"

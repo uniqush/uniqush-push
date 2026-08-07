@@ -92,7 +92,7 @@ var validSubscriberPattern = regexp.MustCompile(`^[a-zA-Z.0-9_@-\[\]^\\\\-]+$`)
 func validateSubscribers(subs []string) error {
 	for _, sub := range subs {
 		if !validSubscriberPattern.MatchString(sub) {
-			return fmt.Errorf("invalid subscriber name: %q. Accepted characters: a-z, A-Z, 0-9, -, _, @ or .", sub) // nolint: golint
+			return fmt.Errorf("invalid subscriber name: %q. Accepted characters: a-z, A-Z, 0-9, -, _, @ or .", sub) //nolint:revive,staticcheck
 		}
 	}
 	return nil
@@ -100,7 +100,7 @@ func validateSubscribers(subs []string) error {
 
 func validateService(service string) error {
 	if !validServicePattern.MatchString(service) {
-		return fmt.Errorf("invalid service name: %q. Accepted characters: a-z, A-Z, 0-9, -, _, @ or .", service) // nolint: golint
+		return fmt.Errorf("invalid service name: %q. Accepted characters: a-z, A-Z, 0-9, -, _, @ or .", service) //nolint:revive,staticcheck
 	}
 	return nil
 }

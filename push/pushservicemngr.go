@@ -32,7 +32,7 @@ type serviceType struct {
 }
 
 // PushServiceManager is a singleton which stores all of the push service implementations.
-type PushServiceManager struct { // nolint: golint
+type PushServiceManager struct { //nolint:revive
 	serviceTypes map[string]*serviceType
 	errChan      chan<- Error
 	configFile   *conf.ConfigFile

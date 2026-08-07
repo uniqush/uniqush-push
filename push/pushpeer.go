@@ -46,7 +46,7 @@ const (
 )
 
 // PushPeer implements common functionality for pushes. Other structs in this module include this struct.
-type PushPeer struct { // nolint:golint
+type PushPeer struct { //nolint:revive
 	m               sync.Mutex // Enforces that there are no data races on Name() in multi push.
 	name            string
 	pushServiceType PushServiceType
@@ -197,7 +197,7 @@ func (dp *DeliveryPoint) addVolatileData(kv map[string]string) error {
 }
 
 // PushServiceProvider contains the data needed to send pushes to an external push notifications service provider (certificates, pushservicetype, server address, etc.).
-type PushServiceProvider struct { // nolint: golint
+type PushServiceProvider struct { //nolint:revive
 	PushPeer
 }
 

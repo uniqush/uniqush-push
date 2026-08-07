@@ -15,7 +15,7 @@
  *
  */
 
-package binary_api // nolint: golint
+package binary_api //nolint:revive
 
 // This file implements a goroutine that periodically connects to apple's feedback servers, and forwards unsubscribe updates on a channel of push.Error instances.
 

@@ -17,7 +17,7 @@
  */
 
 // Package binary_api implements a client for the old APNs binary protocol (over an encrypted TCP socket)
-package binary_api // nolint: golint
+package binary_api //nolint:revive
 
 import (
 	"bytes"

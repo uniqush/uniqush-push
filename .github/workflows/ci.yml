@@ -44,7 +44,7 @@ jobs:
         run: go test ./... -race -coverprofile=coverage.txt -covermode=atomic
 
       - name: Upload coverage
-        uses: codecov/codecov-action@v4
+        uses: codecov/codecov-action@v5
         with:
           files: ./coverage.txt
         continue-on-error: true
@@ -62,11 +62,16 @@ jobs:
           go-version: '1.24'
           check-latest: true
 
-      # There is a backlog of ~50 pre-existing lint findings, several of which
-      # would require breaking API renames to clear, so this job gates on newly
+      # Action v6 and earlier are pinned to golangci-lint v1, which cannot read
+      # the v2 config format in .golangci.yml -- `version: latest` there resolves
+      # to 1.64.8 and fails with "additional properties 'formatters', 'version'
+      # not allowed". v7+ is v2-only. Pin the linter version too, so CI matches
+      # what was verified locally rather than drifting on someone else's release.
+      #
+      # There is a backlog of pre-existing findings, so this job gates on newly
       # introduced issues only. Run `golangci-lint run` locally with no flags to
       # see the whole backlog.
-      - uses: golangci/golangci-lint-action@v6
+      - uses: golangci/golangci-lint-action@v9
         with:
-          version: latest
+          version: v2.12.2
           args: --new-from-merge-base=origin/${{ github.base_ref || 'master' }}

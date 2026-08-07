@@ -26,7 +26,12 @@ import (
 func (api *RestAPI) signalSetup() {
 	ch := make(chan os.Signal, 1)
 	// TODO: Figure out what the equivalent should be on Windows.
-	signal.Notify(ch, syscall.SIGTERM, os.Kill) // nolint: megacheck
+	//
+	// os.Kill (SIGKILL) used to be listed here behind a `// nolint: megacheck`
+	// directive. SIGKILL cannot be caught by any process, so signal.Notify
+	// silently ignored it and the graceful shutdown below never ran for it.
+	// Removing it is behaviour-neutral and lets staticcheck's SA1016 stay on.
+	signal.Notify(ch, syscall.SIGTERM)
 	<-ch
 	api.stop(nil, "SIGTERM")
 }

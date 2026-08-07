@@ -17,7 +17,7 @@
  */
 
 // Package cloud_messaging contains implementation details common to GCM and FCM.
-package cloud_messaging // nolint: golint
+package cloud_messaging //nolint:revive
 
 // TODO: Refactor this as new features are added for FCM/GCM.
 
