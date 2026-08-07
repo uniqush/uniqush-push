@@ -3,9 +3,48 @@ uniqush-push NEWS
 Unreleased
 -------------------------------
 
-APNs changes. Together these are the difference between iOS notifications
-arriving and silently not arriving; anyone running uniqush for APNs should treat
-this as a required upgrade.
+### New backend: UnifiedPush / Web Push
+
+- New provider: **`webpush`, also registered as `unifiedpush`.** Implements
+  RFC 8030 delivery, RFC 8291 `aes128gcm` payload encryption and RFC 8292 VAPID
+  authentication, which is what [UnifiedPush](https://unifiedpush.org/) uses
+  between an application server and a push server. The same backend drives
+  browser Web Push.
+
+  This is the only uniqush backend with no vendor account, no certificate and no
+  API key: the user chooses their own push provider. It reaches de-Googled
+  Android devices, Linux desktops and browsers.
+
+  Registration takes `vapidpublickey`, `vapidprivatekey` and `subscriber` on
+  `/addpsp`; a subscription takes `endpoint`, `p256dh` and `auth` on
+  `/subscribe`, all three of which a UnifiedPush connector library produces on
+  the device. `uniqush.payload.webpush` sends a raw body verbatim. See the
+  README for worked examples.
+
+  The two names behave identically, but a `pushservicetype` is part of a
+  subscription's identity, so pick one per service and stay with it.
+- New feature: `uniqush-push -generate-vapid-keys` prints a fresh VAPID key
+  pair. Keys are minted by the binary rather than over the REST API, which has
+  no authentication.
+- New feature: optional `[webpush]` / `[unifiedpush]` config sections with
+  `allow_private_addresses` and `allowed_hosts`.
+
+  **Security note.** For every other backend the destination host is a constant
+  compiled into uniqush. For Web Push it is supplied by whoever called
+  `/subscribe`, which makes an unguarded implementation a server-side request
+  forgery primitive. uniqush therefore refuses by default to POST to addresses
+  that are not globally routable — loopback, RFC 1918, carrier-grade NAT,
+  link-local (including `169.254.169.254`), documentation and reserved ranges,
+  and the IPv6 equivalents. Redirects are never followed, and the check runs
+  before every push rather than only at subscribe time, so DNS rebinding does
+  not defeat it. Self-hosted push servers on a private network are supported via
+  the config options above.
+
+### APNs
+
+Together these are the difference between iOS notifications arriving and
+silently not arriving; anyone running uniqush for APNs should treat this as a
+required upgrade.
 
 **These changes have not been verified against Apple's servers.** They are
 covered by unit tests against a mocked APNs and follow Apple's current published
