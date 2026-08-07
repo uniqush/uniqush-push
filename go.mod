@@ -3,6 +3,7 @@ module github.com/uniqush/uniqush-push
 go 1.25.0
 
 require (
+	github.com/SherClockHolmes/webpush-go v1.4.0
 	github.com/redis/go-redis/v9 v9.22.0
 	github.com/uniqush/cache2 v0.0.1
 	github.com/uniqush/goconf v0.0.1
@@ -12,7 +13,9 @@ require (
 
 require (
 	github.com/cespare/xxhash/v2 v2.3.0 // indirect
+	github.com/golang-jwt/jwt/v5 v5.3.1 // indirect
 	go.uber.org/atomic v1.11.0 // indirect
+	golang.org/x/crypto v0.54.0 // indirect
 	golang.org/x/sys v0.47.0 // indirect
 	golang.org/x/text v0.40.0 // indirect
 )
