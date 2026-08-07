@@ -12,7 +12,7 @@ The `uniqush-push` API abstracts the APIs of the various push services used
 to send push notifications to those devices. By running `uniqush-push` on the
 server side, you can send push notifications to any supported mobile platform.
 
-[![Build Status](https://travis-ci.org/uniqush/uniqush-push.svg?branch=master)](https://travis-ci.org/uniqush/uniqush-push)
+[![CI](https://github.com/uniqush/uniqush-push/actions/workflows/ci.yml/badge.svg?branch=master)](https://github.com/uniqush/uniqush-push/actions/workflows/ci.yml)
 
 ## Supported Platforms ##
 

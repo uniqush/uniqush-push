@@ -1,0 +1,72 @@
+name: CI
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+
+    # Some of the tests in ./db require redis on 127.0.0.1:6379. Without it they
+    # call t.Skip and the package reports "ok" having asserted nothing, so this
+    # service container is what makes that coverage real rather than decorative.
+    services:
+      redis:
+        image: redis:7
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.24'
+          check-latest: true
+
+      - name: Build
+        run: go build ./...
+
+      - name: Vet
+        run: ./govet.sh
+
+      - name: Test
+        run: go test ./... -race -coverprofile=coverage.txt -covermode=atomic
+
+      - name: Upload coverage
+        uses: codecov/codecov-action@v4
+        with:
+          files: ./coverage.txt
+        continue-on-error: true
+
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # new-from-merge-base needs history to diff against.
+          fetch-depth: 0
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.24'
+          check-latest: true
+
+      # There is a backlog of ~50 pre-existing lint findings, several of which
+      # would require breaking API renames to clear, so this job gates on newly
+      # introduced issues only. Run `golangci-lint run` locally with no flags to
+      # see the whole backlog.
+      - uses: golangci/golangci-lint-action@v6
+        with:
+          version: latest
+          args: --new-from-merge-base=origin/${{ github.base_ref || 'master' }}
