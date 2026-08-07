@@ -1,5 +1,60 @@
 uniqush-push NEWS
 
+Unreleased
+-------------------------------
+
+APNs changes. Together these are the difference between iOS notifications
+arriving and silently not arriving; anyone running uniqush for APNs should treat
+this as a required upgrade.
+
+**These changes have not been verified against Apple's servers.** They are
+covered by unit tests against a mocked APNs and follow Apple's current published
+documentation, but no one has yet run them with real credentials against a real
+device. Reports from anyone who can are very welcome.
+
+- Bugfix: **HTTP/2 is now the default APNs transport.** Previously uniqush used
+  Apple's binary protocol unless a push passed `uniqush.http2=1`. Apple shut the
+  binary protocol down on 31 March 2021, so the default path could not deliver
+  anything. Passing `uniqush.http2=0` still selects it and now logs a
+  deprecation warning; that fallback will be removed in a future release.
+- Bugfix: **Send the `apns-push-type` header.** Apple has required this on
+  watchOS since watchOS 6 and recommends it everywhere. Its absence is worst for
+  background pushes: on iOS 13 and later APNs accepts the request, returns 200,
+  and then discards the notification, so the failure never appears in logs.
+- Bugfix: **Derive `apns-priority` from the push type.** It was hardcoded to 10.
+  Apple's documentation for background pushes says "Always use priority 5. Using
+  priority 10 is an error", which APNs enforces with a 400 `BadPriority`, so
+  background pushes were rejected outright.
+- Bugfix: **Unsubscribe on the full set of permanent token failures.** Only
+  `BadDeviceToken` and a bare 410 were handled. `Unregistered`, `ExpiredToken`
+  and `DeviceTokenNotForTopic` now also remove the subscription, so dead tokens
+  no longer accumulate. Provider and payload errors such as `PayloadTooLarge`,
+  `BadTopic` and `BadCertificate` deliberately do *not* unsubscribe, since those
+  indicate a problem on our side rather than a dead device.
+- New feature: `uniqush.apns_push_type` can be set on `/push` to choose the push
+  type. Valid values are `alert` (the default), `background`, `complication`,
+  `controls`, `fileprovider`, `liveactivity`, `location`, `mdm`, `pushtotalk`,
+  `voip` and `widgets`. An unrecognised value is rejected by uniqush rather than
+  being sent on for APNs to answer with an opaque 400.
+  The older `uniqush.apns_voip=1` continues to work and implies `voip`.
+- New feature: Send an `apns-id` header, unique per notification. APNs generates
+  one when it is omitted, but only returns it in a response uniqush does not
+  keep, which made "did this specific push arrive" unanswerable.
+- Maintenance: Update `golang.org/x/net` from a March 2020 revision to v0.57.0.
+  It backs the APNs HTTP/2 client, so it predated every HTTP/2 hardening fix
+  since, including CVE-2023-44487 (rapid reset) and CVE-2023-45288
+  (CONTINUATION flood). `govulncheck` is now part of CI.
+- Maintenance: **Building now requires Go 1.25 or newer** (was 1.14). A
+  non-vulnerable `golang.org/x/net` is not reachable from Go 1.24.
+- Maintenance: Replace Travis CI with GitHub Actions, and migrate
+  `.golangci.yml` to the v2 config format.
+
+Known limitation: a 410 response carries a `timestamp` recording when APNs last
+saw the token as invalid, and Apple's guidance is to keep the subscription if
+the device re-registered the same token after that point. Acting on it needs a
+reliable per-delivery-point registration time, which uniqush does not yet track
+consistently, so the token is currently dropped unconditionally.
+
 25 Nov 2019, uniqush-push 2.7.0
 -------------------------------
 

@@ -19,6 +19,12 @@ type MockPushRequestProcessor struct {
 	status      uint8
 	didFinalize bool
 	errChan     chan<- push.Error
+
+	// requests records what AddRequest received, so tests can assert on which
+	// processor was chosen and what PushType it was handed. AddRequest runs on
+	// the goroutine executing Push, hence the mutex.
+	mu       sync.Mutex
+	requests []*common.PushRequest
 }
 
 func newMockRequestProcessor(status uint8) *MockPushRequestProcessor {
@@ -28,9 +34,20 @@ func newMockRequestProcessor(status uint8) *MockPushRequestProcessor {
 	}
 }
 
+// recorded returns a copy of the requests this processor received.
+func (mockPRP *MockPushRequestProcessor) recorded() []*common.PushRequest {
+	mockPRP.mu.Lock()
+	defer mockPRP.mu.Unlock()
+	return append([]*common.PushRequest(nil), mockPRP.requests...)
+}
+
 var _ common.PushRequestProcessor = &MockPushRequestProcessor{}
 
 func (mockPRP *MockPushRequestProcessor) AddRequest(request *common.PushRequest) {
+	mockPRP.mu.Lock()
+	mockPRP.requests = append(mockPRP.requests, request)
+	mockPRP.mu.Unlock()
+
 	close(request.ErrChan) // Would have contents only for an invalid request. Send nothing.
 	go func() {
 		for i := range request.DPList {

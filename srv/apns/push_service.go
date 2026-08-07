@@ -34,12 +34,15 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"sort"
 	"strconv"
+	"strings"
 	"sync/atomic"
 	"time"
 
-	// There are two different protocols we use to connect to APNs: binary and HTTP2.
-	// TODO: Make this configurable.
+	// There are two protocols for connecting to APNs: the binary protocol,
+	// which Apple shut down on 2021-03-31, and HTTP/2. HTTP/2 is the default;
+	// see apnsHTTP2Key.
 	"github.com/uniqush/uniqush-push/push"
 	"github.com/uniqush/uniqush-push/srv/apns/binary_api"
 	"github.com/uniqush/uniqush-push/srv/apns/common"
@@ -49,6 +52,44 @@ import (
 const (
 	maxNrConn int = 13
 )
+
+// Keys uniqush clients can set in the /push request to influence APNs behaviour.
+const (
+	// apnsPushTypeKey overrides the apns-push-type header. Defaults to "alert".
+	apnsPushTypeKey = "uniqush.apns_push_type"
+	// apnsVoIPKey predates apnsPushTypeKey. It is still honoured, and implies
+	// a push type of "voip".
+	apnsVoIPKey = "uniqush.apns_voip"
+	// apnsHTTP2Key used to opt *in* to the HTTP/2 API. HTTP/2 is now the
+	// default, so only the value "0" is meaningful: it opts back in to the
+	// binary protocol.
+	apnsHTTP2Key = "uniqush.http2"
+)
+
+// binaryProtocolDeprecationNotice is reported when a caller explicitly asks for
+// the binary protocol. Apple stopped serving it on 2021-03-31, so this is not a
+// performance or compatibility trade-off; it simply will not deliver.
+const binaryProtocolDeprecationNotice = "uniqush.http2=0 selects the APNs binary protocol, which Apple shut down on 2021-03-31. " +
+	"Pushes sent over it cannot be delivered. Remove uniqush.http2=0 from the request; " +
+	"this fallback will be removed in a future release."
+
+// pushTypeForNotification resolves the apns-push-type for a notification.
+func pushTypeForNotification(notif *push.Notification) (string, push.Error) {
+	if pushType, ok := notif.Data[apnsPushTypeKey]; ok && pushType != "" {
+		if !common.IsValidPushType(pushType) {
+			types := common.ValidPushTypes()
+			sort.Strings(types)
+			return "", push.NewBadNotificationWithDetails(
+				fmt.Sprintf("invalid %s %q, expected one of: %s", apnsPushTypeKey, pushType, strings.Join(types, ", ")))
+		}
+		return pushType, nil
+	}
+	// uniqush.apns_voip predates the apns-push-type header. Keep it working.
+	if isVoIP, ok := notif.Data[apnsVoIPKey]; ok && isVoIP == "1" {
+		return common.PushTypeVoIP, nil
+	}
+	return common.DefaultPushType, nil
+}
 
 // pushService is the APNs push service. It implements the two network protocols for sending requests to APNs and getting the corresponding response.
 type pushService struct {
@@ -237,21 +278,29 @@ func (ps *pushService) Push(psp *push.PushServiceProvider, dpQueue <-chan *push.
 	req.PSP = psp
 	req.Payload, err = toAPNSPayload(notif)
 
-	var requestProcessor common.PushRequestProcessor
-	if http2, ok := notif.Data["uniqush.http2"]; ok && http2 == "1" {
-		requestProcessor = ps.httpRequestProcessor
-	} else {
+	pushType, pushTypeErr := pushTypeForNotification(notif)
+	if err == nil && pushTypeErr != nil {
+		err = pushTypeErr
+	}
+	req.PushType = pushType
+
+	// HTTP/2 is the default. The binary protocol is only reachable by asking
+	// for it explicitly, and Apple stopped serving it in March 2021.
+	requestProcessor := ps.httpRequestProcessor
+	if http2, ok := notif.Data[apnsHTTP2Key]; ok && http2 == "0" {
 		requestProcessor = ps.binaryRequestProcessor
+		if ps.errChan != nil {
+			ps.errChan <- push.NewError(binaryProtocolDeprecationNotice)
+		}
 	}
 
 	maxPayloadSize := requestProcessor.GetMaxPayloadSize()
-	// If uniqush.apns_voip=1 for /push, assume the PSP has been set up with a VoIP certificate.
-	// Support 5120 byte payloads for VoIP pushes. Assume VoIP pushes must be http2. https://github.com/uniqush/uniqush-push/issues/202
-	// TODO: Automatically append ".voip" if it's not already the suffix
-	if requestProcessor == ps.httpRequestProcessor {
-		if isVoIP, ok := notif.Data["uniqush.apns_voip"]; ok && isVoIP == "1" {
-			maxPayloadSize = 5120
-		}
+	// A VoIP push may carry 5120 bytes rather than the usual 4096, assuming the
+	// PSP was set up with a VoIP certificate. https://github.com/uniqush/uniqush-push/issues/202
+	// The binary protocol has a smaller ceiling of its own, so only widen for HTTP/2.
+	// TODO: Automatically append ".voip" to apns-topic if it is not already the suffix
+	if requestProcessor == ps.httpRequestProcessor && pushType == common.PushTypeVoIP {
+		maxPayloadSize = 5120
 	}
 
 	if err == nil && len(req.Payload) > maxPayloadSize {
