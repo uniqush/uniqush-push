@@ -21,9 +21,9 @@ package db
 import (
 	"errors"
 	"fmt"
-	"strings"
 	"sync"
 
+	"github.com/redis/go-redis/v9"
 	"github.com/uniqush/log"
 	"github.com/uniqush/uniqush-push/push"
 )
@@ -39,12 +39,17 @@ type PushServiceProviderDeliveryPointPair struct {
 	DeliveryPoint       *push.DeliveryPoint
 }
 
-// isErrCausedByMissingKey checks if an error is caused by a missing redis key. It uses string comparisons because err's type may be erased, and doesn't exist to begin with.
+// isErrCausedByMissingKey checks whether an error means the redis key was absent
+// rather than that something went wrong.
+//
+// This used to string-match "redis: nil" against err.Error(), under a TODO
+// asking for exactly this fix. That happened to keep working because the
+// sentinel's text never changed, but it would also have matched an unrelated
+// error that merely contained the phrase, and it silently depended on an
+// implementation detail of the client. redis.Nil is a comparable constant, and
+// errors.Is handles the wrapping that pushredisdb.go does with %v/%w.
 func isErrCausedByMissingKey(err error) bool {
-	// TODO - fix this check.
-	// This would be a redis.redisError with Err = "redis: nil", and could be detected in pushredisdb.go
-	// return strings.Contains(err.Error(), "Redis Error: Key does not exist")
-	return strings.Contains(err.Error(), "redis: nil") // redisv3 check.
+	return errors.Is(err, redis.Nil)
 }
 
 // PushDatabase is an interface for any db implementation that uniqush-push can use. Currently, redis is the only supported database.
