@@ -1,17 +1,31 @@
-# TODO: Re-enable errcheck
+version: "2"
+
 linters:
-    disable:
-        - errcheck
-    enable:
-        - deadcode
-        - gofmt
-        - golint
-        - ineffassign
-        - misspell
-        - scopelint
-        - structcheck
-        - unconvert
-        - unparam
-        - varcheck
-        - vet
-        - vetshadow
+  # The standard set is errcheck, govet, ineffassign, staticcheck, unused.
+  default: standard
+  enable:
+    - misspell
+    - revive
+    - unconvert
+    - unparam
+  disable:
+    # TODO: Re-enable errcheck. Carried over from the pre-2020 config; there is
+    # a substantial backlog of unchecked errors, mostly in logging calls.
+    - errcheck
+  settings:
+    govet:
+      enable:
+        # Was `vetshadow` in the v1 config.
+        - shadow
+
+formatters:
+  enable:
+    - gofmt
+
+# Notes on what happened to the old v1 linter list:
+#   deadcode, structcheck, varcheck -> all removed upstream, superseded by `unused`
+#   golint                          -> removed upstream, superseded by `revive`
+#   scopelint                       -> removed upstream; the loop-variable capture
+#                                      bug it caught no longer exists as of Go 1.22
+#   vet, vetshadow                  -> aliases for `govet`, now configured above
+#   gofmt                           -> moved from `linters` to `formatters` in v2

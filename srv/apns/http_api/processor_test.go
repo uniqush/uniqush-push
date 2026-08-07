@@ -1,4 +1,4 @@
-package http_api // nolint: golint
+package http_api //nolint:revive
 
 import (
 	"bytes"

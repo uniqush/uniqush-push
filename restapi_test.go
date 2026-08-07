@@ -16,14 +16,14 @@ func TestValidateSubscribers(t *testing.T) {
 	expectedError := `invalid subscriber name: "invalid subscriber.123". Accepted characters: a-z, A-Z, 0-9, -, _, @ or .`
 	err = validateSubscribers([]string{invalidName})
 	if err == nil {
-		t.Errorf("Expected error for " + invalidName)
+		t.Errorf("Expected error for %s", invalidName)
 	} else {
 		testutil.ExpectEquals(t, expectedError, err.Error(), "unexpected error message")
 	}
 
 	err = validateSubscribers([]string{validName, invalidName})
 	if err == nil {
-		t.Errorf("Expected error for " + invalidName)
+		t.Errorf("Expected error for %s", invalidName)
 	} else {
 		testutil.ExpectEquals(t, expectedError, err.Error(), "unexpected error message")
 	}
@@ -39,7 +39,7 @@ func TestValidateService(t *testing.T) {
 	expectedError := `invalid service name: "$invalid_service.123". Accepted characters: a-z, A-Z, 0-9, -, _, @ or .`
 	err = validateService(invalidName)
 	if err == nil {
-		t.Errorf("Expected error for " + invalidName)
+		t.Errorf("Expected error for %s", invalidName)
 	} else {
 		testutil.ExpectEquals(t, expectedError, err.Error(), "unexpected error message")
 	}

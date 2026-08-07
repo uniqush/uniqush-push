@@ -12,13 +12,30 @@ The `uniqush-push` API abstracts the APIs of the various push services used
 to send push notifications to those devices. By running `uniqush-push` on the
 server side, you can send push notifications to any supported mobile platform.
 
-[![Build Status](https://travis-ci.org/uniqush/uniqush-push.svg?branch=master)](https://travis-ci.org/uniqush/uniqush-push)
+[![CI](https://github.com/uniqush/uniqush-push/actions/workflows/ci.yml/badge.svg?branch=master)](https://github.com/uniqush/uniqush-push/actions/workflows/ci.yml)
+
+> ### ⚠️ Status: not currently usable against live push services
+>
+> This project was dormant from 2020 to 2026. In that time the upstream APIs it
+> depends on were shut down, and **three of its four backends can no longer
+> deliver a notification**:
+>
+> - **GCM and FCM** post to the legacy `fcm.googleapis.com/fcm/send` endpoint,
+>   which Google decommissioned on **20 June 2024**.
+> - **APNs** defaults to Apple's binary protocol, switched off on
+>   **31 March 2021**. The HTTP/2 implementation works but is opt-in per push
+>   request via `uniqush.http2=1`, and is missing the `apns-push-type` header
+>   that iOS 13+ requires.
+> - **ADM** is believed to still work, but has not been re-verified.
+>
+> Work to fix this is underway. Please do not deploy this expecting
+> notifications to arrive.
 
 ## Supported Platforms ##
 
-- [GCM](http://developer.android.com/guide/google/gcm/index.html) from Google for the Android platform
-- [FCM](https://firebase.google.com/docs/cloud-messaging/) from Google for the Android platform
-- [APNS](http://developer.apple.com/library/mac/#documentation/NetworkingInternet/Conceptual/RemoteNotificationsPG/ApplePushService/ApplePushService.html) from Apple for the iOS platform
+- [GCM](http://developer.android.com/guide/google/gcm/index.html) from Google for the Android platform — **currently broken, see above**
+- [FCM](https://firebase.google.com/docs/cloud-messaging/) from Google for the Android platform — **currently broken, see above**
+- [APNS](https://developer.apple.com/documentation/usernotifications/sending-notification-requests-to-apns) from Apple for the iOS platform — **broken by default, see above**
 - [ADM](https://developer.amazon.com/sdk/adm.html) from Amazon for Kindle tablets
 
 ## FAQ ##

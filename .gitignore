@@ -14,6 +14,16 @@ _test
 .*.swp
 tags
 vendor/
+# Editor artifacts. Emacs autosave/lock files in particular have been committed
+# to this tree before, and they shadow real sources in greps.
+\#*\#
+.\#*
+*~
+.idea/
+.vscode/
+# Test and coverage output
+coverage.txt
+*.test
 # Ignore binaries and packaged files
 uniqush-push-*
 uniqush-push_*

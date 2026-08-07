@@ -1,7 +1,8 @@
 package main
 
 // These are constants with codes for a uniqush response type.
-// nolint: golint
+//
+//nolint:revive
 const (
 	/* Not errors */
 

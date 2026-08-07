@@ -128,7 +128,7 @@ func NewRetryError(psp *PushServiceProvider, dp *DeliveryPoint, notif *Notificat
 /*********************/
 
 // PushServiceProviderUpdate is an error object indicating that the push service provider's VolatileData was updated. (E.g. triggered by Update-Client-Auth for GCM/FCM)
-type PushServiceProviderUpdate struct { // nolint: golint
+type PushServiceProviderUpdate struct { //nolint:revive
 	implementsPushError
 	Provider *PushServiceProvider
 }
