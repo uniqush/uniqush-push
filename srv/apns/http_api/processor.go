@@ -3,11 +3,12 @@ package http_api //nolint:revive
 
 import (
 	"bytes"
+	"crypto/rand"
 	"crypto/tls"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
-	"io/ioutil"
+	"io"
 	"net/http"
 	"strings"
 	"sync"
@@ -157,9 +158,24 @@ func (prp *HTTPPushRequestProcessor) sendRequests(request *common.PushRequest) {
 	wg := new(sync.WaitGroup)
 	wg.Add(len(request.Devtokens))
 
-	header := http.Header{
+	pushType := request.PushType
+	if pushType == "" {
+		pushType = common.DefaultPushType
+	}
+
+	// Header names are written lowercase deliberately. HTTP/2 requires
+	// lowercase field names on the wire, and using http.Header.Set here would
+	// canonicalise to "Apns-Topic" and create a second, duplicate entry
+	// alongside the lowercase one.
+	baseHeader := http.Header{
 		"apns-expiration": []string{fmt.Sprint(request.Expiry)},
-		"apns-priority":   []string{"10"}, // Send notification immediately
+		// Priority is not a free choice: a background push must use 5, and
+		// APNs rejects 10 with 400 BadPriority.
+		"apns-priority": []string{common.PriorityForPushType(pushType)},
+		// Required on watchOS 6+, and strongly recommended everywhere. Omitting
+		// it on a background push to iOS 13+ makes APNs return 200 and then
+		// silently drop the notification.
+		"apns-push-type": []string{pushType},
 		// This is kept in VolatileData. A PSP may need to be updated first in /addpsp to use this,
 		// by setting bundleid to the bundle id of the app.
 		"apns-topic": []string{bundleid},
@@ -191,7 +207,14 @@ func (prp *HTTPPushRequestProcessor) sendRequests(request *common.PushRequest) {
 			request.ErrChan <- push.NewError(err.Error())
 			continue
 		}
-		httpRequest.Header = header
+		// Clone rather than share: apns-id differs per device token. If apns-id
+		// is omitted APNs generates one, but then it only exists in a response
+		// we do not persist, which makes supporting a "did this push arrive"
+		// question impossible.
+		httpRequest.Header = baseHeader.Clone()
+		if apnsID, idErr := newAPNSID(); idErr == nil {
+			httpRequest.Header["apns-id"] = []string{apnsID}
+		}
 
 		go prp.sendRequest(wg, client, httpRequest, msgID, request.ErrChan, request.ResChan)
 	}
@@ -210,67 +233,92 @@ func (prp *HTTPPushRequestProcessor) sendRequest(wg *sync.WaitGroup, client HTTP
 
 	defer response.Body.Close()
 
-	responseBody, err := ioutil.ReadAll(response.Body)
+	responseBody, err := io.ReadAll(response.Body)
 	if err != nil {
 		errChan <- push.NewError(err.Error())
 		return
-	}
-	// https://developer.apple.com/library/content/documentation/NetworkingInternet/Conceptual/RemoteNotificationsPG/CommunicatingwithAPNs.html
-	switch response.StatusCode {
-	case 200:
-		break // success, body must be empty
-	case 410:
-		// Reason is "Unregistered"
-		// > The device token is inactive for the specified topic.
-		resChan <- &common.APNSResult{
-			MsgID:  messageID,
-			Status: common.Status8Unsubscribe,
-		}
-		return
-	case 400:
-		break // Switch on Reason
-	case 405, 413, 429, 500, 503:
-		// Not sure how to handle this, these error types shouldn't happen in the normal case.
-		// Use generic error handler to report the status message to the client.
-		break
-	default:
-		break
 	}
 
 	prp.handlePushResponseBody(response, responseBody, messageID, errChan, resChan)
 }
 
+// newAPNSID returns a random RFC 4122 version 4 UUID for the apns-id header.
+// APNs requires canonical form: 32 lowercase hex digits in 8-4-4-4-12 groups.
+func newAPNSID() (string, error) {
+	var b [16]byte
+	if _, err := rand.Read(b[:]); err != nil {
+		return "", err
+	}
+	b[6] = (b[6] & 0x0f) | 0x40 // version 4
+	b[8] = (b[8] & 0x3f) | 0x80 // variant 10
+	return fmt.Sprintf("%x-%x-%x-%x-%x", b[0:4], b[4:6], b[6:8], b[8:10], b[10:16]), nil
+}
+
+// permanentTokenFailureReasons are the APNs `reason` values that mean this
+// device token will never work again, so the subscription should be dropped.
+//
+// Apple's own do-not-retry list is broader (it also includes Forbidden and
+// PayloadTooLarge), but those indicate a broken provider config or an oversized
+// payload rather than a dead token, and unsubscribing on them would silently
+// destroy good subscriptions.
+//
+// https://developer.apple.com/documentation/usernotifications/handling-notification-responses-from-apns
+var permanentTokenFailureReasons = map[string]bool{
+	// 400: the token is malformed, or belongs to the other environment
+	// (sandbox token sent to production or vice versa).
+	"BadDeviceToken": true,
+	// 400: the token is valid but registered against a different topic.
+	"DeviceTokenNotForTopic": true,
+	// 410: the app was uninstalled or otherwise unregistered.
+	"Unregistered": true,
+	// 410: the token expired.
+	"ExpiredToken": true,
+}
+
 // handle the response body of an HTTP/2 push attempt to APNs.
 func (prp *HTTPPushRequestProcessor) handlePushResponseBody(response *http.Response, responseBody []byte, messageID uint32, errChan chan<- push.Error, resChan chan<- *common.APNSResult) {
-	if len(responseBody) > 0 {
-		// Successful request should return empty response body
-		apnsError := new(APNSErrorResponse)
-		err := json.Unmarshal(responseBody, apnsError)
-		switch apnsError.Reason {
-		case "BadDeviceToken": // Status code is 400
-			// > The specified device token was bad. If this error is seen, then clients of uniqush should verify that the request contains a valid token and that the token matches the environment (sandbox/prod).
+	if len(responseBody) == 0 {
+		// A successful push returns 200 with an empty body.
+		if response.StatusCode == http.StatusOK {
+			resChan <- &common.APNSResult{
+				MsgID:  messageID,
+				Status: common.Status0Success,
+			}
+			return
+		}
+		// A 410 with no body still means the token is dead. Apple always sends
+		// a reason with it, but do not depend on that to avoid leaking a
+		// subscription that will never be deliverable again.
+		if response.StatusCode == http.StatusGone {
 			resChan <- &common.APNSResult{
 				MsgID:  messageID,
 				Status: common.Status8Unsubscribe,
 			}
 			return
-		default:
-			break
 		}
-		if err != nil {
-			errChan <- push.NewError(err.Error())
-		} else {
-			errChan <- push.NewBadNotificationWithDetails(apnsError.Reason)
-		}
-	} else {
-		// It must be 200 to be successful.
-		if response.StatusCode == 200 {
-			resChan <- &common.APNSResult{
-				MsgID:  messageID,
-				Status: common.Status0Success,
-			}
-		} else {
-			errChan <- push.NewErrorf("Unknown error. No response body, HTTP status code is %d", response.StatusCode)
-		}
+		errChan <- push.NewErrorf("Unknown error. No response body, HTTP status code is %d", response.StatusCode)
+		return
 	}
+
+	apnsError := new(APNSErrorResponse)
+	if err := json.Unmarshal(responseBody, apnsError); err != nil {
+		errChan <- push.NewErrorf("Could not parse APNs error response (HTTP %d): %v", response.StatusCode, err)
+		return
+	}
+
+	if permanentTokenFailureReasons[apnsError.Reason] {
+		// TODO: A 410 also carries a `timestamp` (milliseconds since the epoch)
+		// recording when APNs last saw the token as invalid. Apple's guidance is
+		// to keep the subscription if the device re-registered the same token
+		// after that moment. Acting on it needs a reliable per-delivery-point
+		// registration time, which uniqush does not track consistently yet, so
+		// for now the token is dropped unconditionally. See APNSErrorResponse.
+		resChan <- &common.APNSResult{
+			MsgID:  messageID,
+			Status: common.Status8Unsubscribe,
+		}
+		return
+	}
+
+	errChan <- push.NewBadNotificationWithDetails(apnsError.Reason)
 }
