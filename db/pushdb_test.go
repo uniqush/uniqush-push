@@ -18,6 +18,7 @@
 package db
 
 import (
+	"context"
 	"testing"
 
 	"github.com/uniqush/uniqush-push/push"
@@ -59,7 +60,7 @@ func connectDatabaseAndClearRedisData(t *testing.T) PushDatabase {
 	if err != nil {
 		t.Fatalf("Error connecting to redis for test: %v", err)
 	}
-	result := client.(*pushDatabaseOpts).db.(*PushRedisDB).client.FlushDB()
+	result := client.(*pushDatabaseOpts).db.(*PushRedisDB).client.FlushDB(context.Background())
 	if err = result.Err(); err != nil {
 		t.Skip("Could not connect to db\n")
 	}
