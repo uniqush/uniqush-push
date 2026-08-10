@@ -22,6 +22,7 @@ package main
 
 import (
 	"encoding/json"
+	"errors"
 	"flag"
 	"fmt"
 	"io"
@@ -55,30 +56,44 @@ type vapidKeys struct {
 }
 
 func loadOrCreateVAPIDKeys(path string) (*vapidKeys, error) {
-	if data, err := os.ReadFile(path); err == nil {
+	data, err := os.ReadFile(path)
+	switch {
+	case err == nil:
 		keys := new(vapidKeys)
-		if err := json.Unmarshal(data, keys); err != nil {
-			return nil, fmt.Errorf("could not parse %s: %w", path, err)
+		if parseErr := json.Unmarshal(data, keys); parseErr != nil {
+			return nil, fmt.Errorf("could not parse %s: %w", path, parseErr)
 		}
 		if keys.Public == "" || keys.Private == "" {
 			return nil, fmt.Errorf("%s is missing a key", path)
 		}
 		log.Printf("Loaded VAPID keys from %s", path)
 		return keys, nil
+
+	case errors.Is(err, os.ErrNotExist):
+		// The only case where generating a new pair is correct.
+
+	default:
+		// Anything else -- a permissions problem, a directory where a file was
+		// expected, a transient I/O error -- must not be read as "no keys yet".
+		// Falling through would mint a new pair and overwrite the existing one,
+		// silently invalidating every subscription ever made against the old
+		// public key. Refuse to start instead.
+		return nil, fmt.Errorf("could not read %s: %w (refusing to generate new keys, "+
+			"which would invalidate every existing subscription)", path, err)
 	}
 
-	private, public, err := webpush.GenerateVAPIDKeys()
-	if err != nil {
-		return nil, fmt.Errorf("could not generate VAPID keys: %w", err)
+	private, public, genErr := webpush.GenerateVAPIDKeys()
+	if genErr != nil {
+		return nil, fmt.Errorf("could not generate VAPID keys: %w", genErr)
 	}
 	keys := &vapidKeys{Public: public, Private: private}
-	data, err := json.MarshalIndent(keys, "", "  ")
-	if err != nil {
-		return nil, err
+	encoded, encErr := json.MarshalIndent(keys, "", "  ")
+	if encErr != nil {
+		return nil, encErr
 	}
 	// 0600: the private key is a credential.
-	if err := os.WriteFile(path, data, 0600); err != nil {
-		return nil, fmt.Errorf("could not write %s: %w", path, err)
+	if writeErr := os.WriteFile(path, encoded, 0600); writeErr != nil {
+		return nil, fmt.Errorf("could not write %s: %w", path, writeErr)
 	}
 	log.Printf("Generated new VAPID keys and saved them to %s", path)
 	return keys, nil
@@ -101,14 +116,38 @@ func (d *demo) callUniqush(path string, form url.Values) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("could not reach uniqush at %s: %w", endpoint, err)
 	}
+	return readUniqushResponse(endpoint, response)
+}
+
+// getUniqush issues a GET against a uniqush endpoint.
+func (d *demo) getUniqush(path string, query url.Values) (string, error) {
+	endpoint := strings.TrimSuffix(*uniqushURL, "/") + path
+	if len(query) > 0 {
+		endpoint += "?" + query.Encode()
+	}
+	response, err := d.client.Get(endpoint)
+	if err != nil {
+		return "", fmt.Errorf("could not reach uniqush at %s: %w", endpoint, err)
+	}
+	return readUniqushResponse(endpoint, response)
+}
+
+// readUniqushResponse is shared by both verbs on purpose.
+//
+// The status check and the read error are easy to omit on one path and not the
+// other, and the result is a handler that reports success to the page while
+// uniqush was actually returning an error -- which is precisely the sort of
+// misdirection a debugging tool must not produce.
+func readUniqushResponse(endpoint string, response *http.Response) (string, error) {
 	defer response.Body.Close()
 
 	body, err := io.ReadAll(response.Body)
 	if err != nil {
-		return "", fmt.Errorf("could not read the uniqush response: %w", err)
+		return "", fmt.Errorf("could not read the response from %s: %w", endpoint, err)
 	}
 	if response.StatusCode != http.StatusOK {
-		return "", fmt.Errorf("uniqush returned HTTP %d: %s", response.StatusCode, strings.TrimSpace(string(body)))
+		return "", fmt.Errorf("uniqush returned HTTP %d from %s: %s",
+			response.StatusCode, endpoint, strings.TrimSpace(string(body)))
 	}
 	return strings.TrimSpace(string(body)), nil
 }
@@ -239,16 +278,15 @@ func (d *demo) handlePush(w http.ResponseWriter, r *http.Request) {
 // quickest way to tell whether a failed push means "not subscribed" or
 // "subscribed but undeliverable".
 func (d *demo) handleSubscriptions(w http.ResponseWriter, _ *http.Request) {
-	endpoint := fmt.Sprintf("%s/subscriptions?subscriber=%s&services=%s",
-		strings.TrimSuffix(*uniqushURL, "/"), url.QueryEscape(*subscriber), url.QueryEscape(*service))
-	response, err := d.client.Get(endpoint)
+	body, err := d.getUniqush("/subscriptions", url.Values{
+		"subscriber": {*subscriber},
+		"services":   {*service},
+	})
 	if err != nil {
 		writeError(w, http.StatusBadGateway, err)
 		return
 	}
-	defer response.Body.Close()
-	body, _ := io.ReadAll(response.Body)
-	writeJSON(w, http.StatusOK, map[string]string{"uniqush": strings.TrimSpace(string(body))})
+	writeJSON(w, http.StatusOK, map[string]string{"uniqush": body})
 }
 
 func truncate(value string, limit int) string {
