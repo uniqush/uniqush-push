@@ -33,6 +33,8 @@ server side, you can send push notifications to any supported mobile platform.
 >   `fcm.googleapis.com/fcm/send` endpoint with a server key, which Google
 >   decommissioned on **20 June 2024**. Migrating to FCM HTTP v1 is in progress.
 > - **ADM** is believed to still work, but has not been re-verified.
+> - **UnifiedPush / Web Push — new, and the one backend with no vendor
+>   dependency.** See below.
 >
 > Building requires **Go 1.25 or newer**.
 
@@ -42,6 +44,78 @@ server side, you can send push notifications to any supported mobile platform.
 - [FCM](https://firebase.google.com/docs/cloud-messaging/) from Google for the Android platform — **currently broken, see above**
 - [APNS](https://developer.apple.com/documentation/usernotifications/sending-notification-requests-to-apns) from Apple for the iOS platform
 - [ADM](https://developer.amazon.com/sdk/adm.html) from Amazon for Kindle tablets
+- [UnifiedPush](https://unifiedpush.org/) / [Web Push](https://datatracker.ietf.org/wg/webpush/documents/), for de-Googled Android, Linux desktops and browsers
+
+## UnifiedPush / Web Push ##
+
+[UnifiedPush](https://unifiedpush.org/) is a decentralised push standard: the
+user picks the push provider rather than the app developer, and it works on
+devices with no Google services at all. Its application-server side is plain
+Web Push — [RFC 8030](https://www.rfc-editor.org/rfc/rfc8030) delivery,
+[RFC 8291](https://www.rfc-editor.org/rfc/rfc8291) `aes128gcm` payload
+encryption and [RFC 8292](https://www.rfc-editor.org/rfc/rfc8292) VAPID
+authentication — so the same backend also drives browser Web Push.
+
+It is registered under two names, `webpush` and `unifiedpush`. They behave
+identically; pick one per service and stay with it, since the name is part of a
+subscription's identity in the database.
+
+Unlike the other backends, this one needs no vendor account and no certificate.
+
+**1. Generate a VAPID key pair.** These identify your server to push providers.
+Some providers reject registrations without them.
+
+```
+$ uniqush-push -generate-vapid-keys
+vapidpublickey=BIknD72EXwC1CC5WamGPDn4YbTV7o6yE_zMNNJO2xNMGyy4sz6egSmwFhH8lxllQqvqInrkqyKwnuy1Q1vmkevk
+vapidprivatekey=NOHiudJNUw6IEf0SN0jYTascVt68R0sQJxMWSbVRWM4
+```
+
+**2. Create the push service provider.** `subscriber` is the VAPID contact — a
+bare email address or an `https://` URL, not a `mailto:` URI.
+
+```
+curl http://localhost:9898/addpsp \
+  -d service=myservice \
+  -d pushservicetype=unifiedpush \
+  -d vapidpublickey=BIknD72... \
+  -d vapidprivatekey=NOHiudJ... \
+  -d subscriber=admin@example.org
+```
+
+**3. Subscribe a device.** The app's UnifiedPush connector library produces all
+three values; your app just forwards them to your server.
+
+```
+curl http://localhost:9898/subscribe \
+  -d service=myservice \
+  -d subscriber=alice \
+  -d pushservicetype=unifiedpush \
+  -d endpoint=https://ntfy.sh/up?id=... \
+  -d p256dh=BNcRdreALRFXTkOO... \
+  -d auth=tBHItJI5svbpez7KI4CCXg
+```
+
+**4. Push.** Payload fields are JSON-encoded and delivered encrypted; the app on
+the device decrypts them. Pass `uniqush.payload.webpush` instead to send a raw
+body verbatim.
+
+```
+curl http://localhost:9898/push -d service=myservice -d subscriber=alice -d msg=hello
+```
+
+### A note on SSRF ###
+
+For every other backend the destination host is a constant compiled into
+uniqush. Here it comes from whoever called `/subscribe`, so uniqush refuses by
+default to POST to addresses that are not globally routable — loopback, RFC 1918,
+link-local (including the `169.254.169.254` cloud metadata endpoint), and the
+IPv6 equivalents. Redirects are never followed, and the check runs before every
+push rather than only at subscribe time, so DNS rebinding does not defeat it.
+
+Self-hosted push servers on a private network are a supported UnifiedPush
+setup, so this can be relaxed per service in `uniqush-push.conf` with
+`allow_private_addresses`, ideally alongside an `allowed_hosts` list.
 
 ## FAQ ##
 
