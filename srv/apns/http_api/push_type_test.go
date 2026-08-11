@@ -163,13 +163,40 @@ func awaitOutcome(t *testing.T, resChan <-chan *common.APNSResult, errChan <-cha
 	deadline := time.After(10 * time.Second)
 	for {
 		select {
-		case res := <-resChan:
-			return res, nil
-		case err, open := <-errChan:
-			if open && err != nil {
-				return nil, err
+		case res, open := <-resChan:
+			// Neither of these should happen: the processor sends exactly one
+			// result per device token and never closes resChan. Saying so here
+			// costs two lines and turns a nil dereference in whichever caller
+			// touched res.Status into a message naming the actual problem.
+			if !open {
+				t.Fatal("resChan was closed before a result arrived")
+				return nil, nil
 			}
-			errChan = nil // a nil channel blocks forever, removing this case
+			if res == nil {
+				t.Fatal("Received a nil result")
+				return nil, nil
+			}
+			return res, nil
+
+		case err, open := <-errChan:
+			if !open {
+				// The expected end of a successful push: sendRequests closes
+				// ErrChan when it returns. Not an outcome, so drop this case --
+				// a nil channel blocks forever in a select -- and wait for the
+				// result.
+				errChan = nil
+				continue
+			}
+			if err == nil {
+				// Distinct from the case above, and equally shouldn't happen:
+				// the channel is open and something deliberately sent a nil.
+				// Silently ignoring it would leave the test hanging until the
+				// deadline with no clue why.
+				t.Fatal("Received a nil error on an open errChan")
+				return nil, nil
+			}
+			return nil, err
+
 		case <-deadline:
 			t.Fatal("Timed out waiting for a result or an error")
 			return nil, nil
