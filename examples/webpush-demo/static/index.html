@@ -1,0 +1,260 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>uniqush-push · Web Push / UnifiedPush demo</title>
+<style>
+  :root { color-scheme: light dark; }
+  body {
+    font: 15px/1.55 system-ui, -apple-system, "Segoe UI", sans-serif;
+    max-width: 46rem; margin: 2rem auto; padding: 0 1.25rem;
+  }
+  h1 { font-size: 1.4rem; margin-bottom: .25rem; }
+  h2 { font-size: 1.05rem; margin: 2rem 0 .5rem; }
+  .sub { opacity: .7; margin-top: 0; }
+  section {
+    border: 1px solid color-mix(in srgb, currentColor 20%, transparent);
+    border-radius: 8px; padding: 1rem 1.25rem; margin-bottom: 1rem;
+  }
+  button {
+    font: inherit; padding: .5rem 1rem; border-radius: 6px; cursor: pointer;
+    border: 1px solid color-mix(in srgb, currentColor 35%, transparent);
+    background: color-mix(in srgb, currentColor 8%, transparent); color: inherit;
+  }
+  button:disabled { opacity: .45; cursor: not-allowed; }
+  button.primary { background: #2563eb; border-color: #2563eb; color: #fff; }
+  input, textarea {
+    font: inherit; width: 100%; box-sizing: border-box; padding: .45rem .6rem;
+    border-radius: 6px; margin-bottom: .6rem; color: inherit;
+    border: 1px solid color-mix(in srgb, currentColor 30%, transparent);
+    background: color-mix(in srgb, currentColor 5%, transparent);
+  }
+  label { display: block; font-size: .82rem; opacity: .8; margin-bottom: .15rem; }
+  code, pre { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: .82rem; }
+  pre {
+    background: color-mix(in srgb, currentColor 8%, transparent);
+    padding: .7rem .85rem; border-radius: 6px; overflow-x: auto; white-space: pre-wrap;
+    word-break: break-all; margin: 0;
+  }
+  #log { max-height: 20rem; overflow-y: auto; }
+  .ok { color: #15803d; } .bad { color: #b91c1c; } .muted { opacity: .65; }
+  .row { display: flex; gap: .5rem; flex-wrap: wrap; align-items: center; }
+  .note {
+    font-size: .85rem; opacity: .8; border-left: 3px solid currentColor;
+    padding-left: .75rem; margin: .75rem 0;
+  }
+</style>
+</head>
+<body>
+
+<h1>uniqush-push — Web Push / UnifiedPush demo</h1>
+<p class="sub">Enroll for push notifications, then send yourself one through uniqush.</p>
+
+<section>
+  <h2 style="margin-top:0">1. Enroll</h2>
+
+  <p class="muted" style="margin-top:0">
+    Either subscribe this browser, or paste a UnifiedPush endpoint from a device.
+    Both produce the same three values — an endpoint URL, a <code>p256dh</code>
+    public key and an <code>auth</code> secret — and go down the same server path.
+  </p>
+
+  <div class="row">
+    <button id="enroll" class="primary">Enable notifications in this browser</button>
+    <span id="enrollState" class="muted">checking…</span>
+  </div>
+
+  <p class="note">
+    Requires <code>localhost</code> or HTTPS: browsers refuse to register a
+    service worker otherwise. If the button does nothing, open the console.
+  </p>
+
+  <details>
+    <summary style="cursor:pointer">Or paste a UnifiedPush endpoint (ntfy, NextPush, …)</summary>
+    <div style="margin-top:.75rem">
+      <label for="endpoint">endpoint</label>
+      <input id="endpoint" placeholder="https://ntfy.sh/up?id=…" autocomplete="off">
+      <label for="p256dh">p256dh (base64, 65 bytes decoded)</label>
+      <input id="p256dh" placeholder="BN4G…" autocomplete="off">
+      <label for="auth">auth (base64, 16 bytes decoded)</label>
+      <input id="auth" placeholder="tBHItJI5svbpez7KI4CCXg" autocomplete="off">
+      <button id="enrollManual">Register this endpoint</button>
+    </div>
+  </details>
+</section>
+
+<section>
+  <h2 style="margin-top:0">2. Push</h2>
+  <label for="msg">Message</label>
+  <input id="msg" value="It works." autocomplete="off">
+  <div class="row">
+    <button id="push" class="primary">Send test push</button>
+    <button id="check">Show subscriptions</button>
+  </div>
+</section>
+
+<section>
+  <h2 style="margin-top:0">Log</h2>
+  <pre id="log" class="muted">Ready.</pre>
+</section>
+
+<script>
+const logEl = document.getElementById('log');
+let firstLog = true;
+
+function log(message, cls) {
+  if (firstLog) { logEl.textContent = ''; logEl.classList.remove('muted'); firstLog = false; }
+  const time = new Date().toLocaleTimeString();
+  const line = document.createElement('div');
+  if (cls) line.className = cls;
+  line.textContent = `[${time}] ${message}`;
+  logEl.appendChild(line);
+  logEl.scrollTop = logEl.scrollHeight;
+}
+
+async function postJSON(url, body) {
+  const response = await fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error(data.error || `HTTP ${response.status}`);
+  return data;
+}
+
+// The VAPID public key travels as base64url text but PushManager.subscribe wants
+// raw bytes.
+function base64UrlToUint8Array(value) {
+  const padded = (value + '='.repeat((4 - value.length % 4) % 4))
+    .replace(/-/g, '+').replace(/_/g, '/');
+  const raw = atob(padded);
+  return Uint8Array.from([...raw].map(c => c.charCodeAt(0)));
+}
+
+let config = null;
+
+async function loadConfig() {
+  config = await (await fetch('/api/config')).json();
+  log(`Config: service=${config.service} type=${config.pushservicetype} subscriber=${config.subscriber}`);
+}
+
+const enrollButton = document.getElementById('enroll');
+const enrollState = document.getElementById('enrollState');
+
+function setEnrollState(text, cls) {
+  enrollState.textContent = text;
+  enrollState.className = cls || 'muted';
+}
+
+async function refreshEnrollState() {
+  if (!('serviceWorker' in navigator) || !('PushManager' in window)) {
+    enrollButton.disabled = true;
+    setEnrollState('this browser has no Push API', 'bad');
+    return;
+  }
+  if (!window.isSecureContext) {
+    enrollButton.disabled = true;
+    setEnrollState('needs localhost or HTTPS', 'bad');
+    return;
+  }
+  const registration = await navigator.serviceWorker.getRegistration();
+  const existing = registration && await registration.pushManager.getSubscription();
+  setEnrollState(existing ? 'already subscribed in this browser' : 'not subscribed yet',
+                existing ? 'ok' : 'muted');
+}
+
+// Browser enrollment. The subscription this produces is a Web Push subscription
+// against the browser vendor's push service (Mozilla autopush for Firefox, FCM
+// for Chrome). That is the same RFC 8030 protocol a UnifiedPush distributor
+// speaks, which is why one uniqush backend serves both.
+enrollButton.addEventListener('click', async () => {
+  enrollButton.disabled = true;
+  try {
+    const permission = await Notification.requestPermission();
+    if (permission !== 'granted') throw new Error(`notification permission was ${permission}`);
+
+    const registration = await navigator.serviceWorker.register('/sw.js');
+    await navigator.serviceWorker.ready;
+    log('Service worker registered.');
+
+    let subscription = await registration.pushManager.getSubscription();
+    if (!subscription) {
+      subscription = await registration.pushManager.subscribe({
+        // Required by Chrome; the payload is encrypted either way.
+        userVisibleOnly: true,
+        applicationServerKey: base64UrlToUint8Array(config.vapidPublicKey),
+      });
+      log('Browser created a push subscription.');
+    } else {
+      log('Reusing the existing browser subscription.');
+    }
+
+    const json = subscription.toJSON();
+    log(`Endpoint host: ${new URL(json.endpoint).host}`);
+    const result = await postJSON('/api/subscribe', {
+      endpoint: json.endpoint,
+      p256dh: json.keys.p256dh,
+      auth: json.keys.auth,
+    });
+    log(`Subscribed with uniqush: ${result.uniqush}`, 'ok');
+    await refreshEnrollState();
+  } catch (err) {
+    log(`Enrollment failed: ${err.message}`, 'bad');
+  } finally {
+    enrollButton.disabled = false;
+  }
+});
+
+// Manual enrollment, for an endpoint produced by a UnifiedPush distributor on
+// another device. Nothing here touches the browser's Push API.
+document.getElementById('enrollManual').addEventListener('click', async () => {
+  try {
+    const result = await postJSON('/api/subscribe', {
+      endpoint: document.getElementById('endpoint').value,
+      p256dh: document.getElementById('p256dh').value,
+      auth: document.getElementById('auth').value,
+    });
+    log(`Registered endpoint with uniqush: ${result.uniqush}`, 'ok');
+  } catch (err) {
+    log(`Registration failed: ${err.message}`, 'bad');
+  }
+});
+
+document.getElementById('push').addEventListener('click', async () => {
+  try {
+    const form = new URLSearchParams({ msg: document.getElementById('msg').value });
+    const response = await fetch('/api/push', { method: 'POST', body: form });
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.error || `HTTP ${response.status}`);
+    log(`Push sent. uniqush said: ${data.uniqush}`, 'ok');
+    log('If nothing appears, check the Log above and the uniqush console.', 'muted');
+  } catch (err) {
+    log(`Push failed: ${err.message}`, 'bad');
+  }
+});
+
+document.getElementById('check').addEventListener('click', async () => {
+  try {
+    const data = await (await fetch('/api/subscriptions')).json();
+    log(`Subscriptions: ${data.uniqush}`);
+  } catch (err) {
+    log(`Could not list subscriptions: ${err.message}`, 'bad');
+  }
+});
+
+// Surface what the service worker received, so a delivered-but-not-displayed
+// push is distinguishable from one that never arrived.
+if ('serviceWorker' in navigator) {
+  navigator.serviceWorker.addEventListener('message', (event) => {
+    if (event.data && event.data.type === 'push-received') {
+      log(`Service worker received a push: ${JSON.stringify(event.data.payload)}`, 'ok');
+    }
+  });
+}
+
+loadConfig().then(refreshEnrollState).catch(err => log(`Startup failed: ${err.message}`, 'bad'));
+</script>
+</body>
+</html>
