@@ -3,6 +3,69 @@ uniqush-push NEWS
 Unreleased
 -------------------------------
 
+### FCM: migrated to HTTP v1
+
+- Bugfix: **`fcm` now uses FCM's HTTP v1 API.** It previously posted to
+  `https://fcm.googleapis.com/fcm/send` with an `Authorization: key=` server
+  key, which Google decommissioned on **20 June 2024**. That endpoint now
+  answers with an HTML 404, so every Android push has been failing since.
+
+  Three things changed, and the first two need action from operators:
+
+  - **Auth.** A static server key is replaced by an OAuth2 token minted from a
+    Firebase service account. `/addpsp` now takes `projectid` and
+    `credentialsfile` (a path to the service-account JSON) instead of `apikey`.
+    The file is read at push time and the access token is refreshed
+    automatically.
+  - **`data` values must all be strings.** The legacy API accepted arbitrary
+    JSON and uniqush passed it through, so a `uniqush.payload.fcm` containing
+    numbers, booleans or nested objects used to work and now does not. uniqush
+    rejects it locally with a message naming the offending field, rather than
+    letting FCM answer with an opaque 400.
+  - **No more multicast.** The legacy API accepted up to 1000 registration ids
+    per request; v1 takes exactly one. A push to N devices is now N requests
+    over a shared HTTP/2 connection. This is Google's own recommended
+    replacement and needs no configuration, but it does change the shape of the
+    traffic uniqush generates.
+
+  Unchanged: `/subscribe` still takes `regid`, so **no device has to
+  re-subscribe**.
+
+- Bugfix: **Dead registrations are detected more carefully than before.** Only
+  `UNREGISTERED` and `SENDER_ID_MISMATCH` remove a subscription. v1 collapses a
+  lot of what the legacy API reported separately into `INVALID_ARGUMENT` --
+  including an oversized payload or a non-string data value -- so treating that
+  as a dead device would delete working subscriptions because of a bad payload.
+  `QUOTA_EXCEEDED`, `UNAVAILABLE` and `INTERNAL` are retried, honouring
+  `Retry-After`. `THIRD_PARTY_AUTH_ERROR` is reported against the provider,
+  since it means the APNs certificate or web push key uploaded to the Firebase
+  project is wrong rather than anything about the device.
+
+- Maintenance: **`gcm` is now an alias for `fcm`, not a separate backend.** The
+  two have been identical since 2018, when uniqush repointed gcm at the FCM
+  endpoint. The name is kept because a delivery point's database key is
+  `<pushservicetype>:<hash>`: retiring it would strand every stored gcm
+  subscription, unpushable and not even removable through `/unsubscribe`.
+
+  A gcm provider keeps `projectid` in its fixed data and an fcm provider does
+  not, exactly as before, so that existing providers of either kind can be
+  updated in place. `/addpsp` rejects an update whose fixed data changed, so
+  this detail is what makes upgrading possible without re-subscribing devices.
+
+  The one-call migration, for either name:
+
+      curl http://localhost:9898/addpsp \
+        -d service=myservice \
+        -d pushservicetype=fcm \
+        -d projectid=my-firebase-project \
+        -d credentialsfile=/etc/uniqush/service-account.json
+
+- Maintenance: The implementation is hand-rolled against `net/http` and
+  `golang.org/x/oauth2`, adding one direct dependency. Using Google's
+  firebase-admin-go SDK would have pulled in roughly 55 indirect ones -- grpc,
+  OpenTelemetry, Firestore, Cloud Storage, monitoring -- for a daemon that makes
+  a single API call.
+
 ### New backend: UnifiedPush / Web Push
 
 - New provider: **`webpush`, also registered as `unifiedpush`.** Implements

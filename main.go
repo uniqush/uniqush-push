@@ -33,7 +33,8 @@ var uniqushPushGenerateVAPIDKeysFlag = flag.Bool("generate-vapid-keys", false,
 var uniqushPushVersion = "uniqush-push 2.7.0"
 
 func installPushServices() {
-	srv.InstallGCM()
+	// InstallFCM registers both "fcm" and "gcm"; the latter is an alias kept so
+	// existing gcm subscriptions survive an upgrade. See srv/fcm.go.
 	srv.InstallFCM()
 	srv.InstallAPNS()
 	srv.InstallADM()

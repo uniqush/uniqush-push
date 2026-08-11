@@ -29,9 +29,12 @@ server side, you can send push notifications to any supported mobile platform.
 >   has yet run them against real Apple credentials and a real device**, because
 >   the current maintainer does not have an Apple developer account. If you do,
 >   a report either way would be genuinely useful — please open an issue.
-> - **GCM and FCM — cannot deliver.** Both post to the legacy
->   `fcm.googleapis.com/fcm/send` endpoint with a server key, which Google
->   decommissioned on **20 June 2024**. Migrating to FCM HTTP v1 is in progress.
+> - **FCM — migrated to HTTP v1, but not yet verified against Google.** The
+>   legacy endpoint it used was decommissioned on 20 June 2024. `/addpsp` now
+>   takes `projectid` and `credentialsfile` instead of `apikey`; devices do not
+>   need to re-subscribe. Covered by unit tests against a mocked FCM, but nobody
+>   has run it against a real Firebase project yet. `gcm` is now an alias for
+>   the same backend.
 > - **ADM** is believed to still work, but has not been re-verified.
 > - **UnifiedPush / Web Push — new, and the one backend with no vendor
 >   dependency.** See below.
@@ -40,8 +43,7 @@ server side, you can send push notifications to any supported mobile platform.
 
 ## Supported Platforms ##
 
-- [GCM](http://developer.android.com/guide/google/gcm/index.html) from Google for the Android platform — **currently broken, see above**
-- [FCM](https://firebase.google.com/docs/cloud-messaging/) from Google for the Android platform — **currently broken, see above**
+- [FCM](https://firebase.google.com/docs/cloud-messaging/) from Google for the Android platform (`gcm` is an alias)
 - [APNS](https://developer.apple.com/documentation/usernotifications/sending-notification-requests-to-apns) from Apple for the iOS platform
 - [ADM](https://developer.amazon.com/sdk/adm.html) from Amazon for Kindle tablets
 - [UnifiedPush](https://unifiedpush.org/) / [Web Push](https://datatracker.ietf.org/wg/webpush/documents/), for de-Googled Android, Linux desktops and browsers

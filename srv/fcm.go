@@ -1,82 +1,57 @@
 /*
  * Copyright 2011-2013 Nan Deng
- * Copyright 2013-2017 Uniqush Contributors.
+ * Copyright 2013-2026 Uniqush Contributors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
  *
- *     http://www.apache.org/licenses/LICENSE-2.0
+ *	http://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
  * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
  * See the License for the specific language governing permissions and
  * limitations under the License.
- *
- * This contains cloud messaging code specific to FCM.
- * Implementation details common to GCM and FCM are kept in srv/cloud_messaging
  */
 
+// Package srv contains implementations of push services with code to send
+// pushes to, receive responses from, and manage delivery points for the various
+// external push service providers (ADM, APNs, FCM and Web Push).
 package srv
 
 import (
-	"errors"
 	"fmt"
 
 	"github.com/uniqush/uniqush-push/push"
-	cm "github.com/uniqush/uniqush-push/srv/cloud_messaging"
+	"github.com/uniqush/uniqush-push/srv/fcm"
 )
 
+// Names the FCM backend is registered under.
+//
+// "gcm" is an alias rather than a separate implementation. Google Cloud
+// Messaging was folded into FCM years ago -- uniqush repointed its gcm backend
+// at the FCM endpoint back in 2018 -- so there has been no behavioural
+// difference for a long time, and both stopped working together when the legacy
+// API was decommissioned in June 2024.
+//
+// The alias exists for one specific reason. A delivery point's identity is
+// "<pushservicetype>:<hash of its fixed data>", and that string is its database
+// key. Retiring the name would strand every stored gcm subscription: not
+// pushable, and not removable via /unsubscribe either, since that needs the type
+// registered in order to compute the name. Keeping it lets an operator re-run
+// /addpsp with a service account and carry on, with no device re-subscribing.
 const (
-	// FCM endpoint
-	fcmServiceURL string = "https://fcm.googleapis.com/fcm/send"
-	// payload key to extract from push requests to uniqush. The corresponding value is a JSON blob for a FCM data push
-	// (silent, unless the app has logic to extract information to display notifications on the device)
-	fcmRawPayloadKey = "uniqush.payload.fcm"
-	// notification key to extract from push requests to uniqush. The corresponding value is a JSON blob for a FCM notification (alerts user)
-	fcmRawNotificationKey = "uniqush.notification.fcm"
-	// initialism for log messages
-	fcmInitialism = "FCM"
-	// push service type(name), for requests to uniqush
-	fcmPushServiceName = "fcm"
+	FCMServiceName = "fcm"
+	GCMServiceName = "gcm"
 )
 
-type fcmPushService struct {
-	// There is only one Transport and one Client for connecting to fcm, shared by the set of PSPs with pushservicetype=fcm (whether or not this is using a sandbox)
-	cm.PushServiceBase
-}
-
-var _ push.PushServiceType = &fcmPushService{}
-
-func newFCMPushService() *fcmPushService {
-	return &fcmPushService{
-		PushServiceBase: cm.MakePushServiceBase(fcmInitialism, fcmRawPayloadKey, fcmRawNotificationKey, fcmServiceURL, fcmPushServiceName),
-	}
-}
-
-// InstallFCM registers the only instance of the FCM push service. It is called only once.
+// InstallFCM registers the FCM push service under both of its names.
 func InstallFCM() {
 	psm := push.GetPushServiceManager()
-	err := psm.RegisterPushServiceType(newFCMPushService())
-	if err != nil {
-		panic(fmt.Sprintf("Failed to install FCM module: %v", err))
+	for _, name := range []string{FCMServiceName, GCMServiceName} {
+		if err := psm.RegisterPushServiceType(fcm.NewPushService(name)); err != nil {
+			panic(fmt.Sprintf("Failed to install %s module: %v", name, err))
+		}
 	}
-}
-
-func (p *fcmPushService) BuildPushServiceProviderFromMap(kv map[string]string,
-	psp *push.PushServiceProvider) error {
-	if service, ok := kv["service"]; ok && len(service) > 0 {
-		psp.FixedData["service"] = service
-	} else {
-		return errors.New("NoService")
-	}
-
-	if authtoken, ok := kv["apikey"]; ok && len(authtoken) > 0 {
-		psp.VolatileData["apikey"] = authtoken
-	} else {
-		return errors.New("NoAPIKey")
-	}
-
-	return nil
 }
