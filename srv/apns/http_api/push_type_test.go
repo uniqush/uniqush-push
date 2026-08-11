@@ -7,6 +7,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/uniqush/uniqush-push/push"
 	"github.com/uniqush/uniqush-push/srv/apns/common"
@@ -144,6 +145,65 @@ func TestAPNSIDHeaderIsSentAndUnique(t *testing.T) {
 	}
 }
 
+// awaitOutcome waits for a push to finish and reports whichever channel carried
+// the real signal.
+//
+// Selecting over both channels directly is a coin flip, and it flips on loaded
+// CI machines rather than on a quiet laptop. sendRequests does
+// `defer close(request.ErrChan)`, so for a successful push there is a moment
+// where a result is sitting in the buffered resChan *and* errChan has been
+// closed. Go picks uniformly among ready cases, and a receive from a closed
+// channel yields a nil push.Error -- which reads as "an error occurred, and it
+// was nil".
+//
+// So a closed or nil errChan is not an outcome; it just means there was no
+// error. Disable that case and keep waiting for the result.
+func awaitOutcome(t *testing.T, resChan <-chan *common.APNSResult, errChan <-chan push.Error) (*common.APNSResult, push.Error) {
+	t.Helper()
+	deadline := time.After(10 * time.Second)
+	for {
+		select {
+		case res, open := <-resChan:
+			// Neither of these should happen: the processor sends exactly one
+			// result per device token and never closes resChan. Saying so here
+			// costs two lines and turns a nil dereference in whichever caller
+			// touched res.Status into a message naming the actual problem.
+			if !open {
+				t.Fatal("resChan was closed before a result arrived")
+				return nil, nil
+			}
+			if res == nil {
+				t.Fatal("Received a nil result")
+				return nil, nil
+			}
+			return res, nil
+
+		case err, open := <-errChan:
+			if !open {
+				// The expected end of a successful push: sendRequests closes
+				// ErrChan when it returns. Not an outcome, so drop this case --
+				// a nil channel blocks forever in a select -- and wait for the
+				// result.
+				errChan = nil
+				continue
+			}
+			if err == nil {
+				// Distinct from the case above, and equally shouldn't happen:
+				// the channel is open and something deliberately sent a nil.
+				// Silently ignoring it would leave the test hanging until the
+				// deadline with no clue why.
+				t.Fatal("Received a nil error on an open errChan")
+				return nil, nil
+			}
+			return nil, err
+
+		case <-deadline:
+			t.Fatal("Timed out waiting for a result or an error")
+			return nil, nil
+		}
+	}
+}
+
 // TestPermanentTokenFailuresUnsubscribe covers the reasons that mean a device
 // token is dead forever. Before this change only BadDeviceToken and a bare 410
 // were handled, so Unregistered, ExpiredToken and DeviceTokenNotForTopic leaked
@@ -188,24 +248,21 @@ func TestPermanentTokenFailuresUnsubscribe(t *testing.T) {
 
 			requestProcessor.AddRequest(request)
 
-			select {
-			case res := <-resChan:
-				if !testCase.expectUnsubscribe {
-					t.Fatalf("Expected an error for reason %q, got result status %d", testCase.reason, res.Status)
+			res, err := awaitOutcome(t, resChan, errChan)
+			if testCase.expectUnsubscribe {
+				if err != nil {
+					t.Fatalf("Expected an unsubscribe for reason %q, got error: %v", testCase.reason, err)
 				}
 				if res.Status != common.Status8Unsubscribe {
 					t.Errorf("Expected unsubscribe status %d, got %d", common.Status8Unsubscribe, res.Status)
 				}
-			case err := <-errChan:
-				if testCase.expectUnsubscribe {
-					t.Fatalf("Expected an unsubscribe for reason %q, got error: %v", testCase.reason, err)
-				}
-				if err == nil {
-					t.Fatal("Expected a non-nil error")
-				}
-				if !strings.Contains(err.Error(), testCase.reason) {
-					t.Errorf("Expected error to mention reason %q, got: %v", testCase.reason, err)
-				}
+				return
+			}
+			if err == nil {
+				t.Fatalf("Expected an error for reason %q, got result status %d", testCase.reason, res.Status)
+			}
+			if !strings.Contains(err.Error(), testCase.reason) {
+				t.Errorf("Expected error to mention reason %q, got: %v", testCase.reason, err)
 			}
 		})
 	}
@@ -225,13 +282,12 @@ func TestGoneWithEmptyBodyUnsubscribes(t *testing.T) {
 
 	requestProcessor.AddRequest(request)
 
-	select {
-	case res := <-resChan:
-		if res.Status != common.Status8Unsubscribe {
-			t.Errorf("Expected unsubscribe status %d, got %d", common.Status8Unsubscribe, res.Status)
-		}
-	case err := <-errChan:
+	res, err := awaitOutcome(t, resChan, errChan)
+	if err != nil {
 		t.Fatalf("Expected an unsubscribe, got error: %v", err)
+	}
+	if res.Status != common.Status8Unsubscribe {
+		t.Errorf("Expected unsubscribe status %d, got %d", common.Status8Unsubscribe, res.Status)
 	}
 }
 
@@ -249,15 +305,11 @@ func TestUnparseableErrorBodyReportsAnError(t *testing.T) {
 
 	requestProcessor.AddRequest(request)
 
-	select {
-	case res := <-resChan:
+	res, err := awaitOutcome(t, resChan, errChan)
+	if err == nil {
 		t.Fatalf("Expected an error, got result status %d", res.Status)
-	case err := <-errChan:
-		if err == nil {
-			t.Fatal("Expected a non-nil error")
-		}
-		if !strings.Contains(err.Error(), "502") {
-			t.Errorf("Expected the error to mention the status code, got: %v", err)
-		}
+	}
+	if !strings.Contains(err.Error(), "502") {
+		t.Errorf("Expected the error to mention the status code, got: %v", err)
 	}
 }
