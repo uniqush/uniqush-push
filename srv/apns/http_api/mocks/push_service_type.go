@@ -3,6 +3,7 @@ package mocks
 
 import (
 	"github.com/uniqush/uniqush-push/push"
+	"github.com/uniqush/uniqush-push/srv/apns/common"
 )
 
 // TODO: refactor into a common test library.
@@ -16,7 +17,16 @@ var _ push.PushServiceType = &MockPushServiceType{}
 func (pst *MockPushServiceType) BuildPushServiceProviderFromMap(kv map[string]string, psp *push.PushServiceProvider) error {
 	for key, value := range kv {
 		switch key {
-		case "addr", "bundleid", "skipverify":
+		// Everything that can change without changing the provider's identity.
+		// endpoint and cacert belong here for the same reason addr does: a name
+		// hashes FixedData, so anything an operator may need to update in place
+		// has to stay out of it.
+		//
+		// Named by the constants rather than by literals, so a rename in
+		// srv/apns/common reaches this mock too. A mock that silently disagreed
+		// with the provider it stands in for would make the tests using it
+		// prove the wrong thing.
+		case common.AddrKey, common.SkipVerifyKey, common.EndpointKey, common.CACertKey, "bundleid":
 			psp.VolatileData[key] = value
 		case "service", "pushservicetype", "cert", "subscriber", "key":
 			psp.FixedData[key] = value

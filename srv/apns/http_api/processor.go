@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -54,9 +55,37 @@ func (prp *HTTPPushRequestProcessor) GetMaxPayloadSize() int {
 	return 4096
 }
 
+// clientCacheKey identifies the client a provider needs.
+//
+// Deliberately not psp.Name() alone. A name hashes only FixedData, but the
+// endpoint, the CA bundle and skipverify all live in VolatileData -- they have
+// to, so that changing one does not strand every existing subscription. Keying
+// on the name alone would mean a provider updated to point somewhere else kept
+// using a cached client still pointed at the old destination, with the old
+// trust settings, until uniqush was restarted.
+//
+// The CA is keyed by the digest of its contents, not by its pathname. Rotating
+// a bundle in place -- writing the new authority over the old file and
+// re-running /addpsp -- does not change the path, so a cache keyed on it would
+// go on using a client that trusts the retired CA and not the new one, until
+// the process restarted. Reading the file to hash it costs one small read per
+// push batch, against a network round trip to Apple.
+//
+// skipverify is taken from ShouldSkipVerify rather than from the raw setting, so
+// that two providers differing only in a stored flag that is being ignored share
+// one client instead of pointlessly building two.
+func clientCacheKey(psp *push.PushServiceProvider) string {
+	return strings.Join([]string{
+		psp.Name(),
+		common.ResolveEndpoint(psp),
+		common.CACertFingerprint(psp.VolatileData[common.CACertKey]),
+		strconv.FormatBool(common.ShouldSkipVerify(psp)),
+	}, "\x00")
+}
+
 // GetClient will return the only HTTP client instance for the given psp. That instance uses the credentials and endpoint associated with the given psp.
 func (prp *HTTPPushRequestProcessor) GetClient(psp *push.PushServiceProvider) (HTTPClient, error) {
-	pspName := psp.Name()
+	pspName := clientCacheKey(psp)
 	if client := prp.TryGetClient(pspName); client != nil {
 		return client, nil
 	}
@@ -100,6 +129,18 @@ func defaultClientFactory(transport *http.Transport) HTTPClient {
 	}
 }
 
+// createTLSConfig builds the TLS settings for one provider's connections.
+//
+// Verification is on by default and the two ways to change that are both
+// explicit. A CA bundle is the one to prefer when testing: it still checks the
+// certificate and the hostname, so a simulator has to present a certificate the
+// operator actually issued, rather than any certificate at all.
+//
+// The InsecureSkipVerify branch is guarded by common.ShouldSkipVerify rather
+// than by the stored setting. /addpsp refuses the combination at registration
+// time, but a provider loaded from the database never goes through /addpsp's
+// builder, so the rule has to hold here too or a stale flag from the
+// binary-protocol era would silently downgrade a connection to Apple.
 func createTLSConfig(psp *push.PushServiceProvider) (*tls.Config, error) {
 	cert, err := tls.LoadX509KeyPair(psp.FixedData["cert"], psp.FixedData["key"])
 	if err != nil {
@@ -107,9 +148,30 @@ func createTLSConfig(psp *push.PushServiceProvider) (*tls.Config, error) {
 	}
 
 	conf := &tls.Config{
-		Certificates:       []tls.Certificate{cert},
-		InsecureSkipVerify: false,
+		Certificates: []tls.Certificate{cert},
+		// APNs has required TLS 1.2 since 2018, so nothing is lost by refusing
+		// to negotiate lower with anything standing in for it.
+		MinVersion: tls.VersionTLS12,
 	}
+
+	if caCertPath := psp.VolatileData[common.CACertKey]; caCertPath != "" {
+		pool, caErr := common.LoadCACert(caCertPath)
+		if caErr != nil {
+			return nil, push.NewBadPushServiceProviderWithDetails(psp, caErr.Error())
+		}
+		conf.RootCAs = pool
+	}
+
+	// Re-checked here rather than trusted from /addpsp, because a provider read
+	// back from the database never passes through the builder that validates it.
+	// ShouldSkipVerify refuses to disable verification for a destination that
+	// resolves to Apple, whatever the stored setting says.
+	if common.ShouldSkipVerify(psp) {
+		// For a local simulator whose certificate is generated per run, where
+		// pinning a CA is more ceremony than the test is worth.
+		conf.InsecureSkipVerify = true //nolint:gosec // refused for api*.push.apple.com; see common.ShouldSkipVerify
+	}
+
 	return conf, nil
 }
 
@@ -181,15 +243,8 @@ func (prp *HTTPPushRequestProcessor) sendRequests(request *common.PushRequest) {
 		"apns-topic": []string{bundleid},
 	}
 
-	// TODO: Allow specifying http2 addr without string matching heuristics.
 	psp := request.PSP
-	binaryProtocolAddress := psp.VolatileData["addr"]
-	var http2UrlHost string
-	if strings.Contains(binaryProtocolAddress, "sandbox") || strings.Contains(binaryProtocolAddress, "api.development.") {
-		http2UrlHost = "https://api.development.push.apple.com"
-	} else {
-		http2UrlHost = "https://api.push.apple.com"
-	}
+	http2UrlHost := common.ResolveEndpoint(psp)
 	client, err := prp.GetClient(psp)
 	if err != nil {
 		for range request.Devtokens {
