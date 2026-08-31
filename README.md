@@ -27,8 +27,11 @@ server side, you can send push notifications to any supported mobile platform.
 >
 >   These changes are covered by unit tests against a mocked APNs, but **nobody
 >   has yet run them against real Apple credentials and a real device**, because
->   the current maintainer does not have an Apple developer account. If you do,
->   a report either way would be genuinely useful — please open an issue.
+>   the current maintainer does not have an Apple developer account — and Apple
+>   sells no way to get one for free. If you have one, a report either way would
+>   be genuinely useful; see
+>   [docs/apns-verification-plan.md](docs/apns-verification-plan.md), which lists
+>   exactly which cases have no coverage.
 > - **FCM — migrated to HTTP v1, and verified against Google.** The legacy
 >   endpoint it used was decommissioned on 20 June 2024. `/addpsp` now takes
 >   `projectid` and `credentialsfile` instead of `apikey`; devices do not need
