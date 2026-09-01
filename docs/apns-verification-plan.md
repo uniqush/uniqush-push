@@ -191,9 +191,10 @@ So today, token auth is for new services. Existing certificate-based services
 keep working exactly as before and are not touched by any of this.
 
 Fixing it properly means decoupling a delivery point from the provider's
-credential hash — binding it to service and push service type instead — which is
-a database migration and a change to how `/addpsp` identifies a provider. That
-is worth doing, and is much larger than this.
+credential hash. That is scoped out in
+[delivery-point-rebinding.md](delivery-point-rebinding.md) — it turns out to be
+smaller than it sounds, because the stored binding is already a cache of a pure
+function of *(service, push service type)*, so nothing needs backfilling.
 
 ## What is left
 
