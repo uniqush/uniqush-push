@@ -57,8 +57,11 @@ func NewPushBackEnd(psm *push.PushServiceManager, database db.PushDatabase, logg
 }
 
 // AddPushServiceProvider is used by /addpsp to add a push service provider (for a service+push type) to the database.
-func (backend *PushBackEnd) AddPushServiceProvider(service string, psp *push.PushServiceProvider) error {
-	return backend.db.AddPushServiceProviderToService(service, psp)
+//
+// replace supersedes an existing provider of the same push service type whose
+// fixed data differs, keeping the service's subscriptions.
+func (backend *PushBackEnd) AddPushServiceProvider(service string, psp *push.PushServiceProvider, replace bool) error {
+	return backend.db.AddPushServiceProviderToService(service, psp, replace)
 }
 
 // RemovePushServiceProvider is used by /rmpsp to remove a push service provider (for a service+push type) from the database.

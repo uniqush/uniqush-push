@@ -88,7 +88,7 @@ func TestInsertAndGetPushServiceProviders(t *testing.T) {
 		t.Fatalf("Could not create a mock PSP: %v", err)
 	}
 
-	err = client.AddPushServiceProviderToService(ServiceName, psp)
+	err = client.AddPushServiceProviderToService(ServiceName, psp, false)
 	if err != nil {
 		t.Fatalf("Could not add the mock PSP: %v", err)
 	}
@@ -120,7 +120,7 @@ func TestInsertPushServiceProvidersDifferentServices(t *testing.T) {
 			t.Fatalf("Could not create a mock PSP: %v", err)
 		}
 
-		err = client.AddPushServiceProviderToService(ServiceName, psp)
+		err = client.AddPushServiceProviderToService(ServiceName, psp, false)
 		if err != nil {
 			t.Fatalf("Could not add the mock PSP: %v", err)
 		}
@@ -143,7 +143,7 @@ func TestInsertPushServiceProvidersDifferentServices(t *testing.T) {
 			t.Fatalf("Could not create a mock PSP: %v", err)
 		}
 
-		err = client.AddPushServiceProviderToService(OtherServiceName, otherPSP)
+		err = client.AddPushServiceProviderToService(OtherServiceName, otherPSP, false)
 		if err != nil {
 			t.Fatalf("Could not add the mock PSP: %v", err)
 		}
@@ -184,7 +184,7 @@ func TestInsertPushServiceProvidersConflictSameService(t *testing.T) {
 			t.Fatalf("Could not create a mock PSP: %v", err)
 		}
 
-		err = client.AddPushServiceProviderToService(ServiceName, psp)
+		err = client.AddPushServiceProviderToService(ServiceName, psp, false)
 		if err != nil {
 			t.Fatalf("Could not add the mock PSP: %v", err)
 		}
@@ -209,15 +209,19 @@ func TestInsertPushServiceProvidersConflictSameService(t *testing.T) {
 			t.Fatalf("Could not create a mock PSP: %v", err)
 		}
 
-		err = client.AddPushServiceProviderToService(ServiceName, otherPSP)
+		err = client.AddPushServiceProviderToService(ServiceName, otherPSP, false)
 		if err == nil {
 			t.Fatalf("Expected an error adding the conflicting mock PSP")
 		}
+		// The message no longer suggests removing the old PSP. That was the
+		// documented workaround and it destroys data: a delivery point whose
+		// provider has gone is deleted the next time it is read. replace=true
+		// is the answer now, and it keeps the subscriptions.
 		testutil.ExpectStringEquals(
 			t,
-			"A different PSP for service pushdb_test_service already exists with different fixed data as push service type apns (It has a separate subscriber list). Please double check the list of current PSPs with the /psps API. Note that this error could be worked around by removing the old PSP, but that would delete subscriptions",
+			"A different PSP for service pushdb_test_service already exists with different fixed data as push service type apns (It has a separate subscriber list). Please double check the list of current PSPs with the /psps API. To replace it and keep the existing subscriptions, pass replace=true to /addpsp. Do not use /rmpsp for this: it deletes the provider without moving the subscriptions",
 			err.Error(),
-			"error message should describe the conflict",
+			"error message should describe the conflict and how to resolve it safely",
 		)
 		otherPSPName := otherPSP.Name()
 		testutil.ExpectStringEquals(t, "apns:c5de2508902f441a5252c60044745915df2f7368", otherPSPName, "should have deterministic PSP name")

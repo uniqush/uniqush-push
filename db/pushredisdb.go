@@ -69,6 +69,12 @@ type redisClient interface {
 	SRem(ctx context.Context, key string, members ...interface{}) *redis.IntCmd
 	Set(ctx context.Context, key string, value interface{}, expiration time.Duration) *redis.StatusCmd
 	SMembers(ctx context.Context, key string) *redis.StringSliceCmd
+	// Watch runs fn with the given keys watched. A transaction that fn opens
+	// then fails to commit if another client has written one of those keys in
+	// the meantime, rather than overwriting the change. Reads inside fn go
+	// through the *redis.Tx, which is a single dedicated connection to the
+	// master.
+	Watch(ctx context.Context, fn func(*redis.Tx) error, keys ...string) error
 }
 
 type redisMultiClient struct {
@@ -106,6 +112,13 @@ func (mc *redisMultiClient) Keys(ctx context.Context, key string) *redis.StringS
 
 func (mc *redisMultiClient) Scan(ctx context.Context, cursor uint64, match string, count int64) *redis.ScanCmd {
 	return mc.slaveClient.Scan(ctx, cursor, match, count)
+}
+
+// Watch goes to the master, unlike most reads here. A transaction that read its
+// inputs from a replica would be deciding on data that may already be stale by
+// the time it commits, which is the thing WATCH exists to prevent.
+func (mc *redisMultiClient) Watch(ctx context.Context, fn func(*redis.Tx) error, keys ...string) error {
+	return mc.masterClient.Watch(ctx, fn, keys...)
 }
 
 func (mc *redisMultiClient) MGet(ctx context.Context, keys ...string) *redis.SliceCmd {
@@ -571,6 +584,97 @@ func (r *PushRedisDB) AddPushServiceProviderToService(srv, psp string) error {
 		return fmt.Errorf("AddPSPToService failed for psp %q of service %q: %w", psp, srv, err)
 	}
 	return nil
+}
+
+// setProviderAttempts is how many times a contended provider update is retried
+// before giving up.
+//
+// Each retry means another client wrote the service's provider set between this
+// one's read and its EXEC. That is rare -- it takes two concurrent /addpsp
+// calls against the same service -- so a handful of attempts is the difference
+// between "lost a race" and "something is wrong", and looping forever would
+// turn a hot spot into a hang.
+const setProviderAttempts = 5
+
+// SetPushServiceProviderOfService installs psp as a provider of srv, removing
+// whatever decide names, atomically.
+//
+// WATCH on the service's provider set, read, then MULTI/EXEC: if any other
+// client touches that set in between, EXEC fails and the whole thing is retried
+// from the read. Without it this is four separate commands, and an interruption
+// in the middle leaves a service with two providers of one push service type --
+// the one state where deriving a delivery point's provider is ambiguous, which
+// is to say the state this branch exists to make impossible.
+//
+// The reads inside the transaction go through tx, so they hit the master even
+// where a read replica is configured. The existing conflict check reads the set
+// through the ordinary client, and therefore through the replica: replication
+// lag alone could let a duplicate provider through.
+func (r *PushRedisDB) SetPushServiceProviderOfService(srv string, psp *push.PushServiceProvider,
+	decide func([]ServiceProvider) ([]string, error)) error {
+	setKey := ServiceToPushServiceProvidersPrefix + srv
+
+	attempt := func(tx *redis.Tx) error {
+		names, err := tx.SMembers(r.ctx, setKey).Result()
+		if err != nil && !errors.Is(err, redis.Nil) {
+			return fmt.Errorf("could not read the providers of service %q: %w", srv, err)
+		}
+
+		existing := make([]ServiceProvider, 0, len(names))
+		for _, name := range names {
+			entry := ServiceProvider{Name: name}
+			value, e := tx.Get(r.ctx, PushServiceProviderPrefix+name).Bytes()
+			switch {
+			case errors.Is(e, redis.Nil) || (e == nil && len(value) == 0):
+				// Left as a nil Provider: a name with no record. decide is what
+				// says whether that matters.
+			case e != nil:
+				return fmt.Errorf("could not read push service provider %q of service %q: %w", name, srv, e)
+			default:
+				entry.Provider, e = r.keyValueToPushServiceProvider(value)
+				if e != nil {
+					return fmt.Errorf("could not parse push service provider %q of service %q: %w", name, srv, e)
+				}
+			}
+			existing = append(existing, entry)
+		}
+
+		superseded, err := decide(existing)
+		if err != nil {
+			return err
+		}
+
+		_, err = tx.TxPipelined(r.ctx, func(pipe redis.Pipeliner) error {
+			pipe.Set(r.ctx, PushServiceProviderPrefix+psp.Name(), pushServiceProviderToValue(psp), 0)
+			pipe.SAdd(r.ctx, ServicesSet, srv) // Used to list services in API.
+			pipe.SAdd(r.ctx, setKey, psp.Name())
+			for _, old := range superseded {
+				// Superseding the provider being installed would delete the
+				// record just written. decide should not name it, but the cost
+				// of being sure here is one comparison.
+				if old == psp.Name() {
+					continue
+				}
+				pipe.SRem(r.ctx, setKey, old)
+				pipe.Del(r.ctx, PushServiceProviderPrefix+old)
+			}
+			return nil
+		})
+		return err
+	}
+
+	for i := 0; i < setProviderAttempts; i++ {
+		err := r.client.Watch(r.ctx, attempt, setKey)
+		if err == nil {
+			return nil
+		}
+		if errors.Is(err, redis.TxFailedErr) {
+			continue
+		}
+		return err
+	}
+	return fmt.Errorf("could not set the provider of service %q: the service was modified by something else %d times in a row",
+		srv, setProviderAttempts)
 }
 
 // GetServiceNames will return the list of all services that have 1 or more push service providers.

@@ -110,7 +110,7 @@ func (f *rebindingFixture) addProvider(t *testing.T, cert string) *push.PushServ
 	if err != nil {
 		t.Fatalf("Could not build a provider: %v", err)
 	}
-	if err := f.client.AddPushServiceProviderToService(ServiceName, psp); err != nil {
+	if err := f.client.AddPushServiceProviderToService(ServiceName, psp, false); err != nil {
 		t.Fatalf("Could not add the provider: %v", err)
 	}
 	return psp
@@ -309,7 +309,7 @@ func TestDeliveryPointWithNoProviderOfItsTypeIsSkipped(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Could not build an fcm provider: %v", err)
 	}
-	if err := fixture.client.AddPushServiceProviderToService(ServiceName, fcmPSP); err != nil {
+	if err := fixture.client.AddPushServiceProviderToService(ServiceName, fcmPSP, false); err != nil {
 		t.Fatalf("Could not add the fcm provider: %v", err)
 	}
 
@@ -439,6 +439,206 @@ func TestSubscribingWithNoProviderOfItsTypeIsRefused(t *testing.T) {
 		t.Fatal("Expected subscribing a gcm device to an apns-only service to fail")
 	} else if !strings.Contains(err.Error(), "Cannot Find Push Service Provider with Type gcm") {
 		t.Errorf("Expected the type-not-found error, got: %v", err)
+	}
+}
+
+// TestReplaceKeepsSubscriptions is the acceptance test for the whole branch.
+//
+// A service's provider is replaced with one whose fixed data differs -- exactly
+// what moving an APNs service from a certificate to a .p8 signing key does --
+// and the devices keep working with no re-subscribe. Before this, /addpsp
+// refused the change, and the workaround an operator would reach for (/rmpsp
+// then /addpsp) deleted every subscription in the service.
+func TestReplaceKeepsSubscriptions(t *testing.T) {
+	fixture := newRebindingFixture(t)
+	original := fixture.addProvider(t, "certificate.pem")
+	first := fixture.subscribe(t, "devtoken-1")
+	second := fixture.subscribe(t, "devtoken-2")
+
+	replacement, err := fixture.psm.BuildPushServiceProviderFromMap(map[string]string{
+		"pushservicetype": "apns",
+		"service":         ServiceName,
+		// Stands in for authkey/keyid/teamid: different fixed data, so a
+		// different provider name.
+		"cert": "AuthKey_ABCDE12345.p8",
+		"key":  "",
+	})
+	if err != nil {
+		t.Fatalf("Could not build the replacement provider: %v", err)
+	}
+	if replacement.Name() == original.Name() {
+		t.Fatal("The replacement must have a different name for this test to mean anything")
+	}
+
+	// Without the opt-in this is still refused, and the message must point at
+	// the option rather than at /rmpsp.
+	err = fixture.client.AddPushServiceProviderToService(ServiceName, replacement, false)
+	if err == nil {
+		t.Fatal("Expected a credential change to be refused without replace=true")
+	}
+	if !strings.Contains(err.Error(), "replace=true") {
+		t.Errorf("Expected the error to point at replace=true, got: %v", err)
+	}
+
+	if err = fixture.client.AddPushServiceProviderToService(ServiceName, replacement, true); err != nil {
+		t.Fatalf("Could not replace the provider: %v", err)
+	}
+
+	pairs := fixture.pairs(t)
+	if len(pairs) != 2 {
+		t.Fatalf("Expected both devices to survive the replacement, got %d", len(pairs))
+	}
+	surviving := make(map[string]bool, len(pairs))
+	for _, pair := range pairs {
+		surviving[pair.DeliveryPoint.Name()] = true
+		if got := pair.PushServiceProvider.Name(); got != replacement.Name() {
+			t.Errorf("Expected the device to resolve to the replacement %q, got %q", replacement.Name(), got)
+		}
+	}
+	for _, dp := range []*push.DeliveryPoint{first, second} {
+		if !surviving[dp.Name()] {
+			t.Errorf("Delivery point %q did not survive the replacement", dp.Name())
+		}
+	}
+
+	// The old provider is gone from both the set and its own record, so the
+	// service is left with exactly one provider of the type.
+	if fixture.keyExists(t, PushServiceProviderPrefix+original.Name()) {
+		t.Error("The superseded provider's record was left behind")
+	}
+	names, err := fixture.raw.GetPushServiceProvidersByService(ServiceName)
+	if err != nil {
+		t.Fatalf("Could not list the service's providers: %v", err)
+	}
+	if len(names) != 1 || names[0] != replacement.Name() {
+		t.Errorf("Expected only the replacement provider, got %v", names)
+	}
+
+	// And the database is left consistent, not merely working.
+	report, err := fixture.client.CheckConsistency()
+	if err != nil {
+		t.Fatalf("CheckConsistency failed: %v", err)
+	}
+	for _, problem := range report.Problems {
+		if problem.Kind != ProblemStaleBinding {
+			t.Errorf("Replacement left the database inconsistent: %s", problem)
+		}
+	}
+}
+
+// TestReplaceIsNotNeededForAVolatileDataChange guards the common case against
+// the new option.
+//
+// Changing an endpoint, a bundle id or a rotated credential path touches only
+// volatile data, so the provider's name is unchanged and this has always been a
+// plain update. It must not start requiring replace=true, or every operator
+// updating a provider would learn to pass a flag that also lets them silently
+// discard one.
+func TestReplaceIsNotNeededForAVolatileDataChange(t *testing.T) {
+	fixture := newRebindingFixture(t)
+	fixture.addProvider(t, "certificate.pem")
+	fixture.subscribe(t, "devtoken-1")
+
+	updated, err := fixture.psm.BuildPushServiceProviderFromMap(map[string]string{
+		"pushservicetype": "apns",
+		"service":         ServiceName,
+		"cert":            "certificate.pem",
+		"key":             "certificate.pem.key",
+		"bundleid":        "com.example.changed",
+	})
+	if err != nil {
+		t.Fatalf("Could not build the updated provider: %v", err)
+	}
+	if err := fixture.client.AddPushServiceProviderToService(ServiceName, updated, false); err != nil {
+		t.Fatalf("Expected a volatile-data update to be allowed without replace=true: %v", err)
+	}
+
+	pairs := fixture.pairs(t)
+	if len(pairs) != 1 {
+		t.Fatalf("Expected the device to survive the update, got %d", len(pairs))
+	}
+	if got := pairs[0].PushServiceProvider.VolatileData["bundleid"]; got != "com.example.changed" {
+		t.Errorf("Expected the updated bundleid, got %q", got)
+	}
+}
+
+// TestReplaceIsAtomic is the reason the replace is a transaction rather than
+// four ordered commands.
+//
+// A concurrent write to the service's provider set has to abort the attempt and
+// send it round again, because the alternative -- committing anyway -- leaves a
+// service with two providers of one push service type, which is the one state
+// where a delivery point's provider cannot be derived. Nothing else in uniqush
+// would stop it: dblock is per process, so two instances against one redis
+// interleave freely.
+func TestReplaceIsAtomic(t *testing.T) {
+	fixture := newRebindingFixture(t)
+	original := fixture.addProvider(t, "certificate.pem")
+	fixture.subscribe(t, "devtoken-1")
+
+	replacement, err := fixture.psm.BuildPushServiceProviderFromMap(map[string]string{
+		"pushservicetype": "apns",
+		"service":         ServiceName,
+		"cert":            "AuthKey_ABCDE12345.p8",
+		"key":             "",
+	})
+	if err != nil {
+		t.Fatalf("Could not build the replacement: %v", err)
+	}
+
+	setKey := ServiceToPushServiceProvidersPrefix + ServiceName
+	attempts := 0
+	err = fixture.raw.SetPushServiceProviderOfService(ServiceName, replacement,
+		func(existing []ServiceProvider) ([]string, error) {
+			attempts++
+			if attempts == 1 {
+				// Another client writes the very key this transaction is
+				// watching, after it has read and before it commits. On a
+				// different connection, which is what makes it a conflict
+				// rather than part of the transaction.
+				if e := fixture.raw.client.SAdd(context.Background(), setKey, "someone-elses-provider").Err(); e != nil {
+					t.Fatalf("Could not simulate a concurrent write: %v", e)
+				}
+			}
+			superseded := make([]string, 0, len(existing))
+			for _, entry := range existing {
+				if entry.Name != replacement.Name() {
+					superseded = append(superseded, entry.Name)
+				}
+			}
+			return superseded, nil
+		})
+	if err != nil {
+		t.Fatalf("The replace should have retried and succeeded, got: %v", err)
+	}
+	if attempts < 2 {
+		t.Errorf("Expected the conflicting write to abort the first attempt, but decide ran %d time(s)", attempts)
+	}
+
+	// The retry saw the interloper and superseded it too, so the service ends up
+	// with exactly one provider either way.
+	names, err := fixture.raw.GetPushServiceProvidersByService(ServiceName)
+	if err != nil {
+		t.Fatalf("Could not list the service's providers: %v", err)
+	}
+	if len(names) != 1 || names[0] != replacement.Name() {
+		t.Errorf("Expected the service to hold only the replacement, got %v", names)
+	}
+	if fixture.keyExists(t, PushServiceProviderPrefix+original.Name()) {
+		t.Error("The superseded provider record should be gone")
+	}
+
+	// Nothing half-applied: the device is still there, and still resolvable.
+	if pairs := fixture.pairs(t); len(pairs) != 1 {
+		t.Errorf("Expected the device to survive the replace, got %d pairs", len(pairs))
+	}
+
+	report, err := fixture.client.CheckConsistency()
+	if err != nil {
+		t.Fatalf("CheckConsistency failed: %v", err)
+	}
+	if duplicates := findProblems(report, ProblemDuplicateProvider); len(duplicates) != 0 {
+		t.Errorf("Expected no duplicate providers after a contended replace, got %v", duplicates)
 	}
 }
 

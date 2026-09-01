@@ -63,8 +63,12 @@ type PushDatabase interface {
 	// The push service provider may by anonymous whose Name is empty string
 	// For anonymous push service provider, it will be added to database
 	// and its Name will be set
+	//
+	// replace permits superseding an existing provider of the same push service
+	// type whose fixed data differs -- a credential change, most usefully a move
+	// from an APNs certificate to a .p8 signing key. Subscriptions survive it.
 	AddPushServiceProviderToService(service string,
-		pushServiceProvider *push.PushServiceProvider) error
+		pushServiceProvider *push.PushServiceProvider, replace bool) error
 
 	ModifyPushServiceProvider(psp *push.PushServiceProvider) error
 
@@ -165,7 +169,28 @@ func (f *pushDatabaseOpts) RemovePushServiceProviderFromService(service string, 
 	return nil
 }
 
-func (f *pushDatabaseOpts) AddPushServiceProviderToService(service string, pushServiceProvider *push.PushServiceProvider) error {
+// AddPushServiceProviderToService registers a provider for a service.
+//
+// A service may have at most one provider per push service type. That invariant
+// dates from PR #201 and is what makes a delivery point's provider derivable
+// from the service and the device's type, so it is enforced here rather than
+// merely expected.
+//
+// When a provider of the same type already exists:
+//
+//   - identical fixed data: an update. Volatile data is replaced, which is how
+//     an endpoint, a bundle id or a rotated credential is changed in place.
+//   - different fixed data, replace false: rejected, as it always has been. The
+//     check also catches an operator pasting the wrong certificate path into
+//     the wrong service, and that protection is worth keeping by default.
+//   - different fixed data, replace true: the old provider is replaced.
+//     Delivery points survive, because nothing references the provider by name
+//     any more.
+//
+// The read, the decision and the writes are one redis transaction, so a service
+// cannot be left holding two providers of one type by an interruption or by a
+// second uniqush process doing the same thing at the same time.
+func (f *pushDatabaseOpts) AddPushServiceProviderToService(service string, pushServiceProvider *push.PushServiceProvider, replace bool) error {
 	if pushServiceProvider == nil {
 		return nil
 	}
@@ -176,50 +201,60 @@ func (f *pushDatabaseOpts) AddPushServiceProviderToService(service string, pushS
 	f.dblock.Lock()
 	defer f.dblock.Unlock()
 
-	/*
-	 * Patch by Victor Lang (PR #201)
-	 * Before adding a new psp to a service, try to verify that there is no redundant PSP of same type (GCM, FCM, APNS, or ADM)
-	 * that was already created for the given service.
-	 * Currently, redundant psp to service will result in problem when API clients attempt to subscribe and push later.
-	 *
-	 * However, allow /addpsp to be used to update an existing PSP, as long as none of the fixed data for the PSP changes
-	 */
-	expsps, err := f.db.GetPushServiceProvidersByService(service)
-	if err != nil {
-		return fmt.Errorf("Error in AddPushServiceProviderToService querying list of PSPs for service %s: %v", service, err)
-	}
+	// One transaction: read the service's providers, decide, write. The decision
+	// runs inside it, so the set it judged cannot have changed by the time the
+	// write commits.
+	return f.db.SetPushServiceProviderOfService(service, pushServiceProvider,
+		func(existing []ServiceProvider) ([]string, error) {
+			return supersededProviders(service, pushServiceProvider, existing, replace)
+		})
+}
 
-	for _, pspitem := range expsps {
-		pushpsp, perr := f.db.GetPushServiceProvider(pspitem)
-		if perr != nil {
-			return fmt.Errorf("Error in AddPushServiceProviderToService retrieving existing PSP %s for service %s with name: %v", pspitem, service, perr)
+// supersededProviders decides which of a service's existing providers the one
+// being added replaces, and refuses the whole operation where it must not.
+//
+// Separate from the transaction that calls it because it is the policy, and
+// pure: everything it needs is in its arguments, so the rules can be tested
+// without a database.
+func supersededProviders(service string, psp *push.PushServiceProvider,
+	existing []ServiceProvider, replace bool) ([]string, error) {
+	var superseded []string
+	for _, entry := range existing {
+		if entry.Provider == nil {
+			// A name in the set with no record behind it -- an interrupted
+			// write, which /checkdb reports as a dangling provider. There is
+			// nothing to compare against and nothing to lose, so it is cleared
+			// out whether or not a replacement was asked for.
+			superseded = append(superseded, entry.Name)
+			continue
 		}
-		// Check if the existing PSP has the same push service type
-		if pushpsp.PushServiceName() == pushServiceProvider.PushServiceName() {
-			/*
-			 * The service already has a PSP of the same push service type.
-			 *
-			 * The same fixed data are allowed under this situation in case the user wants to update the changeable VolatileData of a PSP,
-			 * but we disallow adding a different PSP of the same type.
-			 *
-			 * Because the psp's fixed data currently is used to generate a unique pushpeer name,
-			 * we directly compare the Name() of pushpeer and reject the new PSP if the name is different.
-			 */
-			if pushpsp.PushPeer.Name() != pushServiceProvider.PushPeer.Name() {
-				return fmt.Errorf(
-					"A different PSP for service %s already exists with different fixed data as push service type %s (It has a separate subscriber list). Please double check the list of current PSPs with the /psps API. Note that this error could be worked around by removing the old PSP, but that would delete subscriptions",
-					service,
-					pushServiceProvider.PushServiceName(),
-				)
-			}
+		if entry.Provider.PushServiceName() != psp.PushServiceName() {
+			// A service may have one provider per push service type; an apns
+			// provider has no opinion about the fcm one.
+			continue
 		}
+		if entry.Provider.Name() == psp.Name() {
+			// The same provider. This is an update of its volatile data, which
+			// is how an endpoint, a bundle id or a rotated credential changes in
+			// place, and has always been allowed.
+			continue
+		}
+		if !replace {
+			// Capitalised, and staying that way: this is the rejection /addpsp
+			// has always returned, extended with the new way out rather than
+			// reworded. Anything matching on it keeps working.
+			return nil, fmt.Errorf( //nolint:revive,staticcheck
+				"A different PSP for service %s already exists with different fixed data as push service type %s "+
+					"(It has a separate subscriber list). Please double check the list of current PSPs with the /psps API. "+
+					"To replace it and keep the existing subscriptions, pass replace=true to /addpsp. "+
+					"Do not use /rmpsp for this: it deletes the provider without moving the subscriptions",
+				service,
+				psp.PushServiceName(),
+			)
+		}
+		superseded = append(superseded, entry.Name)
 	}
-
-	e := f.db.SetPushServiceProvider(pushServiceProvider)
-	if e != nil {
-		return fmt.Errorf("Error associating psp with name: %v", e)
-	}
-	return f.db.AddPushServiceProviderToService(service, pushServiceProvider.Name())
+	return superseded, nil
 }
 
 func (f *pushDatabaseOpts) AddDeliveryPointToService(service string,

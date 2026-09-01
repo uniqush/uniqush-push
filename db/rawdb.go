@@ -45,6 +45,14 @@ import (
 // delivery point to Service-Subscriber pair.
 //
 
+// ServiceProvider is one member of a service's provider set, paired with the
+// record behind it. Provider is nil when the name has no record -- an
+// interrupted write, which /checkdb reports as a dangling provider.
+type ServiceProvider struct {
+	Name     string
+	Provider *push.PushServiceProvider
+}
+
 // Danger: writing wrong data may leads to inconsistent
 type pushRawDatabaseWriter interface { //nolint:staticcheck
 	// SetDeliveryPoint serializes the delivery point, and saves the serialized delivery point based on its name.
@@ -72,6 +80,21 @@ type pushRawDatabaseWriter interface { //nolint:staticcheck
 	RemovePushServiceProviderOfServiceDeliveryPoint(srv, dp string) error
 
 	AddPushServiceProviderToService(srv, psp string) error
+	// SetPushServiceProviderOfService installs psp as a provider of srv, and
+	// removes the providers that decide names, as one atomic operation.
+	//
+	// decide is handed the service's current providers, read inside the
+	// transaction, and returns the names to supersede -- or an error, which
+	// abandons the whole thing and is returned to the caller. Splitting it this
+	// way keeps the policy (which providers conflict, and whether replacing one
+	// was asked for) out of the layer that knows about redis keys.
+	//
+	// The atomicity is not decoration. Installing a replacement is a
+	// read-modify-write of one service's provider set, and dblock is per
+	// process, so two uniqush instances against one redis have nothing else
+	// stopping them from interleaving.
+	SetPushServiceProviderOfService(srv string, psp *push.PushServiceProvider,
+		decide func([]ServiceProvider) ([]string, error)) error
 	RemovePushServiceProviderFromService(srv, psp string) error
 
 	FlushCache() error

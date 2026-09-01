@@ -182,6 +182,17 @@ func getServiceFromMap(kv map[string]string) (service string, err error) {
 }
 
 func (api *RestAPI) changePushServiceProvider(kv map[string]string, logger log.Logger, remoteAddr string, add bool) APIResponseDetails {
+	// replace=true is an explicit acknowledgement that an existing provider of
+	// this type is being superseded. Off by default: the conflict it bypasses is
+	// also what catches a certificate path pasted into the wrong service.
+	//
+	// Taken out of kv before the provider is built. No push service type reads
+	// an unknown key today, so leaving it there would be harmless -- but it is
+	// an instruction to uniqush, not a property of the provider, and the two
+	// should not be in the same bag.
+	replace := kv["replace"] == "true"
+	delete(kv, "replace")
+
 	psp, err := api.psm.BuildPushServiceProviderFromMap(kv)
 	if err != nil {
 		logger.Errorf("From=%v Cannot build push service provider: %v", remoteAddr, err)
@@ -193,7 +204,7 @@ func (api *RestAPI) changePushServiceProvider(kv map[string]string, logger log.L
 		return APIResponseDetails{From: &remoteAddr, Service: &service, Code: UNIQUSH_ERROR_CANNOT_GET_SERVICE, ErrorMsg: strPtrOfErr(err)}
 	}
 	if add {
-		err = api.backend.AddPushServiceProvider(service, psp)
+		err = api.backend.AddPushServiceProvider(service, psp, replace)
 	} else {
 		err = api.backend.RemovePushServiceProvider(service, psp)
 	}
