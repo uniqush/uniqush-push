@@ -443,6 +443,100 @@ func TestConformanceUnregisteredUnsubscribes(t *testing.T) {
 	}
 }
 
+// TestConformanceTransientFailuresAreRetried covers behaviour APNs never had.
+//
+// Every non-permanent reason used to become a BadNotification and stop there:
+// a 503 from Apple, or a per-device rate limit, was reported as though the
+// payload were malformed and the notification was dropped. FCM has mapped these
+// to RetryError since its rewrite; APNs simply did not.
+func TestConformanceTransientFailuresAreRetried(t *testing.T) {
+	cases := map[string]apnstest.Response{
+		"429 TooManyRequests": {Status: http.StatusTooManyRequests, Reason: apnstest.ReasonTooManyRequests},
+		// Reached only when the previous bucket's token is unavailable to fall
+		// back on; otherwise sendRequest recovers before this point.
+		"429 TooManyProviderTokenUpdates": {
+			Status: http.StatusTooManyRequests,
+			Reason: apnstest.ReasonTooManyProviderTokenUpdates,
+		},
+		"500 InternalServerError": {Status: http.StatusInternalServerError, Reason: apnstest.ReasonInternalServerError},
+		"503 ServiceUnavailable":  {Status: http.StatusServiceUnavailable, Reason: apnstest.ReasonServiceUnavailable},
+	}
+
+	for name, response := range cases {
+		t.Run(name, func(t *testing.T) {
+			server := startSimulator(t)
+			service, _ := newSimulatorService(t)
+			psp := newSimulatorPSP(t, server, nil)
+
+			token := apnstest.DeviceToken(0xb8)
+			server.SetResponse(token, response)
+
+			results := pushToSimulator(t, service, psp, createNotification("Hello World"), token)
+			if len(results) != 1 || results[0].Err == nil {
+				t.Fatalf("Expected an error, got: %s", describeResults(results))
+			}
+
+			retry, isRetry := results[0].Err.(*push.RetryError)
+			if !isRetry {
+				t.Fatalf("Expected a RetryError for %s, got %T: %v", name, results[0].Err, results[0].Err)
+			}
+			// The backend can only re-send a push it has all three parts of.
+			// Without them it drops the retry silently, which would look
+			// identical to the bug this replaced.
+			if retry.Provider == nil || retry.Destination == nil || retry.Content == nil {
+				t.Errorf("RetryError is missing what the backend needs to re-send: provider=%v destination=%v content=%v",
+					retry.Provider != nil, retry.Destination != nil, retry.Content != nil)
+			}
+			if retry.After <= 0 {
+				t.Errorf("Expected a positive backoff, got %s", retry.After)
+			}
+		})
+	}
+}
+
+// TestConformanceProviderFailuresAreReportedAgainstTheProvider covers the other
+// half of the remapping.
+//
+// A wrong signing key, a wrong topic or a skewed clock are not properties of
+// the notification, and calling them BadNotification sends whoever is debugging
+// to look at the payload. These are the reasons an operator has to act on.
+func TestConformanceProviderFailuresAreReportedAgainstTheProvider(t *testing.T) {
+	cases := map[string]apnstest.Response{
+		"403 InvalidProviderToken": {Status: http.StatusForbidden, Reason: apnstest.ReasonInvalidProviderToken},
+		"403 MissingProviderToken": {Status: http.StatusForbidden, Reason: apnstest.ReasonMissingProviderToken},
+		"403 ExpiredProviderToken": {Status: http.StatusForbidden, Reason: apnstest.ReasonExpiredProviderToken},
+		"403 Forbidden":            {Status: http.StatusForbidden, Reason: apnstest.ReasonForbidden},
+		// TooManyProviderTokenUpdates is deliberately absent: it is transient,
+		// the floor always clears, and treating it as a provider failure would
+		// have meant every push failing for up to 20 minutes. See
+		// TestConformanceTransientFailuresAreRetried and the fallback in
+		// sendRequest.
+	}
+
+	for name, response := range cases {
+		t.Run(name, func(t *testing.T) {
+			server := startSimulator(t)
+			service, _ := newSimulatorService(t)
+			psp := newSimulatorPSP(t, server, nil)
+
+			token := apnstest.DeviceToken(0xb9)
+			server.SetResponse(token, response)
+
+			results := pushToSimulator(t, service, psp, createNotification("Hello World"), token)
+			if len(results) != 1 || results[0].Err == nil {
+				t.Fatalf("Expected an error, got: %s", describeResults(results))
+			}
+			if _, isProvider := results[0].Err.(*push.BadPushServiceProvider); !isProvider {
+				t.Errorf("Expected a BadPushServiceProvider for %s, got %T: %v", name, results[0].Err, results[0].Err)
+			}
+			// And never an unsubscribe: none of these is the device's fault.
+			if _, unsubscribed := results[0].Err.(*push.UnsubscribeUpdate); unsubscribed {
+				t.Errorf("%s must not unsubscribe the device", name)
+			}
+		})
+	}
+}
+
 // TestConformanceForbiddenDoesNotUnsubscribe is the deliberate deviation from
 // Apple's own do-not-retry list, and the one most worth pinning down.
 //

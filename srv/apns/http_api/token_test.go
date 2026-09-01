@@ -99,7 +99,7 @@ func TestProviderTokenIsAgedOnTheWallClock(t *testing.T) {
 
 	// time.Now rather than a constructed date, because a constructed time never
 	// carries a monotonic reading and would make this pass for the wrong reason.
-	if _, err := processor.getProviderToken(tokenAuthPSP(t, path), time.Now()); err != nil {
+	if _, _, err := processor.getProviderToken(tokenAuthPSP(t, path), time.Now()); err != nil {
 		t.Fatalf("Could not mint a provider token: %v", err)
 	}
 
@@ -110,34 +110,45 @@ func TestProviderTokenIsAgedOnTheWallClock(t *testing.T) {
 		t.Fatalf("Expected one cached token, got %d", len(processor.tokens))
 	}
 
-	// The cached bucket is built by issuedAtBucket with time.Unix, so a
-	// monotonic reading cannot survive into it. A Time equals its own Round(0)
-	// only when it carries none, which is what this asserts.
+	// The cache is keyed on the bucket's Unix second, and issuedAtBucket builds
+	// its result with time.Unix, so a monotonic reading cannot survive into it.
+	// Reconstructing the bucket and comparing against Round(0) proves that: a
+	// Time equals its own Round(0) only when it carries no monotonic reading.
 	for _, cached := range processor.tokens {
 		cached.mutex.Lock()
-		bucket := cached.signedBucket
-		signed := cached.signed
+		buckets := make([]int64, 0, len(cached.signed))
+		for bucket := range cached.signed {
+			buckets = append(buckets, bucket)
+		}
 		cached.mutex.Unlock()
 
-		if signed == "" {
+		if len(buckets) == 0 {
 			t.Fatal("Expected the mint to have cached a token")
 		}
-		if bucket != bucket.Round(0) {
-			t.Error("The cached bucket carries a monotonic reading, so the token's age is " +
-				"measured on a clock Apple cannot see.\n" +
-				"After a forward clock correction or a host resume, uniqush would go on " +
-				"serving a token Apple already considers expired, failing every push until " +
-				"the monotonic window elapsed.")
+		for _, bucket := range buckets {
+			issuedAt := time.Unix(bucket, 0).UTC()
+			if issuedAt != issuedAt.Round(0) {
+				t.Error("The cached bucket carries a monotonic reading, so the token's age is " +
+					"measured on a clock Apple cannot see.\n" +
+					"After a forward clock correction or a host resume, uniqush would go on " +
+					"serving a token Apple already considers expired, failing every push until " +
+					"the monotonic window ran out.")
+			}
 		}
 	}
 }
 
+// TestProviderTokenIsSignedTheWayAppleExpects checks the JWT itself.
+//
+// Every field here produces the same 403 InvalidProviderToken when wrong, with
+// nothing to say which one, so getting them individually under test is worth
+// more than it usually would be.
 func TestProviderTokenIsSignedTheWayAppleExpects(t *testing.T) {
 	path, key := writeSigningKey(t)
 	processor := newTokenProcessor()
 	now := time.Date(2026, 8, 31, 12, 0, 0, 0, time.UTC)
 
-	signed, err := processor.getProviderToken(tokenAuthPSP(t, path), now)
+	signed, _, err := processor.getProviderToken(tokenAuthPSP(t, path), now)
 	if err != nil {
 		t.Fatalf("Could not mint a provider token: %v", err)
 	}
@@ -184,6 +195,148 @@ func TestProviderTokenIsSignedTheWayAppleExpects(t *testing.T) {
 	}
 }
 
+// TestProviderTokenCachesBothLiveBuckets is the regression test for a cache
+// that spent its whole life thrashing.
+//
+// Every batch asks for two tokens: the current bucket's, and the previous
+// bucket's to carry as a fallback. With a single slot the second call evicted
+// what the first had just stored, so the next batch started with a miss and the
+// pair fought each other forever -- two ECDSA signatures per batch, plus
+// contention on the token mutex, from something that looked like a cache and
+// reported no error.
+//
+// The CPU was the smaller half. srv/apns/es256 states plainly that its signer is
+// not constant-time and rests on running about once per bucket; signing on every
+// batch is precisely the usage that assumption excludes, so this was quietly
+// undermining the security argument for the module's existence.
+func TestProviderTokenCachesBothLiveBuckets(t *testing.T) {
+	path, _ := writeSigningKey(t)
+	processor := newTokenProcessor()
+	psp := tokenAuthPSP(t, path)
+
+	// Mid-bucket, so a previous bucket exists and has not expired.
+	now := issuedAtBucket(time.Date(2026, 8, 31, 12, 0, 0, 0, time.UTC)).Add(5 * time.Minute)
+
+	// What one push batch does, twice over.
+	for round := 0; round < 2; round++ {
+		if _, _, err := processor.getProviderToken(psp, now); err != nil {
+			t.Fatalf("round %d: could not get the current token: %v", round, err)
+		}
+		if _, err := processor.previousProviderToken(psp, now); err != nil {
+			t.Fatalf("round %d: could not get the fallback: %v", round, err)
+		}
+	}
+
+	processor.tokensLock.RLock()
+	defer processor.tokensLock.RUnlock()
+
+	for _, cached := range processor.tokens {
+		cached.mutex.Lock()
+		buckets := len(cached.signed)
+		cached.mutex.Unlock()
+
+		if buckets != 2 {
+			t.Errorf("Expected both live buckets to be cached, got %d entry/entries.\n"+
+				"With one slot the current and previous tokens evict each other, so every "+
+				"batch re-signs both.", buckets)
+		}
+	}
+}
+
+// TestProviderTokenCacheDoesNotGrowWithoutBound is the other side of caching two
+// buckets: entries that can never be presented again have to go, or a
+// long-running process accumulates one per bucket for as long as it lives.
+func TestProviderTokenCacheDoesNotGrowWithoutBound(t *testing.T) {
+	path, _ := writeSigningKey(t)
+	processor := newTokenProcessor()
+	psp := tokenAuthPSP(t, path)
+
+	now := issuedAtBucket(time.Date(2026, 8, 31, 12, 0, 0, 0, time.UTC))
+
+	// A day of pushes, one per bucket.
+	for step := 0; step < 24*60/int(tokenRefreshInterval/time.Minute); step++ {
+		if _, _, err := processor.getProviderToken(psp, now); err != nil {
+			t.Fatalf("step %d: %v", step, err)
+		}
+		if _, err := processor.previousProviderToken(psp, now); err != nil {
+			t.Fatalf("step %d: %v", step, err)
+		}
+		now = now.Add(tokenRefreshInterval)
+	}
+
+	// At most one bucket per lifetime, plus the one being written.
+	maxLive := int(tokenLifetime/tokenRefreshInterval) + 2
+
+	processor.tokensLock.RLock()
+	defer processor.tokensLock.RUnlock()
+
+	for _, cached := range processor.tokens {
+		cached.mutex.Lock()
+		buckets := len(cached.signed)
+		cached.mutex.Unlock()
+
+		if buckets > maxLive {
+			t.Errorf("The token cache holds %d buckets after a day, more than the %d that can "+
+				"still be presented: expired entries are never dropped", buckets, maxLive)
+		}
+	}
+}
+
+// TestProviderTokenRefusalIsRecordedAgainstTheSignedBucket covers a
+// misattribution that only shows up near a boundary.
+//
+// A request signed just before a boundary can have its 429 arrive just after
+// one. Dating the refusal by the clock at that moment blames the bucket Apple
+// has never been shown, and the memo then sends every later push straight to the
+// previous bucket -- which is the token that was actually rejected. Both the
+// primary and the fallback would then be known-bad for the whole memo window.
+func TestProviderTokenRefusalIsRecordedAgainstTheSignedBucket(t *testing.T) {
+	path, _ := writeSigningKey(t)
+	processor := newTokenProcessor()
+	psp := tokenAuthPSP(t, path)
+
+	// Signed one second before a boundary; the answer comes back one second
+	// after it.
+	boundary := issuedAtBucket(time.Date(2026, 8, 31, 12, 0, 0, 0, time.UTC)).Add(tokenRefreshInterval)
+	signedAt := boundary.Add(-time.Second)
+	observedAt := boundary.Add(time.Second)
+
+	signed, signedBucket, err := processor.getProviderToken(psp, signedAt)
+	if err != nil {
+		t.Fatalf("Could not mint: %v", err)
+	}
+	if !signedBucket.Equal(issuedAtBucket(signedAt)) {
+		t.Fatalf("Expected the reported bucket to be the one signed for")
+	}
+
+	processor.noteProviderTokenRefused(psp, signedBucket, observedAt)
+
+	// The new bucket has not been refused, so it is still what gets offered.
+	afterBoundary, bucket, err := processor.getProviderToken(psp, observedAt)
+	if err != nil {
+		t.Fatalf("Could not get a token after the boundary: %v", err)
+	}
+	if !bucket.Equal(boundary) {
+		t.Errorf("Expected the untried bucket %s to be offered after the boundary, got %s.\n"+
+			"Recording the refusal against the response clock blames a bucket Apple has never "+
+			"seen, and skips straight to the token it actually rejected.",
+			boundary.Format(time.TimeOnly), bucket.Format(time.TimeOnly))
+	}
+	if afterBoundary == signed {
+		t.Error("The token Apple just refused was offered again as the primary")
+	}
+
+	// And the refused one is not offered as the fallback either.
+	fallback, err := processor.previousProviderToken(psp, observedAt)
+	if err != nil {
+		t.Fatalf("Could not compute the fallback: %v", err)
+	}
+	if fallback == signed {
+		t.Error("The refused token was offered as the fallback. Retrying with a token already " +
+			"known to be rejected costs a second round trip and cannot succeed.")
+	}
+}
+
 // TestProviderTokenRefreshWindow is the test for the constraint that makes this
 // awkward: uniqush must re-sign often enough to stay inside Apple's one-hour
 // expiry, and rarely enough to stay outside its one-per-20-minutes mint limit.
@@ -200,7 +353,7 @@ func TestProviderTokenRefreshWindow(t *testing.T) {
 	// Buckets align to the Unix epoch, so a round wall-clock time is not one.
 	start := issuedAtBucket(time.Date(2026, 8, 31, 12, 0, 0, 0, time.UTC))
 
-	first, err := processor.getProviderToken(psp, start)
+	first, _, err := processor.getProviderToken(psp, start)
 	if err != nil {
 		t.Fatalf("Could not mint the first token: %v", err)
 	}
@@ -221,7 +374,7 @@ func TestProviderTokenRefreshWindow(t *testing.T) {
 
 	for _, testCase := range cases {
 		t.Run(testCase.name, func(t *testing.T) {
-			signed, err := processor.getProviderToken(psp, start.Add(testCase.after))
+			signed, _, err := processor.getProviderToken(psp, start.Add(testCase.after))
 			if err != nil {
 				t.Fatalf("Could not get a token: %v", err)
 			}
@@ -237,24 +390,61 @@ func TestProviderTokenRefreshWindow(t *testing.T) {
 
 // TestProviderTokenRefreshIntervalRespectsApplesBounds pins the constant itself.
 //
-// TestProviderTokenRefreshIntervalRespectsApplesBounds pins the interval
-// between Apple's two limits.
-//
-// Both edges take a provider completely offline rather than degrading it: a
-// token older than an hour is refused with ExpiredProviderToken, and minting
-// again inside 20 minutes is refused with TooManyProviderTokenUpdates. An
-// interval outside either bound fails every push for the key, so the
-// relationship is asserted rather than left to the comment on the constants.
+// The value is only correct relative to two numbers Apple publishes, and a
+// plausible-looking change to it -- rounding to half an hour, say, or matching
+// the one-hour lifetime -- lands outside them. Reading it back from the
+// constants is the only way to make that a test failure rather than a
+// production incident.
 func TestProviderTokenRefreshIntervalRespectsApplesBounds(t *testing.T) {
-	if tokenRefreshInterval >= tokenLifetime {
-		t.Errorf("The refresh interval (%v) must be shorter than Apple's token lifetime (%v), "+
-			"or every push fails with ExpiredProviderToken before uniqush re-signs.",
-			tokenRefreshInterval, tokenLifetime)
-	}
 	if tokenRefreshInterval <= tokenMintFloor {
-		t.Errorf("The refresh interval (%v) must exceed Apple's mint floor (%v), or two "+
-			"consecutive tokens arrive too close together and are refused with "+
-			"TooManyProviderTokenUpdates.", tokenRefreshInterval, tokenMintFloor)
+		t.Errorf("A refresh interval of %s is inside Apple's %s minimum between tokens; "+
+			"a busy provider would get TooManyProviderTokenUpdates", tokenRefreshInterval, tokenMintFloor)
+	}
+	if tokenRefreshInterval >= tokenLifetime {
+		t.Errorf("A refresh interval of %s does not renew before Apple's %s expiry; "+
+			"every push would fail with ExpiredProviderToken", tokenRefreshInterval, tokenLifetime)
+	}
+	// A margin below the ceiling, since the expiry is judged by Apple's clock
+	// rather than ours and the two need not agree.
+	if margin := tokenLifetime - tokenRefreshInterval; margin < 10*time.Minute {
+		t.Errorf("Only %s of margin before expiry; too little to absorb clock skew", margin)
+	}
+
+	// The binding constraint, and the one a 45-minute interval quietly failed.
+	//
+	// Recovery from TooManyProviderTokenUpdates means presenting the previous
+	// bucket's token, so that token has to outlive the refusal. Worst case is a
+	// first use at the very end of a bucket: the floor clears at bucketStart +
+	// interval + floor, while the previous token expires at bucketStart +
+	// lifetime. Widen the interval past lifetime - floor and there is a window
+	// with no usable token at all -- neither the refused one nor the expired one.
+	if tokenRefreshInterval+tokenMintFloor > tokenLifetime {
+		t.Errorf("A %s interval leaves the previous token expired before Apple's %s floor clears "+
+			"(%s + %s > %s), so a late first use would have no usable token at all",
+			tokenRefreshInterval, tokenMintFloor,
+			tokenRefreshInterval, tokenMintFloor, tokenLifetime)
+	}
+
+	// And strictly inside it, with room for the clocks to disagree.
+	//
+	// Both ends of the constraint above are measured on Apple's clock, not ours:
+	// the floor starts when Apple observes a token, and the expiry is judged
+	// against the iat we wrote. Sitting exactly on the bound leaves nothing for
+	// that difference, nor for the time a request spends in flight. With uniqush
+	// a minute behind, a fallback first observed at local +39:30 reaches the end
+	// of the floor at local +59:00 while Apple already calls it expired -- so the
+	// recovery returns ExpiredProviderToken and the push is dropped as a
+	// credential failure, which is the outage the fallback exists to prevent.
+	if tokenRefreshInterval+tokenMintFloor+tokenSkewMargin > tokenLifetime {
+		t.Errorf("A %s interval leaves only %s of slack against Apple's clock (%s + %s + %s > %s). "+
+			"The fallback can expire before the floor clears, turning a recoverable refusal into "+
+			"a dropped push.",
+			tokenRefreshInterval, tokenLifetime-tokenRefreshInterval-tokenMintFloor,
+			tokenRefreshInterval, tokenMintFloor, tokenSkewMargin, tokenLifetime)
+	}
+	if tokenSkewMargin <= 0 {
+		t.Error("The skew margin must be positive; it is the only allowance for uniqush's clock " +
+			"and Apple's disagreeing")
 	}
 }
 
@@ -273,11 +463,11 @@ func TestProviderTokenIsSharedAcrossProviders(t *testing.T) {
 	second := tokenAuthPSP(t, path)
 	second.FixedData["service"] = "anotherservice"
 
-	firstToken, err := processor.getProviderToken(first, now)
+	firstToken, _, err := processor.getProviderToken(first, now)
 	if err != nil {
 		t.Fatalf("Could not mint a token: %v", err)
 	}
-	secondToken, err := processor.getProviderToken(second, now.Add(time.Minute))
+	secondToken, _, err := processor.getProviderToken(second, now.Add(time.Minute))
 	if err != nil {
 		t.Fatalf("Could not mint a token: %v", err)
 	}
@@ -289,7 +479,7 @@ func TestProviderTokenIsSharedAcrossProviders(t *testing.T) {
 	// A different key must not share, or rotating one service's key would
 	// silently keep signing with the other's.
 	otherPath, _ := writeSigningKey(t)
-	otherToken, err := processor.getProviderToken(tokenAuthPSP(t, otherPath), now.Add(2*time.Minute))
+	otherToken, _, err := processor.getProviderToken(tokenAuthPSP(t, otherPath), now.Add(2*time.Minute))
 	if err != nil {
 		t.Fatalf("Could not mint a token: %v", err)
 	}
@@ -330,12 +520,12 @@ func TestProviderTokenIsSharedAcrossPathsToOneKey(t *testing.T) {
 		t.Skipf("This filesystem does not support symlinks: %v", err)
 	}
 
-	first, err := processor.getProviderToken(tokenAuthPSP(t, path), now)
+	first, _, err := processor.getProviderToken(tokenAuthPSP(t, path), now)
 	if err != nil {
 		t.Fatalf("Could not mint a token: %v", err)
 	}
 	for name, alias := range map[string]string{"a copy": copied, "a symlink": linked} {
-		token, err := processor.getProviderToken(tokenAuthPSP(t, alias), now.Add(time.Minute))
+		token, _, err := processor.getProviderToken(tokenAuthPSP(t, alias), now.Add(time.Minute))
 		if err != nil {
 			t.Fatalf("Could not get a token through %s: %v", name, err)
 		}
@@ -343,6 +533,38 @@ func TestProviderTokenIsSharedAcrossPathsToOneKey(t *testing.T) {
 			t.Errorf("%s of the signing key got its own token; Apple's mint limit is per key, "+
 				"so both would count against the same 20-minute floor", name)
 		}
+	}
+}
+
+// TestProviderTokenIsIdenticalAcrossProcessors is the property the whole
+// deterministic-signing exercise exists to produce.
+//
+// Two independent processors stand in for two uniqush instances, or for the
+// same instance before and after a restart. Neither shares state with the
+// other, and they must still present Apple with byte-identical tokens -- that
+// is what makes a restart cost no mint and a second instance cost none either.
+//
+// With jwt.SigningMethodES256 this fails, because ECDSA draws a random nonce
+// and the two signatures differ even though the claims are identical.
+func TestProviderTokenIsIdenticalAcrossProcessors(t *testing.T) {
+	path, _ := writeSigningKey(t)
+	psp := tokenAuthPSP(t, path)
+	now := time.Date(2026, 8, 31, 12, 0, 0, 0, time.UTC)
+
+	first, _, err := newTokenProcessor().getProviderToken(psp, now)
+	if err != nil {
+		t.Fatalf("Could not mint a token in the first processor: %v", err)
+	}
+	// A second processor with an empty cache, a few minutes later in the same
+	// bucket -- the situation after a restart.
+	second, _, err := newTokenProcessor().getProviderToken(psp, now.Add(7*time.Minute))
+	if err != nil {
+		t.Fatalf("Could not mint a token in the second processor: %v", err)
+	}
+
+	if first != second {
+		t.Error("Two processors produced different tokens for the same bucket; " +
+			"a restart or a second instance would count as a new mint against Apple's 20-minute floor")
 	}
 }
 
@@ -414,7 +636,7 @@ func TestProviderTokenReportsBadKeysUsefully(t *testing.T) {
 			t.Fatalf("Could not write the key: %v", err)
 		}
 
-		if _, err := processor.getProviderToken(tokenAuthPSP(t, path), now); err == nil {
+		if _, _, err := processor.getProviderToken(tokenAuthPSP(t, path), now); err == nil {
 			t.Error("Expected a P-384 key to be rejected")
 		} else if !strings.Contains(err.Error(), "P-256") {
 			t.Errorf("Expected the error to name the curve APNs requires, got: %v", err)
@@ -423,7 +645,7 @@ func TestProviderTokenReportsBadKeysUsefully(t *testing.T) {
 
 	t.Run("missing file", func(t *testing.T) {
 		psp := tokenAuthPSP(t, filepath.Join(t.TempDir(), "absent.p8"))
-		_, err := processor.getProviderToken(psp, now)
+		_, _, err := processor.getProviderToken(psp, now)
 		if err == nil {
 			t.Fatal("Expected an error for a missing signing key")
 		}
@@ -440,7 +662,7 @@ func TestProviderTokenReportsBadKeysUsefully(t *testing.T) {
 		if err := os.WriteFile(path, rsaKeyPEM(t), 0600); err != nil {
 			t.Fatalf("Could not write the fixture: %v", err)
 		}
-		_, err := processor.getProviderToken(tokenAuthPSP(t, path), now)
+		_, _, err := processor.getProviderToken(tokenAuthPSP(t, path), now)
 		if err == nil {
 			t.Fatal("Expected an error for an RSA key")
 		}

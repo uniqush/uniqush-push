@@ -220,7 +220,7 @@ func (s *Server) recordToken(raw string, issuedAt, observedAt time.Time) (status
 
 	if _, seen := s.tokenIssuedAt[raw]; seen {
 		// A token uniqush is reusing, which is the expected case by a wide
-		// margin: one token should serve every push for 45 minutes.
+		// margin: one token should serve every push for a whole bucket.
 		return 0, "", "", ""
 	}
 

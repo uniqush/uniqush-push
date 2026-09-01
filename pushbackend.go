@@ -152,12 +152,32 @@ func (backend *PushBackEnd) fixRetryError(
 	if sub, ok = err.Destination.FixedData["subscriber"]; !ok {
 		return
 	}
+	// A push service that names its own delay knows something the generic
+	// backoff does not. APNs answers TooManyProviderTokenUpdates with Apple's
+	// 20-minute floor, and retrying inside it cannot succeed however many times
+	// it is attempted -- while the default schedule (5s, doubling, abandoned
+	// past a minute) would spend four pointless requests and then drop the
+	// notification. Seeding from err.After makes the first retry land when the
+	// service said it would be worth trying.
+	if err.After > after {
+		after = err.After
+	}
 	if after <= 1*time.Second {
 		after = 5 * time.Second
 	}
+
+	// The ceiling rises to match a requested delay, since abandoning the push
+	// for exceeding a minute would discard exactly the retries the service
+	// asked for. It bounds the doubling either way, so a 20-minute request
+	// buys one retry at 20 minutes rather than an unbounded series.
+	ceiling := 1 * time.Minute
+	if err.After > ceiling {
+		ceiling = err.After
+	}
+
 	providerName := err.Provider.Name()
 	destinationName := err.Destination.Name()
-	if after > 1*time.Minute {
+	if after > ceiling {
 		logger.Errorf("RequestID=%v Service=%v Subscriber=%v PushServiceProvider=%v DeliveryPoint=%v Failed after retry", reqID, service, sub, providerName, destinationName)
 		handler.AddDetailsToHandler(APIResponseDetails{RequestID: &reqID, From: &remoteAddr, Service: &service, Subscriber: &sub, PushServiceProvider: &providerName, DeliveryPoint: &destinationName, Code: UNIQUSH_ERROR_FAILED_RETRY})
 		return

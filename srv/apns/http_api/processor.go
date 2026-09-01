@@ -486,12 +486,38 @@ func (prp *HTTPPushRequestProcessor) sendRequests(request *common.PushRequest) {
 		return
 	}
 
+	// The previous bucket's token, used only if Apple refuses the current one,
+	// the bucket it belongs to, and the bucket the token actually sent belongs
+	// to.
+	var fallbackAuthorization string
+	var fallbackBucket time.Time
+	var signingBucket time.Time
+
+	// The signing key's cache entry, resolved once for the whole batch.
+	//
+	// Resolving it means reading the .p8 off disk and parsing it, so it is done
+	// here and handed down rather than looked up again per device. It used to be
+	// looked up again per device, by way of the note* helpers that every
+	// response called: a hundred-device batch read and parsed the key a hundred
+	// and five times, on the push path, for an entry that cannot change within a
+	// batch. nil for certificate auth, which has no token.
+	var token *providerToken
+
 	// Signed once per push rather than once per device. A provider token
 	// authenticates the team, so every device in this request shares it, and
 	// minting one each time would trip Apple's limit of one token per 20
 	// minutes per key.
 	if common.UsesTokenAuth(psp) {
-		signed, tokenErr := prp.getProviderToken(psp, prp.currentTime())
+		cached, tokenErr := prp.providerTokenFor(psp)
+		if tokenErr == nil {
+			token = cached
+		}
+		now := prp.currentTime()
+		var signed string
+		var bucket time.Time
+		if tokenErr == nil {
+			signed, bucket, tokenErr = token.token(now)
+		}
 		if tokenErr != nil {
 			for range request.Devtokens {
 				request.ErrChan <- push.NewBadPushServiceProviderWithDetails(psp, tokenErr.Error())
@@ -499,6 +525,55 @@ func (prp *HTTPPushRequestProcessor) sendRequests(request *common.PushRequest) {
 			return
 		}
 		baseHeader["authorization"] = []string{authorizationHeader(signed)}
+		signingBucket = bucket
+	}
+
+	// resolveTokens re-reads the token to send and the one to fall back to.
+	//
+	// Called again after a probe, because the answer can have changed: a refusal
+	// installs the memo, and the memo steers token() to the previous bucket.
+	resolveTokens := func(now time.Time) {
+		if signed, bucket, err := token.token(now); err == nil {
+			baseHeader["authorization"] = []string{authorizationHeader(signed)}
+			signingBucket = bucket
+		}
+
+		// The previous bucket's token, carried in case Apple refuses this one
+		// with TooManyProviderTokenUpdates -- which happens when it observed a
+		// different token less than 20 minutes ago, and is expected whenever a
+		// bucket's first push lands late. Empty once the older token has
+		// expired, which the bucket length is chosen to prevent, or when that
+		// bucket is itself one Apple has just refused.
+		//
+		// Both tokens are cached per bucket, so asking for this one does not
+		// evict the one just signed: with a single slot the two calls fought
+		// each other and every batch paid for two signatures.
+		//
+		// Its bucket is carried too. A fallback that Apple accepts is an
+		// observation about *that* bucket, and recording it against the bucket
+		// that was just refused would mark a token Apple has never taken as
+		// confirmed -- see sendRequest.
+		fallbackAuthorization = ""
+		fallbackBucket = time.Time{}
+		fallback, bucket, err := token.previousToken(now)
+		if err != nil || fallback == "" {
+			return
+		}
+		// Never a fallback onto the bucket already being sent. While the memo is
+		// in force token() returns the previous bucket, and previousToken()
+		// returns that same bucket -- so registering it here would arm a retry
+		// with byte-identical bytes. A 429 would then be re-sent unchanged,
+		// once per device, and the second refusal would look like a second
+		// piece of information when it is the first one repeated.
+		if bucket.Equal(signingBucket) {
+			return
+		}
+		fallbackAuthorization = authorizationHeader(fallback)
+		fallbackBucket = bucket
+	}
+
+	if token != nil {
+		resolveTokens(prp.currentTime())
 	}
 
 	http2UrlHost := common.ResolveEndpoint(psp)
@@ -514,9 +589,9 @@ func (prp *HTTPPushRequestProcessor) sendRequests(request *common.PushRequest) {
 	// last request drains, rather than being dropped while still in use.
 	defer releaseClient()
 
-	for i, token := range request.Devtokens {
-		msgID := request.GetID(i)
-
+	// buildDeviceRequest prepares the request for one device token, or reports
+	// the failure and returns false.
+	buildDeviceRequest := func(i int, token []byte) (*http.Request, uint32, *push.DeliveryPoint, bool) {
 		url := fmt.Sprintf("%s/3/device/%s", http2UrlHost, hex.EncodeToString(token))
 		httpRequest, err := http.NewRequest("POST", url, bytes.NewReader(request.Payload))
 		if err != nil {
@@ -529,7 +604,7 @@ func (prp *HTTPPushRequestProcessor) sendRequests(request *common.PushRequest) {
 			// leaks two goroutines, silently and permanently.
 			wg.Done()
 			request.ErrChan <- push.NewError(err.Error())
-			continue
+			return nil, 0, nil, false
 		}
 		// Clone rather than share: apns-id differs per device token. If apns-id
 		// is omitted APNs generates one, but then it only exists in a response
@@ -540,30 +615,224 @@ func (prp *HTTPPushRequestProcessor) sendRequests(request *common.PushRequest) {
 			httpRequest.Header["apns-id"] = []string{apnsID}
 		}
 
-		go prp.sendRequest(wg, client, httpRequest, msgID, psp, request.ErrChan, request.ResChan)
+		// The delivery point this push is for, when the caller supplied one.
+		// A RetryError cannot be built without it, so a push whose DPList is
+		// short degrades to a plain error rather than a panic.
+		var deliveryPoint *push.DeliveryPoint
+		if i < len(request.DPList) {
+			deliveryPoint = request.DPList[i]
+		}
+		return httpRequest, request.GetID(i), deliveryPoint, true
+	}
+
+	// The first push of a bucket goes on its own, and the rest wait for it.
+	//
+	// Whether Apple will accept this bucket's token is only knowable by asking,
+	// and at a bucket boundary the answer can be no. Releasing the whole batch
+	// at once means every device in it asks the same question simultaneously and
+	// gets the same refusal: N round trips, N 429s counted against the provider,
+	// and N fallback retries, for one piece of information. A batch of a
+	// thousand devices turns a single unavoidable refusal into a thousand.
+	//
+	// So a batch whose bucket has not been confirmed sends one request first and
+	// reads the answer. Every later batch in the same bucket skips this
+	// entirely, which is what keeps the cost at one probe per bucket rather than
+	// one per batch.
+	// Skipped for certificate auth, which has no bucket, and for a bucket
+	// already known good -- there is nothing left to learn in either case.
+	needsProbe := token != nil && !signingBucket.IsZero() &&
+		!token.isConfirmed(signingBucket) &&
+		len(request.Devtokens) > 1
+
+	first := 0
+	if needsProbe {
+		// One prober per bucket, across every batch in this process.
+		//
+		// Checking isConfirmed alone is not enough. AddRequest starts each batch
+		// in its own goroutine, so several can read an unconfirmed bucket before
+		// any of them has an answer to record: each would then send its own
+		// probe, and a boundary that costs one refusal would cost one per
+		// concurrent batch. The memo suppressed the second probe a batch would
+		// make and never the first one every other batch makes.
+		probing, done := token.claimProbe(signingBucket, prp.currentTime())
+
+		if probing {
+			// Published even if the probe cannot be built, so nobody waits on an
+			// answer that is never coming.
+			defer func() { token.finishProbe(signingBucket, prp.currentTime()) }()
+
+			// Device 0 is this batch's probe, and it is spoken for either way.
+			//
+			// Set before the build rather than after it succeeds. On the failure
+			// path buildDeviceRequest has already reported the error and counted
+			// the device off the WaitGroup, so leaving first at 0 would send the
+			// loop below over device 0 a second time: a second error for one
+			// notification, and a second Done for one Add. The counter goes
+			// negative on the batch's last device and the WaitGroup panics,
+			// taking the process down -- reachable from nothing worse than a
+			// stored endpoint that will not build a URL.
+			first = 1
+
+			if httpRequest, msgID, deliveryPoint, ok := buildDeviceRequest(0, request.Devtokens[0]); ok {
+				// Inline, not in a goroutine: the point is to have the answer
+				// before the rest go out. wg was already sized for every device,
+				// so this consumes one of those counts rather than adding
+				// another.
+				prp.sendRequest(wg, client, httpRequest, msgID, request, token, deliveryPoint,
+					fallbackAuthorization, fallbackBucket, signingBucket)
+			}
+			token.finishProbe(signingBucket, prp.currentTime())
+		} else {
+			// Someone else is asking. Wait for their answer rather than sending
+			// the same question, then re-read: a refusal will have installed the
+			// memo, which moves this batch onto the token Apple accepted.
+			//
+			// Bounded, because the prober is one request to Apple and anything
+			// can happen to it. Expiring here means proceeding on whatever the
+			// cache says, which is no worse than never having waited.
+			select {
+			case <-done:
+			case <-time.After(probeWaitLimit):
+			}
+		}
+
+		// Re-resolve either way. For the prober the answer may have just
+		// changed; for a waiter it may have changed while they waited. Off the
+		// same cache entry, so neither costs a further read of the key.
+		resolveTokens(prp.currentTime())
+	}
+
+	for i := first; i < len(request.Devtokens); i++ {
+		httpRequest, msgID, deliveryPoint, ok := buildDeviceRequest(i, request.Devtokens[i])
+		if !ok {
+			continue
+		}
+		go prp.sendRequest(wg, client, httpRequest, msgID, request, token, deliveryPoint,
+			fallbackAuthorization, fallbackBucket, signingBucket)
 	}
 
 	wg.Wait()
 }
 
-func (prp *HTTPPushRequestProcessor) sendRequest(wg *sync.WaitGroup, client HTTPClient, request *http.Request, messageID uint32, psp *push.PushServiceProvider, errChan chan<- push.Error, resChan chan<- *common.APNSResult) {
+func (prp *HTTPPushRequestProcessor) sendRequest(wg *sync.WaitGroup, client HTTPClient, httpRequest *http.Request,
+	messageID uint32, request *common.PushRequest, token *providerToken, deliveryPoint *push.DeliveryPoint,
+	fallbackAuthorization string, fallbackBucket, signingBucket time.Time) {
 	defer wg.Done()
 
-	response, err := client.Do(request)
+	errChan := request.ErrChan
+
+	response, responseBody, err := doRequest(client, httpRequest, request.Payload)
 	if err != nil {
-		errChan <- push.NewConnectionError(err)
+		errChan <- err
 		return
 	}
 
+	// The bucket of the token this response is actually about. It changes when
+	// the fallback is used, which is the whole point of tracking it separately.
+	acceptedBucket := signingBucket
+
+	// TooManyProviderTokenUpdates means Apple saw a different token from this
+	// key too recently -- most often because this bucket's first push landed
+	// late and the boundary followed shortly after. The token Apple did see is
+	// the previous bucket's, it is still valid, and deterministic signing means
+	// this process can reproduce it even if another instance sent it. Retrying
+	// with it succeeds immediately rather than failing for up to 20 minutes.
+	if fallbackAuthorization != "" && reasonOf(response, responseBody) == reasonTooManyProviderTokenUpdates {
+		// Remember the refusal, so the rest of this bucket's pushes go straight
+		// to the token Apple accepted instead of each paying for the discovery.
+		//
+		// Recorded against the bucket this request was signed for, not against
+		// the clock now. A request signed just before a boundary can have its
+		// 429 arrive just after one, and reading the clock here would blame a
+		// bucket Apple has never been shown -- sending every later push straight
+		// to the token that was actually rejected. The response time is still
+		// what dates the refusal, since that is when the floor starts running.
+		if token != nil {
+			token.noteRefused(signingBucket, prp.currentTime())
+		}
+
+		retry := httpRequest.Clone(httpRequest.Context())
+		retry.Body = io.NopCloser(bytes.NewReader(request.Payload))
+		retry.Header["authorization"] = []string{fallbackAuthorization}
+
+		retryResponse, retryBody, retryErr := doRequest(client, retry, request.Payload)
+		if retryErr != nil {
+			// Reported, not swallowed.
+			//
+			// Discarding it left the caller holding the *original* 429, which
+			// then went through the classifier and came out as
+			// TooManyProviderTokenUpdates: a twenty-minute backoff for what was
+			// actually a connection failure on the second attempt. The first
+			// attempt's transport errors are surfaced immediately a few lines
+			// above, and there is no reason for the retry's to be treated
+			// differently -- least of all by being relabelled as something with
+			// a much longer delay.
+			errChan <- retryErr
+			return
+		}
+		response, responseBody = retryResponse, retryBody
+
+		// Whatever the retry says, it says it about the fallback's bucket.
+		acceptedBucket = fallbackBucket
+	}
+
+	// Anything that is not a mint-floor refusal means Apple took the token --
+	// even a rejection of the device or the payload, which it could only reach
+	// after authenticating. Recording that lets later batches in this bucket go
+	// out together instead of each probing first.
+	//
+	// Recorded against the bucket that was actually accepted, which after a
+	// fallback is the *previous* bucket rather than the one just refused.
+	// Confirming the refused bucket instead looked harmless -- the push had
+	// succeeded either way -- and quietly disarmed the probe: once the memo
+	// expired inside that same bucket, isConfirmed answered yes for a token
+	// Apple had never taken, so the next batch went out in full against it and
+	// every device in it paid for the same refusal. That is precisely the
+	// thundering herd probeBeforeReleasingBatch exists to prevent.
+	//
+	// Confirming the fallback's bucket is also what makes the memo and the probe
+	// agree. While the memo holds, token() hands out the previous bucket, so
+	// signingBucket *is* that bucket on every later batch and the probe is
+	// correctly skipped; when the memo lapses and the current bucket comes back,
+	// it is unconfirmed again and costs exactly one more probe.
+	if token != nil && reasonOf(response, responseBody) != reasonTooManyProviderTokenUpdates {
+		if !acceptedBucket.IsZero() {
+			token.noteAccepted(acceptedBucket)
+		}
+	}
+
+	prp.handlePushResponseBody(response, responseBody, messageID, request, deliveryPoint)
+}
+
+// doRequest sends one request and reads its body.
+func doRequest(client HTTPClient, httpRequest *http.Request, payload []byte) (*http.Response, []byte, push.Error) {
+	if httpRequest.Body == nil && payload != nil {
+		httpRequest.Body = io.NopCloser(bytes.NewReader(payload))
+	}
+	response, err := client.Do(httpRequest)
+	if err != nil {
+		return nil, nil, push.NewConnectionError(err)
+	}
 	defer response.Body.Close()
 
-	responseBody, err := io.ReadAll(response.Body)
+	body, err := io.ReadAll(response.Body)
 	if err != nil {
-		errChan <- push.NewError(err.Error())
-		return
+		return nil, nil, push.NewError(err.Error())
 	}
+	return response, body, nil
+}
 
-	prp.handlePushResponseBody(response, responseBody, messageID, psp, errChan, resChan)
+// reasonOf reads the APNs failure reason out of a response, or "" if there is
+// none to read.
+func reasonOf(response *http.Response, body []byte) string {
+	if response == nil || response.StatusCode == http.StatusOK || len(body) == 0 {
+		return ""
+	}
+	apnsError := new(APNSErrorResponse)
+	if err := json.Unmarshal(body, apnsError); err != nil {
+		return ""
+	}
+	return apnsError.Reason
 }
 
 // newAPNSID returns a random RFC 4122 version 4 UUID for the apns-id header.
@@ -599,23 +868,16 @@ var permanentTokenFailureReasons = map[string]bool{
 	"ExpiredToken": true,
 }
 
-// credentialFailureReasons are the APNs `reason` values that mean uniqush's own
-// credentials were rejected, rather than anything about the device or the
-// notification.
+// providerFailureReasons are the reasons that describe the provider's
+// credentials or configuration rather than the notification or the device.
 //
-// These have to be reported as BadPushServiceProvider. The distinction is not
-// cosmetic: BadNotification says "this message was malformed", which invites
-// the conclusion that a different message would get through, when in fact every
-// push for this provider will fail until an operator fixes the credential.
-// Reported correctly, the provider name is in the error and there is something
-// to act on.
-//
-// Nor may they unsubscribe. A rejected provider token says nothing about any
-// device, so treating one as a dead token would delete every subscription in
-// the service because a key was misconfigured or a clock had drifted.
+// These used to be reported as BadNotification, which is actively misleading:
+// it points an operator at the payload when the problem is the .p8, the topic,
+// or a clock. Reporting them against the provider is what FCM already does for
+// THIRD_PARTY_AUTH_ERROR.
 //
 // https://developer.apple.com/documentation/usernotifications/handling-notification-responses-from-apns
-var credentialFailureReasons = map[string]string{
+var providerFailureReasons = map[string]string{
 	// 403: the token's iat is more than an hour old. Apple ages it on its own
 	// clock, so this can mean the host's clock has drifted rather than that
 	// uniqush failed to refresh.
@@ -623,8 +885,6 @@ var credentialFailureReasons = map[string]string{
 	// 403: signed by a key Apple does not recognise for this team, or the kid
 	// header does not match the key.
 	"InvalidProviderToken": "the provider token was rejected; check authkey, keyid and teamid",
-	// 401: token auth is in use but no authorization header reached APNs.
-	//
 	// Apple's answer when a request carries neither an acceptable client
 	// certificate nor a provider token, so it reaches both kinds of provider and
 	// means something different in each.
@@ -646,40 +906,77 @@ var credentialFailureReasons = map[string]string{
 	"MissingProviderToken": "APNs accepted neither a client certificate nor an authorization " +
 		"header; check the certificate, or whether something between uniqush and APNs is " +
 		"stripping the header",
-	// 429: a new token for this key arrived less than 20 minutes after the
-	// previous one, and Apple refuses to mint again yet.
-	//
-	// A scheduling failure across the provider rather than anything about this
-	// notification: every push using this key fails the same way until the floor
-	// clears. The token cache here is process-local, so a restart inside the
-	// window or a second instance sharing the .p8 both produce it.
-	//
-	// Reported against the provider because that is what it is, and because
-	// BadNotification would send an operator to look at their payload. It is
-	// nonetheless transient, which this classification cannot express -- the
-	// follow-up that makes tokens reproducible across processes reclassifies it
-	// as retryable, once there is a recovery to retry into.
-	"TooManyProviderTokenUpdates": "authentication tokens were minted too quickly; Apple allows one " +
-		"per key per 20 minutes, so this usually means a restart or a second instance sharing the key",
 	// 403: the certificate is not one Apple accepts for this topic.
-	"BadCertificate": "APNs rejected the certificate",
+	"BadCertificate": "the certificate is not valid for APNs",
 	// 403: a sandbox certificate used against production, or the reverse.
-	"BadCertificateEnvironment": "the certificate is for the other APNs environment",
-	// 403: the credentials are not permitted to send to this topic at all.
-	//
-	// This repository already treats Forbidden as a credential problem where it
-	// matters most -- TestLiveForbiddenIsNotTreatedAsADeadToken asserts against
-	// Apple's real response that it must not unsubscribe the device, because
-	// doing so would delete every subscription in a service over one
-	// misconfiguration. Leaving it out of this map made the two halves disagree:
-	// uniqush knew it was not a dead token, and still told the caller their
-	// payload was bad.
-	"Forbidden": "APNs refused these credentials for this topic; check the certificate or " +
-		"signing key against the bundleid",
+	"BadCertificateEnvironment": "the certificate is for the other environment; check the endpoint or sandbox setting",
+	"Forbidden":                 "APNs refused the credentials for this topic",
+	"BadTopic":                  "the bundleid is not a topic this credential may send to",
+	"TopicDisallowed":           "this credential may not send to that topic",
+}
+
+// reasonTooManyProviderTokenUpdates is Apple's answer when it saw a different
+// token for this key less than 20 minutes ago.
+//
+// Deliberately not in providerFailureReasons. It is transient -- the floor
+// always clears -- and it is recovered from before it ever reaches here, by
+// retrying with the previous bucket's token; see sendRequest. Classifying it as
+// a provider failure would have made every push fail for up to 20 minutes,
+// which is exactly what the deterministic scheme exists to avoid. It stays in
+// retryableReasons so that a provider without a usable fallback still backs off
+// rather than dropping the notification.
+const reasonTooManyProviderTokenUpdates = "TooManyProviderTokenUpdates"
+
+// retryableReasons are transient conditions on Apple's side, with how long to
+// wait before trying again.
+//
+// APNs had no retry handling at all before this: every one of these was
+// reported as a bad notification and dropped. Apple does not send Retry-After,
+// so the delays are ours.
+var retryableReasons = map[string]time.Duration{
+	// 429: this device is being pushed to too often.
+	"TooManyRequests": 10 * time.Second,
+	// 429: a new token arrived inside Apple's 20-minute floor, and the fallback
+	// in sendRequest could not recover it. Backing off is the only option, and
+	// the floor is what sets the delay.
+	reasonTooManyProviderTokenUpdates: tokenMintFloor,
+	// 500: Apple's own fault, and worth one more attempt.
+	"InternalServerError": 10 * time.Second,
+	// 503: the service is unavailable or the server is shutting down. Apple's
+	// guidance is to back off and retry.
+	"ServiceUnavailable": 30 * time.Second,
+	"Shutdown":           30 * time.Second,
+}
+
+// interpretAPNSError turns an APNs failure reason into the right uniqush error.
+//
+// Returning nil means the reason is not one of these classes and the caller
+// should fall back to reporting it against the notification.
+func interpretAPNSError(reason string, request *common.PushRequest, deliveryPoint *push.DeliveryPoint) push.Error {
+	if detail, isProviderProblem := providerFailureReasons[reason]; isProviderProblem {
+		return push.NewBadPushServiceProviderWithDetails(request.PSP,
+			fmt.Sprintf("APNs rejected the provider: %s (%s)", reason, detail))
+	}
+
+	if after, isRetryable := retryableReasons[reason]; isRetryable {
+		// A RetryError needs all three to be re-sent. Without them the retry
+		// would be dropped silently by the backend, so say what happened
+		// instead of pretending it is being handled.
+		if request.PSP == nil || deliveryPoint == nil || request.Notification == nil {
+			return push.NewErrorf("APNs returned %s, which is retryable, but this push cannot be retried", reason)
+		}
+		return push.NewRetryErrorWithReason(request.PSP, deliveryPoint, request.Notification, after,
+			fmt.Errorf("APNs returned %s", reason))
+	}
+
+	return nil
 }
 
 // handle the response body of an HTTP/2 push attempt to APNs.
-func (prp *HTTPPushRequestProcessor) handlePushResponseBody(response *http.Response, responseBody []byte, messageID uint32, psp *push.PushServiceProvider, errChan chan<- push.Error, resChan chan<- *common.APNSResult) {
+func (prp *HTTPPushRequestProcessor) handlePushResponseBody(response *http.Response, responseBody []byte,
+	messageID uint32, request *common.PushRequest, deliveryPoint *push.DeliveryPoint) {
+	errChan, resChan := request.ErrChan, request.ResChan
+
 	// Redirects are deliberately not followed -- see defaultClientFactory -- so
 	// a 3xx arrives here as the response rather than as whatever the next hop
 	// would have said. Reported specifically, because the alternative is the
@@ -736,11 +1033,12 @@ func (prp *HTTPPushRequestProcessor) handlePushResponseBody(response *http.Respo
 		return
 	}
 
-	if details, isCredential := credentialFailureReasons[apnsError.Reason]; isCredential {
-		errChan <- push.NewBadPushServiceProviderWithDetails(psp,
-			fmt.Sprintf("APNs returned %s: %s", apnsError.Reason, details))
+	if interpreted := interpretAPNSError(apnsError.Reason, request, deliveryPoint); interpreted != nil {
+		errChan <- interpreted
 		return
 	}
 
+	// Whatever is left really is about this notification: BadPriority,
+	// PayloadTooLarge, InvalidPushType and the rest.
 	errChan <- push.NewBadNotificationWithDetails(apnsError.Reason)
 }
