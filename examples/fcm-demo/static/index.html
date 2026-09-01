@@ -100,9 +100,11 @@
   </div>
   <p class="note">
     Sent as a <em>data</em> message, not a <code>notification</code> one, so
-    nothing appears unless the service worker displays it. What you see on
-    screen is uniqush's payload having survived the round trip, rather than
-    something the browser rendered by itself.
+    what appears on screen is uniqush's payload having survived the round trip
+    rather than something the browser rendered by itself. A message arriving
+    while this tab is focused is handled by the page; one arriving while it is
+    not is handled by the service worker. Both display a notification, and the
+    log below says which path it took.
   </p>
 </section>
 
@@ -151,10 +153,33 @@ log(`firebase project ${firebaseConfig.projectId}`);
 const app = initializeApp(firebaseConfig);
 const messaging = getMessaging(app);
 
-// Foreground messages never reach the service worker's background handler, so
-// they are logged here. Both paths carry the same data map.
-onMessage(messaging, (payload) => {
-  log('Push received (foreground): ' + JSON.stringify(payload.data || payload), 'ok');
+// showNotification displays a push from the page.
+//
+// This exists because a message arriving while the tab is focused never reaches
+// the service worker at all -- the SDK routes it to onMessage instead -- so
+// nothing is displayed unless the page displays it. Without this, clicking
+// "Send test push" on the page you are looking at is the one case that produces
+// no notification, which is exactly the case everybody tries first.
+async function showNotification(data) {
+  if (Notification.permission !== 'granted') return;
+  const registration = await navigator.serviceWorker.getRegistration('/');
+  if (!registration) return;
+  await registration.showNotification(data.title || 'uniqush-push', {
+    body: data.body || JSON.stringify(data),
+    // A stable tag would collapse repeated test pushes into one, hiding
+    // exactly the thing being tested.
+    tag: 'uniqush-' + Date.now(),
+  });
+}
+
+onMessage(messaging, async (payload) => {
+  const data = payload.data || {};
+  log('Push received (foreground, tab focused): ' + JSON.stringify(data), 'ok');
+  try {
+    await showNotification(data);
+  } catch (err) {
+    log('Received, but could not display a notification: ' + err.message, 'bad');
+  }
 });
 
 // Background pushes are forwarded by the service worker, so one log shows both.
@@ -163,6 +188,11 @@ navigator.serviceWorker?.addEventListener('message', (event) => {
     log('Push received (background): ' + JSON.stringify(event.data.data), 'ok');
   }
 });
+// Required, and easy to miss: messages posted to a client are queued until the
+// page either sets navigator.serviceWorker.onmessage or calls this. Registering
+// with addEventListener alone leaves the queue closed, so the handler above
+// would never fire and a background push would look like no push at all.
+navigator.serviceWorker?.startMessages();
 
 const enrollState = document.getElementById('enrollState');
 

@@ -161,10 +161,28 @@ console has been known to visually truncate the public key when you select it by
 hand — use the copy button. Otherwise check that the service worker registered:
 DevTools → Application → Service Workers.
 
-**Nothing arrives, but uniqush reports success.** A 200 from FCM means *accepted
-for delivery*, not delivered. Check the browser tab isn't focused (foreground
-messages go to `onMessage`, and the demo logs those separately), and that the
-notification permission is still granted.
+**uniqush reports success but no notification appears.** A 200 from FCM means
+*accepted for delivery*, not delivered, so the next question is how far it got.
+Work down these three layers; each one rules out everything above it.
+
+1. **Did the browser receive it?** Look at the demo's own log. A push arriving
+   while the tab is focused is reported as `(foreground, tab focused)`, and one
+   arriving while it is not as `(background)`. Either line means the whole
+   server path worked and only the display is in question. DevTools →
+   Application → Push Messaging shows the same thing independently.
+
+2. **Did the service worker run?** DevTools → Application → Service Workers.
+   A worker that failed to install — a typo in `fcm-demo.json` breaks
+   `/firebase-config.js`, which the worker imports — shows an error here, and
+   its `onBackgroundMessage` never fires.
+
+3. **Did the notification display?** If the log shows the push arriving and
+   nothing appears on screen, the message reached the browser and the operating
+   system swallowed it. On Linux this is usually Chrome's *Use system
+   notifications* setting with no notification daemon running; try toggling it
+   at `chrome://flags/#enable-system-notifications`. Also check the site is not
+   muted under `chrome://settings/content/notifications`, and that the desktop
+   is not in a do-not-disturb mode.
 
 **`FCM rejected our credentials (HTTP 403)`.** Either the Cloud Messaging API
 (V1) is not enabled on the project, or `credentialsFile` points at the wrong
