@@ -8,6 +8,15 @@ decommissioned the legacy `fcm.googleapis.com/fcm/send` endpoint on 20 June
 2024. The unit tests drive a mocked FCM, which proves uniqush builds the request
 it means to build — but not that Google agrees. This closes that gap.
 
+> **Verified on 1 September 2026.** Run against a real Firebase project and
+> Chrome: the provider registered, the browser returned a registration token,
+> and pushes were accepted by FCM and displayed on the device. A stale token
+> from an earlier run came back `UNREGISTERED` and was unsubscribed, so the
+> conservative unsubscribe mapping was exercised on real data too.
+>
+> Android has not been through this yet — the browser path covers the whole
+> server side, but not the `android` block. A report would be welcome.
+
 Everything here is free. FCM has no cost on Firebase's Spark plan, and unlike
 APNs there is no paid developer programme to join.
 

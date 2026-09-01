@@ -1,7 +1,21 @@
-# Your Firebase project's settings.
-fcm-demo.json
-
-# The service account private key. It authorises sending to every device in the
-# project, so it must never be committed.
-service-account.json
-*-service-account.json
+# Ignore everything here by default, and name the exceptions.
+#
+# The blocklist this replaces did not work. It listed the filenames the README
+# suggests -- fcm-demo.json, service-account.json -- and a real Firebase project
+# arrives as whatever you saved it as: fcm.key, firebase-config.json, or the
+# adminsdk name Google generates. Anything not on the list was committed by the
+# next `git add -A`.
+#
+# Guessing what a credential is called is the wrong way round. This directory
+# holds a handful of known files and, while anyone is using it, a Firebase
+# project's private settings; so ignore by default and list what belongs.
+*
+!.gitignore
+!README.md
+!main.go
+!main_test.go
+!uniqush-push.conf
+!fcm-demo.example.json
+!static/
+!static/index.html
+!static/firebase-messaging-sw.js
