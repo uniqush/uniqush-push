@@ -265,8 +265,9 @@ func (r *PushRedisDB) checkDeliveryPointBindings(report *ConsistencyReport, prov
 			}
 			if _, exists := providers[boundTo]; !exists {
 				r.report(report, ProblemStaleBinding, service, dpName,
-					"bound to provider %q, which no longer exists, so this device cannot currently be pushed to. "+
-						"Re-add that provider with /addpsp to make it reachable again.", boundTo)
+					"bound to provider %q, which no longer exists. Harmless: the provider is derived from the "+
+						"service and the device's push service type now, and this binding is only a tie-breaker.",
+					boundTo)
 				continue
 			}
 
@@ -277,9 +278,8 @@ func (r *PushRedisDB) checkDeliveryPointBindings(report *ConsistencyReport, prov
 			candidates := byServiceAndType[service][dpType]
 			if len(candidates) == 1 && candidates[0] != boundTo {
 				r.report(report, ProblemBindingDisagrees, service, dpName,
-					"bound to provider %q, but the service's only %s provider is %q. Nothing acts on that "+
-						"disagreement yet; it is what would change if the provider were derived instead of read.",
-					boundTo, dpType, candidates[0])
+					"bound to provider %q, but the derivation picks %q. The derivation wins today; "+
+						"this becomes final when the binding index is retired.", boundTo, candidates[0])
 			}
 		}
 		return nil

@@ -177,11 +177,11 @@ func TestConsistencyCheckScansPastOnePage(t *testing.T) {
 }
 
 // TestConsistencyCheckFindsStaleBindings covers a delivery point bound to a
-// provider that has gone.
+// provider that has gone -- which, now that the provider is derived rather than
+// read, is expected and harmless after a credential change.
 //
-// While the binding is authoritative this is why a device stops receiving
-// pushes, so the detail has to say how to bring it back. It is also the count
-// that says what deriving the provider instead would fix.
+// It is reported so that the count can be watched falling to zero, which is the
+// signal that the binding index is safe to retire.
 func TestConsistencyCheckFindsStaleBindings(t *testing.T) {
 	fixture := newRebindingFixture(t)
 	original := fixture.addProvider(t, "first.cert")
@@ -200,9 +200,9 @@ func TestConsistencyCheckFindsStaleBindings(t *testing.T) {
 	if stale[0].Subject != dp.Name() {
 		t.Errorf("Expected the problem to name delivery point %q, got %q", dp.Name(), stale[0].Subject)
 	}
-	// The detail has to say what to do about it, or the report is just an alarm.
-	if !strings.Contains(stale[0].Detail, "/addpsp") {
-		t.Errorf("Expected the detail to say how to fix it, got %q", stale[0].Detail)
+	// It must read as harmless, or an operator will "fix" a working database.
+	if !strings.Contains(stale[0].Detail, "Harmless") {
+		t.Errorf("Expected the detail to say this is harmless, got %q", stale[0].Detail)
 	}
 }
 

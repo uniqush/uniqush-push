@@ -51,15 +51,15 @@ const (
 	ProblemOrphanedProvider = "orphaned_provider"
 
 	// ProblemStaleBinding is a srv.dp-2-psp entry naming a provider that no
-	// longer exists. Today that delivery point cannot be pushed to; once the
-	// provider is derived rather than read, it becomes harmless, and the count
-	// is what shows the index is safe to stop writing.
+	// longer exists. Expected, and harmless, after a provider's credentials
+	// change: the binding is a tie-breaker rather than the answer. Reported so
+	// the count can be seen to fall to zero once the index is retired.
 	ProblemStaleBinding = "stale_binding"
 
 	// ProblemBindingDisagrees is a srv.dp-2-psp entry naming a provider that
-	// exists but is not the one deriving from the service and push service type
-	// would choose. Nothing acts on the derivation yet; this is the count that
-	// says what would change when something does.
+	// exists but is not the one the derivation picks. Worth knowing about
+	// before the index is retired, since retiring it makes the derivation's
+	// answer final.
 	ProblemBindingDisagrees = "binding_disagrees"
 
 	// ProblemOrphanedDeliveryPoint is a name in a subscriber's set with no

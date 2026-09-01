@@ -233,39 +233,22 @@ func (f *pushDatabaseOpts) AddDeliveryPointToService(service string,
 	}
 	f.dblock.Lock()
 	defer f.dblock.Unlock()
-	pspnames, err := f.db.GetPushServiceProvidersByService(service)
+
+	psp, err := f.resolveProviderForSubscribe(service, deliveryPoint)
 	if err != nil {
-		return nil, fmt.Errorf("Cannot list services for %s: %v", service, err)
-	}
-	if pspnames == nil {
-		return nil, fmt.Errorf("Cannot Find Service %s", service)
+		return nil, err
 	}
 
-	for _, pspname := range pspnames {
-		psp, e := f.db.GetPushServiceProvider(pspname)
-		if e != nil {
-			return nil, fmt.Errorf("Failed to get information for psp %s: %v", pspname, e)
-		}
-		if psp == nil {
-			continue
-		}
-		if psp.PushServiceName() == deliveryPoint.PushServiceName() {
-			err = f.db.SetDeliveryPoint(deliveryPoint)
-			if err != nil {
-				return nil, fmt.Errorf("Failed to save new info for delivery point: %v", err)
-			}
-			err = f.db.AddDeliveryPointToServiceSubscriber(service, subscriber, deliveryPoint.Name())
-			if err != nil {
-				return nil, fmt.Errorf("Failed to add delivery point to subscriber: %v", err)
-			}
-			err = f.db.SetPushServiceProviderOfServiceDeliveryPoint(service, deliveryPoint.Name(), psp.Name())
-			if err != nil {
-				return nil, fmt.Errorf("Failed to set psp of delivery point: %v", err)
-			}
-			return psp, nil
-		}
+	if e := f.db.SetDeliveryPoint(deliveryPoint); e != nil {
+		return nil, fmt.Errorf("failed to save new info for delivery point: %v", e)
 	}
-	return nil, fmt.Errorf("Cannot Find Push Service Provider with Type %s", deliveryPoint.PushServiceName())
+	if e := f.db.AddDeliveryPointToServiceSubscriber(service, subscriber, deliveryPoint.Name()); e != nil {
+		return nil, fmt.Errorf("failed to add delivery point to subscriber: %v", e)
+	}
+	if e := f.db.SetPushServiceProviderOfServiceDeliveryPoint(service, deliveryPoint.Name(), psp.Name()); e != nil {
+		return nil, fmt.Errorf("failed to set psp of delivery point: %v", e)
+	}
+	return psp, nil
 }
 
 func (f *pushDatabaseOpts) RemoveDeliveryPointFromService(service string,
@@ -343,6 +326,8 @@ func (f *pushDatabaseOpts) collectDeliveryPointPairs(service string, subscriber 
 	}
 	pairs := make([]PushServiceProviderDeliveryPointPair, 0, len(dpnames))
 	var orphans []orphanedDeliveryPoint
+	// One provider lookup per service, not per delivery point.
+	providerCache := make(map[string][]*push.PushServiceProvider, len(dpnames))
 
 	dpNamesSubset := make(map[string]bool, len(dpNamesRequested))
 	for _, name := range dpNamesRequested {
@@ -367,7 +352,7 @@ func (f *pushDatabaseOpts) collectDeliveryPointPairs(service string, subscriber 
 				continue
 			}
 
-			psp, e1 := f.resolveProvider(srv, dpName, logger)
+			psp, e1 := f.resolveProvider(srv, dp, providerCache, logger)
 			if e1 != nil {
 				return nil, nil, e1
 			}
@@ -384,37 +369,208 @@ func (f *pushDatabaseOpts) collectDeliveryPointPairs(service string, subscriber 
 	return pairs, orphans, nil
 }
 
+// serviceProviders lists a service's providers, caching within one read pass.
+//
+// The cache matters: without it this is a SMEMBERS plus a GET per provider for
+// every single delivery point, and a subscriber with a dozen devices would pay
+// for the same lookup a dozen times. A service's providers cannot change
+// underneath a pass that holds the read lock.
+func (f *pushDatabaseOpts) serviceProviders(service string,
+	cache map[string][]*push.PushServiceProvider, logger log.Logger) ([]*push.PushServiceProvider, error) {
+	// Normalised here as well as at the entry points, because this is reached
+	// from the write path too, and that one has no logger of its own to pass
+	// down. The one statement below that logs runs only when the database is
+	// already inconsistent, so a nil logger here would be a panic waiting on a
+	// rare branch -- the same shape of bug as the one the read path's teardown
+	// had, which is reason enough to stop relying on callers getting it right.
+	logger = orDiscard(logger)
+
+	if providers, cached := cache[service]; cached {
+		return providers, nil
+	}
+
+	names, err := f.db.GetPushServiceProvidersByService(service)
+	if err != nil {
+		return nil, fmt.Errorf("could not list push service providers for service %s: %v", service, err)
+	}
+
+	providers := make([]*push.PushServiceProvider, 0, len(names))
+	for _, name := range names {
+		psp, e := f.db.GetPushServiceProvider(name)
+		if e != nil {
+			if isErrCausedByMissingKey(e) {
+				// A name in srv-2-psp with no record behind it. /rmpsp removes
+				// both, so this means an interrupted write rather than normal
+				// operation; skipping it is right, and the consistency check
+				// reports it.
+				logger.Infof("Service %q lists push service provider %q, which has no record; ignoring it", service, name)
+				continue
+			}
+			return nil, fmt.Errorf("failed to get information about psp %s: %v", name, e)
+		}
+		if psp == nil {
+			continue
+		}
+		providers = append(providers, psp)
+	}
+
+	cache[service] = providers
+	return providers, nil
+}
+
 // resolveProvider finds the push service provider a delivery point sends through.
+//
+// The provider is *derived* from the service and the delivery point's push
+// service type rather than read from srv.dp-2-psp. That index is not a source
+// of truth: AddDeliveryPointToService computes exactly this answer at subscribe
+// time and then stores it, so it is a cache of a pure function -- given the
+// invariant that a service has at most one provider per push service type,
+// which AddPushServiceProviderToService has enforced since PR #201.
+//
+// Deriving it is what decouples a device from its provider's credentials. The
+// stored name embeds a hash of the provider's fixed data, so as long as it was
+// authoritative, changing a credential meant every device pointed at a provider
+// that no longer existed.
+//
+// The index is still consulted, but only to break a tie that should not exist:
+// data written before PR #201 may have several providers of one type in a
+// service, and srv-2-psp is an unordered set, so picking a match arbitrarily
+// would be nondeterministic between reads.
 //
 // A nil provider with a nil error means "skip this delivery point": the reason
 // has been logged, and it is not an error for the whole query. A real error
 // means the database itself is unreachable, which the caller must not paper
 // over by returning a short list of devices as though the rest had unsubscribed.
-func (f *pushDatabaseOpts) resolveProvider(service, dpName string, logger log.Logger) (*push.PushServiceProvider, error) {
-	pspname, err := f.db.GetPushServiceProviderNameByServiceDeliveryPoint(service, dpName)
-	if err != nil && !isErrCausedByMissingKey(err) {
-		return nil, fmt.Errorf("failed to get psp name for dp %s: %v", dpName, err)
+func (f *pushDatabaseOpts) resolveProvider(service string, dp *push.DeliveryPoint,
+	cache map[string][]*push.PushServiceProvider, logger log.Logger) (*push.PushServiceProvider, error) {
+	providers, err := f.serviceProviders(service, cache, logger)
+	if err != nil {
+		return nil, err
 	}
-	if len(pspname) == 0 {
-		logger.Infof("Delivery point %q of service %q has no push service provider recorded; skipping it", dpName, service)
+
+	wanted := dp.PushServiceName()
+	matches := candidateProviders(providers, wanted)
+
+	switch len(matches) {
+	case 1:
+		return matches[0], nil
+	case 0:
+		logger.Infof(
+			"Delivery point %q of service %q is a %s subscription, but that service has no %s push service provider; "+
+				"skipping it. Add one with /addpsp to make this device reachable again.",
+			dp.Name(), service, wanted, wanted)
 		return nil, nil
 	}
 
-	psp, err := f.db.GetPushServiceProvider(pspname)
-	if err != nil {
-		if isErrCausedByMissingKey(err) {
-			logger.Infof(
-				"Delivery point %q of service %q refers to push service provider %q, which no longer exists; "+
-					"skipping it. Re-add that provider with /addpsp to make this device reachable again.",
-				dpName, service, pspname)
-			return nil, nil
+	return f.disambiguateProvider(service, dp, matches, logger)
+}
+
+// candidateProviders returns the providers of one push service type.
+func candidateProviders(providers []*push.PushServiceProvider, pushServiceType string) []*push.PushServiceProvider {
+	matches := make([]*push.PushServiceProvider, 0, 1)
+	for _, psp := range providers {
+		if psp.PushServiceName() == pushServiceType {
+			matches = append(matches, psp)
 		}
-		return nil, fmt.Errorf("failed to get information about psp %s: %v", pspname, err)
 	}
-	if psp == nil {
-		return nil, nil
+	return matches
+}
+
+// resolveProviderForSubscribe picks the provider a new subscription binds to.
+//
+// This has to agree with resolveProvider. Where it does not, a device is bound
+// to one provider at subscribe time and served by another at push time, and the
+// binding written here -- the very tie-breaker the read path falls back on --
+// makes the disagreement permanent. Picking the first match out of srv-2-psp,
+// which is an unordered set, is exactly the guess the read path was taught not
+// to make.
+//
+// Where the read path skips a delivery point it cannot resolve, this refuses:
+// /subscribe has a caller waiting for an answer, and a device accepted but
+// unreachable is worse than one that was rejected with a reason.
+func (f *pushDatabaseOpts) resolveProviderForSubscribe(service string,
+	dp *push.DeliveryPoint) (*push.PushServiceProvider, error) {
+	// A cache of one entry: this is a single lookup under the write lock, not a
+	// pass over a subscriber's devices.
+	//
+	// Nothing to log to. AddDeliveryPointToService takes no logger, and the one
+	// thing serviceProviders would report -- a provider name in srv-2-psp with
+	// no record behind it -- costs nothing here: if the service has another
+	// provider of the device's type the subscribe succeeds anyway, and if it
+	// does not, the error returned below says so and /subscribe logs it.
+	// /checkdb is what names the dangling provider.
+	providers, err := f.serviceProviders(service, make(map[string][]*push.PushServiceProvider, 1), discardLogger)
+	if err != nil {
+		return nil, err
 	}
-	return psp, nil
+	if len(providers) == 0 {
+		// Capitalised, and staying that way: this is the error /subscribe has
+		// always returned to clients for an unknown service. It moved here
+		// unchanged from AddDeliveryPointToService, and rewording it would
+		// break whatever is matching on it.
+		return nil, fmt.Errorf("Cannot Find Service %s", service) //nolint:revive,staticcheck
+	}
+
+	matches := candidateProviders(providers, dp.PushServiceName())
+	switch len(matches) {
+	case 1:
+		return matches[0], nil
+	case 0:
+		// Preserved verbatim, like the message above: this is what /subscribe
+		// has always answered when a service has no provider of the device's
+		// type.
+		return nil, fmt.Errorf("Cannot Find Push Service Provider with Type %s", dp.PushServiceName()) //nolint:revive,staticcheck
+	}
+
+	// Several providers of one type: data written before PR #201. An existing
+	// binding is honoured so that re-subscribing a device already known to this
+	// service cannot move it to a different provider.
+	bound, err := f.db.GetPushServiceProviderNameByServiceDeliveryPoint(service, dp.Name())
+	if err != nil && !isErrCausedByMissingKey(err) {
+		return nil, fmt.Errorf("failed to get psp name for dp %s: %v", dp.Name(), err)
+	}
+	for _, psp := range matches {
+		if psp.Name() == bound {
+			return psp, nil
+		}
+	}
+
+	return nil, fmt.Errorf(
+		"service %s has %d push service providers of type %s, so there is no single provider to subscribe this "+
+			"delivery point to. Run /checkdb, and remove all but one of them with /rmpsp",
+		service, len(matches), dp.PushServiceName())
+}
+
+// disambiguateProvider picks between several providers of one push service type.
+//
+// Only reachable for a service that predates the one-provider-per-type rule.
+// The stored binding is the tie-breaker because it records the choice made when
+// the device subscribed, which is the closest thing to an intended answer.
+func (f *pushDatabaseOpts) disambiguateProvider(service string, dp *push.DeliveryPoint,
+	matches []*push.PushServiceProvider, logger log.Logger) (*push.PushServiceProvider, error) {
+	pspname, err := f.db.GetPushServiceProviderNameByServiceDeliveryPoint(service, dp.Name())
+	if err != nil && !isErrCausedByMissingKey(err) {
+		return nil, fmt.Errorf("failed to get psp name for dp %s: %v", dp.Name(), err)
+	}
+
+	for _, psp := range matches {
+		if psp.Name() == pspname {
+			logger.Infof(
+				"Service %q has %d push service providers of type %s; using the one delivery point %q was subscribed to (%s). "+
+					"Run the consistency check: only one provider per type is supported.",
+				service, len(matches), dp.PushServiceName(), dp.Name(), pspname)
+			return psp, nil
+		}
+	}
+
+	// Several candidates and nothing to choose between them. Guessing would
+	// send to a different provider on different reads, which is worse than not
+	// sending: a device would appear to work intermittently.
+	logger.Infof(
+		"Service %q has %d push service providers of type %s and delivery point %q is bound to none of them; "+
+			"skipping it. Run the consistency check.",
+		service, len(matches), dp.PushServiceName(), dp.Name())
+	return nil, nil
 }
 
 // forgetOrphanedDeliveryPoints removes names whose delivery point record is gone.
