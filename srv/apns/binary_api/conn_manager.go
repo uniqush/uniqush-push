@@ -75,6 +75,18 @@ var _ ConnManager = &connManagerImpl{}
 
 func newAPNSConnManager(psp *push.PushServiceProvider, resultChan chan<- *common.APNSResult) ConnManager {
 	manager := new(connManagerImpl)
+
+	// Token authentication has no certificate to present, and the binary
+	// protocol has no way to carry a JWT. A caller who forces this path with
+	// uniqush.http2=0 would otherwise get `open : no such file or directory`
+	// from LoadX509KeyPair on two empty paths, which says nothing about the
+	// actual problem.
+	if common.UsesTokenAuth(psp) {
+		manager.err = fmt.Errorf("the retired binary protocol cannot be used with token authentication; " +
+			"a .p8 signing key is only carried over HTTP/2, so remove uniqush.http2=0 from this push")
+		return manager
+	}
+
 	manager.cert, manager.err = tls.LoadX509KeyPair(psp.FixedData["cert"], psp.FixedData["key"])
 	if manager.err != nil {
 		return manager

@@ -51,6 +51,84 @@ Unreleased
   its last request drains instead of being closed underneath it.
   `TryGetClient` is removed: it looked providers up by name after the cache
   moved to a composite key, so it had been returning nil for every caller.
+### APNs: token (.p8) authentication, and a way to test any of this
+
+- Feature: **APNs providers can authenticate with a signing key instead of a
+  certificate.** `/addpsp` now accepts `authkey` (the path to the `.p8` from the
+  developer portal), `keyid` and `teamid` as an alternative to `cert` and `key`.
+  uniqush signs an ES256 JWT and sends it as `authorization: bearer <jwt>`.
+
+  A `.p8` does not expire and covers every app in the team, unlike a certificate
+  which expires annually and is per-app.
+
+  The token is refreshed every 45 minutes. That number is bounded on both sides
+  by Apple and is not a tuning choice: a token older than an hour is rejected
+  with `ExpiredProviderToken`, and minting more than one per 20 minutes for the
+  same key is rejected with `TooManyProviderTokenUpdates`. The cache is keyed on
+  a fingerprint of the signing key's public half rather than on the provider or
+  on the path the key was read from: the mint limit is per key, and the same
+  `.p8` reached by two paths, a symlink or a copy is one key to Apple. The key
+  is also required to be P-256 at `/addpsp`, since ES256 accepts nothing else
+  and a P-384 key would otherwise register cleanly and fail on the first push.
+
+  **Known limitation in this change, fixed in the follow-up: the schedule does
+  not survive a restart.** The cache is process-local, so restarting inside the
+  20-minute window mints a second token, and two uniqush instances sharing a key
+  mint independently; Apple can answer either with
+  `TooManyProviderTokenUpdates`.
+
+  Half of the answer is already here: `iat` is quantised into fixed buckets, so
+  every process agrees on *what* to sign for a given moment. What is missing is
+  that they do not agree on the *bytes*, because `crypto/ecdsa` draws a random
+  nonce -- so two processes signing the same bucket still produce two different
+  tokens, and Apple counts tokens.
+
+  Reviewers of this change should know the plan rather than weigh a fix that is
+  not here. The follow-up makes the signature deterministic, which is the piece
+  that turns bucketing into agreement: every process and every restart then
+  computes an identical token and Apple sees one per bucket -- with nothing
+  shared between instances and no credential stored anywhere new. The obvious
+  alternative, putting the signed token in redis, was rejected: redis holds only
+  the *path* to the `.p8` today, and storing the JWT would turn it into an
+  hour-lived bearer credential for the whole team in a store that is usually
+  unauthenticated. That change carries an architecture decision record with the
+  full reasoning.
+
+  Until then `TooManyProviderTokenUpdates` is reported against the provider
+  rather than the notification, so the error names the credential at fault
+  instead of implying the payload was malformed.
+
+  **An existing certificate-based service cannot be switched to `.p8` in
+  place.** A provider's name hashes its fixed data; `cert` and `key` are part of
+  that and a signing key deliberately is not, so the two auth modes produce
+  different provider names and `/addpsp` rejects the second as a conflicting
+  provider. `/rmpsp` followed by `/addpsp` is *not* a workaround -- a delivery
+  point whose provider has gone is deleted on the next read, so it silently
+  unsubscribes every device. Token auth is therefore for new services, until
+  delivery points stop being bound to a provider's credential hash. Existing
+  certificate providers are unaffected and keep updating in place as before.
+
+- Feature: **`/addpsp` accepts `endpoint` and `cacert` for APNs.** The HTTP/2
+  destination was previously chosen by string-matching the binary protocol's
+  `addr` for "sandbox", so it could only ever be one of Apple's two hosts, and
+  `skipverify` was ignored on the HTTP/2 path entirely. Between them, the
+  repaired HTTP/2 code could not be pointed at a test server at all.
+
+  Both settings are optional and neither changes an existing provider: without
+  an endpoint the environment is still inferred from `addr`. `skipverify` is now
+  refused for Apple's own hosts, since it disables the only check that the host
+  answering for `api.push.apple.com` is Apple.
+
+- Testing: **`go test ./srv/apns/` now drives the real HTTP/2 transport against
+  a simulator** (`srv/apns/apnstest`) that enforces Apple's documented contract
+  rather than accepting whatever arrives -- the path shape, the required
+  headers, priority 5 for background pushes, the payload ceiling, provider token
+  validity, and duplicate headers. `go test -tags apns_live
+  ./srv/apns/http_api/` checks reachability and error parsing against Apple's
+  real sandbox, which answers unauthenticated requests.
+
+  Delivery to a device is still unverified and needs a paid Apple Developer
+  Program membership. See `docs/apns-verification-plan.md`.
 
 ### FCM: migrated to HTTP v1
 

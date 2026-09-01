@@ -104,7 +104,7 @@ func TestARedirectIsReportedRatherThanSwallowed(t *testing.T) {
 		StatusCode: http.StatusTemporaryRedirect,
 		Header:     http.Header{"Location": []string{"https://elsewhere.example/3/device/abc"}},
 	}
-	processor.handlePushResponseBody(response, nil, 1, errChan, resChan)
+	processor.handlePushResponseBody(response, nil, 1, pushServiceProvider, errChan, resChan)
 
 	select {
 	case err := <-errChan:
