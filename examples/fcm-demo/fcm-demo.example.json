@@ -1,0 +1,15 @@
+{
+  "_comment": "Copy to fcm-demo.json and fill in. See README.md for where each value comes from.",
+
+  "projectId": "my-firebase-project",
+  "credentialsFile": "service-account.json",
+
+  "web": {
+    "apiKey": "AIza...",
+    "authDomain": "my-firebase-project.firebaseapp.com",
+    "projectId": "my-firebase-project",
+    "messagingSenderId": "123456789012",
+    "appId": "1:123456789012:web:abcdef0123456789",
+    "vapidKey": "BN..."
+  }
+}

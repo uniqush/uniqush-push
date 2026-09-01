@@ -1,0 +1,310 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>uniqush-push · FCM demo</title>
+<style>
+  :root { color-scheme: light dark; }
+  body {
+    font: 15px/1.55 system-ui, -apple-system, "Segoe UI", sans-serif;
+    max-width: 46rem; margin: 2rem auto; padding: 0 1.25rem;
+  }
+  h1 { font-size: 1.4rem; margin-bottom: .25rem; }
+  h2 { font-size: 1.05rem; margin: 2rem 0 .5rem; }
+  .sub { opacity: .7; margin-top: 0; }
+  section {
+    border: 1px solid color-mix(in srgb, currentColor 20%, transparent);
+    border-radius: 8px; padding: 1rem 1.25rem; margin-bottom: 1rem;
+  }
+  button {
+    font: inherit; padding: .5rem 1rem; border-radius: 6px; cursor: pointer;
+    border: 1px solid color-mix(in srgb, currentColor 35%, transparent);
+    background: color-mix(in srgb, currentColor 8%, transparent); color: inherit;
+  }
+  button:disabled { opacity: .45; cursor: not-allowed; }
+  button.primary { background: #2563eb; border-color: #2563eb; color: #fff; }
+  input, textarea {
+    font: inherit; width: 100%; box-sizing: border-box; padding: .45rem .6rem;
+    border-radius: 6px; margin-bottom: .6rem; color: inherit;
+    border: 1px solid color-mix(in srgb, currentColor 30%, transparent);
+    background: color-mix(in srgb, currentColor 5%, transparent);
+  }
+  label { display: block; font-size: .82rem; opacity: .8; margin-bottom: .15rem; }
+  code, pre { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: .82rem; }
+  pre {
+    background: color-mix(in srgb, currentColor 8%, transparent);
+    padding: .7rem .85rem; border-radius: 6px; overflow-x: auto; white-space: pre-wrap;
+    word-break: break-all; margin: 0;
+  }
+  #log { max-height: 20rem; overflow-y: auto; }
+  .ok { color: #15803d; } .bad { color: #b91c1c; } .muted { opacity: .65; }
+  .row { display: flex; gap: .5rem; flex-wrap: wrap; align-items: center; }
+  .note {
+    font-size: .85rem; opacity: .8; border-left: 3px solid currentColor;
+    padding-left: .75rem; margin: .75rem 0;
+  }
+</style>
+</head>
+<body>
+
+<h1>uniqush-push — FCM demo</h1>
+<p class="sub">Get an FCM registration token, subscribe it to uniqush, then push to it.</p>
+
+<section>
+  <h2 style="margin-top:0">1. Get a registration token</h2>
+
+  <p class="muted" style="margin-top:0">
+    FCM issues registration tokens to browsers as well as to Android apps, and
+    the HTTP v1 send API treats them identically — same <code>token</code>
+    target, same request, same code path in <code>srv/fcm</code>. So a browser
+    is enough to verify the server side; an Android device only adds the
+    platform-specific <code>android</code> block.
+  </p>
+
+  <div class="row">
+    <button id="enroll" class="primary">Get a token for this browser</button>
+    <span id="enrollState" class="muted">checking…</span>
+  </div>
+
+  <p class="note">
+    Requires <code>localhost</code> or HTTPS, and a browser with FCM web push
+    support (Chrome, Edge, Firefox). Safari on macOS needs the site installed
+    as a web app first.
+  </p>
+
+  <details>
+    <summary style="cursor:pointer">Or paste a token from an Android device</summary>
+    <div style="margin-top:.75rem">
+      <p class="muted">
+        From <code>FirebaseMessaging.getInstance().getToken()</code> in an app
+        built against this same Firebase project. A token from a different
+        project fails with <code>SENDER_ID_MISMATCH</code>, which uniqush
+        treats as a permanent failure and unsubscribes.
+      </p>
+      <label for="regid">registration token</label>
+      <input id="regid" placeholder="dGhpcyBpcyBub3QgYSByZWFsIHRva2Vu…" autocomplete="off">
+      <button id="enrollManual">Subscribe this token</button>
+    </div>
+  </details>
+</section>
+
+<section>
+  <h2 style="margin-top:0">2. Push</h2>
+  <label for="msg">Message</label>
+  <input id="msg" value="It works." autocomplete="off">
+  <div class="row">
+    <button id="push" class="primary">Send test push</button>
+    <button id="preview">Preview the FCM payload</button>
+    <button id="subs">Show subscriptions</button>
+  </div>
+  <p class="note">
+    Sent as a <em>data</em> message, not a <code>notification</code> one, so
+    what appears on screen is uniqush's payload having survived the round trip
+    rather than something the browser rendered by itself. A message arriving
+    while this tab is focused is handled by the page; one arriving while it is
+    not is handled by the service worker. Both display a notification, and the
+    log below says which path it took.
+  </p>
+</section>
+
+<section>
+  <h2 style="margin-top:0">Log</h2>
+  <pre id="log" class="muted">Waiting…</pre>
+</section>
+
+<script type="module">
+import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js';
+import { getMessaging, getToken, onMessage } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-messaging.js';
+
+const logEl = document.getElementById('log');
+let firstLog = true;
+
+function log(message, cls) {
+  if (firstLog) { logEl.textContent = ''; logEl.classList.remove('muted'); firstLog = false; }
+  // A span with a trailing newline, not a div. The log is a <pre>, whose
+  // content model is phrasing content, so a div in there is invalid HTML --
+  // browsers cope, but the line breaks would then come from the div being a
+  // block rather than from the text, which is not something to rely on. <pre>
+  // preserves the newline, so each entry lands on its own line by the same
+  // mechanism that makes the rest of the block work.
+  const line = document.createElement('span');
+  if (cls) line.className = cls;
+  line.textContent = new Date().toLocaleTimeString() + '  ' + message + '\n';
+  logEl.appendChild(line);
+  logEl.scrollTop = logEl.scrollHeight;
+}
+
+async function api(path, options) {
+  const response = await fetch(path, options);
+  const body = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error(body.error || ('HTTP ' + response.status));
+  return body;
+}
+
+// Loaded from the server so the Firebase project details live in one file.
+const config = await api('/api/config');
+const firebaseConfig = config.firebase;
+const vapidKey = firebaseConfig.vapidKey;
+
+log(`service=${config.service} type=${config.pushservicetype} subscriber=${config.subscriber}`);
+log(`firebase project ${firebaseConfig.projectId}`);
+
+const app = initializeApp(firebaseConfig);
+const messaging = getMessaging(app);
+
+// showNotification displays a push from the page.
+//
+// This exists because a message arriving while the tab is focused never reaches
+// the service worker at all -- the SDK routes it to onMessage instead -- so
+// nothing is displayed unless the page displays it. Without this, clicking
+// "Send test push" on the page you are looking at is the one case that produces
+// no notification, which is exactly the case everybody tries first.
+async function showNotification(data) {
+  if (Notification.permission !== 'granted') return;
+  const registration = await navigator.serviceWorker.getRegistration('/');
+  if (!registration) return;
+  await registration.showNotification(data.title || 'uniqush-push', {
+    body: data.body || JSON.stringify(data),
+    // A stable tag would collapse repeated test pushes into one, hiding
+    // exactly the thing being tested.
+    tag: 'uniqush-' + Date.now(),
+  });
+}
+
+onMessage(messaging, async (payload) => {
+  const data = payload.data || {};
+  log('Push received (foreground, tab focused): ' + JSON.stringify(data), 'ok');
+  try {
+    await showNotification(data);
+  } catch (err) {
+    log('Received, but could not display a notification: ' + err.message, 'bad');
+  }
+});
+
+// Background pushes are forwarded by the service worker, so one log shows both.
+navigator.serviceWorker?.addEventListener('message', (event) => {
+  if (event.data?.source === 'sw') {
+    log('Push received (background): ' + JSON.stringify(event.data.data), 'ok');
+  }
+});
+// Required, and easy to miss: messages posted to a client are queued until the
+// page either sets navigator.serviceWorker.onmessage or calls this. Registering
+// with addEventListener alone leaves the queue closed, so the handler above
+// would never fire and a background push would look like no push at all.
+navigator.serviceWorker?.startMessages();
+
+const enrollState = document.getElementById('enrollState');
+
+function setState(text, cls) {
+  enrollState.textContent = text;
+  enrollState.className = cls || 'muted';
+}
+
+if (!('serviceWorker' in navigator) || !('PushManager' in window)) {
+  setState('this browser has no push support', 'bad');
+  document.getElementById('enroll').disabled = true;
+} else if (Notification.permission === 'granted') {
+  setState('notifications already allowed');
+} else if (Notification.permission === 'denied') {
+  setState('notifications blocked — reset the permission in site settings', 'bad');
+} else {
+  setState('not enrolled yet');
+}
+
+async function subscribe(regid) {
+  const result = await api('/api/subscribe', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ regid }),
+  });
+  log('Subscribed. uniqush said: ' + result.uniqush, 'ok');
+}
+
+document.getElementById('enroll').addEventListener('click', async () => {
+  try {
+    setState('requesting permission…');
+    const permission = await Notification.requestPermission();
+    if (permission !== 'granted') {
+      setState('permission ' + permission, 'bad');
+      return;
+    }
+
+    // Registered explicitly rather than letting the SDK do it, so a failure
+    // here is reported as a service worker problem rather than as a confusing
+    // getToken() error.
+    setState('registering service worker…');
+    const registration = await navigator.serviceWorker.register('/firebase-messaging-sw.js', { scope: '/' });
+    await navigator.serviceWorker.ready;
+
+    setState('requesting a token…');
+    const token = await getToken(messaging, {
+      vapidKey,
+      serviceWorkerRegistration: registration,
+    });
+    if (!token) throw new Error('getToken returned nothing');
+
+    log('Registration token: ' + token.slice(0, 32) + '…');
+    await subscribe(token);
+    setState('enrolled', 'ok');
+  } catch (err) {
+    setState('failed', 'bad');
+    // The common causes are a wrong or missing vapidKey and a project without
+    // the Cloud Messaging API enabled, neither of which the SDK says plainly.
+    log('Enrollment failed: ' + err.message, 'bad');
+    log('Check web.vapidKey in fcm-demo.json, and that Cloud Messaging is enabled for the project.', 'muted');
+  }
+});
+
+document.getElementById('enrollManual').addEventListener('click', async () => {
+  const regid = document.getElementById('regid').value.trim();
+  if (!regid) { log('Paste a registration token first.', 'bad'); return; }
+  try {
+    await subscribe(regid);
+  } catch (err) {
+    log('Subscribe failed: ' + err.message, 'bad');
+  }
+});
+
+document.getElementById('push').addEventListener('click', async () => {
+  const msg = document.getElementById('msg').value;
+  try {
+    const result = await api('/api/push', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({ msg }),
+    });
+    // uniqush answers /push with one JSON object per delivery point, so this
+    // is where a per-device failure such as UNREGISTERED shows up.
+    log('Pushed. uniqush said: ' + result.uniqush);
+  } catch (err) {
+    log('Push failed: ' + err.message, 'bad');
+  }
+});
+
+document.getElementById('preview').addEventListener('click', async () => {
+  const msg = document.getElementById('msg').value;
+  try {
+    const result = await api('/api/preview', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({ msg }),
+    });
+    log('Would send: ' + result.uniqush);
+  } catch (err) {
+    log('Preview failed: ' + err.message, 'bad');
+  }
+});
+
+document.getElementById('subs').addEventListener('click', async () => {
+  try {
+    const result = await api('/api/subscriptions');
+    log('Subscriptions: ' + result.uniqush);
+  } catch (err) {
+    log('Could not list subscriptions: ' + err.message, 'bad');
+  }
+});
+</script>
+
+</body>
+</html>

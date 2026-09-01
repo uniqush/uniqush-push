@@ -29,12 +29,18 @@ server side, you can send push notifications to any supported mobile platform.
 >   has yet run them against real Apple credentials and a real device**, because
 >   the current maintainer does not have an Apple developer account. If you do,
 >   a report either way would be genuinely useful — please open an issue.
-> - **FCM — migrated to HTTP v1, but not yet verified against Google.** The
->   legacy endpoint it used was decommissioned on 20 June 2024. `/addpsp` now
->   takes `projectid` and `credentialsfile` instead of `apikey`; devices do not
->   need to re-subscribe. Covered by unit tests against a mocked FCM, but nobody
->   has run it against a real Firebase project yet. `gcm` is now an alias for
->   the same backend.
+> - **FCM — migrated to HTTP v1, and verified against Google.** The legacy
+>   endpoint it used was decommissioned on 20 June 2024. `/addpsp` now takes
+>   `projectid` and `credentialsfile` instead of `apikey`; devices do not need
+>   to re-subscribe. `gcm` is now an alias for the same backend.
+>
+>   Confirmed working end to end on 1 September 2026, against a real Firebase
+>   project: pushes were accepted by FCM and delivered to a browser. Unlike APNs
+>   this needs no paid account, so you can repeat it yourself —
+>   [examples/fcm-demo](examples/fcm-demo) is the ten-minute version, and
+>   `go test -tags fcm_live ./srv/fcm/` exercises the send path against Google
+>   directly. Delivery to an Android device has not been checked yet; the
+>   browser path covers the whole server side but not the `android` block.
 > - **ADM** is believed to still work, but has not been re-verified.
 > - **UnifiedPush / Web Push — new, and the one backend with no vendor
 >   dependency.** See below.
