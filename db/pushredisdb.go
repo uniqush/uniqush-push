@@ -61,6 +61,10 @@ type redisClient interface {
 	Keys(ctx context.Context, key string) *redis.StringSliceCmd
 	MGet(ctx context.Context, keys ...string) *redis.SliceCmd
 	Save(ctx context.Context) *redis.StatusCmd
+	// Scan is how anything that walks the keyspace should do it. KEYS holds the
+	// redis event loop for the whole walk, which on a database large enough to
+	// be worth inspecting means stalling every push for the duration.
+	Scan(ctx context.Context, cursor uint64, match string, count int64) *redis.ScanCmd
 	SAdd(ctx context.Context, key string, members ...interface{}) *redis.IntCmd
 	SRem(ctx context.Context, key string, members ...interface{}) *redis.IntCmd
 	Set(ctx context.Context, key string, value interface{}, expiration time.Duration) *redis.StatusCmd
@@ -98,6 +102,10 @@ func (mc *redisMultiClient) Incr(ctx context.Context, key string) *redis.IntCmd 
 
 func (mc *redisMultiClient) Keys(ctx context.Context, key string) *redis.StringSliceCmd {
 	return mc.slaveClient.Keys(ctx, key)
+}
+
+func (mc *redisMultiClient) Scan(ctx context.Context, cursor uint64, match string, count int64) *redis.ScanCmd {
+	return mc.slaveClient.Scan(ctx, cursor, match, count)
 }
 
 func (mc *redisMultiClient) MGet(ctx context.Context, keys ...string) *redis.SliceCmd {

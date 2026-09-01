@@ -99,6 +99,10 @@ type PushDatabase interface {
 
 	GetSubscriptions(services []string, user string, logger log.Logger) ([]map[string]string, error)
 
+	// CheckConsistency scans the database and reports what does not add up. It
+	// is read-only and changes nothing, including the problems it finds.
+	CheckConsistency() (*ConsistencyReport, error)
+
 	FlushCache() error
 }
 

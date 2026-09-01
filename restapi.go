@@ -33,6 +33,7 @@ import (
 	"time"
 
 	"github.com/uniqush/log"
+	"github.com/uniqush/uniqush-push/db"
 	"github.com/uniqush/uniqush-push/push"
 )
 
@@ -77,7 +78,18 @@ const (
 	QuerySubscriptionsURL                   = "/subscriptions"
 	QueryPushServiceProviders               = "/psps"
 	RebuildServiceSetURL                    = "/rebuildserviceset"
+	// CheckDatabaseURL scans the database and reports inconsistencies. It is
+	// read-only, repairs nothing, walks the keyspace with SCAN rather than KEYS
+	// and takes no lock, so it is safe to run against production.
+	CheckDatabaseURL = "/checkdb"
 )
+
+// maxLoggedProblems bounds the per-finding lines one /checkdb writes to the log.
+//
+// Enough to see the shape of the problem without reading the response body, and
+// few enough that running the check on a badly inconsistent database cannot cost
+// more in log ingestion than the check was worth.
+const maxLoggedProblems = 20
 
 // TODO: Switch to the stricter regex in a subsequent release.
 // uniqush.org didn't really document the accepted characters, so it's possible some clients used invalid characters.
@@ -442,6 +454,60 @@ func (api *RestAPI) queryPSPs(logger log.Logger) []byte {
 	return json
 }
 
+// checkDatabase reports what does not add up in the database.
+//
+// The report is returned rather than acted on. A repair running unattended
+// against a database nobody has looked at is how a consistency check becomes an
+// outage, and every problem it finds already has an existing operation that
+// fixes it -- /addpsp for a missing provider, a read for an orphaned delivery
+// point.
+func (api *RestAPI) checkDatabase(logger log.Logger) []byte {
+	report, err := api.backend.CheckDatabase()
+	if err != nil {
+		logger.Errorf("Error in /checkdb: %v", err)
+		errorMsg := err.Error()
+		details := APIResponseDetails{Code: UNIQUSH_ERROR_GENERIC, ErrorMsg: &errorMsg}
+		encoded, e := json.Marshal(details)
+		if e != nil {
+			return []byte("Failed to serialize response")
+		}
+		return encoded
+	}
+
+	if report.Healthy() {
+		logger.Infof("/checkdb: %s", report.Summary())
+	} else {
+		// Warn rather than Info: nothing here is urgent, but a database with
+		// duplicate providers pushes nondeterministically, and that should not
+		// be discoverable only by reading a JSON body.
+		//
+		// The summary carries every count, so it is the line that matters and it
+		// is always written. The individual findings are examples, and are
+		// capped: this endpoint exists to be run on a database somebody is
+		// already worried about, and an unbounded fan-out of warnings would meet
+		// that worry by filling the disk that the logs are on.
+		logger.Warnf("/checkdb: %s", report.Summary())
+		logged := 0
+		for _, problem := range report.Problems {
+			if logged >= maxLoggedProblems {
+				break
+			}
+			logger.Warnf("/checkdb: %s", problem)
+			logged++
+		}
+		if remaining := report.TotalProblems() - logged; remaining > 0 {
+			logger.Warnf("/checkdb: and %d more not logged; the counts above are complete, and the response body "+
+				"carries up to %d examples of each kind", remaining, db.MaxProblemsPerKind)
+		}
+	}
+
+	encoded, err := json.Marshal(report)
+	if err != nil {
+		return []byte("Failed to serialize response")
+	}
+	return encoded
+}
+
 // rebuildServiceSet is used to make sure that the /subscriptions and /psps APIs work properly, on uniqush setups created before those APIs existed.
 func (api *RestAPI) rebuildServiceSet(logger log.Logger) []byte {
 	err := api.backend.RebuildServiceSet()
@@ -498,6 +564,10 @@ func (api *RestAPI) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	case RebuildServiceSetURL:
 		n := api.rebuildServiceSet(api.loggers[LoggerServices])
+		fmt.Fprintf(w, "%s\r\n", n)
+		return
+	case CheckDatabaseURL:
+		n := api.checkDatabase(api.loggers[LoggerServices])
 		fmt.Fprintf(w, "%s\r\n", n)
 		return
 	case QueryNumberOfDeliveryPointsURL:
@@ -580,6 +650,7 @@ func (api *RestAPI) Run(addr string, stopChan chan<- bool) {
 	http.Handle(QuerySubscriptionsURL, api)
 	http.Handle(QueryPushServiceProviders, api)
 	http.Handle(RebuildServiceSetURL, api)
+	http.Handle(CheckDatabaseURL, api)
 
 	api.stopChan = stopChan
 	err := http.ListenAndServe(addr, nil)

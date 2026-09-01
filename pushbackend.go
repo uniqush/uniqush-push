@@ -448,6 +448,11 @@ func (backend *PushBackEnd) RebuildServiceSet() error {
 	return backend.db.RebuildServiceSet()
 }
 
+// CheckDatabase scans the database and reports inconsistencies, changing nothing.
+func (backend *PushBackEnd) CheckDatabase() (*db.ConsistencyReport, error) {
+	return backend.db.CheckConsistency()
+}
+
 // Push will send a push notification to the given subscriber(s) of a push service.
 func (backend *PushBackEnd) Push(reqID string, remoteAddr string, service string, subs []string, dpNamesRequested []string, notif *push.Notification, perdp map[string][]string, logger log.Logger, handler APIResponseHandler) {
 	backend.pushImpl(reqID, remoteAddr, service, subs, dpNamesRequested, notif, perdp, logger, nil, nil, 0*time.Second, handler)

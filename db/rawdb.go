@@ -89,6 +89,11 @@ type pushRawDatabaseReader interface { //nolint:staticcheck
 	GetPushServiceProviderNameByServiceDeliveryPoint(srv, dp string) (string, error)
 
 	GetPushServiceProvidersByService(srv string) ([]string, error)
+
+	// CheckConsistency scans the whole database and reports what does not add
+	// up. Read-only, and implemented alongside the key layout rather than in
+	// pushdb.go because every check is a statement about how the keys relate.
+	CheckConsistency() (*ConsistencyReport, error)
 }
 
 type pushRawDatabase interface {
