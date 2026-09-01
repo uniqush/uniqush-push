@@ -475,8 +475,18 @@ func (r *PushRedisDB) RemoveDeliveryPointFromServiceSubscriber(srv, sub, dp stri
 	return nil
 }
 
-// removeMissingDeliveryPointFromServiceSubscriber removes any associations from a subscription list to a dp with missing subscriptions.
-func (r *PushRedisDB) removeMissingDeliveryPointFromServiceSubscriber(service, subscriber, dpName string, logger log.Logger) {
+// RemoveMissingDeliveryPointFromServiceSubscriber removes any associations from a subscription list to a dp with missing subscriptions.
+//
+// The precondition -- that delivery.point:<dp> is already gone -- is what makes
+// deleting the counter outright correct rather than blunt. The counter is a
+// refcount across services, but the record it counts references to no longer
+// exists anywhere, so there is nothing left for another service to hold.
+func (r *PushRedisDB) RemoveMissingDeliveryPointFromServiceSubscriber(service, subscriber, dpName string, logger log.Logger) {
+	// Both statements below log only when redis fails, so a nil logger here
+	// would panic exactly where something has already gone wrong -- the failure
+	// mode that hides longest, because the happy path never touches it.
+	logger = orDiscard(logger)
+
 	// Precondition: DeliveryPointPrefix + dp was already missing. No need to remove it.
 	e0 := r.client.SRem(r.ctx, ServiceSubscriberToDeliveryPointsPrefix+service+":"+subscriber, dpName).Err()
 	if e0 != nil {
@@ -620,6 +630,7 @@ func (r *PushRedisDB) FlushCache() error {
 // GetSubscriptions will fetch the subscriptions of the given subscriber belonging to the given service list.
 // If queryServices is empty, then this will fetch subscriptions from all known services.
 func (r *PushRedisDB) GetSubscriptions(queryServices []string, subscriber string, logger log.Logger) ([]map[string]string, error) {
+	logger = orDiscard(logger)
 	if len(queryServices) == 0 {
 		definedServices, err := r.GetServiceNames()
 		if err != nil {
@@ -680,7 +691,7 @@ func (r *PushRedisDB) GetSubscriptions(queryServices []string, subscriber string
 			logger.Errorf("Redis error fetching subscriber delivery point data for dp %q user %q service %q, removing...", dpName, subscriber, service)
 			// The multi-get returned nil, so this key is missing.
 			// Try to remove this delivery point as cleanly as possible, removing counts, etc.
-			r.removeMissingDeliveryPointFromServiceSubscriber(service, subscriber, dpName, logger)
+			r.RemoveMissingDeliveryPointFromServiceSubscriber(service, subscriber, dpName, logger)
 		}
 	}
 

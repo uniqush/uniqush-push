@@ -404,7 +404,7 @@ func (backend *PushBackEnd) collectResult(
 
 // NumberOfDeliveryPoints returns the number of delivery points for a given service+subscriber.
 func (backend *PushBackEnd) NumberOfDeliveryPoints(service, sub string, logger log.Logger) int {
-	pspDpList, err := backend.db.GetPushServiceProviderDeliveryPointPairs(service, sub, nil)
+	pspDpList, err := backend.db.GetPushServiceProviderDeliveryPointPairs(service, sub, nil, logger)
 	if err != nil {
 		logger.Errorf("Query=NumberOfDeliveryPoints Service=%v Subscriber=%v Failed: Database Error %v", service, sub, err)
 		return 0
@@ -489,7 +489,7 @@ func (backend *PushBackEnd) pushImpl(
 			pspDpList[0].DeliveryPoint = dest
 		} else {
 			var err error
-			pspDpList, err = backend.db.GetPushServiceProviderDeliveryPointPairs(service, sub, dpNamesRequested)
+			pspDpList, err = backend.db.GetPushServiceProviderDeliveryPointPairs(service, sub, dpNamesRequested, logger)
 			if err != nil {
 				logger.Errorf("RequestID=%v Service=%v Subscriber=%v Failed: Database Error: %v", reqID, service, sub, err)
 				handler.AddDetailsToHandler(APIResponseDetails{RequestID: &reqID, From: &remoteAddr, Service: &service, Subscriber: &sub, Code: UNIQUSH_ERROR_DATABASE, ErrorMsg: strPtrOfErr(err)})

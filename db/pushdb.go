@@ -90,7 +90,12 @@ type PushDatabase interface {
 
 	ModifyDeliveryPoint(dp *push.DeliveryPoint) error
 
-	GetPushServiceProviderDeliveryPointPairs(service string, subscriber string, dpNamesRequested []string) ([]PushServiceProviderDeliveryPointPair, error)
+	// GetPushServiceProviderDeliveryPointPairs takes a logger because it can
+	// skip delivery points -- one whose provider has been removed, say -- and a
+	// device that silently stops receiving pushes is the hardest kind of
+	// failure to diagnose from the outside. GetSubscriptions takes one for the
+	// same reason.
+	GetPushServiceProviderDeliveryPointPairs(service string, subscriber string, dpNamesRequested []string, logger log.Logger) ([]PushServiceProviderDeliveryPointPair, error)
 
 	GetSubscriptions(services []string, user string, logger log.Logger) ([]map[string]string, error)
 
@@ -278,19 +283,62 @@ func (f *pushDatabaseOpts) RemoveDeliveryPointFromService(service string,
 	return nil
 }
 
-// Fetch all of the delivery points of subscriber for a given service. If dpNames is not empty, limit the results to fetch to that subset.
+// orphanedDeliveryPoint is a name in a subscriber's set whose record has gone.
+type orphanedDeliveryPoint struct {
+	service string
+	name    string
+}
+
+// GetPushServiceProviderDeliveryPointPairs fetches all of the delivery points of
+// subscriber for a given service. If dpNames is not empty, the results are
+// limited to that subset.
+//
+// A delivery point this cannot resolve to a provider is skipped and logged, not
+// deleted. That distinction is the whole point: a read must not destroy data.
+// The previous behaviour deleted the delivery point whenever its provider was
+// missing, which turned /rmpsp into an unrecoverable operation -- every device
+// in the service was silently unsubscribed by the next push, and re-adding the
+// provider did not bring them back.
+//
+// The one case that is still cleaned up is a name in the subscriber's set whose
+// delivery.point:<name> record is already gone. There is no data left to lose
+// there, and leaving it means /subscriptions never stops reporting a device
+// that does not exist.
 func (f *pushDatabaseOpts) GetPushServiceProviderDeliveryPointPairs(service string,
-	subscriber string, dpNamesRequested []string) ([]PushServiceProviderDeliveryPointPair, error) {
+	subscriber string, dpNamesRequested []string, logger log.Logger) ([]PushServiceProviderDeliveryPointPair, error) {
+	logger = orDiscard(logger)
+	pairs, orphans, err := f.collectDeliveryPointPairs(service, subscriber, dpNamesRequested, logger)
+	if err != nil {
+		return nil, err
+	}
+
+	// Deliberately outside the read lock. Cleaning up under RLock is what the
+	// previous code did, and RLock admits concurrent readers, so two of them
+	// finding the same orphan would both decrement its counter. Taking the
+	// write lock afterwards costs an uncontended lock on a path that almost
+	// never has orphans to clean.
+	if len(orphans) > 0 {
+		f.forgetOrphanedDeliveryPoints(subscriber, orphans, logger)
+	}
+	return pairs, nil
+}
+
+// collectDeliveryPointPairs does the read pass, returning the pairs it resolved
+// and the delivery points whose records have vanished.
+func (f *pushDatabaseOpts) collectDeliveryPointPairs(service string, subscriber string,
+	dpNamesRequested []string, logger log.Logger) ([]PushServiceProviderDeliveryPointPair, []orphanedDeliveryPoint, error) {
 	f.dblock.RLock()
 	defer f.dblock.RUnlock()
+
 	dpnames, err := f.db.GetDeliveryPointsNameByServiceSubscriber(service, subscriber)
 	if err != nil {
-		return nil, fmt.Errorf("Could not list delivery points for service %s, subscriber %s: %v", service, subscriber, err)
+		return nil, nil, fmt.Errorf("could not list delivery points for service %s, subscriber %s: %v", service, subscriber, err)
 	}
 	if dpnames == nil {
-		return nil, nil
+		return nil, nil, nil
 	}
-	ret := make([]PushServiceProviderDeliveryPointPair, 0, len(dpnames))
+	pairs := make([]PushServiceProviderDeliveryPointPair, 0, len(dpnames))
+	var orphans []orphanedDeliveryPoint
 
 	dpNamesSubset := make(map[string]bool, len(dpNamesRequested))
 	for _, name := range dpNamesRequested {
@@ -306,53 +354,111 @@ func (f *pushDatabaseOpts) GetPushServiceProviderDeliveryPointPairs(service stri
 			dp, e0 := f.db.GetDeliveryPoint(dpName)
 			if e0 != nil {
 				if isErrCausedByMissingKey(e0) {
-					f.db.RemoveDeliveryPoint(dpName)
+					orphans = append(orphans, orphanedDeliveryPoint{service: srv, name: dpName})
 					continue
 				}
-				return nil, fmt.Errorf("Failed to get delivery point info for %s: %v", dpName, e0)
+				return nil, nil, fmt.Errorf("failed to get delivery point info for %s: %v", dpName, e0)
 			}
 			if dp == nil {
 				continue
 			}
 
-			pspname, e := f.db.GetPushServiceProviderNameByServiceDeliveryPoint(srv, dpName)
-			if e != nil {
-				if isErrCausedByMissingKey(e) {
-					f.db.RemoveDeliveryPoint(dpName)
-					continue
-				}
-				return nil, fmt.Errorf("Failed to get psp name for dp %s: %v", dpName, e)
-			}
-
-			if len(pspname) == 0 {
-				continue
-			}
-
-			psp, e1 := f.db.GetPushServiceProvider(pspname)
+			psp, e1 := f.resolveProvider(srv, dpName, logger)
 			if e1 != nil {
-				// If the error was caused because the PSP for the dpName no longer exists, then ignore and remove that delivery point.
-				if isErrCausedByMissingKey(e1) {
-					e2 := f.db.RemoveDeliveryPoint(dpName)
-					e3 := f.db.RemovePushServiceProviderOfServiceDeliveryPoint(srv, dpName)
-					if e2 != nil {
-						return nil, fmt.Errorf("Failed to remove dp %s with invalid psp %s: %v", dpName, pspname, e2)
-					}
-					if e3 != nil {
-						return nil, fmt.Errorf("Failed to remove pspname %s for dp %s (PSP no longer exists): %v", pspname, dpName, e3)
-					}
-					continue
-				}
-				return nil, fmt.Errorf("Failed to get information about psp %s: %v", pspname, e1)
+				return nil, nil, e1
 			}
 			if psp == nil {
+				// Already logged by resolveProvider. The delivery point stays
+				// where it is, so restoring the provider restores the device.
 				continue
 			}
 
-			ret = append(ret, PushServiceProviderDeliveryPointPair{psp, dp})
+			pairs = append(pairs, PushServiceProviderDeliveryPointPair{psp, dp})
 		}
 	}
 
-	return ret, nil
+	return pairs, orphans, nil
+}
+
+// resolveProvider finds the push service provider a delivery point sends through.
+//
+// A nil provider with a nil error means "skip this delivery point": the reason
+// has been logged, and it is not an error for the whole query. A real error
+// means the database itself is unreachable, which the caller must not paper
+// over by returning a short list of devices as though the rest had unsubscribed.
+func (f *pushDatabaseOpts) resolveProvider(service, dpName string, logger log.Logger) (*push.PushServiceProvider, error) {
+	pspname, err := f.db.GetPushServiceProviderNameByServiceDeliveryPoint(service, dpName)
+	if err != nil && !isErrCausedByMissingKey(err) {
+		return nil, fmt.Errorf("failed to get psp name for dp %s: %v", dpName, err)
+	}
+	if len(pspname) == 0 {
+		logger.Infof("Delivery point %q of service %q has no push service provider recorded; skipping it", dpName, service)
+		return nil, nil
+	}
+
+	psp, err := f.db.GetPushServiceProvider(pspname)
+	if err != nil {
+		if isErrCausedByMissingKey(err) {
+			logger.Infof(
+				"Delivery point %q of service %q refers to push service provider %q, which no longer exists; "+
+					"skipping it. Re-add that provider with /addpsp to make this device reachable again.",
+				dpName, service, pspname)
+			return nil, nil
+		}
+		return nil, fmt.Errorf("failed to get information about psp %s: %v", pspname, err)
+	}
+	if psp == nil {
+		return nil, nil
+	}
+	return psp, nil
+}
+
+// forgetOrphanedDeliveryPoints removes names whose delivery point record is gone.
+func (f *pushDatabaseOpts) forgetOrphanedDeliveryPoints(subscriber string, orphans []orphanedDeliveryPoint, logger log.Logger) {
+	f.dblock.Lock()
+	defer f.dblock.Unlock()
+
+	for _, orphan := range orphans {
+		// Re-check under the write lock. Another goroutine may have cleaned this
+		// up between the read pass and here, and the counter must not be
+		// decremented twice for one delivery point.
+		if _, err := f.db.GetDeliveryPoint(orphan.name); err == nil {
+			continue
+		} else if !isErrCausedByMissingKey(err) {
+			continue
+		}
+		logger.Infof("Removing delivery point %q of service %q from subscriber %q: its record no longer exists",
+			orphan.name, orphan.service, subscriber)
+		f.db.RemoveMissingDeliveryPointFromServiceSubscriber(orphan.service, subscriber, orphan.name, logger)
+		if err := f.db.RemovePushServiceProviderOfServiceDeliveryPoint(orphan.service, orphan.name); err != nil {
+			logger.Errorf("Could not remove the provider binding for orphaned delivery point %q of service %q: %v",
+				orphan.name, orphan.service, err)
+		}
+	}
+}
+
+// discardLogger swallows everything written to it.
+//
+// A logger built over a nil writer: log.NewLogger substitutes a writer that
+// discards, so this needs no type of its own. Package-level because the read
+// path allocating one per call would be silly.
+var discardLogger = log.NewLogger(nil, "", log.LOGLEVEL_SILENT)
+
+// orDiscard turns a nil logger into one that discards, at the boundary.
+//
+// Called once by each exported method that accepts a logger, so that nothing
+// below has to think about it. The alternative -- a nil check at each call
+// site -- was tried first and was worse than no defence at all: it covered
+// this file only, while RemoveMissingDeliveryPointFromServiceSubscriber, which
+// the same logger is handed to, logs unconditionally. So a nil logger got past
+// the checks that looked like protection and panicked in the one place that
+// reports a redis failure, which is to say on the error path, which is to say
+// exactly where a panic is least welcome and least likely to be noticed first.
+func orDiscard(logger log.Logger) log.Logger {
+	if logger == nil {
+		return discardLogger
+	}
+	return logger
 }
 
 func (f *pushDatabaseOpts) ModifyPushServiceProvider(psp *push.PushServiceProvider) error {
@@ -417,7 +523,7 @@ func (f *pushDatabaseOpts) GetSubscriptions(services []string, user string, logg
 	// f.dblock.RLock()
 	// defer f.dblock.RUnlock()
 	// End note.
-	subs, err := f.db.GetSubscriptions(services, user, logger)
+	subs, err := f.db.GetSubscriptions(services, user, orDiscard(logger))
 	if err != nil {
 		return nil, fmt.Errorf("GetSubscriptions: %v", err)
 	}
