@@ -737,7 +737,12 @@ func (prp *HTTPPushRequestProcessor) sendRequest(wg *sync.WaitGroup, client HTTP
 	// the previous bucket's, it is still valid, and deterministic signing means
 	// this process can reproduce it even if another instance sent it. Retrying
 	// with it succeeds immediately rather than failing for up to 20 minutes.
-	if fallbackAuthorization != "" && reasonOf(response, responseBody) == reasonTooManyProviderTokenUpdates {
+	// Parsed once and carried, rather than re-unmarshalled at each decision.
+	// Three passes over the same small body is not a cost worth worrying about;
+	// three chances for the checks to disagree about what the response said is.
+	reason := reasonOf(response, responseBody)
+
+	if fallbackAuthorization != "" && reason == reasonTooManyProviderTokenUpdates {
 		// Remember the refusal, so the rest of this bucket's pushes go straight
 		// to the token Apple accepted instead of each paying for the discovery.
 		//
@@ -771,6 +776,7 @@ func (prp *HTTPPushRequestProcessor) sendRequest(wg *sync.WaitGroup, client HTTP
 			return
 		}
 		response, responseBody = retryResponse, retryBody
+		reason = reasonOf(response, responseBody)
 
 		// Whatever the retry says, it says it about the fallback's bucket.
 		acceptedBucket = fallbackBucket
@@ -795,7 +801,7 @@ func (prp *HTTPPushRequestProcessor) sendRequest(wg *sync.WaitGroup, client HTTP
 	// signingBucket *is* that bucket on every later batch and the probe is
 	// correctly skipped; when the memo lapses and the current bucket comes back,
 	// it is unconfirmed again and costs exactly one more probe.
-	if token != nil && reasonOf(response, responseBody) != reasonTooManyProviderTokenUpdates {
+	if token != nil && reason != reasonTooManyProviderTokenUpdates {
 		if !acceptedBucket.IsZero() {
 			token.noteAccepted(acceptedBucket)
 		}

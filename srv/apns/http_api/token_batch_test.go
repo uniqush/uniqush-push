@@ -77,7 +77,11 @@ func runBatch(t *testing.T, processor *HTTPPushRequestProcessor, psp *push.PushS
 
 	mockAPNSRequest(processor, func(r *http.Request) (*http.Response, *mockResponse, error) {
 		auth := ""
-		if values := r.Header["authorization"]; len(values) > 0 {
+		// Lowercase, not http.CanonicalHeaderKey: HTTP/2 requires lowercase
+		// field names on the wire and the processor writes the map key that
+		// way, so a canonical lookup would silently find nothing.
+		values := r.Header["authorization"] //nolint:staticcheck // SA1008: lowercase is intentional for HTTP/2
+		if len(values) > 0 {
 			auth = values[0]
 		}
 		<-lock

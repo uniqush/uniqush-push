@@ -384,10 +384,13 @@ func TestMultiInstanceAcrossSeveralBucketsMintsOnePerBucket(t *testing.T) {
 	instances := []*instance{f.start("one", 0), f.start("two", 0), f.start("three", 0)}
 
 	// Two hours in ten-minute steps, counting the buckets actually visited
-	// rather than predicting them. The first draft asserted four from a
-	// back-of-envelope "two hours over whole buckets" and was wrong: the
-	// last push lands at +110 minutes, inside the third bucket, so only three
-	// are ever entered. Deriving it keeps the test honest if the interval moves.
+	// rather than predicting them.
+	//
+	// Derived rather than hardcoded because the arithmetic is easy to get
+	// wrong and easier to leave stale: an earlier draft asserted a fixed count
+	// from a back-of-envelope reading of "two hours over whole buckets", and it
+	// stopped describing the run as soon as the interval changed. Counting what
+	// the run actually enters keeps this honest the next time it moves.
 	visited := map[time.Time]bool{}
 	deviceToken := byte(0x60)
 	for step := 0; step < 12; step++ {
