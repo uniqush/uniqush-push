@@ -46,18 +46,26 @@ type fleet struct {
 	t      *testing.T
 	server *apnstest.Server
 	key    *apnstest.SigningKey
-	now    time.Time
+
+	// clock is the shared wall clock. Guarded, because the test goroutine moves
+	// it between pushes while the simulator reads it on an HTTP handler
+	// goroutine, and a loopback round trip is not an ordering the race detector
+	// recognises. See fakeClock in conformance_token_test.go.
+	clock *fakeClock
 }
+
+// now reads the shared wall clock.
+func (f *fleet) now() time.Time { return f.clock.Now() }
 
 // newFleet starts a simulator demanding token auth, with the wall clock at start.
 func newFleet(t *testing.T, start time.Time) *fleet {
 	t.Helper()
 
 	server, key := newTokenSimulator(t)
-	f := &fleet{t: t, server: server, key: key, now: start}
+	f := &fleet{t: t, server: server, key: key, clock: newFakeClock(start)}
 	// The simulator reads the shared wall clock, so every instance's traffic is
 	// judged against one timeline no matter how their own clocks are skewed.
-	server.SetClock(func() time.Time { return f.now })
+	server.SetClock(f.clock.Now)
 	return f
 }
 
@@ -76,7 +84,7 @@ func (f *fleet) start(name string, skew time.Duration) *instance {
 		skew:    skew,
 	}
 
-	clock := func() time.Time { return f.now.Add(skew) }
+	clock := func() time.Time { return f.clock.Now().Add(skew) }
 	service.httpRequestProcessor.(interface{ SetClock(func() time.Time) }).SetClock(clock)
 	return inst
 }
@@ -93,7 +101,7 @@ func (f *fleet) startDisposable(name string) *instance {
 	service := NewPushService().(*pushService)
 	service.SetErrorReportChan(make(chan push.Error, 100))
 	service.httpRequestProcessor.(interface{ SetClock(func() time.Time) }).
-		SetClock(func() time.Time { return f.now })
+		SetClock(f.clock.Now)
 
 	return &instance{name: name, service: service, psp: newTokenPSP(f.t, f.server, f.key)}
 }
@@ -126,13 +134,13 @@ func (f *fleet) startWithKeyAt(name, authKeyPath string) *instance {
 
 	service, _ := newSimulatorService(f.t)
 	service.httpRequestProcessor.(interface{ SetClock(func() time.Time) }).
-		SetClock(func() time.Time { return f.now })
+		SetClock(f.clock.Now)
 
 	return &instance{name: name, service: service, psp: psp}
 }
 
 // advance moves the shared wall clock, and with it every instance's clock.
-func (f *fleet) advance(d time.Duration) { f.now = f.now.Add(d) }
+func (f *fleet) advance(d time.Duration) { f.clock.Advance(d) }
 
 // push sends one notification from an instance and fails the test if it did not
 // arrive.
@@ -144,7 +152,7 @@ func (f *fleet) push(inst *instance, deviceToken byte) {
 
 	if len(results) != 1 || results[0].Err != nil {
 		f.t.Fatalf("Push from %s at %s failed: %s",
-			inst.name, f.now.Format(time.TimeOnly), describeResults(results))
+			inst.name, f.now().Format(time.TimeOnly), describeResults(results))
 	}
 }
 
@@ -383,7 +391,7 @@ func TestMultiInstanceAcrossSeveralBucketsMintsOnePerBucket(t *testing.T) {
 	visited := map[time.Time]bool{}
 	deviceToken := byte(0x60)
 	for step := 0; step < 12; step++ {
-		visited[bucketStart(f.now)] = true
+		visited[bucketStart(f.now())] = true
 		for _, inst := range instances {
 			f.push(inst, deviceToken)
 			deviceToken++
