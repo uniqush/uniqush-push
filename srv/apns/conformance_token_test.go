@@ -3,6 +3,7 @@ package apns
 import (
 	"net/http"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -69,13 +70,58 @@ func newTokenPSP(t *testing.T, server *apnstest.Server, key *apnstest.SigningKey
 	return psp
 }
 
+// fakeClock is a clock the test goroutine moves and another goroutine reads.
+//
+// Guarded, because both of those things are true at once. The simulator reads
+// its clock on the HTTP handler goroutine while the test advances it between
+// pushes, and there is no happens-before edge between the two: the round trip
+// travels over a loopback socket, which is not something the race detector
+// models, and the server's own mutex does not order a write the test makes
+// without taking it. A plain time.Time field there is a data race that CI runs
+// with -race and would eventually catch.
+//
+// The processor's clock was safe by accident -- results come back over a Go
+// channel, which does order things -- but it is the same shape, so it uses the
+// same type rather than relying on a reader to work out which of the two is
+// which.
+type fakeClock struct {
+	mutex sync.Mutex
+	now   time.Time
+}
+
+func newFakeClock(start time.Time) *fakeClock {
+	return &fakeClock{now: start}
+}
+
+// Now reads the clock. Passed directly to SetClock on both sides.
+func (c *fakeClock) Now() time.Time {
+	c.mutex.Lock()
+	defer c.mutex.Unlock()
+	return c.now
+}
+
+// Advance moves the clock forward.
+func (c *fakeClock) Advance(d time.Duration) {
+	c.mutex.Lock()
+	defer c.mutex.Unlock()
+	c.now = c.now.Add(d)
+}
+
+// Set moves the clock to a specific instant, for a test that jumps rather than
+// advances.
+func (c *fakeClock) Set(t time.Time) {
+	c.mutex.Lock()
+	defer c.mutex.Unlock()
+	c.now = t
+}
+
 // setProcessorClock points the push service's HTTP/2 processor at a fake clock,
-// and returns a function to move it.
-func setProcessorClock(service *pushService, start time.Time) func(time.Duration) {
-	current := start
+// and returns it.
+func setProcessorClock(service *pushService, start time.Time) *fakeClock {
+	clock := newFakeClock(start)
 	processor := service.httpRequestProcessor.(interface{ SetClock(func() time.Time) })
-	processor.SetClock(func() time.Time { return current })
-	return func(advance time.Duration) { current = current.Add(advance) }
+	processor.SetClock(clock.Now)
+	return clock
 }
 
 // TestConformanceTokenAuthPush is the baseline: a push authenticated with a
@@ -132,15 +178,15 @@ func TestConformanceTokenIsReusedAcrossPushes(t *testing.T) {
 	psp := newTokenPSP(t, server, key)
 
 	start := time.Date(2026, 8, 31, 9, 0, 0, 0, time.UTC)
-	advance := setProcessorClock(service, start)
-	server.SetClock(func() time.Time { return start })
+	processorClock := setProcessorClock(service, start)
+	server.SetClock(newFakeClock(start).Now)
 
 	for i := 0; i < 5; i++ {
 		results := pushToSimulator(t, service, psp, createNotification("Hello World"), apnstest.DeviceToken(byte(0xc0+i)))
 		if len(results) != 1 || results[0].Err != nil {
 			t.Fatalf("Push %d failed: %s", i, describeResults(results))
 		}
-		advance(time.Minute)
+		processorClock.Advance(time.Minute)
 	}
 
 	if tokens := server.IssuedTokens(); len(tokens) != 1 {
@@ -160,12 +206,13 @@ func TestConformanceTokenIsRefreshedBeforeItExpires(t *testing.T) {
 	service, _ := newSimulatorService(t)
 	psp := newTokenPSP(t, server, key)
 
-	current := time.Date(2026, 8, 31, 9, 0, 0, 0, time.UTC)
-	advance := setProcessorClock(service, current)
-	server.SetClock(func() time.Time { return current })
+	start := time.Date(2026, 8, 31, 9, 0, 0, 0, time.UTC)
+	processorClock := setProcessorClock(service, start)
+	serverClock := newFakeClock(start)
+	server.SetClock(serverClock.Now)
 	moveBoth := func(d time.Duration) {
-		current = current.Add(d)
-		advance(d)
+		serverClock.Advance(d)
+		processorClock.Advance(d)
 	}
 
 	results := pushToSimulator(t, service, psp, createNotification("Hello World"), apnstest.DeviceToken(0xd1))
@@ -206,10 +253,10 @@ func TestConformanceMintFloorIsMeasuredOnArrival(t *testing.T) {
 	psp := newTokenPSP(t, server, key)
 
 	start := time.Date(2026, 8, 31, 9, 0, 0, 0, time.UTC)
-	advance := setProcessorClock(service, start)
+	processorClock := setProcessorClock(service, start)
 	// The simulator's clock never moves: every token arrives at the same instant
 	// as far as it is concerned.
-	server.SetClock(func() time.Time { return start })
+	server.SetClock(newFakeClock(start).Now)
 
 	results := pushToSimulator(t, service, psp, createNotification("first"), apnstest.DeviceToken(0xa1))
 	if len(results) != 1 || results[0].Err != nil {
@@ -219,7 +266,7 @@ func TestConformanceMintFloorIsMeasuredOnArrival(t *testing.T) {
 	// Past uniqush's refresh interval, so it signs a new token whose iat is 50
 	// minutes after the first -- comfortably outside Apple's 20-minute floor, if
 	// you believe the claim. It arrives immediately after the previous one.
-	advance(50 * time.Minute)
+	processorClock.Advance(50 * time.Minute)
 
 	results = pushToSimulator(t, service, psp, createNotification("second"), apnstest.DeviceToken(0xa2))
 	if len(results) != 1 || results[0].Err == nil {
@@ -258,14 +305,14 @@ func TestConformanceExpiredTokenIsRejected(t *testing.T) {
 
 	start := time.Date(2026, 8, 31, 9, 0, 0, 0, time.UTC)
 	setProcessorClock(service, start) // never advances: uniqush keeps re-sending one token
-	serverNow := start
-	server.SetClock(func() time.Time { return serverNow })
+	serverClock := newFakeClock(start)
+	server.SetClock(serverClock.Now)
 
 	if results := pushToSimulator(t, service, psp, createNotification("Hello"), apnstest.DeviceToken(0xe1)); results[0].Err != nil {
 		t.Fatalf("The first push failed: %s", describeResults(results))
 	}
 
-	serverNow = start.Add(90 * time.Minute)
+	serverClock.Set(start.Add(90 * time.Minute))
 
 	results := pushToSimulator(t, service, psp, createNotification("Hello"), apnstest.DeviceToken(0xe2))
 	if len(results) != 1 || results[0].Err == nil {
@@ -362,6 +409,14 @@ func TestConformanceInvalidProviderTokenIsAProviderFailure(t *testing.T) {
 	}
 	if _, unsubscribed := results[0].Err.(*push.UnsubscribeUpdate); unsubscribed {
 		t.Error("An unrecognised signing key must not unsubscribe the device")
+	}
+	// The reason, not only the type. MissingProviderToken -- what Apple answers
+	// when no authorization header arrives at all -- is also a provider failure,
+	// so a type-only assertion passes just as happily if uniqush stops sending
+	// the token it is supposed to be sending wrongly.
+	if !strings.Contains(results[0].Err.Error(), apnstest.ReasonInvalidProviderToken) {
+		t.Errorf("Expected the failure to name %s, got: %v",
+			apnstest.ReasonInvalidProviderToken, results[0].Err)
 	}
 }
 
