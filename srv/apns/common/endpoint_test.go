@@ -1,6 +1,7 @@
 package common
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -66,6 +67,7 @@ func TestResolveEndpointPrefersAnExplicitEndpoint(t *testing.T) {
 }
 
 func TestValidateEndpoint(t *testing.T) {
+	allowNonAppleEndpoints(t)
 	valid := []string{
 		"https://localhost:8443",
 		"https://localhost:8443/",
@@ -117,6 +119,7 @@ func TestValidateEndpoint(t *testing.T) {
 // check that the host answering for api.push.apple.com is Apple, which is
 // exactly the sort of thing that survives a copy-pasted /addpsp for years.
 func TestSkipVerifyIsRefusedForApple(t *testing.T) {
+	allowNonAppleEndpoints(t)
 	for _, endpoint := range []string{HostProduction, HostDevelopment} {
 		if err := ValidateEndpoint(endpoint, true); err == nil {
 			t.Errorf("Expected skipverify to be refused for %s", endpoint)
@@ -384,4 +387,167 @@ func TestPortsOutsideTheValidRangeAreRefused(t *testing.T) {
 			t.Errorf("Expected %q to be accepted, got: %v", endpoint, err)
 		}
 	}
+}
+
+// allowNonAppleEndpoints permits non-Apple destinations for one test.
+//
+// Most of what this file checks -- schemes, paths, query delimiters, empty
+// hosts -- is about the shape of an endpoint, and the only endpoints with an
+// interesting shape are the ones nobody would point at Apple. Those cases are
+// about the parser, not the policy, so they turn the policy off the way an
+// operator would.
+func allowNonAppleEndpoints(t *testing.T) {
+	t.Helper()
+	previous := AllowsNonAppleEndpoints()
+	SetAllowNonAppleEndpoints(true)
+	t.Cleanup(func() { SetAllowNonAppleEndpoints(previous) })
+}
+
+// TestNonAppleEndpointsAreRefusedByDefault covers the gate itself.
+//
+// An endpoint is where every push for a service goes, carrying device tokens
+// and the payload, and on a certificate provider it is also where the APNs
+// client certificate gets presented. Anyone who can reach /addpsp could
+// therefore redirect a service's whole push stream by supplying one, so the
+// capability is opt-in.
+func TestNonAppleEndpointsAreRefusedByDefault(t *testing.T) {
+	if AllowsNonAppleEndpoints() {
+		t.Fatal("Non-Apple endpoints should be refused unless uniqush.conf enables them")
+	}
+
+	for _, endpoint := range []string{
+		"https://apns.attacker.example",
+		"https://localhost:8443",
+		// Not Apple: the leading dot in the suffix is what stops this matching,
+		// and it is the shape an attacker would choose.
+		"https://evilpush.apple.com",
+	} {
+		if err := ValidateEndpoint(endpoint, false); err == nil {
+			t.Errorf("Expected %q to be refused while non-Apple endpoints are disabled", endpoint)
+		} else if !errors.Is(err, ErrNonAppleEndpoint) {
+			t.Errorf("Expected %q to be refused as a non-Apple endpoint, got: %v", endpoint, err)
+		}
+	}
+
+	// Apple's own hosts are unaffected by the flag, in either position.
+	for _, endpoint := range []string{"https://api.push.apple.com", "https://api.sandbox.push.apple.com"} {
+		if err := ValidateEndpoint(endpoint, false); err != nil {
+			t.Errorf("Expected Apple's own endpoint %q to be accepted, got: %v", endpoint, err)
+		}
+	}
+}
+
+// TestTheFlagDoesNotExcuseAMalformedEndpoint keeps the two rules independent.
+//
+// Turning the flag on says where pushes may go, not that anything goes. An
+// operator who enables it should still be told that their URL has a path.
+func TestTheFlagDoesNotExcuseAMalformedEndpoint(t *testing.T) {
+	allowNonAppleEndpoints(t)
+
+	for _, endpoint := range []string{
+		"http://relay.example",
+		"https://relay.example/3/device",
+		"https://relay.example?x=1",
+		"https://:443",
+	} {
+		if err := ValidateEndpoint(endpoint, false); err == nil {
+			t.Errorf("Expected %q to be refused even with non-Apple endpoints permitted", endpoint)
+		} else if errors.Is(err, ErrNonAppleEndpoint) {
+			t.Errorf("Expected %q to be refused for its shape, not by the policy: %v", endpoint, err)
+		}
+	}
+}
+
+// TestAMalformedEndpointIsReportedAsMalformed pins the ordering of the two
+// ways an endpoint can be refused.
+//
+// An endpoint can be malformed -- wrong scheme, a path, a query delimiter -- and
+// it can be disallowed by policy for pointing somewhere other than Apple. An
+// endpoint that is *both* is reported as malformed, because that names a mistake
+// to fix rather than a policy to change: an operator who enabled the opt-in to
+// get past the policy error would hit the parse error immediately afterwards.
+func TestAMalformedEndpointIsReportedAsMalformed(t *testing.T) {
+	err := ValidateEndpoint("http://relay.example", false)
+	if err == nil {
+		t.Fatal("Expected an http:// endpoint to be refused")
+	}
+	if errors.Is(err, ErrNonAppleEndpoint) {
+		t.Errorf("An endpoint that is malformed and not permitted should be reported as malformed, got: %v", err)
+	}
+}
+
+// TestStoredEndpointsAreRevalidatedAtPushTime covers the guard on the push
+// path rather than the one at /addpsp.
+//
+// A provider read back from the database is rebuilt by
+// BuildPushServiceProviderFromBytes, which unserializes it directly and never
+// runs the builder -- so nothing it carries has necessarily been validated by
+// the current code, or by any code at all if the row was written by hand.
+//
+// Checking only the hostname there was not enough, and the gap was the one that
+// matters most: "http://api.push.apple.com" satisfies any Apple-host test, and
+// would have carried device tokens and payload contents in the clear.
+func TestStoredEndpointsAreRevalidatedAtPushTime(t *testing.T) {
+	stored := func(endpoint string, extra map[string]string) *push.PushServiceProvider {
+		psp := push.NewEmptyPushServiceProvider()
+		psp.FixedData["service"] = "stored"
+		psp.VolatileData[EndpointKey] = endpoint
+		for key, value := range extra {
+			psp.VolatileData[key] = value
+		}
+		return psp
+	}
+
+	t.Run("cleartext to Apple is refused", func(t *testing.T) {
+		// Passes IsAppleHost, so a hostname-only check let it through.
+		if err := CheckEndpointAllowed(stored("http://api.push.apple.com", nil)); err == nil {
+			t.Error("Expected a stored http:// endpoint to be refused at push time; " +
+				"device tokens and the payload would go out in the clear")
+		}
+	})
+
+	t.Run("cleartext elsewhere is refused even when the opt-in is on", func(t *testing.T) {
+		allowNonAppleEndpoints(t)
+		if err := CheckEndpointAllowed(stored("http://relay.example", nil)); err == nil {
+			t.Error("Expected a stored http:// endpoint to be refused even with non-Apple " +
+				"endpoints permitted; the opt-in says where pushes may go, not that anything goes")
+		}
+	})
+
+	t.Run("a path is refused", func(t *testing.T) {
+		// uniqush appends /3/device/<token>, so a stored path produces a URL
+		// nobody intended.
+		if err := CheckEndpointAllowed(stored("https://api.push.apple.com/oops", nil)); err == nil {
+			t.Error("Expected a stored endpoint carrying a path to be refused at push time")
+		}
+	})
+
+	t.Run("non-Apple is refused by default", func(t *testing.T) {
+		err := CheckEndpointAllowed(stored("https://relay.example", nil))
+		if err == nil {
+			t.Fatal("Expected a stored non-Apple endpoint to be refused while the opt-in is off")
+		}
+		if !errors.Is(err, ErrNonAppleEndpoint) {
+			t.Errorf("Expected the policy error, got: %v", err)
+		}
+	})
+
+	t.Run("Apple is allowed", func(t *testing.T) {
+		if err := CheckEndpointAllowed(stored(HostProduction, nil)); err != nil {
+			t.Errorf("Expected Apple's own endpoint to be allowed, got: %v", err)
+		}
+	})
+
+	t.Run("a legacy stale skipverify against Apple still pushes", func(t *testing.T) {
+		// skipverify predates the HTTP/2 path and was ignored there, so an
+		// operator who set it years ago for the binary-protocol simulator still
+		// has it stored. ShouldSkipVerify already refuses to honour it against
+		// Apple; this check must not go further and refuse the push itself,
+		// which would turn a stale flag into an outage.
+		psp := stored(HostProduction, map[string]string{SkipVerifyKey: "true"})
+		if err := CheckEndpointAllowed(psp); err != nil {
+			t.Errorf("A provider carrying a stale skipverify against Apple must still push "+
+				"(verification stays on); got: %v", err)
+		}
+	})
 }

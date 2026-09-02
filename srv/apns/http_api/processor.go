@@ -307,6 +307,28 @@ func defaultClientFactory(transport *http.Transport) HTTPClient {
 	return &http.Client{
 		Transport: transport,
 		Timeout:   20 * time.Second,
+		// Redirects are refused, not followed.
+		//
+		// APNs does not redirect, so nothing is lost -- and following one would
+		// undo the endpoint policy entirely. Everything uniqush checks about a
+		// destination happens once, before the first request: the scheme, the
+		// host, the shape of the URL. A 307 or 308 replays the same request
+		// somewhere the operator never named, carrying the device token in the
+		// path, the notification in the body, and the apns-topic identifying the
+		// app.
+		//
+		// The certificate is the worst of it. The redirected request goes out on
+		// this same transport, whose TLSClientConfig carries the provider's APNs
+		// client certificate, so the new host can simply ask for it during the
+		// handshake -- from a server that only had to answer one push with a
+		// Location header.
+		//
+		// ErrUseLastResponse rather than an error, so the 3xx comes back as an
+		// ordinary response and handlePushResponseBody can report it against the
+		// provider instead of surfacing as a transport failure with no detail.
+		CheckRedirect: func(*http.Request, []*http.Request) error {
+			return http.ErrUseLastResponse
+		},
 	}
 }
 
@@ -440,6 +462,15 @@ func (prp *HTTPPushRequestProcessor) sendRequests(request *common.PushRequest) {
 	}
 
 	psp := request.PSP
+	// Re-checked here, not only at /addpsp, because a provider loaded from the
+	// database never passes through the builder. See common.CheckEndpointAllowed.
+	if err := common.CheckEndpointAllowed(psp); err != nil {
+		for range request.Devtokens {
+			request.ErrChan <- push.NewBadPushServiceProviderWithDetails(psp, err.Error())
+		}
+		return
+	}
+
 	http2UrlHost := common.ResolveEndpoint(psp)
 	client, releaseClient, err := prp.GetClient(psp)
 	if err != nil {
@@ -532,6 +563,19 @@ var permanentTokenFailureReasons = map[string]bool{
 
 // handle the response body of an HTTP/2 push attempt to APNs.
 func (prp *HTTPPushRequestProcessor) handlePushResponseBody(response *http.Response, responseBody []byte, messageID uint32, errChan chan<- push.Error, resChan chan<- *common.APNSResult) {
+	// Redirects are deliberately not followed -- see defaultClientFactory -- so
+	// a 3xx arrives here as the response rather than as whatever the next hop
+	// would have said. Reported specifically, because the alternative is the
+	// "Unknown error, no response body" below, which tells an operator nothing
+	// about what actually happened or why uniqush declined to go along with it.
+	if response.StatusCode >= 300 && response.StatusCode < 400 {
+		errChan <- push.NewErrorf("APNs replied with HTTP %d redirecting to %q, which uniqush "+
+			"does not follow: the next hop would receive the device token, the notification and "+
+			"this provider's client certificate",
+			response.StatusCode, response.Header.Get("Location"))
+		return
+	}
+
 	if len(responseBody) == 0 {
 		// A successful push returns 200 with an empty body.
 		if response.StatusCode == http.StatusOK {

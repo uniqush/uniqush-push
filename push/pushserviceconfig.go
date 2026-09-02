@@ -32,3 +32,11 @@ func (config *PushServiceConfig) GetInt(option string) (int, error) {
 	}
 	return config.c.GetInt(config.name, option)
 }
+
+// GetBool will return a boolean for the given option from this push service's section of the configuration file.
+func (config *PushServiceConfig) GetBool(option string) (bool, error) {
+	if config.c == nil {
+		return false, errors.New("No config")
+	}
+	return config.c.GetBool(config.name, option)
+}

@@ -3,6 +3,53 @@ uniqush-push NEWS
 Unreleased
 -------------------------------
 
+### APNs: HTTP/2 endpoint is configurable, and non-Apple destinations are opt-in
+
+- Feature: **`/addpsp` accepts `endpoint` and `cacert` for `apns`.** `endpoint`
+  is the base URL HTTP/2 pushes go to, `cacert` a PEM bundle to verify it
+  against. Together they make it possible to point uniqush at a simulator or a
+  relay without disabling certificate verification -- which is what
+  `skipverify` did, and what it is now refused for doing against Apple.
+
+  A provider that sets neither keeps sending exactly where it used to: the
+  environment is still inferred from the binary protocol's `addr`. Both are
+  cleared when omitted from a later `/addpsp`, the same way `bundleid` has
+  always behaved.
+
+- Security: **a non-Apple `endpoint` is refused unless uniqush.conf permits
+  it.** Set `allow_non_apple_endpoints=true` in the `[apns]` section to enable
+  the capability.
+
+  An endpoint decides where every push for a service goes, carrying device
+  tokens and the notification payload, and on a certificate provider it is also
+  where the APNs client certificate is presented during the handshake. Without
+  a gate, anyone who can reach `/addpsp` could redirect a service's entire push
+  stream to a host they control. The setting is re-checked when a push is sent
+  and not only at registration, because a provider loaded from redis never
+  passes through the code that validates it.
+
+  Nothing existing breaks: `endpoint` is new in this release, so no stored
+  provider has one.
+
+- Bugfix: **`skipverify` is refused for Apple's own hosts.** It predates the
+  HTTP/2 path and was silently ignored there, so an operator who set it years
+  ago for the binary-protocol simulator still has it stored. Honouring it now
+  would have disabled certificate verification on connections to Apple. The
+  check matches on the `push.apple.com` domain and normalises the hostname
+  through IDNA first, because `https://api.push.apple.com\u3002` is a URL
+  net/http dials as Apple and a byte comparison does not.
+
+- Bugfix: **`Finalize` no longer deadlocks.** It took the client cache's write
+  lock and returned still holding it, so anything touching the cache afterwards
+  blocked forever. Shutdown mostly hid this; a `Finalize` followed by any
+  further push did not.
+
+- **API change for embedders:** `http_api.HTTPPushRequestProcessor.GetClient`
+  now returns `(HTTPClient, func(), error)`. The second value releases the
+  borrow and must be called exactly once, and never on the error path where it
+  is nil. Borrowing is what lets a client superseded mid-push stay alive until
+  its last request drains instead of being closed underneath it.
+
 ### FCM: migrated to HTTP v1
 
 - Bugfix: **`fcm` now uses FCM's HTTP v1 API.** It previously posted to

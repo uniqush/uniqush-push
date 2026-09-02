@@ -118,7 +118,22 @@ func newSimulatorPSP(t *testing.T, server *apnstest.Server, extra map[string]str
 	return psp
 }
 
+// allowNonAppleEndpoints permits simulator endpoints for one test.
+//
+// Every test in this package points a provider at a local simulator, which is
+// exactly the destination /addpsp refuses unless uniqush.conf opts in. That
+// refusal is the feature -- see common.ErrNonAppleEndpoint -- so these tests
+// enable it the way an operator running against a simulator would, rather than
+// the package defaulting to permissive and leaving the guard untested.
+func allowNonAppleEndpoints(t *testing.T) {
+	t.Helper()
+	previous := common.AllowsNonAppleEndpoints()
+	common.SetAllowNonAppleEndpoints(true)
+	t.Cleanup(func() { common.SetAllowNonAppleEndpoints(previous) })
+}
+
 func startSimulator(t *testing.T) *apnstest.Server {
+	allowNonAppleEndpoints(t)
 	t.Helper()
 	server, err := apnstest.NewServer()
 	if err != nil {
@@ -586,6 +601,7 @@ func buildAPNSProvider(t *testing.T, kv map[string]string) (*push.PushServicePro
 // verification against Apple, because that is a setting people copy from a
 // testing recipe and never look at again.
 func TestSkipVerifyIsRefusedForAppleThroughAddpsp(t *testing.T) {
+	allowNonAppleEndpoints(t)
 	for _, host := range []string{common.HostProduction, common.HostDevelopment} {
 		t.Run(host, func(t *testing.T) {
 			_, err := buildAPNSProvider(t, map[string]string{
@@ -747,6 +763,7 @@ func TestBuilderRecordsACredentialRevision(t *testing.T) {
 // a trap, and the doc comment on buildHTTP2Destination promises the opposite:
 // that absent settings fall back to the addr-inferred host and the system roots.
 func TestEndpointAndCACertAreClearedWhenAbsent(t *testing.T) {
+	allowNonAppleEndpoints(t)
 	psp := buildIntoExistingProvider(t, map[string]string{
 		common.EndpointKey: "https://localhost:8443",
 		common.CACertKey:   "/etc/uniqush/simulator-ca.pem",
@@ -770,6 +787,7 @@ func TestEndpointAndCACertAreClearedWhenAbsent(t *testing.T) {
 // an operator who followed a testing recipe with no way to restore it short of
 // deleting the provider -- and with it, every subscription in the service.
 func TestSkipVerifyIsClearedWhenAbsent(t *testing.T) {
+	allowNonAppleEndpoints(t)
 	psp := buildIntoExistingProvider(t, map[string]string{
 		common.SkipVerifyKey: "true",
 	}, nil)
@@ -836,5 +854,32 @@ func TestConformanceOversizedPayloadIsRejectedLocally(t *testing.T) {
 	}
 	if requests := server.Requests(); len(requests) != 0 {
 		t.Errorf("Expected the oversized push not to be sent, but %d reached the server", len(requests))
+	}
+}
+
+// TestAddpspRefusesANonAppleEndpointByDefault is the end-to-end half of the
+// policy: the unit test in srv/apns/common covers the rule, this covers the
+// door it is fitted to.
+//
+// Registration is where the mistake is made and where it can still be refused
+// cheaply. Once a provider is stored, every push for that service goes to
+// whatever host it names -- carrying device tokens and payload, and presenting
+// the client certificate on the way -- and the only remaining defence is the
+// re-check on the push path.
+func TestAddpspRefusesANonAppleEndpointByDefault(t *testing.T) {
+	ensureAPNSRegistered()
+
+	if common.AllowsNonAppleEndpoints() {
+		t.Fatal("Expected non-Apple endpoints to be disabled by default")
+	}
+
+	_, err := buildAPNSProvider(t, map[string]string{
+		"endpoint": "https://apns.attacker.example",
+	})
+	if err == nil {
+		t.Fatal("Expected /addpsp to refuse an endpoint that is not Apple's")
+	}
+	if !strings.Contains(err.Error(), "allow_non_apple_endpoints") {
+		t.Errorf("Expected the refusal to name the setting that permits it, got: %v", err)
 	}
 }

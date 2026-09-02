@@ -26,6 +26,7 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"sync/atomic"
 
 	"golang.org/x/net/idna"
 
@@ -187,6 +188,74 @@ func ShouldSkipVerify(psp *push.PushServiceProvider) bool {
 	return !IsAppleHost(ResolveEndpoint(psp))
 }
 
+// allowNonApple governs whether a provider may be pointed at a host other than
+// Apple's own. Off unless uniqush.conf turns it on.
+//
+// The endpoint setting exists so that uniqush can be pointed at a simulator, a
+// staging relay, or a proxy. That is a real need, and it is also a way to make
+// every push for a service go somewhere else: a push carries device tokens and
+// the notification payload to whatever host it dials, and on a certificate
+// provider it presents the APNs client certificate during that handshake. So
+// the capability is kept, and the default is that it is not available.
+//
+// A flag rather than an address policy like srv/webpush/endpoint.go's. webpush
+// is defending against endpoints supplied by *subscribers*, where a
+// private-range destination is the whole attack and a public one is normal
+// traffic. Here the endpoint comes from an operator through /addpsp, and the
+// legitimate destinations -- a simulator on localhost, a relay inside the
+// network -- are exactly the addresses such a policy blocks, while an
+// attacker-controlled public host is exactly what it allows. Ranges would
+// forbid every real use and permit the dangerous one.
+//
+// An atomic rather than a plain bool because it is written once at registration
+// and read on the push path, and the race detector should not have to take that
+// on trust.
+var allowNonApple atomic.Bool
+
+// SetAllowNonAppleEndpoints records whether non-Apple endpoints are permitted.
+//
+// Called from the apns push service when it is handed uniqush.conf, which
+// happens at registration and therefore before any push.
+func SetAllowNonAppleEndpoints(allow bool) { allowNonApple.Store(allow) }
+
+// AllowsNonAppleEndpoints reports the current setting.
+func AllowsNonAppleEndpoints() bool { return allowNonApple.Load() }
+
+// ErrNonAppleEndpoint explains a refused destination.
+//
+// Named, because it is reported from two places -- /addpsp and the push path --
+// and an operator who has hit one and then the other should recognise it as the
+// same rule rather than two.
+var ErrNonAppleEndpoint = errors.New("endpoint is not an Apple host; " +
+	"set allow_non_apple_endpoints=true in the [apns] section of uniqush.conf to permit it")
+
+// CheckEndpointAllowed re-validates a provider's destination at the point of
+// use.
+//
+// The same checks /addpsp applies, for the same reason ShouldSkipVerify is
+// re-derived here: a provider read back from the database is rebuilt by
+// BuildPushServiceProviderFromBytes, which unserializes it directly and never
+// runs the builder. Nothing it carries has necessarily been through the current
+// code, or through any validation at all if the row was written by hand.
+//
+// The whole of ValidateEndpoint, not only the Apple-host policy. Checking the
+// host alone left the shape unchecked, and the shape is what decides whether a
+// push is encrypted: a stored endpoint of "http://api.push.apple.com" passes any
+// hostname test there is, and would have sent device tokens and payload
+// contents in the clear to a host uniqush is entitled to talk to. With the
+// non-Apple opt-in enabled, any cleartext URL would have done the same.
+//
+// ShouldSkipVerify rather than the stored skipverify flag. The two differ for
+// exactly the providers that must keep working: skipverify predates the HTTP/2
+// path and was silently ignored there, so an operator who set it years ago for
+// the binary-protocol simulator still has it stored while pointing at Apple.
+// ShouldSkipVerify already refuses to honour that combination, whereas passing
+// the raw setting would make ValidateEndpoint reject the provider outright --
+// turning a stale flag on a working provider into an outage on every push.
+func CheckEndpointAllowed(psp *push.PushServiceProvider) error {
+	return ValidateEndpoint(ResolveEndpoint(psp), ShouldSkipVerify(psp))
+}
+
 // ValidateEndpoint checks an operator-supplied endpoint at /addpsp time.
 //
 // The point is to fail where the mistake was made. An endpoint that is wrong in
@@ -251,6 +320,15 @@ func ValidateEndpoint(endpoint string, skipVerify bool) error {
 	if skipVerify && IsAppleHost(endpoint) {
 		return errors.New("skipverify cannot be used with Apple's own endpoints; " +
 			"it disables the certificate check that makes the connection meaningful")
+	}
+
+	// Last, so that an endpoint which is malformed *and* not permitted is
+	// reported as malformed. That is the more useful of the two answers: it
+	// names a mistake to fix, where the other names a policy to change, and an
+	// operator who turns the flag on to get past this would then hit the parse
+	// error anyway.
+	if !AllowsNonAppleEndpoints() && !IsAppleHost(endpoint) {
+		return fmt.Errorf("%q: %w", endpoint, ErrNonAppleEndpoint)
 	}
 	return nil
 }

@@ -132,6 +132,47 @@ Self-hosted push servers on a private network are a supported UnifiedPush
 setup, so this can be relaxed per service in `uniqush-push.conf` with
 `allow_private_addresses`, ideally alongside an `allowed_hosts` list.
 
+## APNs ##
+
+`/addpsp` for `apns` takes the usual `cert`, `key` and `bundleid`. Two optional
+settings control where HTTP/2 pushes actually go:
+
+- `endpoint` — the base URL to push to, e.g. `https://api.sandbox.push.apple.com`.
+  uniqush appends `/3/device/<token>`, so it must have no path, query or
+  fragment. Omitted, the environment is inferred from `addr` exactly as it was
+  before this setting existed.
+- `cacert` — a PEM bundle to verify that endpoint against. Prefer this to
+  `skipverify` when testing: the certificate and hostname are still checked, so
+  a simulator has to present one you actually issued.
+
+Both are cleared if a later `/addpsp` omits them, the same way `bundleid`
+behaves.
+
+### A note on endpoints ###
+
+An `endpoint` decides where every push for a service goes. It carries device
+tokens and the notification payload, and for a certificate provider it is also
+where the APNs client certificate is presented. So unlike the UnifiedPush case
+above — where the destination comes from a subscriber and the defence is an
+address policy — uniqush refuses **any** host outside `push.apple.com` unless
+you opt in:
+
+```
+[apns]
+allow_non_apple_endpoints=true
+```
+
+The check runs before every push as well as at `/addpsp`, because a provider
+loaded from Redis never passes through the code that validates it. An address
+policy would be the wrong tool here: the legitimate destinations are a simulator
+on localhost or a relay inside your network, which is exactly what such a policy
+blocks, while an attacker-controlled public host is exactly what it permits.
+
+`skipverify` is refused outright for Apple's own hosts. It predates the HTTP/2
+path and was silently ignored there, so operators who set it years ago for the
+binary-protocol simulator still have it stored; honouring it now would have
+disabled certificate verification on connections to Apple.
+
 ## FAQ ##
 
 - Q: Is this a general push notification platform for all types of devices? How does this differ

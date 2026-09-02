@@ -134,9 +134,26 @@ func (ps *pushService) SetErrorReportChan(errChan chan<- push.Error) {
 func (ps *pushService) SetPushServiceConfig(c *push.PushServiceConfig) {
 	// This uses the fact that registration takes place before any requests are sent, so pools aren't created yet.
 
+	// Whether a provider may be pointed anywhere other than Apple. Absent or
+	// unparseable means off, which is the default and the safe direction: the
+	// option only ever widens what /addpsp will accept.
+	//
+	// Written unconditionally, including on error. Only setting it when the
+	// option parses would make this fail *open* on reconfiguration: the setting
+	// is process-wide, SetPushServiceConfig can be called again through the push
+	// service manager, and skipping the write on error would leave a gate that
+	// an earlier config had opened still open after the option was removed or
+	// corrupted. Deleting the line has to turn the capability off.
+	allow, err := c.GetBool(optionAllowNonAppleEndpoints)
+	common.SetAllowNonAppleEndpoints(err == nil && allow)
+
 	ps.binaryRequestProcessor.SetPushServiceConfig(c)
 	ps.httpRequestProcessor.SetPushServiceConfig(c)
 }
+
+// optionAllowNonAppleEndpoints is the uniqush.conf option, in the [apns]
+// section, that permits providers pointed somewhere other than Apple.
+const optionAllowNonAppleEndpoints = "allow_non_apple_endpoints"
 
 func (ps *pushService) BuildPushServiceProviderFromMap(kv map[string]string, psp *push.PushServiceProvider) error {
 	if service, ok := kv["service"]; ok {
