@@ -108,40 +108,123 @@ the hostname, so the code path production uses is the code path under test.
 
 ---
 
-## What is left
-
 ### Token (`.p8`) authentication
 
-uniqush only supports certificate authentication: `createTLSConfig` loads a
-`cert`/`key` pair and `/addpsp` requires both. Apple's token-based auth — an
-ES256-signed JWT built from a `.p8` key, a key id and a team id — is not
-implemented.
+`/addpsp` takes `authkey` (the path to the `.p8`), `keyid` and `teamid` as an
+alternative to `cert` and `key`:
 
-Certificates expire annually and are per-app; a `.p8` key does not expire and
-covers every app in the team, which is why it is the default in current
-documentation and in every actively maintained APNs library. Anyone volunteering
-to test uniqush is likely to have a `.p8` and to find being asked for a `.p12`
-odd, so this widens the pool for the item below.
+```
+curl http://localhost:9898/addpsp \
+  -d service=myservice \
+  -d pushservicetype=apns \
+  -d authkey=/etc/uniqush/AuthKey_ABCDE12345.p8 \
+  -d keyid=ABCDE12345 \
+  -d teamid=TEAM123456 \
+  -d bundleid=com.example.app
+```
 
-- Accept `authkey` (path to the `.p8`), `keyid` and `teamid` in `/addpsp`, as an
-  alternative to `cert`/`key`.
-- Mint a JWT with `alg: ES256`, `kid`, `iss` and `iat`, sent as
-  `authorization: bearer <jwt>`.
-- Cache and refresh it. Apple rejects a token older than one hour with
-  `ExpiredProviderToken`, and rejects minting more than one per 20 minutes per
-  key with `TooManyProviderTokenUpdates`, so the refresh window has to sit
-  between those bounds — roughly every 40-50 minutes.
-- Keep the credential out of `FixedData`, for the same reason `endpoint` is not
-  there: a provider's name hashes its fixed data, so a rotatable credential
-  stored there could never be rotated without re-subscribing every device.
-  `srv/fcm/push_service.go` has the same reasoning written out for
-  `credentialsfile`.
-- No new dependency needed: `github.com/golang-jwt/jwt/v5` is already indirect.
+uniqush signs an ES256 JWT carrying `kid` in the header and `iss`/`iat` in the
+claims, and sends it as `authorization: bearer <jwt>`.
 
-The simulator should grow matching support — validating the JWT signature,
-returning `ExpiredProviderToken` past the hour, and
-`TooManyProviderTokenUpdates` on over-eager refresh — so the refresh timing can
-be tested without waiting an hour against Apple.
+The interesting part is the refresh schedule, because Apple bounds it from both
+sides: a token whose `iat` is over an hour old is rejected with
+`ExpiredProviderToken`, and minting more than one token per 20 minutes for the
+same key is rejected with `TooManyProviderTokenUpdates`. Both failures apply to
+every push, so either edge is an outage rather than a slowdown. uniqush
+refreshes at 45 minutes, and the token cache is keyed on the signing key rather
+than on the provider — the mint limit is per key, so two services sharing a
+`.p8` have to share one schedule.
+
+The simulator enforces both bounds against an injectable clock, so
+`TestConformanceTokenIsRefreshedBeforeItExpires` and
+`TestConformanceTokenIsReusedAcrossPushes` cover them without anyone waiting an
+hour. Both were confirmed to fail when the refresh interval is moved outside
+Apple's window. The mint floor is measured from when the simulator *receives* a
+token rather than from the `iat` it claims, since `iat` is chosen by the sender
+and a provider re-signing on every push could otherwise space its claims to look
+compliant while Apple, which can only observe arrivals, counts a burst.
+
+The cache is keyed on a SHA-256 fingerprint of the key's public half rather than
+on the path it was read from. Apple's limit is per key, and the same `.p8`
+reached by two paths, a symlink or a copy is one key: keying on the pathname
+would give those separate mint schedules, both counting against the same floor.
+
+#### The refresh schedule does not survive a restart
+
+> **Note for reviewers of this change:** this limitation is real, is known, and
+> is fixed in the immediately following change rather than here. Half of the
+> answer is already in place: `iat` is quantised into buckets here, so every
+> process agrees on *what* to sign for a given moment. What they do not agree on
+> is the bytes, because `crypto/ecdsa` draws a random nonce — two processes
+> signing the same bucket still produce two different tokens, and Apple counts
+> tokens. The follow-up makes the signature deterministic, which is the piece
+> that turns bucketing into agreement: every process and every restart then
+> computes the same token and Apple sees one per bucket — no shared state, no
+> lock, and no credential stored anywhere new. Sharing the signed token through
+> redis was considered and rejected: redis holds only the *path* to the `.p8`
+> today, and storing the JWT would turn it into an hour-lived bearer credential
+> for the whole team, in a store that is usually unauthenticated. That change
+> carries an architecture decision record setting out the reasoning and the
+> alternatives in full.
+>
+> It is separated because it needs a small RFC 6979 implementation, and that
+> deserves to be reviewed on its own rather than buried inside a feature.
+
+**As of this change the limitation stands.** The token cache lives in the
+process, so:
+
+- a restart inside the 20-minute window mints a second token, and
+- two uniqush instances sharing a signing key mint independently.
+
+Apple can answer either with `TooManyProviderTokenUpdates`. In practice a single
+restart is usually tolerated — the limit is on excessive updates rather than a
+hard one-per-20-minutes ban — but frequent restarts or a horizontally scaled
+deployment can trip it, and when it trips it affects every push.
+
+The fix, in the change that follows this one, is to make the token
+*recomputable* rather than shared: sign deterministically and quantise `iat`, so
+every process and every restart independently arrives at the same JWT for the
+same window. Apple sees one token per window however many instances there are,
+and nothing is shared, locked, or written anywhere new.
+
+Sharing the signed token through redis is the obvious alternative, and it was
+considered and rejected. Redis holds only the *path* to the `.p8` today: an
+attacker with redis access gets device tokens and a filename, and cannot push.
+Storing the JWT would turn that into an hour-lived bearer credential for the
+whole team, in a store that in most uniqush deployments is unauthenticated on a
+trusted network and persisted to disk — and it would need a lock, so that two
+instances refreshing at the same moment do not both mint. That is a security and
+operational trade-off worth deciding deliberately rather than inheriting as a
+side effect of adding token auth, which is why it is recorded rather than done.
+
+Anyone running more than one instance against one signing key should know this
+before turning token auth on. Certificate auth has no equivalent limit.
+
+#### Switching an existing service to `.p8` is not an in-place change
+
+This is the sharp edge, and it is worth understanding before recommending token
+auth to anyone with a running deployment.
+
+A provider's name is a hash of its `FixedData`, a delivery point is stored
+against that name, and `GetPushServiceProviderDeliveryPointPairs` **deletes any
+delivery point whose provider has gone**. Certificate auth keeps `cert` and
+`key` in `FixedData`; token auth cannot, because a signing key has to be
+rotatable. So the two auth modes give a service two different provider names,
+and `/addpsp` refuses the second as a conflicting provider.
+
+The workaround an operator would reach for — `/rmpsp` then `/addpsp` — is
+exactly what destroys the subscriptions: every device bound to the removed
+provider is dropped on the next read.
+
+So today, token auth is for new services. Existing certificate-based services
+keep working exactly as before and are not touched by any of this.
+
+Fixing it properly means decoupling a delivery point from the provider's
+credential hash — binding it to service and push service type instead — which is
+a database migration and a change to how `/addpsp` identifies a provider. That
+is worth doing, and is much larger than this.
+
+## What is left
 
 ### The part that needs an Apple account
 
@@ -153,6 +236,10 @@ What would make that ask likely to succeed is a kit: a script taking a `.p8` (or
 `/subscribe` and `/push` against a local uniqush and prints a filled-in report
 to paste into an issue. Ten minutes of a stranger's time, rather than an
 open-ended favour.
+
+A `.p8` is now the easier credential to be asked for, which should help: it does
+not expire, it covers every app in the team, and it is what current Apple
+documentation steers people towards.
 
 Worth asking for specifically, since these have no coverage:
 
@@ -177,5 +264,8 @@ retiring or rewriting against `endpoint`.
 | Configurable endpoint and CA | no | nothing alone; unblocks the rest | done |
 | Local simulator | no | protocol conformance, error mapping, the whole stack | done |
 | Live sandbox probe | no | reachability, TLS/ALPN/h2, real error parsing | done |
-| `.p8` auth | no to build, yes to test | nothing alone; widens the pool below | outstanding |
+| `.p8` auth | no to build, yes to test | JWT shape and refresh schedule | done |
 | Real device | **yes** | delivery | outstanding |
+
+The one remaining gap needs a paid Apple Developer Program membership. Nothing
+uniqush can do closes it.

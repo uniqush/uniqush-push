@@ -70,6 +70,15 @@ type HTTPPushRequestProcessor struct {
 	// borrow closes it.
 	generation    uint64
 	clientFactory ClientFactory // can be overridden by test
+
+	// tokens caches one signed provider JWT per signing key, for providers
+	// using token authentication rather than a certificate. See token.go.
+	tokens     map[string]*providerToken
+	tokensLock sync.RWMutex
+
+	// now is overridden by tests that need to move through the token refresh
+	// window without waiting for it.
+	now func() time.Time
 }
 
 // NewRequestProcessor returns a new HTTPPushProcessor using net/http DefaultClient connection pool
@@ -78,6 +87,8 @@ func NewRequestProcessor() common.PushRequestProcessor {
 		clients:       make(map[string]*cachedClient),
 		currentKeys:   make(map[string]string),
 		clientFactory: defaultClientFactory,
+		tokens:        make(map[string]*providerToken),
+		now:           time.Now,
 	}
 }
 
@@ -303,6 +314,18 @@ func closeIdleConnections(client HTTPClient) {
 	}
 }
 
+// SetClock overrides the processor's idea of the current time.
+//
+// Only the provider token schedule reads it. That schedule has to sit between
+// Apple's 20-minute mint floor and its 1-hour expiry, and neither boundary can
+// be explored in real time, so the alternative to injecting a clock is leaving
+// the two failure modes that take a provider completely offline untested.
+func (prp *HTTPPushRequestProcessor) SetClock(now func() time.Time) {
+	prp.tokensLock.Lock()
+	defer prp.tokensLock.Unlock()
+	prp.now = now
+}
+
 func defaultClientFactory(transport *http.Transport) HTTPClient {
 	return &http.Client{
 		Transport: transport,
@@ -345,16 +368,22 @@ func defaultClientFactory(transport *http.Transport) HTTPClient {
 // builder, so the rule has to hold here too or a stale flag from the
 // binary-protocol era would silently downgrade a connection to Apple.
 func createTLSConfig(psp *push.PushServiceProvider) (*tls.Config, error) {
-	cert, err := tls.LoadX509KeyPair(psp.FixedData["cert"], psp.FixedData["key"])
-	if err != nil {
-		return nil, push.NewBadPushServiceProviderWithDetails(psp, err.Error())
-	}
-
 	conf := &tls.Config{
-		Certificates: []tls.Certificate{cert},
 		// APNs has required TLS 1.2 since 2018, so nothing is lost by refusing
 		// to negotiate lower with anything standing in for it.
 		MinVersion: tls.VersionTLS12,
+	}
+
+	// Token authentication proves identity per request, in a JWT, so the
+	// connection carries no client certificate at all. Presenting one would not
+	// be harmful, but there is no certificate to present: the whole point of a
+	// signing key is that the operator does not have one.
+	if !common.UsesTokenAuth(psp) {
+		cert, err := tls.LoadX509KeyPair(psp.FixedData["cert"], psp.FixedData["key"])
+		if err != nil {
+			return nil, push.NewBadPushServiceProviderWithDetails(psp, err.Error())
+		}
+		conf.Certificates = []tls.Certificate{cert}
 	}
 
 	if caCertPath := psp.VolatileData[common.CACertKey]; caCertPath != "" {
@@ -457,6 +486,21 @@ func (prp *HTTPPushRequestProcessor) sendRequests(request *common.PushRequest) {
 		return
 	}
 
+	// Signed once per push rather than once per device. A provider token
+	// authenticates the team, so every device in this request shares it, and
+	// minting one each time would trip Apple's limit of one token per 20
+	// minutes per key.
+	if common.UsesTokenAuth(psp) {
+		signed, tokenErr := prp.getProviderToken(psp, prp.currentTime())
+		if tokenErr != nil {
+			for range request.Devtokens {
+				request.ErrChan <- push.NewBadPushServiceProviderWithDetails(psp, tokenErr.Error())
+			}
+			return
+		}
+		baseHeader["authorization"] = []string{authorizationHeader(signed)}
+	}
+
 	http2UrlHost := common.ResolveEndpoint(psp)
 	client, releaseClient, err := prp.GetClient(psp)
 	if err != nil {
@@ -496,13 +540,13 @@ func (prp *HTTPPushRequestProcessor) sendRequests(request *common.PushRequest) {
 			httpRequest.Header["apns-id"] = []string{apnsID}
 		}
 
-		go prp.sendRequest(wg, client, httpRequest, msgID, request.ErrChan, request.ResChan)
+		go prp.sendRequest(wg, client, httpRequest, msgID, psp, request.ErrChan, request.ResChan)
 	}
 
 	wg.Wait()
 }
 
-func (prp *HTTPPushRequestProcessor) sendRequest(wg *sync.WaitGroup, client HTTPClient, request *http.Request, messageID uint32, errChan chan<- push.Error, resChan chan<- *common.APNSResult) {
+func (prp *HTTPPushRequestProcessor) sendRequest(wg *sync.WaitGroup, client HTTPClient, request *http.Request, messageID uint32, psp *push.PushServiceProvider, errChan chan<- push.Error, resChan chan<- *common.APNSResult) {
 	defer wg.Done()
 
 	response, err := client.Do(request)
@@ -519,7 +563,7 @@ func (prp *HTTPPushRequestProcessor) sendRequest(wg *sync.WaitGroup, client HTTP
 		return
 	}
 
-	prp.handlePushResponseBody(response, responseBody, messageID, errChan, resChan)
+	prp.handlePushResponseBody(response, responseBody, messageID, psp, errChan, resChan)
 }
 
 // newAPNSID returns a random RFC 4122 version 4 UUID for the apns-id header.
@@ -555,8 +599,87 @@ var permanentTokenFailureReasons = map[string]bool{
 	"ExpiredToken": true,
 }
 
+// credentialFailureReasons are the APNs `reason` values that mean uniqush's own
+// credentials were rejected, rather than anything about the device or the
+// notification.
+//
+// These have to be reported as BadPushServiceProvider. The distinction is not
+// cosmetic: BadNotification says "this message was malformed", which invites
+// the conclusion that a different message would get through, when in fact every
+// push for this provider will fail until an operator fixes the credential.
+// Reported correctly, the provider name is in the error and there is something
+// to act on.
+//
+// Nor may they unsubscribe. A rejected provider token says nothing about any
+// device, so treating one as a dead token would delete every subscription in
+// the service because a key was misconfigured or a clock had drifted.
+//
+// https://developer.apple.com/documentation/usernotifications/handling-notification-responses-from-apns
+var credentialFailureReasons = map[string]string{
+	// 403: the token's iat is more than an hour old. Apple ages it on its own
+	// clock, so this can mean the host's clock has drifted rather than that
+	// uniqush failed to refresh.
+	"ExpiredProviderToken": "the provider token has expired; check the server's clock if this persists",
+	// 403: signed by a key Apple does not recognise for this team, or the kid
+	// header does not match the key.
+	"InvalidProviderToken": "the provider token was rejected; check authkey, keyid and teamid",
+	// 401: token auth is in use but no authorization header reached APNs.
+	//
+	// Apple's answer when a request carries neither an acceptable client
+	// certificate nor a provider token, so it reaches both kinds of provider and
+	// means something different in each.
+	//
+	// For a certificate provider it is the ordinary case: no token was ever
+	// meant to be sent, and Apple is saying the certificate did not authenticate
+	// the connection either.
+	//
+	// For a token provider it cannot be a local signing failure -- a key that
+	// will not load returns BadPushServiceProvider before anything is sent, and
+	// any request that *is* sent has had the header set on it -- so the header
+	// went missing in transit, stripped by something between uniqush and APNs,
+	// or the request reached something that is not APNs at all.
+	//
+	// The message has to cover both, because this code cannot tell which
+	// provider it is describing. An earlier version said "although one was
+	// sent", which is simply false on the certificate path and sends an operator
+	// looking for a proxy when their certificate is the problem.
+	"MissingProviderToken": "APNs accepted neither a client certificate nor an authorization " +
+		"header; check the certificate, or whether something between uniqush and APNs is " +
+		"stripping the header",
+	// 429: a new token for this key arrived less than 20 minutes after the
+	// previous one, and Apple refuses to mint again yet.
+	//
+	// A scheduling failure across the provider rather than anything about this
+	// notification: every push using this key fails the same way until the floor
+	// clears. The token cache here is process-local, so a restart inside the
+	// window or a second instance sharing the .p8 both produce it.
+	//
+	// Reported against the provider because that is what it is, and because
+	// BadNotification would send an operator to look at their payload. It is
+	// nonetheless transient, which this classification cannot express -- the
+	// follow-up that makes tokens reproducible across processes reclassifies it
+	// as retryable, once there is a recovery to retry into.
+	"TooManyProviderTokenUpdates": "authentication tokens were minted too quickly; Apple allows one " +
+		"per key per 20 minutes, so this usually means a restart or a second instance sharing the key",
+	// 403: the certificate is not one Apple accepts for this topic.
+	"BadCertificate": "APNs rejected the certificate",
+	// 403: a sandbox certificate used against production, or the reverse.
+	"BadCertificateEnvironment": "the certificate is for the other APNs environment",
+	// 403: the credentials are not permitted to send to this topic at all.
+	//
+	// This repository already treats Forbidden as a credential problem where it
+	// matters most -- TestLiveForbiddenIsNotTreatedAsADeadToken asserts against
+	// Apple's real response that it must not unsubscribe the device, because
+	// doing so would delete every subscription in a service over one
+	// misconfiguration. Leaving it out of this map made the two halves disagree:
+	// uniqush knew it was not a dead token, and still told the caller their
+	// payload was bad.
+	"Forbidden": "APNs refused these credentials for this topic; check the certificate or " +
+		"signing key against the bundleid",
+}
+
 // handle the response body of an HTTP/2 push attempt to APNs.
-func (prp *HTTPPushRequestProcessor) handlePushResponseBody(response *http.Response, responseBody []byte, messageID uint32, errChan chan<- push.Error, resChan chan<- *common.APNSResult) {
+func (prp *HTTPPushRequestProcessor) handlePushResponseBody(response *http.Response, responseBody []byte, messageID uint32, psp *push.PushServiceProvider, errChan chan<- push.Error, resChan chan<- *common.APNSResult) {
 	// Redirects are deliberately not followed -- see defaultClientFactory -- so
 	// a 3xx arrives here as the response rather than as whatever the next hop
 	// would have said. Reported specifically, because the alternative is the
@@ -610,6 +733,12 @@ func (prp *HTTPPushRequestProcessor) handlePushResponseBody(response *http.Respo
 			MsgID:  messageID,
 			Status: common.Status8Unsubscribe,
 		}
+		return
+	}
+
+	if details, isCredential := credentialFailureReasons[apnsError.Reason]; isCredential {
+		errChan <- push.NewBadPushServiceProviderWithDetails(psp,
+			fmt.Sprintf("APNs returned %s: %s", apnsError.Reason, details))
 		return
 	}
 

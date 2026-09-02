@@ -165,7 +165,98 @@ func (ps *pushService) BuildPushServiceProviderFromMap(kv map[string]string, psp
 	return ps.buildBinaryPushServiceProviderFromMap(kv, psp)
 }
 
-func (ps *pushService) buildBinaryPushServiceProviderFromMap(kv map[string]string, psp *push.PushServiceProvider) error {
+// buildCredentials records how this provider authenticates to APNs.
+//
+// There are two ways, and which one is in use decides the shape of the
+// provider's FixedData -- which is not a detail, because a provider's name is a
+// hash of its FixedData and a delivery point is stored against that name. A
+// delivery point whose provider has vanished is deleted on the next read, so
+// changing the shape of an existing provider's fixed data does not produce an
+// error, it produces silently unsubscribed devices.
+//
+//   - Certificate auth keeps cert and key in FixedData, exactly where they have
+//     always been. Re-running /addpsp with the same pair therefore updates the
+//     provider in place, and no existing installation is disturbed by any of
+//     this.
+//   - Token auth puts nothing in FixedData beyond the service name. The .p8
+//     path, key id and team id are all credentials, and all rotatable; a
+//     signing key that could not be rotated without re-subscribing every device
+//     would be worse than the certificate it replaces.
+//
+// The consequence is that the two shapes have different names, so an existing
+// certificate-based service cannot be switched to token auth in place --
+// /addpsp rejects it as a conflicting second provider. See
+// docs/apns-verification-plan.md; it is called out there rather than worked
+// around here, because the workaround an operator would reach for (/rmpsp then
+// /addpsp) is exactly what destroys the subscriptions.
+//
+// This builder therefore refuses a provider that already carries credentials
+// rather than rewriting one in place. uniqush's own caller always passes a
+// fresh provider, but BuildPushServiceProviderFromMap is on the exported
+// push.PushServiceType interface, so an embedder can pass anything.
+//
+// Rewriting is refused rather than supported because it cannot be done
+// correctly from here. PushPeer.Name() memoises its result on first call
+// (push/pushpeer.go), and there is no exported way to invalidate that memo --
+// so a provider whose name had already been taken would keep reporting the old
+// one after its FixedData changed, and every delivery point written against it
+// afterwards would be bound to an identity that no longer describes it. That is
+// the same silent-unsubscribe failure the FixedData rules above exist to
+// prevent, reached from the other direction. Building a fresh provider costs
+// the caller nothing and has none of these questions.
+func buildCredentials(kv map[string]string, psp *push.PushServiceProvider) error {
+	// Non-empty, not merely present. A form post carries every field the client
+	// rendered, so a client that always sends cert= and key= -- empty when it is
+	// using a signing key -- would otherwise be told it had configured both
+	// mechanisms. The certificate branch below already treats an empty value as
+	// absent, and this has to agree with it.
+	hasCert := strings.TrimSpace(kv["cert"]) != ""
+	hasKey := strings.TrimSpace(kv["key"]) != ""
+	authKey := strings.TrimSpace(kv[common.AuthKeyKey])
+
+	// Refused rather than rewritten. See the note above on PushPeer.Name()'s
+	// memo: there is no way to change a named provider's identity from here
+	// without leaving it reporting the old one.
+	//
+	// Only credentials count as populated. The manager sets FixedData["service"]
+	// before calling this, so a provider is never entirely blank by the time it
+	// arrives.
+	if existing := existingCredential(psp); existing != "" {
+		return fmt.Errorf("this provider already has %s configured; "+
+			"build credentials into a fresh PushServiceProvider rather than rewriting one, "+
+			"because a provider's name is fixed once it has been read", existing)
+	}
+
+	if authKey != "" {
+		if hasCert || hasKey {
+			// Sending both is a sign of a half-finished migration, and guessing
+			// which was meant would be the wrong kind of helpful.
+			return errors.New("provide either cert and key, or authkey, keyid and teamid -- not both")
+		}
+		if err := common.ValidateTokenAuth(authKey, kv[common.KeyIDKey], kv[common.TeamIDKey]); err != nil {
+			return err
+		}
+		psp.VolatileData[common.AuthKeyKey] = authKey
+		psp.VolatileData[common.KeyIDKey] = strings.TrimSpace(kv[common.KeyIDKey])
+		psp.VolatileData[common.TeamIDKey] = strings.TrimSpace(kv[common.TeamIDKey])
+
+		return nil
+	}
+
+	// A keyid or teamid with no authkey is a partially filled-in token
+	// configuration. Falling through to "NoCertificate" would be an unhelpful
+	// way to report it.
+	//
+	// Trimmed, like every other field here. A form post carries whatever the
+	// client rendered, so a certificate-auth request that includes empty keyid=
+	// and teamid= inputs -- or ones holding a stray space -- would otherwise be
+	// rejected with NoAuthKey for fields that are, after normalisation, absent.
+	// The whole point of this check is to catch a *partially filled* token
+	// configuration, and whitespace is not filled in.
+	if strings.TrimSpace(kv[common.KeyIDKey]) != "" || strings.TrimSpace(kv[common.TeamIDKey]) != "" {
+		return errors.New("NoAuthKey: keyid and teamid need an authkey (the .p8 file) alongside them")
+	}
+
 	if cert, ok := kv["cert"]; ok && len(cert) > 0 {
 		psp.FixedData["cert"] = cert
 	} else {
@@ -178,8 +269,15 @@ func (ps *pushService) buildBinaryPushServiceProviderFromMap(kv map[string]strin
 		return errors.New("NoPrivateKey")
 	}
 
-	_, err := tls.LoadX509KeyPair(psp.FixedData["cert"], psp.FixedData["key"])
-	if err != nil {
+	if _, err := tls.LoadX509KeyPair(psp.FixedData["cert"], psp.FixedData["key"]); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func (ps *pushService) buildBinaryPushServiceProviderFromMap(kv map[string]string, psp *push.PushServiceProvider) error {
+	if err := buildCredentials(kv, psp); err != nil {
 		return err
 	}
 
@@ -508,4 +606,19 @@ func (ps *pushService) Push(psp *push.PushServiceProvider, dpQueue <-chan *push.
 	// Wait for the unserialized responses from APNs asynchronously - these will not affect what we send our clients for this request, but will affect subsequent requests.
 	// TODO: With HTTP/2, this can be refactored to become synchronous (not in this PR, not while binary provider is supported for a PSP). The map[string]T can be removed.
 	go ps.waitResults(psp, dpList, lastID, resChan)
+}
+
+// existingCredential names the credential a provider already carries, or "".
+//
+// Both shapes are checked, in both storage areas: a certificate lives in
+// FixedData and a signing key in VolatileData, and either one arriving here
+// means the caller is trying to rewrite a provider rather than build one.
+func existingCredential(psp *push.PushServiceProvider) string {
+	if strings.TrimSpace(psp.FixedData["cert"]) != "" || strings.TrimSpace(psp.FixedData["key"]) != "" {
+		return "a certificate"
+	}
+	if strings.TrimSpace(psp.VolatileData[common.AuthKeyKey]) != "" {
+		return "a signing key"
+	}
+	return ""
 }

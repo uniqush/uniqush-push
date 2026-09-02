@@ -171,6 +171,14 @@ type Server struct {
 	// which makes a leak test flaky in both directions. This counts exactly the
 	// connections to exactly this simulator.
 	activeConns int
+
+	// Token authentication state; see auth.go. signingKey being nil means this
+	// team uses a certificate and no authorization header is expected.
+	signingKey    *SigningKey
+	tokenIssuedAt map[string]time.Time
+	tokensSeen    []string
+	lastMintedAt  time.Time
+	clock         func() time.Time
 }
 
 // NewServer starts a simulator on a random port with a self-signed certificate.
@@ -405,6 +413,19 @@ func (s *Server) handle(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Before anything about the notification. APNs authenticates first, which
+	// is why a request with no usable credential is answered with 401 or 403
+	// rather than with a complaint about a missing topic.
+	//
+	// A request refused here is not recorded in Requests(), which is Apple's
+	// behaviour as far as a provider can observe it -- there is no accepted
+	// notification to report. The refusal itself is recorded in Violations(),
+	// which is what the auth tests assert on.
+	if status, reason, rule, details := s.checkProviderToken(r); reason != "" {
+		s.fail(w, token, status, reason, rule, "%s", details)
+		return
+	}
+
 	// Bounded by the limit this server was actually configured with, not by the
 	// package default. They are the same until a test calls SetMaxPayloadSize,
 	// and a reader who has just called it should not have to discover that the
@@ -462,7 +483,7 @@ func (s *Server) handle(w http.ResponseWriter, r *http.Request) {
 // this check the mistake is invisible: the first value is usually right, so
 // everything appears to work.
 func (s *Server) checkDuplicateHeaders(r *http.Request) (reason, rule, details string) {
-	for _, name := range []string{"apns-topic", "apns-push-type", "apns-priority", "apns-expiration", "apns-id"} {
+	for _, name := range []string{"apns-topic", "apns-push-type", "apns-priority", "apns-expiration", "apns-id", "authorization"} {
 		if values := r.Header.Values(name); len(values) > 1 {
 			return ReasonDuplicateHeaders, "duplicate-headers",
 				fmt.Sprintf("%s was sent %d times (%v); Set() alongside a lowercase literal is the usual cause", name, len(values), values)
