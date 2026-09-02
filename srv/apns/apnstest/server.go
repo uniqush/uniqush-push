@@ -55,6 +55,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 )
@@ -178,7 +179,7 @@ type Server struct {
 // is the only thing uniqush's HTTP/2 processor will talk to: it configures its
 // transport with http2.ConfigureTransport, so h2 has to be negotiated over ALPN
 // and a cleartext server would never be reached.
-func NewServer() (*Server, error) {
+func NewServer() *Server {
 	server := &Server{
 		responses:      make(map[string]Response),
 		maxPayloadSize: MaxPayloadSize,
@@ -189,7 +190,7 @@ func NewServer() (*Server, error) {
 	httpServer.Config.ConnState = server.trackConn
 	httpServer.StartTLS()
 	server.httpServer = httpServer
-	return server, nil
+	return server
 }
 
 // URL is the base URL to give uniqush as the provider's endpoint.
@@ -395,7 +396,7 @@ func (s *Server) handle(w http.ResponseWriter, r *http.Request) {
 	// Apple's own documentation writes tokens in lowercase hex, and a token
 	// that round-trips through uniqush's hex.EncodeToString always is. Anything
 	// else means something re-cased it on the way.
-	if token != stringToLower(token) {
+	if token != strings.ToLower(token) {
 		s.violate(token, "token", "device token is not lowercase hex")
 	}
 
@@ -404,7 +405,12 @@ func (s *Server) handle(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	payload, err := io.ReadAll(io.LimitReader(r.Body, int64(MaxPayloadSize)*4))
+	// Bounded by the limit this server was actually configured with, not by the
+	// package default. They are the same until a test calls SetMaxPayloadSize,
+	// and a reader who has just called it should not have to discover that the
+	// bound here is a different number.
+	maxPayload, _ := s.settings()
+	payload, err := io.ReadAll(io.LimitReader(r.Body, int64(maxPayload)*4))
 	if err != nil {
 		s.fail(w, token, http.StatusBadRequest, ReasonPayloadEmpty,
 			"payload", "could not read the body: %v", err)
@@ -545,16 +551,6 @@ var validPushTypes = map[string]bool{
 	"alert": true, "background": true, "complication": true, "controls": true,
 	"fileprovider": true, "liveactivity": true, "location": true, "mdm": true,
 	"pushtotalk": true, "voip": true, "widgets": true,
-}
-
-func stringToLower(value string) string {
-	lowered := []byte(value)
-	for i, b := range lowered {
-		if b >= 'A' && b <= 'Z' {
-			lowered[i] = b + ('a' - 'A')
-		}
-	}
-	return string(lowered)
 }
 
 // GenerateClientCert writes a self-signed certificate and key for uniqush to

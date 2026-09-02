@@ -135,10 +135,7 @@ func allowNonAppleEndpoints(t *testing.T) {
 func startSimulator(t *testing.T) *apnstest.Server {
 	allowNonAppleEndpoints(t)
 	t.Helper()
-	server, err := apnstest.NewServer()
-	if err != nil {
-		t.Fatalf("Could not start the APNs simulator: %v", err)
-	}
+	server := apnstest.NewServer()
 	server.RequireTopic(conformanceTopic)
 	t.Cleanup(server.Close)
 	return server

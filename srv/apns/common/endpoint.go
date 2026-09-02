@@ -227,7 +227,7 @@ func AllowsNonAppleEndpoints() bool { return allowNonApple.Load() }
 // and an operator who has hit one and then the other should recognise it as the
 // same rule rather than two.
 var ErrNonAppleEndpoint = errors.New("endpoint is not an Apple host; " +
-	"set allow_non_apple_endpoints=true in the [apns] section of uniqush.conf to permit it")
+	"set allow_non_apple_endpoints=true in the [apns] section of uniqush-push.conf to permit it")
 
 // CheckEndpointAllowed re-validates a provider's destination at the point of
 // use.
