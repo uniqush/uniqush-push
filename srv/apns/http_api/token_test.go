@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -240,6 +241,60 @@ func TestProviderTokenCachesBothLiveBuckets(t *testing.T) {
 				"With one slot the current and previous tokens evict each other, so every "+
 				"batch re-signs both.", buckets)
 		}
+	}
+}
+
+// TestProviderTokenSignsOncePerBucket counts signatures rather than cache
+// entries.
+//
+// srv/apns/es256 ships a signer that is deliberately not constant time, and the
+// argument for that is entirely about rate: roughly one signature per key per
+// bucket, on a server, over a message an attacker does not choose. Its package
+// comment names this test as the guard.
+//
+// Cache entries cannot be that guard. Signing is deterministic, so re-signing
+// on every call returns identical bytes and every assertion about token values
+// passes either way; and a map that is written to but never read still ends up
+// the right size. Only a count of the signatures themselves can tell.
+func TestProviderTokenSignsOncePerBucket(t *testing.T) {
+	path, _ := writeSigningKey(t)
+	processor := newTokenProcessor()
+	psp := tokenAuthPSP(t, path)
+
+	var signatures atomic.Int64
+	previous := signES256
+	signES256 = func(key *ecdsa.PrivateKey, input []byte) ([]byte, error) {
+		signatures.Add(1)
+		return previous(key, input)
+	}
+	t.Cleanup(func() { signES256 = previous })
+
+	now := issuedAtBucket(time.Date(2026, 8, 31, 12, 0, 0, 0, time.UTC)).Add(5 * time.Minute)
+
+	// Ten batches, each asking for the current token and then the fallback, the
+	// way sendRequests does.
+	for round := 0; round < 10; round++ {
+		if _, _, err := processor.getProviderToken(psp, now); err != nil {
+			t.Fatalf("round %d: %v", round, err)
+		}
+		if _, err := processor.previousProviderToken(psp, now); err != nil {
+			t.Fatalf("round %d: %v", round, err)
+		}
+	}
+
+	// Two: one for the current bucket, one for the previous. Not twenty.
+	if got := signatures.Load(); got != 2 {
+		t.Errorf("Ten batches produced %d ECDSA signatures, expected 2 (one per live bucket).\n"+
+			"srv/apns/es256 is not constant time and rests on being called about once per "+
+			"bucket; signing per batch moves it into a regime it was never justified for.", got)
+	}
+
+	// And crossing into the next bucket costs exactly one more.
+	if _, _, err := processor.getProviderToken(psp, now.Add(TokenRefreshInterval)); err != nil {
+		t.Fatalf("next bucket: %v", err)
+	}
+	if got := signatures.Load(); got != 3 {
+		t.Errorf("Crossing a bucket boundary produced %d signatures in total, expected 3", got)
 	}
 }
 

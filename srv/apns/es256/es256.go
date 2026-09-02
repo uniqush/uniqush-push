@@ -69,12 +69,18 @@
 // slow does not give a timing attack anything to work with.
 //
 // That rate is the whole of the argument, so it is worth saying what would
-// invalidate it. Signing on every push, or on every batch, would not: the cache
-// in http_api is what keeps the rate down, and a bug there that made it re-sign
+// invalidate it. Signing on every push, or on every batch, would: the cache in
+// http_api is what keeps the rate down, and a bug there that made it re-sign
 // per request would quietly move this package into a regime it was never
-// justified for. There is a test for exactly that
-// (TestProviderTokenCachesBothLiveBuckets), because the failure is silent from
-// here. Do not lift this package into a context where the rate is higher.
+// justified for.
+//
+// The guard is http_api.TestProviderTokenSignsOncePerBucket, which counts the
+// signatures themselves. It has to be a count. Because signing here is
+// deterministic, re-signing returns identical bytes, so every assertion about
+// token values passes whether the cache works or not -- and a cache that is
+// written and never read still ends up the right size. Nothing but a count can
+// see this failure. Do not lift this package into a context where the rate is
+// higher.
 package es256
 
 import (

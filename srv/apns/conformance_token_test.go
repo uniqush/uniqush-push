@@ -283,10 +283,14 @@ func TestConformanceMintFloorIsMeasuredOnArrival(t *testing.T) {
 	// there was no recovery. It began passing for a reason unrelated to what it
 	// was named for as soon as the bucket length changed, which is exactly the
 	// kind of drift a conformance test should not have.
+	// Matched on the reason, not on the rule. Every authentication failure the
+	// simulator reports carries rule "auth" -- a bad signature, an unknown key
+	// id, an expired token -- so counting those made this pass for reasons that
+	// have nothing to do with the mint floor it is named for.
 	refusals := 0
 	for _, violation := range server.Violations() {
-		if strings.Contains(violation.Details, apnstest.TokenMinInterval.String()) ||
-			strings.Contains(violation.Rule, "auth") {
+		if strings.Contains(violation.Details, apnstest.ReasonTooManyProviderTokenUpdates) ||
+			strings.Contains(violation.Details, apnstest.TokenMinInterval.String()) {
 			refusals++
 		}
 	}

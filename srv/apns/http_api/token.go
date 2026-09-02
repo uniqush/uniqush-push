@@ -271,12 +271,23 @@ var _ jwt.SigningMethod = deterministicES256{}
 
 func (deterministicES256) Alg() string { return "ES256" }
 
+// signES256 produces the signature. A package variable so that a test can count
+// how many are produced.
+//
+// The count is the point. srv/apns/es256 justifies a signer that is not
+// constant time on the grounds that uniqush signs about once per bucket, and
+// says so in its package comment. Nothing else can check that: because signing
+// is deterministic, re-signing on every call produces byte-identical output, so
+// every assertion about tokens passes whether the cache works or not. See
+// TestProviderTokenSignsOncePerBucket.
+var signES256 = es256.Sign
+
 func (deterministicES256) Sign(signingString string, key interface{}) ([]byte, error) {
 	private, ok := key.(*ecdsa.PrivateKey)
 	if !ok {
 		return nil, jwt.ErrInvalidKeyType
 	}
-	return es256.Sign(private, []byte(signingString))
+	return signES256(private, []byte(signingString))
 }
 
 func (deterministicES256) Verify(signingString string, sig []byte, key interface{}) error {

@@ -472,3 +472,37 @@ func TestSignRejectsAKeyWithNoPublicPoint(t *testing.T) {
 		})
 	}
 }
+
+// TestSignRefusesASignatureThatDoesNotVerify covers Sign's own verification.
+//
+// Sign checks its output with crypto/ecdsa before returning it, so that an
+// implementation mistake or a flipped bit becomes an error here rather than an
+// authentication failure against Apple that looks like a credential problem.
+// Nothing exercised that check: every other test hands Sign a key whose public
+// half was derived from its private half, so the verification always passes and
+// the branch could be deleted without a single failure.
+//
+// A key whose public half does not match its scalar reaches it. That is not a
+// contrived shape either -- an *ecdsa.PrivateKey is a struct a caller can
+// assemble, and this is what a mismatched or partially-overwritten one looks
+// like.
+func TestSignRefusesASignatureThatDoesNotVerify(t *testing.T) {
+	key := rfc6979Key(t)
+
+	// A different valid point, so the key passes every guard in Sign -- P-256
+	// curve, scalar in range -- and only the final verification can catch it.
+	other, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	if err != nil {
+		t.Fatalf("Could not generate a second key: %v", err)
+	}
+	mismatched := &ecdsa.PrivateKey{PublicKey: other.PublicKey, D: key.D}
+
+	signature, err := Sign(mismatched, []byte("sample"))
+	if err == nil {
+		t.Fatalf("Expected a key whose public half does not match its scalar to be refused, "+
+			"got a %d-byte signature", len(signature))
+	}
+	if !strings.Contains(err.Error(), "does not verify") {
+		t.Errorf("Expected the failure to say the signature did not verify, got: %v", err)
+	}
+}
