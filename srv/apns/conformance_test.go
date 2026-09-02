@@ -2,7 +2,9 @@ package apns
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
+	"os"
 	"strconv"
 	"strings"
 	"sync"
@@ -46,13 +48,6 @@ func newSimulatorService(t *testing.T) (*pushService, chan push.Error) {
 	return service, errChan
 }
 
-// newSimulatorPSP registers a provider pointed at the simulator.
-//
-// It verifies the simulator's certificate against the simulator's own CA rather
-// than setting skipverify. That is deliberate: skipverify would leave the
-// certificate-verification path -- the one production uses -- completely
-// untested, and would also mean these tests still passed if createTLSConfig
-// stopped verifying anything at all.
 // ensureAPNSRegistered makes sure the manager can build an "apns" provider.
 //
 // Providers have to be built through the manager, because that is what attaches
@@ -65,11 +60,28 @@ var registerAPNSOnce sync.Once
 
 func ensureAPNSRegistered() {
 	registerAPNSOnce.Do(func() {
-		//nolint:errcheck // a registration from another test in this package is fine
-		push.GetPushServiceManager().RegisterPushServiceType(NewPushService())
+		// The instance is kept rather than passed straight in, so that it can be
+		// finalized when registration is refused.
+		//
+		// NewPushService starts the binary processor's pushMux goroutine at
+		// construction. The manager rejects a duplicate name, so when another
+		// test in this package has already registered "apns" this service
+		// becomes unreachable -- and, if it were dropped here, would leak the
+		// very goroutine TestBuildingAProviderLeaksNoGoroutines is watching for.
+		service := NewPushService()
+		if err := push.GetPushServiceManager().RegisterPushServiceType(service); err != nil {
+			service.Finalize()
+		}
 	})
 }
 
+// newSimulatorPSP registers a provider pointed at the simulator.
+//
+// It verifies the simulator's certificate against the simulator's own CA rather
+// than setting skipverify. That is deliberate: skipverify would leave the
+// certificate-verification path -- the one production uses -- completely
+// untested, and would also mean these tests still passed if createTLSConfig
+// stopped verifying anything at all.
 func newSimulatorPSP(t *testing.T, server *apnstest.Server, extra map[string]string) *push.PushServiceProvider {
 	t.Helper()
 	ensureAPNSRegistered()
@@ -158,6 +170,31 @@ func awaitAsyncError(t *testing.T, errChan <-chan push.Error) push.Error {
 		t.Fatal("Timed out waiting for an asynchronous result from APNs")
 		return nil
 	}
+}
+
+// describeResults renders push results for a failure message.
+//
+// Not just "%v" on the slice. push.Result.Error() formats r.Destination.Name(),
+// and a Result built from the error channel has no Destination -- which is how
+// every APNs error response arrives. Printing one directly panics inside the
+// formatter, so a genuine test failure reports "PANIC=Error method" instead of
+// what went wrong, which is a memorably unhelpful way to spend an afternoon.
+func describeResults(results []*push.Result) string {
+	if len(results) == 0 {
+		return "no results"
+	}
+	described := make([]string, 0, len(results))
+	for i, result := range results {
+		switch {
+		case result == nil:
+			described = append(described, fmt.Sprintf("[%d] <nil result>", i))
+		case result.Err == nil:
+			described = append(described, fmt.Sprintf("[%d] success (MsgID=%s)", i, result.MsgID))
+		default:
+			described = append(described, fmt.Sprintf("[%d] %T: %v", i, result.Err, result.Err))
+		}
+	}
+	return strings.Join(described, "; ")
 }
 
 func assertNoViolations(t *testing.T, server *apnstest.Server) {
@@ -272,7 +309,7 @@ func TestConformanceBackgroundPushUsesPriority5(t *testing.T) {
 
 	results := pushToSimulator(t, service, psp, notif, apnstest.DeviceToken(0x33))
 	if len(results) != 1 || results[0].Err != nil {
-		t.Fatalf("Expected a background push to be accepted, got: %v", results)
+		t.Fatalf("Expected a background push to be accepted, got: %s", describeResults(results))
 	}
 
 	request := requireOneRequest(t, server)
@@ -305,7 +342,7 @@ func TestConformanceVoIPPush(t *testing.T) {
 
 			results := pushToSimulator(t, service, psp, notif, apnstest.DeviceToken(0x44))
 			if len(results) != 1 || results[0].Err != nil {
-				t.Fatalf("Expected the VoIP push to be accepted, got: %v", results)
+				t.Fatalf("Expected the VoIP push to be accepted, got: %s", describeResults(results))
 			}
 			if request := requireOneRequest(t, server); request.PushType != common.PushTypeVoIP {
 				t.Errorf("Expected apns-push-type voip, got %q", request.PushType)
@@ -608,11 +645,99 @@ func buildIntoExistingProvider(t *testing.T, existing, kv map[string]string) *pu
 		full[key] = value
 	}
 
+	// Finalized even though this helper only builds a provider and never sends
+	// anything. NewPushService constructs the binary processor too, and that
+	// starts a pushMux goroutine at construction rather than on first use, so a
+	// service that is built and dropped leaks it for the life of the test
+	// binary. Cheap to get right, and invisible until something counts
+	// goroutines.
 	service := NewPushService().(*pushService)
+	defer service.Finalize()
+
 	if err := service.BuildPushServiceProviderFromMap(full, psp); err != nil {
 		t.Fatalf("Could not build the provider: %v", err)
 	}
 	return psp
+}
+
+// TestBuilderRecordsACredentialRevision pins the half of the rotation fix that
+// lives in the builder.
+//
+// The push path decides whether a cached TLS client is still the right one by
+// comparing this value, and it deliberately does not open the credential files
+// itself -- doing so would put three synchronous reads on the fast path of every
+// push, for every provider, to learn something that can only change here.
+//
+// That trade is only sound if the builder actually records it, and the tests in
+// srv/apns/http_api go through a mock push service type, so they cannot see the
+// real builder at all. This is the test that does.
+func TestBuilderRecordsACredentialRevision(t *testing.T) {
+	dir := t.TempDir()
+	certPath, keyPath, err := apnstest.GenerateClientCert(dir)
+	if err != nil {
+		t.Fatalf("Could not generate a client certificate: %v", err)
+	}
+
+	// Through the manager, so the provider carries its push service type and
+	// Name() works. The registered type is the real APNs service in this
+	// package, so this is the production builder.
+	ensureAPNSRegistered()
+	build := func() *push.PushServiceProvider {
+		t.Helper()
+		psp, buildErr := push.GetPushServiceManager().BuildPushServiceProviderFromMap(map[string]string{
+			"pushservicetype": "apns",
+			"service":         "revisions",
+			"cert":            certPath,
+			"key":             keyPath,
+			"bundleid":        conformanceTopic,
+		})
+		if buildErr != nil {
+			t.Fatalf("Could not build the provider: %v", buildErr)
+		}
+		return psp
+	}
+
+	before := build()
+	revision := before.VolatileData[common.CredentialRevisionKey]
+	if revision == "" {
+		t.Fatal("The builder recorded no credential revision, so the push path has nothing to " +
+			"compare and a rotated certificate would never take effect")
+	}
+
+	// Rebuilding an unchanged provider must give the same answer, or every
+	// /addpsp would pointlessly discard a working client.
+	if again := build().VolatileData[common.CredentialRevisionKey]; again != revision {
+		t.Error("Rebuilding an unchanged provider produced a different credential revision")
+	}
+
+	// The annual renewal: a genuinely different, genuinely loadable pair written
+	// over the same paths. Generated rather than faked, because the builder
+	// validates the pair and nonsense would fail the build instead.
+	newCert, newKey, err := apnstest.GenerateClientCert(t.TempDir())
+	if err != nil {
+		t.Fatalf("Could not generate a replacement certificate: %v", err)
+	}
+	for _, pair := range [][2]string{{newCert, certPath}, {newKey, keyPath}} {
+		contents, readErr := os.ReadFile(pair[0])
+		if readErr != nil {
+			t.Fatalf("Could not read %s: %v", pair[0], readErr)
+		}
+		if writeErr := os.WriteFile(pair[1], contents, 0o600); writeErr != nil {
+			t.Fatalf("Could not install the renewed credential: %v", writeErr)
+		}
+	}
+
+	after := build()
+	if after.VolatileData[common.CredentialRevisionKey] == revision {
+		t.Error("Renewing the certificate in place did not change the credential revision.\n" +
+			"Every path is unchanged and so is psp.Name(), so this value is the only thing that " +
+			"can tell the push path to stop using the retired certificate.")
+	}
+	// The identity must not move: delivery points are stored against the name.
+	if after.Name() != before.Name() {
+		t.Error("Renewing a certificate changed the provider's name, which would strand every " +
+			"delivery point stored against the old one")
+	}
 }
 
 // TestEndpointAndCACertAreClearedWhenAbsent is the other half of making them
@@ -681,7 +806,7 @@ func TestConformanceEndpointIsHonoured(t *testing.T) {
 
 	results := pushToSimulator(t, service, psp, createNotification("Hello World"), apnstest.DeviceToken(0x99))
 	if len(results) != 1 || results[0].Err != nil {
-		t.Fatalf("Expected the push to reach the simulator, got: %v", results)
+		t.Fatalf("Expected the push to reach the simulator, got: %s", describeResults(results))
 	}
 	if len(server.Requests()) != 1 {
 		t.Error("The push did not reach the simulator")
@@ -704,7 +829,7 @@ func TestConformanceOversizedPayloadIsRejectedLocally(t *testing.T) {
 	results := pushToSimulator(t, service, psp, notif, apnstest.DeviceToken(0xaa))
 
 	if len(results) != 1 || results[0].Err == nil {
-		t.Fatalf("Expected an oversized payload to be rejected, got: %v", results)
+		t.Fatalf("Expected an oversized payload to be rejected, got: %s", describeResults(results))
 	}
 	if !strings.Contains(results[0].Err.Error(), "too large") {
 		t.Errorf("Expected the error to say the payload is too large, got: %v", results[0].Err)

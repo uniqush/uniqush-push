@@ -32,6 +32,15 @@ func (pst *MockPushServiceType) BuildPushServiceProviderFromMap(kv map[string]st
 			psp.FixedData[key] = value
 		}
 	}
+
+	// The real builder records this once it has validated the credential files,
+	// and the push path relies on it to notice a credential rotated in place
+	// without reopening anything. A mock that skipped it would leave every
+	// provider it builds keying on an empty revision, so the tests that check
+	// rotation is noticed would pass or fail for reasons of their own.
+	psp.VolatileData[common.CredentialRevisionKey] = common.CredentialRevision(
+		psp.FixedData["cert"], psp.FixedData["key"], psp.VolatileData[common.CACertKey])
+
 	return nil
 }
 

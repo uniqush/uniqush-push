@@ -128,6 +128,28 @@ func TestSkipVerifyIsRefusedForApple(t *testing.T) {
 	}
 }
 
+// TestValidateEndpointRejectsAnAuthorityWithNoHostname covers a URL that looks
+// like it has a host and does not.
+//
+// url.Parse fills Host with the whole authority, port included, so "https://:443"
+// has a Host of ":443" -- non-empty -- and a Hostname of "". Checking Host
+// therefore accepted an endpoint with no destination at all and left it to fail
+// on the first push, which is the deferred failure this validation exists to
+// prevent: by then whoever typed it has moved on, and the error surfaces as a
+// push problem rather than a configuration one.
+func TestValidateEndpointRejectsAnAuthorityWithNoHostname(t *testing.T) {
+	for _, endpoint := range []string{
+		"https://:443",
+		"https://:8443",
+		// The same shape with the port omitted too.
+		"https://",
+	} {
+		if err := ValidateEndpoint(endpoint, false); err == nil {
+			t.Errorf("Expected %q to be rejected: it has a port but no host to send to", endpoint)
+		}
+	}
+}
+
 func TestIsAppleHost(t *testing.T) {
 	appleHosts := []string{
 		HostProduction,
@@ -273,21 +295,21 @@ func TestShouldSkipVerifyIgnoresStaleSettingsOnAppleHosts(t *testing.T) {
 	}
 }
 
-// TestCACertFingerprintTracksContents covers the cache-key bug: a CA rotated in
+// TestFileFingerprintTracksContents covers the cache-key bug: a credential rotated in
 // place keeps its pathname, so a client cached against the path would go on
 // trusting the retired authority until the process restarted.
-func TestCACertFingerprintTracksContents(t *testing.T) {
+func TestFileFingerprintTracksContents(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "ca.pem")
 
 	if err := os.WriteFile(path, []byte("first contents"), 0600); err != nil {
 		t.Fatalf("Could not write the bundle: %v", err)
 	}
-	first := CACertFingerprint(path)
+	first := FileFingerprint(path)
 	if first == "" {
 		t.Fatal("Expected a fingerprint for a readable file")
 	}
-	if again := CACertFingerprint(path); again != first {
+	if again := FileFingerprint(path); again != first {
 		t.Error("The fingerprint of unchanged contents changed")
 	}
 
@@ -295,15 +317,15 @@ func TestCACertFingerprintTracksContents(t *testing.T) {
 	if err := os.WriteFile(path, []byte("second contents"), 0600); err != nil {
 		t.Fatalf("Could not rotate the bundle: %v", err)
 	}
-	if rotated := CACertFingerprint(path); rotated == first {
+	if rotated := FileFingerprint(path); rotated == first {
 		t.Error("The fingerprint did not change when the bundle did; " +
 			"a client cached against it would keep trusting the retired CA")
 	}
 
-	if CACertFingerprint("") != "" {
+	if FileFingerprint("") != "" {
 		t.Error("Expected no fingerprint for an unset path")
 	}
-	if CACertFingerprint(filepath.Join(dir, "absent.pem")) != "" {
+	if FileFingerprint(filepath.Join(dir, "absent.pem")) != "" {
 		t.Error("Expected no fingerprint for an unreadable path")
 	}
 }

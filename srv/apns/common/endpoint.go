@@ -50,6 +50,22 @@ const (
 	// is still what selects between Apple's two environments for providers that
 	// do not set an endpoint.
 	AddrKey = "addr"
+
+	// CredentialRevisionKey holds a digest of the credential *files* a provider
+	// was built from -- the client certificate, its key, and the CA bundle.
+	//
+	// It exists so that the push path can tell whether those files have changed
+	// without opening them. Rotating a credential in place leaves every path
+	// identical, and the paths are what psp.Name() hashes, so nothing else about
+	// the provider moves; without this the cached TLS client would go on
+	// presenting the retired material until uniqush restarted.
+	//
+	// Computed once, by the builder, at /addpsp time -- which is the only moment
+	// a rotation can take effect anyway, since a provider is reloaded from the
+	// database rather than re-read from disk. Doing it here rather than on each
+	// push is the difference between hashing three files once per registration
+	// and doing it on every push for every provider.
+	CredentialRevisionKey = "credrev"
 )
 
 // Apple's two HTTP/2 hosts.
@@ -190,7 +206,13 @@ func ValidateEndpoint(endpoint string, skipVerify bool) error {
 	if parsed.Scheme != "https" {
 		return fmt.Errorf("endpoint %q must use https, got scheme %q", endpoint, parsed.Scheme)
 	}
-	if parsed.Host == "" {
+	// Hostname() rather than Host, because Host includes the port and is
+	// non-empty for an authority that is nothing but one. "https://:443" parses
+	// with Host ":443" and Hostname "", so checking Host accepted an endpoint
+	// with no destination at all and left it to fail on the first push --
+	// exactly the kind of deferred failure this function exists to prevent,
+	// since by then whoever supplied it has moved on.
+	if parsed.Hostname() == "" {
 		return fmt.Errorf("endpoint %q has no host", endpoint)
 	}
 
@@ -257,18 +279,47 @@ func ValidateCACert(path string) error {
 	return err
 }
 
-// CACertFingerprint returns a digest of a CA bundle's contents.
+// CredentialRevision digests the credential files a provider was built from, so
+// that a change to any of their contents produces a different value.
 //
-// Used to key cached clients. The pathname is not enough: rotating a CA in place
-// -- writing a new bundle over the old one and re-running /addpsp -- leaves the
-// path identical, so a cache keyed on it would keep serving a client that still
-// trusts the retired authority, until the process restarts. That fails in both
-// directions: the new CA does not take effect, and the old one is still trusted.
+// Order is fixed and each path is included alongside its digest, so that moving
+// a credential between the cert and CA slots, or clearing one, is a change too.
+// An unreadable file contributes an empty digest rather than an error: the
+// builder has already validated the ones it requires, and a value here is only
+// ever compared against another value here.
+func CredentialRevision(certPath, keyPath, caCertPath string) string {
+	parts := make([]string, 0, 6)
+	for _, path := range []string{certPath, keyPath, caCertPath} {
+		parts = append(parts, path, FileFingerprint(path))
+	}
+	digest := sha256.Sum256([]byte(strings.Join(parts, "\x00")))
+	return hex.EncodeToString(digest[:])
+}
+
+// FileFingerprint returns a digest of a credential file's contents.
+//
+// Used to key cached clients, for every file a TLS config is built from: the CA
+// bundle, the client certificate, and its private key. The pathname is not
+// enough, because paths outlive the material they point at. Rotating a
+// credential in place -- writing the new file over the old one and re-running
+// /addpsp -- leaves the path identical, so a cache keyed on the path alone would
+// go on using a client built from the retired material until a restart.
+//
+// For the CA that fails in both directions at once: the new authority does not
+// take effect and the old one is still trusted.
+//
+// For the client certificate it is not a corner case but the annual routine. An
+// APNs certificate expires every year; the operator drops the replacement at the
+// same path and re-runs /addpsp. Nothing about the provider's identity changes
+// -- the paths live in FixedData, which is what psp.Name() hashes, so the name
+// is identical, and using a *different* path instead would be rejected as a
+// different provider. Without the contents in the key there is no way to start
+// using a renewed certificate short of restarting uniqush.
 //
 // An unreadable file returns an empty fingerprint rather than an error. The
 // caller is building a cache key on a path that createTLSConfig is about to
 // fail on anyway, with a better message than this could give.
-func CACertFingerprint(path string) string {
+func FileFingerprint(path string) string {
 	if path == "" {
 		return ""
 	}

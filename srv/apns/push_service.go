@@ -243,6 +243,24 @@ func buildHTTP2Destination(kv map[string]string, psp *push.PushServiceProvider, 
 		}
 		psp.VolatileData[common.CACertKey] = caCert
 	}
+
+	// Record what the credential files contained, now that they have all been
+	// validated and their paths settled.
+	//
+	// This is what lets the push path decide whether a cached TLS client is
+	// still the right one without opening anything. Rotating a certificate in
+	// place -- the annual APNs renewal -- leaves every path identical and
+	// psp.Name() unchanged, so the revision is the only thing that moves, and
+	// the cache notices.
+	//
+	// It is deliberately computed here and not on the push path. /addpsp is the
+	// only moment a rotation can take effect at all, because a provider reaches
+	// a push by being loaded from the database rather than re-read from disk, so
+	// hashing on every push would be three file reads per provider per request
+	// to learn something that can only change here.
+	psp.VolatileData[common.CredentialRevisionKey] = common.CredentialRevision(
+		psp.FixedData["cert"], psp.FixedData["key"], psp.VolatileData[common.CACertKey])
+
 	return nil
 }
 
