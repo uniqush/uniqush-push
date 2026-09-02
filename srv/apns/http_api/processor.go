@@ -490,6 +490,14 @@ func (prp *HTTPPushRequestProcessor) sendRequests(request *common.PushRequest) {
 		url := fmt.Sprintf("%s/3/device/%s", http2UrlHost, hex.EncodeToString(token))
 		httpRequest, err := http.NewRequest("POST", url, bytes.NewReader(request.Payload))
 		if err != nil {
+			// Counted off explicitly. wg was sized for every device up front,
+			// and sendRequest -- which is what normally calls Done -- is never
+			// reached on this path. Without this the WaitGroup never reaches
+			// zero: wg.Wait below blocks forever, the deferred close of
+			// ErrChan never runs, and the goroutine in push_service.go ranging
+			// over it blocks with it. One unbuildable URL wedges the push and
+			// leaks two goroutines, silently and permanently.
+			wg.Done()
 			request.ErrChan <- push.NewError(err.Error())
 			continue
 		}
