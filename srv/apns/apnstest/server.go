@@ -48,6 +48,7 @@ import (
 	"fmt"
 	"io"
 	"math/big"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -159,6 +160,16 @@ type Server struct {
 	responses      map[string]Response
 	maxPayloadSize int
 	requireTopic   string
+
+	// activeConns counts connections this server currently holds open.
+	//
+	// Reported per server rather than inferred from the client side, because
+	// the only client-side signal is a process-wide goroutine count -- and every
+	// other test in the package shares that process. A neighbour opening or
+	// closing a connection moves such a count underneath whoever is reading it,
+	// which makes a leak test flaky in both directions. This counts exactly the
+	// connections to exactly this simulator.
+	activeConns int
 }
 
 // NewServer starts a simulator on a random port with a self-signed certificate.
@@ -175,12 +186,44 @@ func NewServer() (*Server, error) {
 
 	httpServer := httptest.NewUnstartedServer(http.HandlerFunc(server.handle))
 	httpServer.EnableHTTP2 = true
+	httpServer.Config.ConnState = server.trackConn
 	httpServer.StartTLS()
 	server.httpServer = httpServer
 	return server, nil
 }
 
 // URL is the base URL to give uniqush as the provider's endpoint.
+// trackConn keeps activeConns in step with net/http's view of the connection.
+//
+// StateNew and StateClosed bracket a connection's life; StateHijacked is the
+// other terminal state and is counted with it. The intermediate states --
+// active, idle -- say what a connection is doing, not whether it exists.
+func (s *Server) trackConn(_ net.Conn, state http.ConnState) {
+	switch state {
+	case http.StateNew:
+		s.mutex.Lock()
+		s.activeConns++
+		s.mutex.Unlock()
+	case http.StateClosed, http.StateHijacked:
+		s.mutex.Lock()
+		s.activeConns--
+		s.mutex.Unlock()
+	case http.StateActive, http.StateIdle:
+	}
+}
+
+// ActiveConnections reports how many connections this server currently holds.
+//
+// The point of measurement for whether a client released what it opened: it
+// counts this server's own sockets, so it is unaffected by anything else
+// running in the same test binary.
+func (s *Server) ActiveConnections() int {
+	s.mutex.Lock()
+	defer s.mutex.Unlock()
+	return s.activeConns
+}
+
+// URL returns the simulator's base URL, for an /addpsp endpoint setting.
 func (s *Server) URL() string { return s.httpServer.URL }
 
 // Close shuts the simulator down.
