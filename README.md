@@ -19,19 +19,23 @@ server side, you can send push notifications to any supported mobile platform.
 > This project was dormant from 2020 to 2026, and in that time some of the
 > upstream APIs it depends on were shut down.
 >
-> - **APNs — repaired, but not yet verified against Apple's servers.** As of the
->   unreleased version it uses the HTTP/2 API by default and sends the
+> - **APNs — repaired, and verified as far as Apple allows without an account.**
+>   As of the unreleased version it uses the HTTP/2 API by default and sends the
 >   `apns-push-type` header that iOS 13+ requires. Earlier releases defaulted to
 >   the binary protocol, which Apple switched off on 31 March 2021, and could
 >   not deliver at all.
 >
->   These changes are covered by unit tests against a mocked APNs, but **nobody
->   has yet run them against real Apple credentials and a real device**, because
->   the current maintainer does not have an Apple developer account — and Apple
->   sells no way to get one for free. If you have one, a report either way would
->   be genuinely useful; see
->   [docs/apns-verification-plan.md](docs/apns-verification-plan.md), which lists
->   exactly which cases have no coverage.
+>   `go test ./srv/apns/` now drives the real HTTP/2 transport against a
+>   simulator that enforces Apple's documented contract, and
+>   `go test -tags apns_live ./srv/apns/http_api/` checks reachability and error
+>   parsing against Apple's real sandbox, which answers unauthenticated
+>   requests.
+>
+>   What remains is delivery to a device, and that needs a paid Apple Developer
+>   Program membership — Apple sells no free route to one. **If you have an
+>   account, a report either way would be genuinely useful**; see
+>   [docs/apns-verification-plan.md](docs/apns-verification-plan.md) for exactly
+>   which cases still have no coverage.
 > - **FCM — migrated to HTTP v1, and verified against Google.** The legacy
 >   endpoint it used was decommissioned on 20 June 2024. `/addpsp` now takes
 >   `projectid` and `credentialsfile` instead of `apikey`; devices do not need

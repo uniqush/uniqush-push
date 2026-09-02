@@ -1,202 +1,181 @@
 # Verifying the APNs backend
 
-APNs is the one backend uniqush cannot currently verify. The HTTP/2 repairs in
-[#278](https://github.com/uniqush/uniqush-push/pull/278) are covered by unit
-tests against a mocked APNs, but nobody has run them against Apple's servers
-with real credentials and a real device.
+APNs is the backend uniqush can verify least. The HTTP/2 repairs in
+[#278](https://github.com/uniqush/uniqush-push/pull/278) were covered only by
+unit tests against a mocked APNs, and nobody had run them against Apple's
+servers.
 
-That gap is not going to close on its own, because **Apple charges for the
-ability to close it**. Push Notifications is not among the capabilities
-available to a free Apple ID: enabling it needs an App ID with the APS
-entitlement, which needs a paid Apple Developer Program membership ($99/year).
-That is true for both authentication methods — a `.p12` certificate and a `.p8`
-token key are both minted from a paid account. There is no free tier and no
-legitimate way around it.
+That gap cannot be closed completely, because **Apple charges for the ability to
+close it**. Push Notifications is not among the capabilities available to a free
+Apple ID: enabling it needs an App ID with the APS entitlement, which needs a
+paid Apple Developer Program membership ($99/year). That is true for both
+authentication methods — a `.p12` certificate and a `.p8` token key are both
+minted from a paid account. There is no free tier and no legitimate way around
+it.
 
-So the plan is to get as close as possible without an account, and to make it
-trivial for someone who *has* an account to cover the rest.
-
-This document describes three pieces of work. They are independent and roughly
-ordered by value per hour spent.
+So the approach is to get as close as possible without an account, and to make
+it cheap for someone who has one to cover the rest. Most of that now exists.
 
 ---
 
-## 1. Point the HTTP/2 client somewhere other than Apple
+## What you can run today
 
-**Why:** everything else here depends on it, and today it is impossible.
+### The conformance suite — `go test ./srv/apns/`
 
-Two things are hardcoded:
+`srv/apns/apnstest` is an APNs simulator, and `srv/apns/conformance_test.go`
+drives the real push service against it over a real HTTP/2 socket. This is the
+first coverage the HTTP/2 path has had that exercises the transport rather than
+mocking it out.
 
-- `srv/apns/http_api/processor.go:184-192` picks between
-  `api.push.apple.com` and `api.development.push.apple.com` by string-matching
-  the *binary protocol* `addr` field for `"sandbox"` or `"api.development."`.
-  There is no way to express any other host. The existing `// TODO: Allow
-  specifying http2 addr without string matching heuristics` is this problem.
-- `createTLSConfig` at `srv/apns/http_api/processor.go:103-114` hardcodes
-  `InsecureSkipVerify: false` and accepts no custom CA, so the `skipverify`
-  option that `/addpsp` records is silently ignored on the HTTP/2 path.
+The simulator enforces Apple's documented contract instead of accepting whatever
+arrives — the `/3/device/<hex>` path shape, the required headers, priority 5 for
+background pushes, the 4096-byte ceiling, canonical `apns-id` UUIDs, and
+duplicate headers. That last one is worth calling out: `http.Header.Set`
+canonicalises `apns-topic` to `Apns-Topic`, and using it alongside a lowercase
+literal puts the field on the wire twice, which Apple answers with 400
+`DuplicateHeaders`. It is an easy change to make while tidying and invisible
+without a server that counts.
 
-The consequence is worth stating plainly: `srv/apns/apns-test/apns-test.sh` and
-the `uniqush/apns-simulator` it drives only ever exercised the **binary**
-protocol — the one Apple switched off on 31 March 2021. The repaired code path
-has no end-to-end test at all, and cannot have one.
+Each of these was confirmed to fail the suite when reintroduced:
 
-**What to do:**
+| Reintroduced bug | Caught by |
+|---|---|
+| `apns-push-type` header dropped | `TestConformanceAlertPush` |
+| `apns-priority` hardcoded to 10 | `TestConformanceBackgroundPushUsesPriority5` |
+| header shared instead of cloned per token | `TestConformanceEachTokenGetsItsOwnAPNSID` |
+| `Header.Set` alongside the lowercase literal | `TestConformanceHeadersAreSentOnce` |
+| endpoint hardcoded back to Apple | `TestConformanceEndpointIsHonoured` |
 
-- Add an explicit endpoint setting to the APNs provider, recorded in
-  `VolatileData` by `buildBinaryPushServiceProviderFromMap` in
-  `srv/apns/push_service.go`. Keep deriving the Apple hosts from `sandbox` /
-  `addr` when it is absent, so no existing provider changes behaviour.
-- Honour `skipverify` in `createTLSConfig`, and ideally accept a CA bundle so a
-  local simulator can be trusted properly rather than by disabling verification.
-- Reject a non-Apple endpoint unless `skipverify` or an explicit CA is set, so
-  a typo cannot quietly redirect production pushes.
+What it cannot tell you is whether Apple agrees with any of it. The simulator
+matches our reading of the documentation, which is exactly the thing in doubt.
 
-Note the security shape here. For every other backend the destination host is a
-constant compiled into uniqush; making it configurable moves APNs closer to the
-webpush backend, where the destination comes from outside. It is not as exposed
-as webpush — this value comes from the operator via `/addpsp`, not from an
-arbitrary `/subscribe` caller — but the SSRF reasoning in the webpush backend is
-worth rereading before choosing where the value may come from.
+### The live probe — `go test -tags apns_live ./srv/apns/http_api/`
 
----
-
-## 2. A local APNs conformance simulator
-
-**Why:** it verifies everything except Apple's own acceptance, needs no account,
-and runs in CI on every commit.
-
-`uniqush/apns-simulator` exists but speaks the dead binary protocol. What is
-needed is an HTTP/2 server that implements Apple's documented contract strictly
-enough that passing it means something:
-
-- `POST /3/device/<lowercase hex token>`, and a 400 `BadDeviceToken` for
-  anything else
-- required headers: `apns-topic`, `apns-push-type`, `apns-expiration`,
-  `apns-priority`, `apns-id`
-- the header rules uniqush now depends on — a background push must use priority
-  5, and priority 10 with `apns-push-type: background` is a 400 `BadPriority`
-- lowercase header field names on the wire (HTTP/2 requires it; the comment at
-  `processor.go:166` explains why uniqush writes `http.Header` entries directly
-  rather than using `Set`)
-- the 4096-byte payload limit, as 413 `PayloadTooLarge`
-- error responses as `{"reason": "..."}` with the documented status codes
-- 410 `Unregistered` with a `timestamp`
-- 429 with `Retry-After`, and a GOAWAY, so the connection-level handling gets
-  exercised too
-
-Then drive the real `uniqush-push` binary against it over the REST API —
-`/addpsp`, `/subscribe`, `/push` — so the test covers the whole stack rather
-than just the processor. A rewritten `apns-test.sh` is the natural shape.
-
-The assertions worth having are the ones that encode Apple's behaviour rather
-than uniqush's: that a background push without `apns-push-type` would have been
-silently dropped, that the four `permanentTokenFailureReasons` unsubscribe and
-that `Forbidden` and `PayloadTooLarge` deliberately do not.
-
-Prior art: [`bergusman/apnsmock-go`](https://github.com/bergusman/apnsmock-go).
-Writing our own is probably still right, because the point is to encode Apple's
-rules as assertions we control, but it is worth reading first.
-
----
-
-## 3. A live probe against Apple's real sandbox
-
-**Why:** it tests against genuine Apple infrastructure, costs nothing, needs no
-account, and takes under an hour.
-
-`api.sandbox.push.apple.com` answers unauthenticated requests. Confirmed:
+Apple's development host answers unauthenticated requests. `-D -` prints the
+status line and headers, which `-s` alone does not:
 
 ```console
-$ curl -sv --http2 -X POST https://api.sandbox.push.apple.com/3/device/aaaa -d '{}'
-...
-< HTTP/2 403
-< apns-id: F4121B12-E0BF-3266-F079-D9253E98BF49
+$ curl -sS -D - --http2 -X POST \
+    -H 'apns-topic: com.example.uniqush.probe' \
+    -H 'apns-push-type: alert' \
+    https://api.development.push.apple.com/3/device/aaaa -d '{"aps":{}}'
+HTTP/2 403
+apns-id: 9CC486EA-EA83-9351-40DF-557A308816D8
+
 {"reason":"MissingProviderToken"}
 ```
 
-That single exchange exercises a surprising amount: TLS to Apple, ALPN
-negotiating h2, the hostname, the `/3/device/` path shape, HTTP/2 framing, and
-the error-response parser running on a real Apple error body rather than a
-fixture someone typed.
+That is the host the live tests target, `common.HostDevelopment`.
+`api.sandbox.push.apple.com` is the older name for the same environment and
+behaves identically, but the command above is the one that matches what is
+under test.
 
-Build-tag it (`//go:build apns_live`) alongside `srv/fcm/live_test.go`, which is
-the same idea for FCM and can be copied. Assert that a 403 comes back, that the
-body parses as `APNSErrorResponse`, that the reason is one of the auth-related
-values, and — importantly — that uniqush does **not** treat it as a dead token
-and unsubscribe. `Forbidden` is on Apple's do-not-retry list but is deliberately
-absent from `permanentTokenFailureReasons`, and this is a live check of that
-distinction.
+So these tests run against genuine Apple infrastructure with no account at all.
+They cover TLS to Apple, ALPN negotiating h2, both host constants, the
+`/3/device` path shape, and uniqush's own `APNSErrorResponse` parsing a real
+Apple error body rather than a fixture. They also assert that uniqush does *not*
+treat `MissingProviderToken` — the reason Apple returns for an unauthenticated
+push — as a dead token, since unsubscribing on it would delete every
+subscription in a service because a credential was wrong.
 
-What it cannot tell you: whether a real payload is accepted or delivered.
+What they cannot reach is `Forbidden`, which requires authenticating and then
+being refused for the topic. That needs a paid account, so the guarantee that
+uniqush does not unsubscribe on it lives in the simulator instead, in
+`TestConformanceForbiddenDoesNotUnsubscribe`. Asserting it here would mean
+indexing the failure map with whatever reason happened to come back, which
+passes whether or not the guarantee holds.
+
+They are build-tagged, so they stay out of `go test ./...` and out of CI.
+
+### Pointing uniqush at either
+
+`/addpsp` takes two settings that make the above possible:
+
+```
+-d endpoint=https://localhost:8443   # APNs HTTP/2 base URL
+-d cacert=/path/to/ca.pem            # verify it against this CA
+```
+
+Both live in `VolatileData`, so a service can move between environments without
+every device re-subscribing, and both are optional — without them the
+environment is inferred from `addr` exactly as before, so no existing provider
+changes where it sends. `skipverify` is refused for Apple's own hosts: it is an
+easy setting to leave behind after testing, and it disables the only check that
+the host answering for `api.push.apple.com` is Apple.
+
+Prefer `cacert` over `skipverify` when testing. It still verifies the chain and
+the hostname, so the code path production uses is the code path under test.
 
 ---
 
-## 4. Token (`.p8`) authentication
+## What is left
 
-**Why:** it is what almost everyone uses now, and it widens the pool of people
-who could test #5 for us.
+### Token (`.p8`) authentication
 
 uniqush only supports certificate authentication: `createTLSConfig` loads a
-`cert`/`key` pair, and `/addpsp` requires both. Apple's token-based auth — an
-ES256-signed JWT in an `authorization` header, from a `.p8` key plus a key id
-and team id — is not implemented at all.
+`cert`/`key` pair and `/addpsp` requires both. Apple's token-based auth — an
+ES256-signed JWT built from a `.p8` key, a key id and a team id — is not
+implemented.
 
 Certificates expire annually and are per-app; a `.p8` key does not expire and
-works for every app in the team, which is why it is the default choice in
-current documentation and in every actively maintained APNs library. Anyone
-volunteering to test uniqush is likely to have a `.p8` and to find being asked
-for a `.p12` odd.
+covers every app in the team, which is why it is the default in current
+documentation and in every actively maintained APNs library. Anyone volunteering
+to test uniqush is likely to have a `.p8` and to find being asked for a `.p12`
+odd, so this widens the pool for the item below.
 
-**What to do:**
-
-- Accept `authkey` (path to the `.p8`), `keyid` and `teamid` in
-  `/addpsp`, as an alternative to `cert`/`key`.
-- Mint a JWT with `alg: ES256`, `kid: <keyid>`, `iss: <teamid>` and `iat`, and
-  send it as `authorization: bearer <jwt>`.
+- Accept `authkey` (path to the `.p8`), `keyid` and `teamid` in `/addpsp`, as an
+  alternative to `cert`/`key`.
+- Mint a JWT with `alg: ES256`, `kid`, `iss` and `iat`, sent as
+  `authorization: bearer <jwt>`.
 - Cache and refresh it. Apple rejects a token older than one hour with
-  `ExpiredProviderToken`, and rejects *minting* more than one per 20 minutes
-  per key with `TooManyProviderTokenUpdates`, so the refresh window has to sit
-  between those two bounds — roughly every 40-50 minutes.
-- Keep the credential out of `FixedData`. A provider's name is a hash of its
-  fixed data and `/addpsp` refuses an update that changes it, so putting a
-  rotatable credential there would make rotation impossible without
-  re-subscribing every device. `srv/fcm/push_service.go` has the same
-  reasoning written out for `credentialsfile`.
-- `golang.org/x/oauth2` is already a dependency and `github.com/golang-jwt/jwt/v5`
-  is already an indirect one, so this needs no new module.
+  `ExpiredProviderToken`, and rejects minting more than one per 20 minutes per
+  key with `TooManyProviderTokenUpdates`, so the refresh window has to sit
+  between those bounds — roughly every 40-50 minutes.
+- Keep the credential out of `FixedData`, for the same reason `endpoint` is not
+  there: a provider's name hashes its fixed data, so a rotatable credential
+  stored there could never be rotated without re-subscribing every device.
+  `srv/fcm/push_service.go` has the same reasoning written out for
+  `credentialsfile`.
+- No new dependency needed: `github.com/golang-jwt/jwt/v5` is already indirect.
 
----
+The simulator should grow matching support — validating the JWT signature,
+returning `ExpiredProviderToken` past the hour, and
+`TooManyProviderTokenUpdates` on over-eager refresh — so the refresh timing can
+be tested without waiting an hour against Apple.
 
-## 5. The part that needs someone with an account
+### The part that needs an Apple account
 
 None of the above proves a notification arrives on an iPhone. That needs a paid
-membership, and the most realistic route is asking someone who has one.
+membership, and the realistic route is asking someone who has one.
 
-The README already invites reports. What would make that ask likely to succeed
-is a kit: a script that takes a `.p8` (or `.p12`), a team id, a bundle id and a
-device token, runs `/addpsp`, `/subscribe` and `/push` against a local uniqush,
-and prints a filled-in report to paste into an issue. Ten minutes of a
-stranger's time, rather than an open-ended favour.
+What would make that ask likely to succeed is a kit: a script taking a `.p8` (or
+`.p12`), a team id, a bundle id and a device token, which runs `/addpsp`,
+`/subscribe` and `/push` against a local uniqush and prints a filled-in report
+to paste into an issue. Ten minutes of a stranger's time, rather than an
+open-ended favour.
 
-Worth asking for specifically, since these are the changes with no coverage:
+Worth asking for specifically, since these have no coverage:
 
 - an alert push to a foregrounded and a backgrounded app
 - a **background** push (`apns-push-type: background`, priority 5) — the case
   that used to return 200 and then silently drop, and the main thing #278 fixed
 - a VoIP push, via both `uniqush.apns_push_type=voip` and the older
   `uniqush.apns_voip=1`
-- a push to a token from the other environment, which should come back
+- a push to a token from the other environment, expected to come back
   `BadDeviceToken` and unsubscribe
-- a push to an uninstalled app, which should come back 410 `Unregistered`
-- a >4096-byte payload, which should be rejected locally, not by Apple
+- a push to an uninstalled app, expected to come back 410 `Unregistered`
+
+Note that `srv/apns/apns-test/apns-test.sh` and the `uniqush/apns-simulator` it
+drives are binary-protocol only, and so exercise a path Apple switched off on
+2021-03-31. The conformance suite replaces them for HTTP/2; the script is worth
+retiring or rewriting against `endpoint`.
 
 ## Status
 
-| | Needs an Apple account | Proves |
-|---|---|---|
-| 1. Configurable endpoint | no | nothing on its own; unblocks 2 |
-| 2. Local simulator | no | protocol conformance, error mapping, the whole stack |
-| 3. Live sandbox probe | no | reachability, TLS/ALPN/h2, real error parsing |
-| 4. `.p8` auth | no to build, yes to test | nothing on its own; widens the pool for 5 |
-| 5. Real device | yes | delivery |
+| | Needs an Apple account | Proves | State |
+|---|---|---|---|
+| Configurable endpoint and CA | no | nothing alone; unblocks the rest | done |
+| Local simulator | no | protocol conformance, error mapping, the whole stack | done |
+| Live sandbox probe | no | reachability, TLS/ALPN/h2, real error parsing | done |
+| `.p8` auth | no to build, yes to test | nothing alone; widens the pool below | outstanding |
+| Real device | **yes** | delivery | outstanding |
