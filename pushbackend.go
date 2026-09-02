@@ -129,7 +129,16 @@ func (backend *PushBackEnd) fixError(
 	}
 }
 
-// fixRetryError will retry sending the push with longer and longer intervals, and give up when the interval exceeds 1 minute.
+// maxRequestedRetryDelay bounds how long a push service may ask uniqush to hold
+// a notification before retrying it.
+//
+// Comfortably above the longest delay any backend legitimately asks for --
+// APNs' 20-minute provider-token floor -- and far below the point where holding
+// a notification in memory stops being reasonable.
+const maxRequestedRetryDelay = 30 * time.Minute
+
+// fixRetryError will retry sending the push with longer and longer intervals, and give up when the interval exceeds 1 minute,
+// or the delay the push service asked for if that is longer.
 func (backend *PushBackEnd) fixRetryError(
 	err *push.RetryError,
 	reqID string,
@@ -159,8 +168,22 @@ func (backend *PushBackEnd) fixRetryError(
 	// past a minute) would spend four pointless requests and then drop the
 	// notification. Seeding from err.After makes the first retry land when the
 	// service said it would be worth trying.
-	if err.After > after {
-		after = err.After
+	//
+	// Capped, because for every service other than APNs that duration comes
+	// from a Retry-After header, and neither fcm nor webpush bounds what it
+	// parses out of one. A retry is a live goroutine holding a timer and the
+	// notification, so honouring the header verbatim would let a remote server
+	// -- hostile, or merely misconfigured -- pin uniqush's memory for as long
+	// as it liked by answering "Retry-After: 1000000". Before this seeding
+	// existed the ceiling was a flat minute and the question did not arise.
+	requested := err.After
+	if requested > maxRequestedRetryDelay {
+		logger.Errorf("RequestID=%v Service=%v PushServiceProvider=%v asked to retry after %v, capping at %v",
+			reqID, service, err.Provider.Name(), requested, maxRequestedRetryDelay)
+		requested = maxRequestedRetryDelay
+	}
+	if requested > after {
+		after = requested
 	}
 	if after <= 1*time.Second {
 		after = 5 * time.Second
@@ -171,8 +194,8 @@ func (backend *PushBackEnd) fixRetryError(
 	// asked for. It bounds the doubling either way, so a 20-minute request
 	// buys one retry at 20 minutes rather than an unbounded series.
 	ceiling := 1 * time.Minute
-	if err.After > ceiling {
-		ceiling = err.After
+	if requested > ceiling {
+		ceiling = requested
 	}
 
 	providerName := err.Provider.Name()

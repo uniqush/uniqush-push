@@ -51,6 +51,25 @@ Unreleased
   its last request drains instead of being closed underneath it.
   `TryGetClient` is removed: it looked providers up by name after the cache
   moved to a composite key, so it had been returning nil for every caller.
+### Retries: a push service's own delay is honoured, within a cap
+
+- Change: **`RetryError.After` now seeds the retry schedule.** Previously the
+  first retry was always 5 seconds and the push was abandoned once the interval
+  passed a minute, whatever the service asked for. APNs' `TooManyProviderTokenUpdates`
+  carries Apple's 20-minute floor and cannot succeed before it clears, so the
+  old schedule spent four pointless requests and then dropped the notification.
+
+  This affects **every** backend, not only APNs: `fcm`, `unifiedpush` and `adm`
+  all derive `After` from a `Retry-After` header, so their first retry now lands
+  when the server said to come back rather than at a flat 5 seconds.
+
+- Safety: **a requested delay is capped at 30 minutes.** A retry is a live
+  goroutine holding a timer and the notification, and neither `fcm` nor
+  `unifiedpush` bounds what it parses out of `Retry-After` -- so without a cap a
+  remote server could pin uniqush's memory by answering with a very large value.
+  The cap sits above the longest delay any backend legitimately asks for. A
+  request beyond it is logged and clamped.
+
 ### APNs: token (.p8) authentication, and a way to test any of this
 
 - Feature: **APNs providers can authenticate with a signing key instead of a
