@@ -134,9 +134,26 @@ func (ps *pushService) SetErrorReportChan(errChan chan<- push.Error) {
 func (ps *pushService) SetPushServiceConfig(c *push.PushServiceConfig) {
 	// This uses the fact that registration takes place before any requests are sent, so pools aren't created yet.
 
+	// Whether a provider may be pointed anywhere other than Apple. Absent or
+	// unparseable means off, which is the default and the safe direction: the
+	// option only ever widens what /addpsp will accept.
+	//
+	// Written unconditionally, including on error. Only setting it when the
+	// option parses would make this fail *open* on reconfiguration: the setting
+	// is process-wide, SetPushServiceConfig can be called again through the push
+	// service manager, and skipping the write on error would leave a gate that
+	// an earlier config had opened still open after the option was removed or
+	// corrupted. Deleting the line has to turn the capability off.
+	allow, err := c.GetBool(optionAllowNonAppleEndpoints)
+	common.SetAllowNonAppleEndpoints(err == nil && allow)
+
 	ps.binaryRequestProcessor.SetPushServiceConfig(c)
 	ps.httpRequestProcessor.SetPushServiceConfig(c)
 }
+
+// optionAllowNonAppleEndpoints is the uniqush.conf option, in the [apns]
+// section, that permits providers pointed somewhere other than Apple.
+const optionAllowNonAppleEndpoints = "allow_non_apple_endpoints"
 
 func (ps *pushService) BuildPushServiceProviderFromMap(kv map[string]string, psp *push.PushServiceProvider) error {
 	if service, ok := kv["service"]; ok {
@@ -166,10 +183,19 @@ func (ps *pushService) buildBinaryPushServiceProviderFromMap(kv map[string]strin
 		return err
 	}
 
-	if skip, ok := kv["skipverify"]; ok {
-		if skip == "true" {
-			psp.VolatileData["skipverify"] = "true"
-		}
+	// Set or cleared on every call, never left alone. /addpsp is a
+	// create-or-replace of the whole provider rather than a partial update --
+	// bundleid below has always worked this way -- so a setting the operator
+	// stopped sending is one they mean to be gone.
+	//
+	// This one matters most of the three: leaving a stale "true" here would mean
+	// certificate verification could be turned off but never back on without
+	// deleting the provider and re-subscribing every device.
+	skipVerify := kv[common.SkipVerifyKey] == "true"
+	if skipVerify {
+		psp.VolatileData[common.SkipVerifyKey] = "true"
+	} else {
+		delete(psp.VolatileData, common.SkipVerifyKey)
 	}
 
 	// Put other things which can change in VolatileData.
@@ -180,14 +206,78 @@ func (ps *pushService) buildBinaryPushServiceProviderFromMap(kv map[string]strin
 		psp.VolatileData["bundleid"] = ""
 	}
 	if sandbox, ok := kv["sandbox"]; ok && sandbox == "true" {
-		psp.VolatileData["addr"] = "gateway.sandbox.push.apple.com:2195"
+		psp.VolatileData[common.AddrKey] = "gateway.sandbox.push.apple.com:2195"
 	} else {
-		if addr, ok := kv["addr"]; ok {
-			psp.VolatileData["addr"] = addr
+		if addr, ok := kv[common.AddrKey]; ok {
+			psp.VolatileData[common.AddrKey] = addr
 		} else {
-			psp.VolatileData["addr"] = "gateway.push.apple.com:2195"
+			psp.VolatileData[common.AddrKey] = "gateway.push.apple.com:2195"
 		}
 	}
+
+	return buildHTTP2Destination(kv, psp, skipVerify)
+}
+
+// buildHTTP2Destination records where HTTP/2 pushes go, and how to trust it.
+//
+// Both settings live in VolatileData rather than FixedData, and that is not a
+// stylistic choice. A provider's name is a hash of its FixedData, and /addpsp
+// rejects an update whose fixed data changed -- it reads that as a second,
+// conflicting provider for the service. Putting the endpoint there would mean
+// an operator could never move a service between the sandbox and production, or
+// point it at a simulator and back again, without every device re-subscribing.
+//
+// Both are optional, and absent they change nothing: ResolveEndpoint falls back
+// to the environment inferred from addr, exactly as before.
+func buildHTTP2Destination(kv map[string]string, psp *push.PushServiceProvider, skipVerify bool) error {
+	// Both are cleared when absent or empty, not merely left alone. Without
+	// that, an operator who pointed a service at a simulator could never point
+	// it back: the endpoint would still be in VolatileData, and the fallback to
+	// the addr-inferred host that the comment above promises would be
+	// unreachable. The same for a CA bundle and the system roots. bundleid has
+	// always cleared this way, and /addpsp replaces a provider wholesale rather
+	// than patching it.
+	endpoint := strings.TrimSpace(kv[common.EndpointKey])
+	if endpoint == "" {
+		delete(psp.VolatileData, common.EndpointKey)
+	} else {
+		if err := common.ValidateEndpoint(endpoint, skipVerify); err != nil {
+			return err
+		}
+		psp.VolatileData[common.EndpointKey] = endpoint
+	}
+
+	caCert := strings.TrimSpace(kv[common.CACertKey])
+	if caCert == "" {
+		delete(psp.VolatileData, common.CACertKey)
+	} else {
+		// Read the file now rather than on the first push. uniqush reads it in
+		// its own process and possibly as another user, so an unreadable path
+		// or a file that is not actually PEM is worth reporting to whoever just
+		// supplied it, while they still have the context to fix it.
+		if err := common.ValidateCACert(caCert); err != nil {
+			return err
+		}
+		psp.VolatileData[common.CACertKey] = caCert
+	}
+
+	// Record what the credential files contained, now that they have all been
+	// validated and their paths settled.
+	//
+	// This is what lets the push path decide whether a cached TLS client is
+	// still the right one without opening anything. Rotating a certificate in
+	// place -- the annual APNs renewal -- leaves every path identical and
+	// psp.Name() unchanged, so the revision is the only thing that moves, and
+	// the cache notices.
+	//
+	// It is deliberately computed here and not on the push path. /addpsp is the
+	// only moment a rotation can take effect at all, because a provider reaches
+	// a push by being loaded from the database rather than re-read from disk, so
+	// hashing on every push would be three file reads per provider per request
+	// to learn something that can only change here.
+	psp.VolatileData[common.CredentialRevisionKey] = common.CredentialRevision(
+		psp.FixedData["cert"], psp.FixedData["key"], psp.VolatileData[common.CACertKey])
+
 	return nil
 }
 

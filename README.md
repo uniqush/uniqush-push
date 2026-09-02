@@ -19,16 +19,23 @@ server side, you can send push notifications to any supported mobile platform.
 > This project was dormant from 2020 to 2026, and in that time some of the
 > upstream APIs it depends on were shut down.
 >
-> - **APNs — repaired, but not yet verified against Apple's servers.** As of the
->   unreleased version it uses the HTTP/2 API by default and sends the
+> - **APNs — repaired, and verified as far as Apple allows without an account.**
+>   As of the unreleased version it uses the HTTP/2 API by default and sends the
 >   `apns-push-type` header that iOS 13+ requires. Earlier releases defaulted to
 >   the binary protocol, which Apple switched off on 31 March 2021, and could
 >   not deliver at all.
 >
->   These changes are covered by unit tests against a mocked APNs, but **nobody
->   has yet run them against real Apple credentials and a real device**, because
->   the current maintainer does not have an Apple developer account. If you do,
->   a report either way would be genuinely useful — please open an issue.
+>   `go test ./srv/apns/` now drives the real HTTP/2 transport against a
+>   simulator that enforces Apple's documented contract, and
+>   `go test -tags apns_live ./srv/apns/http_api/` checks reachability and error
+>   parsing against Apple's real sandbox, which answers unauthenticated
+>   requests.
+>
+>   What remains is delivery to a device, and that needs a paid Apple Developer
+>   Program membership — Apple sells no free route to one. **If you have an
+>   account, a report either way would be genuinely useful**; see
+>   [docs/apns-verification-plan.md](docs/apns-verification-plan.md) for exactly
+>   which cases still have no coverage.
 > - **FCM — migrated to HTTP v1, and verified against Google.** The legacy
 >   endpoint it used was decommissioned on 20 June 2024. `/addpsp` now takes
 >   `projectid` and `credentialsfile` instead of `apikey`; devices do not need
@@ -124,6 +131,47 @@ push rather than only at subscribe time, so DNS rebinding does not defeat it.
 Self-hosted push servers on a private network are a supported UnifiedPush
 setup, so this can be relaxed per service in `uniqush-push.conf` with
 `allow_private_addresses`, ideally alongside an `allowed_hosts` list.
+
+## APNs ##
+
+`/addpsp` for `apns` takes the usual `cert`, `key` and `bundleid`. Two optional
+settings control where HTTP/2 pushes actually go:
+
+- `endpoint` — the base URL to push to, e.g. `https://api.sandbox.push.apple.com`.
+  uniqush appends `/3/device/<token>`, so it must have no path, query or
+  fragment. Omitted, the environment is inferred from `addr` exactly as it was
+  before this setting existed.
+- `cacert` — a PEM bundle to verify that endpoint against. Prefer this to
+  `skipverify` when testing: the certificate and hostname are still checked, so
+  a simulator has to present one you actually issued.
+
+Both are cleared if a later `/addpsp` omits them, the same way `bundleid`
+behaves.
+
+### A note on endpoints ###
+
+An `endpoint` decides where every push for a service goes. It carries device
+tokens and the notification payload, and for a certificate provider it is also
+where the APNs client certificate is presented. So unlike the UnifiedPush case
+above — where the destination comes from a subscriber and the defence is an
+address policy — uniqush refuses **any** host outside `push.apple.com` unless
+you opt in:
+
+```
+[apns]
+allow_non_apple_endpoints=true
+```
+
+The check runs before every push as well as at `/addpsp`, because a provider
+loaded from Redis never passes through the code that validates it. An address
+policy would be the wrong tool here: the legitimate destinations are a simulator
+on localhost or a relay inside your network, which is exactly what such a policy
+blocks, while an attacker-controlled public host is exactly what it permits.
+
+`skipverify` is refused outright for Apple's own hosts. It predates the HTTP/2
+path and was silently ignored there, so operators who set it years ago for the
+binary-protocol simulator still have it stored; honouring it now would have
+disabled certificate verification on connections to Apple.
 
 ## FAQ ##
 
