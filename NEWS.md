@@ -49,6 +49,8 @@ Unreleased
   borrow and must be called exactly once, and never on the error path where it
   is nil. Borrowing is what lets a client superseded mid-push stay alive until
   its last request drains instead of being closed underneath it.
+  `TryGetClient` is removed: it looked providers up by name after the cache
+  moved to a composite key, so it had been returning nil for every caller.
 
 ### FCM: migrated to HTTP v1
 

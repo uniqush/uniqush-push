@@ -378,20 +378,6 @@ func createTLSConfig(psp *push.PushServiceProvider) (*tls.Config, error) {
 	return conf, nil
 }
 
-// TryGetClient returns the cached client for a key without borrowing it.
-//
-// Callers must not hold on to the result: nothing stops it being retired the
-// moment this returns. Use GetClient, which counts the borrow, for anything
-// that is going to send a request.
-func (prp *HTTPPushRequestProcessor) TryGetClient(pspName string) HTTPClient {
-	prp.clientsLock.RLock()
-	defer prp.clientsLock.RUnlock()
-	if entry, exists := prp.clients[pspName]; exists {
-		return entry.client
-	}
-	return nil
-}
-
 // Finalize will shut down all of the connections owned by HTTP/2 clients for each PSP.
 //
 // The unlock is deferred rather than absent. It was absent: Finalize took the
