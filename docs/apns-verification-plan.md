@@ -131,7 +131,7 @@ sides: a token whose `iat` is over an hour old is rejected with
 `ExpiredProviderToken`, and minting more than one token per 20 minutes for the
 same key is rejected with `TooManyProviderTokenUpdates`. Both failures apply to
 every push, so either edge is an outage rather than a slowdown. uniqush
-refreshes at 45 minutes, and the token cache is keyed on the signing key rather
+refreshes at 35 minutes, and the token cache is keyed on the signing key rather
 than on the provider — the mint limit is per key, so two services sharing a
 `.p8` have to share one schedule.
 
@@ -149,56 +149,27 @@ on the path it was read from. Apple's limit is per key, and the same `.p8`
 reached by two paths, a symlink or a copy is one key: keying on the pathname
 would give those separate mint schedules, both counting against the same floor.
 
-#### The refresh schedule does not survive a restart
+#### The refresh schedule survives restarts and scales out
 
-> **Note for reviewers of this change:** this limitation is real, is known, and
-> is fixed in the immediately following change rather than here. Half of the
-> answer is already in place: `iat` is quantised into buckets here, so every
-> process agrees on *what* to sign for a given moment. What they do not agree on
-> is the bytes, because `crypto/ecdsa` draws a random nonce — two processes
-> signing the same bucket still produce two different tokens, and Apple counts
-> tokens. The follow-up makes the signature deterministic, which is the piece
-> that turns bucketing into agreement: every process and every restart then
-> computes the same token and Apple sees one per bucket — no shared state, no
-> lock, and no credential stored anywhere new. Sharing the signed token through
-> redis was considered and rejected: redis holds only the *path* to the `.p8`
-> today, and storing the JWT would turn it into an hour-lived bearer credential
-> for the whole team, in a store that is usually unauthenticated. That change
-> carries an architecture decision record setting out the reasoning and the
-> alternatives in full.
->
-> It is separated because it needs a small RFC 6979 implementation, and that
-> deserves to be reviewed on its own rather than buried inside a feature.
+Tokens are signed **deterministically**, and `iat` is quantised into 35-minute
+buckets. Every process, on every restart, independently computes a
+byte-identical JWT for the current bucket, so Apple sees one token per bucket no
+matter how many uniqush instances exist. There is nothing to share and nothing
+to lock.
 
-**As of this change the limitation stands.** The token cache lives in the
-process, so:
+This needed a small amount of cryptographic code — `srv/apns/es256`, RFC 6979
+over `filippo.io/nistec` — because Go's `crypto/ecdsa` cannot sign
+deterministically and, as of Go 1.26, ignores the `Reader` argument outright.
+The decision, the alternatives that were rejected (sharing the token through
+redis, caching it in a local file, handling the rejection reactively alone), and
+how the implementation is verified against the RFC's published test vectors are
+recorded in
+[adr/0001-deterministic-apns-provider-tokens.md](adr/0001-deterministic-apns-provider-tokens.md).
 
-- a restart inside the 20-minute window mints a second token, and
-- two uniqush instances sharing a signing key mint independently.
-
-Apple can answer either with `TooManyProviderTokenUpdates`. In practice a single
-restart is usually tolerated — the limit is on excessive updates rather than a
-hard one-per-20-minutes ban — but frequent restarts or a horizontally scaled
-deployment can trip it, and when it trips it affects every push.
-
-The fix, in the change that follows this one, is to make the token
-*recomputable* rather than shared: sign deterministically and quantise `iat`, so
-every process and every restart independently arrives at the same JWT for the
-same window. Apple sees one token per window however many instances there are,
-and nothing is shared, locked, or written anywhere new.
-
-Sharing the signed token through redis is the obvious alternative, and it was
-considered and rejected. Redis holds only the *path* to the `.p8` today: an
-attacker with redis access gets device tokens and a filename, and cannot push.
-Storing the JWT would turn that into an hour-lived bearer credential for the
-whole team, in a store that in most uniqush deployments is unauthenticated on a
-trusted network and persisted to disk — and it would need a lock, so that two
-instances refreshing at the same moment do not both mint. That is a security and
-operational trade-off worth deciding deliberately rather than inheriting as a
-side effect of adding token auth, which is why it is recorded rather than done.
-
-Anyone running more than one instance against one signing key should know this
-before turning token auth on. Certificate auth has no equivalent limit.
+APNs failures are also classified now: transient ones are retried with a
+backoff, and credential or configuration failures are reported against the
+provider instead of against the notification. Before this, every non-permanent
+reason became a `BadNotification` and the push was dropped.
 
 #### Switching an existing service to `.p8` is not an in-place change
 

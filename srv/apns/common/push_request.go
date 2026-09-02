@@ -54,7 +54,14 @@ type PushRequest struct {
 	PushType string
 
 	// DPList is a list of delivery points of the same length as Devtokens. DPList[i].FixedData["dev_token"] == string(Devtokens[i])
-	DPList  []*push.DeliveryPoint
+	DPList []*push.DeliveryPoint
+
+	// Notification is the push being sent, carried so a transient APNs failure
+	// can become a push.RetryError -- which the backend can only act on if it
+	// has the provider, the delivery point and the content to re-send. Without
+	// it a 503 from Apple is a dropped notification rather than a retried one.
+	Notification *push.Notification
+
 	ErrChan chan<- push.Error
 	ResChan chan<- *APNSResult
 }

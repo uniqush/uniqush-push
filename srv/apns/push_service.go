@@ -464,6 +464,7 @@ func (ps *pushService) Push(psp *push.PushServiceProvider, dpQueue <-chan *push.
 	var err push.Error
 	req := new(common.PushRequest)
 	req.PSP = psp
+	req.Notification = notif
 	req.Payload, err = toAPNSPayload(notif)
 
 	pushType, pushTypeErr := pushTypeForNotification(notif)

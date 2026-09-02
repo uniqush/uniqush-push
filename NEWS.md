@@ -51,6 +51,25 @@ Unreleased
   its last request drains instead of being closed underneath it.
   `TryGetClient` is removed: it looked providers up by name after the cache
   moved to a composite key, so it had been returning nil for every caller.
+### Retries: a push service's own delay is honoured, within a cap
+
+- Change: **`RetryError.After` now seeds the retry schedule.** Previously the
+  first retry was always 5 seconds and the push was abandoned once the interval
+  passed a minute, whatever the service asked for. APNs' `TooManyProviderTokenUpdates`
+  carries Apple's 20-minute floor and cannot succeed before it clears, so the
+  old schedule spent four pointless requests and then dropped the notification.
+
+  This affects **every** backend, not only APNs: `fcm`, `unifiedpush` and `adm`
+  all derive `After` from a `Retry-After` header, so their first retry now lands
+  when the server said to come back rather than at a flat 5 seconds.
+
+- Safety: **a requested delay is capped at 30 minutes.** A retry is a live
+  goroutine holding a timer and the notification, and neither `fcm` nor
+  `unifiedpush` bounds what it parses out of `Retry-After` -- so without a cap a
+  remote server could pin uniqush's memory by answering with a very large value.
+  The cap sits above the longest delay any backend legitimately asks for. A
+  request beyond it is logged and clamped.
+
 ### APNs: token (.p8) authentication, and a way to test any of this
 
 - Feature: **APNs providers can authenticate with a signing key instead of a
@@ -61,42 +80,56 @@ Unreleased
   A `.p8` does not expire and covers every app in the team, unlike a certificate
   which expires annually and is per-app.
 
-  The token is refreshed every 45 minutes. That number is bounded on both sides
+  The token is refreshed every 35 minutes. That number is bounded on both sides
   by Apple and is not a tuning choice: a token older than an hour is rejected
   with `ExpiredProviderToken`, and minting more than one per 20 minutes for the
-  same key is rejected with `TooManyProviderTokenUpdates`. The cache is keyed on
+  same key is rejected with `TooManyProviderTokenUpdates`. The upper bound is
+  the tighter of the two, at `lifetime - floor`, so that recovery from a refused
+  token is always possible; see the ADR. The cache is keyed on
   a fingerprint of the signing key's public half rather than on the provider or
   on the path the key was read from: the mint limit is per key, and the same
   `.p8` reached by two paths, a symlink or a copy is one key to Apple. The key
   is also required to be P-256 at `/addpsp`, since ES256 accepts nothing else
   and a P-384 key would otherwise register cleanly and fail on the first push.
 
-  **Known limitation in this change, fixed in the follow-up: the schedule does
-  not survive a restart.** The cache is process-local, so restarting inside the
-  20-minute window mints a second token, and two uniqush instances sharing a key
-  mint independently; Apple can answer either with
-  `TooManyProviderTokenUpdates`.
+  Tokens are signed **deterministically** and `iat` is quantised into 35-minute
+  buckets, so every process -- and every restart, and every additional instance
+  -- computes a byte-identical token for the same bucket. Apple sees one token
+  per bucket however many uniqush processes there are. Nothing is shared between
+  them and no credential is stored anywhere new.
 
-  Half of the answer is already here: `iat` is quantised into fixed buckets, so
-  every process agrees on *what* to sign for a given moment. What is missing is
-  that they do not agree on the *bytes*, because `crypto/ecdsa` draws a random
-  nonce -- so two processes signing the same bucket still produce two different
-  tokens, and Apple counts tokens.
+  Because Apple measures its 20-minute floor from when it *observes* a token
+  rather than from the token's `iat`, a bucket whose first push lands late can
+  still be refused at the following boundary. uniqush recovers by presenting the
+  previous bucket's token -- the one Apple actually saw, still valid, and
+  recomputable by any instance precisely because signing is deterministic -- and
+  remembers the refusal so the rest of the window skips the failed attempt.
 
-  Reviewers of this change should know the plan rather than weigh a fix that is
-  not here. The follow-up makes the signature deterministic, which is the piece
-  that turns bucketing into agreement: every process and every restart then
-  computes an identical token and Apple sees one per bucket -- with nothing
-  shared between instances and no credential stored anywhere new. The obvious
-  alternative, putting the signed token in redis, was rejected: redis holds only
-  the *path* to the `.p8` today, and storing the JWT would turn it into an
-  hour-lived bearer credential for the whole team in a store that is usually
-  unauthenticated. That change carries an architecture decision record with the
-  full reasoning.
+  That needed `srv/apns/es256`, a small RFC 6979 implementation over
+  `filippo.io/nistec`, because `crypto/ecdsa` cannot sign deterministically and
+  as of Go 1.26 ignores its `Reader` argument entirely. It is checked against
+  the RFC's published P-256 test vectors rather than against itself. The
+  decision and the rejected alternatives are recorded in
+  `docs/adr/0001-deterministic-apns-provider-tokens.md`.
 
-  Until then `TooManyProviderTokenUpdates` is reported against the provider
-  rather than the notification, so the error names the credential at fault
-  instead of implying the payload was malformed.
+- Bugfix: **APNs failures are classified instead of all being called bad
+  notifications.** Every non-permanent reason used to become a
+  `BadNotification` and the push was dropped -- so a 503 from Apple, or a wrong
+  signing key, was reported as though the payload were malformed.
+
+  Transient conditions (`TooManyRequests`, `InternalServerError`,
+  `ServiceUnavailable`, `Shutdown`) are now retried with a backoff, and
+  credential or configuration failures (`InvalidProviderToken`,
+  `ExpiredProviderToken`, `BadCertificate`, `Forbidden`, `BadTopic` and friends)
+  are reported against the provider with a message naming what to check. FCM has
+  done this since its rewrite; APNs had no retry handling at all.
+
+  `TooManyProviderTokenUpdates` moves the other way in this change. The previous
+  release reported it against the provider, which was the best available reading
+  when nothing could be done about it. Now that the previous bucket's token can
+  be recomputed and presented, it is a transient condition with a known recovery,
+  so it is retried -- after Apple's floor, which is what sets the delay -- rather
+  than failing the push.
 
   **An existing certificate-based service cannot be switched to `.p8` in
   place.** A provider's name hashes its fixed data; `cert` and `key` are part of

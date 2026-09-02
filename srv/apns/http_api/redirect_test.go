@@ -99,12 +99,17 @@ func TestARedirectIsReportedRatherThanSwallowed(t *testing.T) {
 
 	errChan := make(chan push.Error, 1)
 	resChan := make(chan *common.APNSResult, 1)
+	request := &common.PushRequest{
+		PSP:     pushServiceProvider,
+		ErrChan: errChan,
+		ResChan: resChan,
+	}
 
 	response := &http.Response{
 		StatusCode: http.StatusTemporaryRedirect,
 		Header:     http.Header{"Location": []string{"https://elsewhere.example/3/device/abc"}},
 	}
-	processor.handlePushResponseBody(response, nil, 1, pushServiceProvider, errChan, resChan)
+	processor.handlePushResponseBody(response, nil, 1, request, nil)
 
 	select {
 	case err := <-errChan:
