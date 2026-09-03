@@ -3,357 +3,84 @@ uniqush-push NEWS
 Unreleased
 -------------------------------
 
-### Database: a delivery point is no longer bound to its provider's credentials
+The longer version of everything below, for operators, is in
+[docs/upgrading.md](docs/upgrading.md). No device needs to re-subscribe.
 
-- Bugfix: **a read no longer deletes delivery points.**
-  `GetPushServiceProviderDeliveryPointPairs` used to delete any delivery point
-  whose push service provider it could not find, which made `/rmpsp`
-  unrecoverable: it reported success, and every device in the service was
-  silently unsubscribed later, during an unrelated push. Re-adding the provider
-  did not bring them back.
+APNs:
 
-  Such a delivery point is now skipped and logged. The one case still cleaned up
-  is a name in a subscriber's set whose record has already gone, and that
-  teardown is now complete -- it used to delete the record, which was by
-  definition already absent, while leaving the subscriber's set entry and
-  leaking the refcount.
+Anyone running uniqush for APNs should treat this as a required upgrade: 2.7.0
+could not deliver an iOS notification at all. The changes are verified against
+a conformance simulator and Apple's sandbox, but not yet against a real device;
+see docs/apns-verification-plan.md.
 
-- Feature: **`/addpsp` accepts `replace=true`.** A provider of the same service
-  and push service type whose fixed data differs -- a credential change, most
-  usefully a move from an APNs certificate to a `.p8` signing key -- now
-  replaces the existing one instead of being rejected, and the service's
-  subscriptions survive.
+- Bugfix: Use the HTTP/2 API by default. Apple shut the binary protocol down on 31 March 2021.
+  `uniqush.http2=0` still selects it and logs a deprecation warning; it will be removed in a future release.
+- Bugfix: Send the `apns-push-type` header, and derive `apns-priority` from it instead of hardcoding 10.
+  Background pushes were previously either silently discarded (iOS 13+) or rejected with `BadPriority`.
+- Bugfix: Classify APNs failures instead of treating every one as a `BadNotification` and dropping the push.
+  Transient reasons are retried; credential and configuration reasons are reported against the provider.
+- Bugfix: Also unsubscribe on `Unregistered`, `ExpiredToken` and `DeviceTokenNotForTopic`, not only `BadDeviceToken` and 410.
+- Bugfix: Refuse `skipverify` for Apple's own hosts. It was silently ignored on the HTTP/2 path, so honouring it
+  now would have disabled certificate verification against Apple.
+- Bugfix: `Finalize` no longer deadlocks on the HTTP/2 client cache.
+- New feature: Token (`.p8`) authentication. `/addpsp` accepts `authkey`, `keyid` and `teamid` as an
+  alternative to `cert` and `key`. Tokens are signed deterministically, so any number of uniqush instances can
+  share one key with nothing shared between them. (docs/adr/0001-deterministic-apns-provider-tokens.md)
+- New feature: `uniqush.apns_push_type` on `/push` selects the push type (`alert`, `background`, `voip`, ...).
+  `uniqush.apns_voip=1` still works and implies `voip`.
+- New feature: Send a unique `apns-id` header per notification.
+- New feature: `/addpsp` accepts `endpoint` and `cacert` for `apns`, so a simulator or relay can be used
+  without disabling certificate verification.
+- Security: A non-Apple `endpoint` is refused unless `allow_non_apple_endpoints=true` is set in `[apns]`.
 
-  This works because a delivery point's provider is now derived from the service
-  and the device's push service type rather than read from `srv.dp-2-psp`. That
-  index was never a source of truth: `/subscribe` computes exactly this answer
-  and then stores it. It is still written, and still consulted to break a tie in
-  databases old enough to have several providers of one type, so this release
-  can be rolled back without repairing anything.
+FCM:
 
-  `replace=true` is opt-in because the conflict it bypasses also catches a
-  certificate path pasted into the wrong service. The replacement is a single
-  redis transaction, so it cannot leave a service holding two providers of one
-  type -- neither by being interrupted, nor by racing a second uniqush process.
+- Bugfix: Migrate to FCM's HTTP v1 API. Google decommissioned the legacy endpoint on 20 June 2024, so every
+  Android push has been failing since. **Action required:** `/addpsp` now takes `projectid` and `credentialsfile`
+  (a Firebase service-account JSON) instead of `apikey`, and all `data` values must be strings.
+- Bugfix: Only `UNREGISTERED` and `SENDER_ID_MISMATCH` unsubscribe a device. v1 reports bad payloads as
+  `INVALID_ARGUMENT`, so treating that as a dead device would have deleted working subscriptions.
+- Maintenance: `gcm` is now an alias for `fcm`. Existing gcm providers and subscriptions keep working.
 
-- Feature: **`/checkdb` reports database inconsistencies.** Read-only: it
-  repairs nothing, so it is safe to run against production. It reports services
-  with more than one provider of a type -- the one case where deriving a
-  provider is ambiguous -- along with dangling and orphaned providers, stale
-  bindings, orphaned delivery points and leaked counters.
+UnifiedPush / Web Push:
 
-  It walks the keyspace with `SCAN` and takes no lock, so it does not block
-  pushes while it runs. Run it before upgrading if your database was created
-  before uniqush 2.6.0, which is the release that stopped `/addpsp` accepting a
-  second provider of one push service type for a service. Such a service is the
-  only case this release handles differently, and `/checkdb` is what finds it.
+- New provider: `webpush`, also registered as `unifiedpush`. RFC 8030 delivery, RFC 8291 encryption and
+  RFC 8292 VAPID, which is what UnifiedPush and browser Web Push use. See the README for setup.
+- New feature: `uniqush-push -generate-vapid-keys` prints a VAPID key pair.
+- Security: Pushes to non-globally-routable addresses are refused by default, since the destination comes
+  from `/subscribe`. Relax per service with `allow_private_addresses` and `allowed_hosts` in the config.
 
-### APNs: HTTP/2 endpoint is configurable, and non-Apple destinations are opt-in
+Retries:
 
-- Feature: **`/addpsp` accepts `endpoint` and `cacert` for `apns`.** `endpoint`
-  is the base URL HTTP/2 pushes go to, `cacert` a PEM bundle to verify it
-  against. Together they make it possible to point uniqush at a simulator or a
-  relay without disabling certificate verification -- which is what
-  `skipverify` did, and what it is now refused for doing against Apple.
+- Change: A push service's requested delay (`Retry-After`, or Apple's provider-token floor) now seeds the
+  retry schedule for every backend. Previously the first retry was always 5 seconds and the push was
+  abandoned past a minute regardless.
+- Security: A requested delay is capped at 30 minutes, so a remote server cannot pin memory with a huge `Retry-After`.
 
-  A provider that sets neither keeps sending exactly where it used to: the
-  environment is still inferred from the binary protocol's `addr`. Both are
-  cleared when omitted from a later `/addpsp`, the same way `bundleid` has
-  always behaved.
+Database:
 
-- Security: **a non-Apple `endpoint` is refused unless uniqush.conf permits
-  it.** Set `allow_non_apple_endpoints=true` in the `[apns]` section to enable
-  the capability.
+- Bugfix: A read no longer deletes delivery points whose provider is missing. `/rmpsp` used to silently
+  unsubscribe every device in the service on the next push, unrecoverably.
+- New feature: `/addpsp` accepts `replace=true` to replace a provider whose credentials changed -- e.g. moving
+  APNs from a certificate to a `.p8` -- without losing subscriptions. A delivery point's provider is now
+  derived from its service and push service type rather than read from the stored binding; the binding is
+  still written, so a rollback needs no repair. (docs/delivery-point-rebinding.md)
+- New feature: `/checkdb` reports database inconsistencies. Read-only and lock-free, so it is safe to run
+  against production. Run it before upgrading a database created before 2.6.0.
 
-  An endpoint decides where every push for a service goes, carrying device
-  tokens and the notification payload, and on a certificate provider it is also
-  where the APNs client certificate is presented during the handshake. Without
-  a gate, anyone who can reach `/addpsp` could redirect a service's entire push
-  stream to a host they control. The setting is re-checked when a push is sent
-  and not only at registration, because a provider loaded from redis never
-  passes through the code that validates it.
+Maintenance:
 
-  Nothing existing breaks: `endpoint` is new in this release, so no stored
-  provider has one.
+- Building requires Go 1.25 or newer (was 1.14).
+- Update `golang.org/x/net` from a 2020 revision to v0.57.0 (CVE-2023-44487, CVE-2023-45288). `govulncheck` runs in CI.
+- Replace Travis CI with GitHub Actions; migrate `.golangci.yml` to the v2 format.
+- `go test ./srv/apns/` drives the real HTTP/2 transport against a simulator that enforces Apple's documented
+  contract; `go test -tags apns_live ./srv/apns/http_api/` probes Apple's real sandbox.
 
-- Bugfix: **`skipverify` is refused for Apple's own hosts.** It predates the
-  HTTP/2 path and was silently ignored there, so an operator who set it years
-  ago for the binary-protocol simulator still has it stored. Honouring it now
-  would have disabled certificate verification on connections to Apple. The
-  check matches on the `push.apple.com` domain and normalises the hostname
-  through IDNA first, because `https://api.push.apple.com\u3002` is a URL
-  net/http dials as Apple and a byte comparison does not.
+Changes to APIs (embedders only):
 
-- Bugfix: **`Finalize` no longer deadlocks.** It took the client cache's write
-  lock and returned still holding it, so anything touching the cache afterwards
-  blocked forever. Shutdown mostly hid this; a `Finalize` followed by any
-  further push did not.
-
-- **API change for embedders:** `http_api.HTTPPushRequestProcessor.GetClient`
-  now returns `(HTTPClient, func(), error)`. The second value releases the
-  borrow and must be called exactly once, and never on the error path where it
-  is nil. Borrowing is what lets a client superseded mid-push stay alive until
-  its last request drains instead of being closed underneath it.
-  `TryGetClient` is removed: it looked providers up by name after the cache
-  moved to a composite key, so it had been returning nil for every caller.
-### Retries: a push service's own delay is honoured, within a cap
-
-- Change: **`RetryError.After` now seeds the retry schedule.** Previously the
-  first retry was always 5 seconds and the push was abandoned once the interval
-  passed a minute, whatever the service asked for. APNs' `TooManyProviderTokenUpdates`
-  carries Apple's 20-minute floor and cannot succeed before it clears, so the
-  old schedule spent four pointless requests and then dropped the notification.
-
-  This affects **every** backend, not only APNs: `fcm`, `unifiedpush` and `adm`
-  all derive `After` from a `Retry-After` header, so their first retry now lands
-  when the server said to come back rather than at a flat 5 seconds.
-
-- Safety: **a requested delay is capped at 30 minutes.** A retry is a live
-  goroutine holding a timer and the notification, and neither `fcm` nor
-  `unifiedpush` bounds what it parses out of `Retry-After` -- so without a cap a
-  remote server could pin uniqush's memory by answering with a very large value.
-  The cap sits above the longest delay any backend legitimately asks for. A
-  request beyond it is logged and clamped.
-
-### APNs: token (.p8) authentication, and a way to test any of this
-
-- Feature: **APNs providers can authenticate with a signing key instead of a
-  certificate.** `/addpsp` now accepts `authkey` (the path to the `.p8` from the
-  developer portal), `keyid` and `teamid` as an alternative to `cert` and `key`.
-  uniqush signs an ES256 JWT and sends it as `authorization: bearer <jwt>`.
-
-  A `.p8` does not expire and covers every app in the team, unlike a certificate
-  which expires annually and is per-app.
-
-  The token is refreshed every 35 minutes. That number is bounded on both sides
-  by Apple and is not a tuning choice: a token older than an hour is rejected
-  with `ExpiredProviderToken`, and minting more than one per 20 minutes for the
-  same key is rejected with `TooManyProviderTokenUpdates`. The upper bound is
-  the tighter of the two, at `lifetime - floor`, so that recovery from a refused
-  token is always possible; see the ADR. The cache is keyed on
-  a fingerprint of the signing key's public half rather than on the provider or
-  on the path the key was read from: the mint limit is per key, and the same
-  `.p8` reached by two paths, a symlink or a copy is one key to Apple. The key
-  is also required to be P-256 at `/addpsp`, since ES256 accepts nothing else
-  and a P-384 key would otherwise register cleanly and fail on the first push.
-
-  Tokens are signed **deterministically** and `iat` is quantised into 35-minute
-  buckets, so every process -- and every restart, and every additional instance
-  -- computes a byte-identical token for the same bucket. Apple sees one token
-  per bucket however many uniqush processes there are. Nothing is shared between
-  them and no credential is stored anywhere new.
-
-  Because Apple measures its 20-minute floor from when it *observes* a token
-  rather than from the token's `iat`, a bucket whose first push lands late can
-  still be refused at the following boundary. uniqush recovers by presenting the
-  previous bucket's token -- the one Apple actually saw, still valid, and
-  recomputable by any instance precisely because signing is deterministic -- and
-  remembers the refusal so the rest of the window skips the failed attempt.
-
-  That needed `srv/apns/es256`, a small RFC 6979 implementation over
-  `filippo.io/nistec`, because `crypto/ecdsa` cannot sign deterministically and
-  as of Go 1.26 ignores its `Reader` argument entirely. It is checked against
-  the RFC's published P-256 test vectors rather than against itself. The
-  decision and the rejected alternatives are recorded in
-  `docs/adr/0001-deterministic-apns-provider-tokens.md`.
-
-- Bugfix: **APNs failures are classified instead of all being called bad
-  notifications.** Every non-permanent reason used to become a
-  `BadNotification` and the push was dropped -- so a 503 from Apple, or a wrong
-  signing key, was reported as though the payload were malformed.
-
-  Transient conditions (`TooManyRequests`, `InternalServerError`,
-  `ServiceUnavailable`, `Shutdown`) are now retried with a backoff, and
-  credential or configuration failures (`InvalidProviderToken`,
-  `ExpiredProviderToken`, `BadCertificate`, `Forbidden`, `BadTopic` and friends)
-  are reported against the provider with a message naming what to check. FCM has
-  done this since its rewrite; APNs had no retry handling at all.
-
-  `TooManyProviderTokenUpdates` moves the other way in this change. The previous
-  release reported it against the provider, which was the best available reading
-  when nothing could be done about it. Now that the previous bucket's token can
-  be recomputed and presented, it is a transient condition with a known recovery,
-  so it is retried -- after Apple's floor, which is what sets the delay -- rather
-  than failing the push.
-
-  To move an existing certificate-based service across, add `replace=true`; see
-  the database section above. Do **not** use `/rmpsp` for this.
-
-- Feature: **`/addpsp` accepts `endpoint` and `cacert` for APNs.** The HTTP/2
-  destination was previously chosen by string-matching the binary protocol's
-  `addr` for "sandbox", so it could only ever be one of Apple's two hosts, and
-  `skipverify` was ignored on the HTTP/2 path entirely. Between them, the
-  repaired HTTP/2 code could not be pointed at a test server at all.
-
-  Both settings are optional and neither changes an existing provider: without
-  an endpoint the environment is still inferred from `addr`. `skipverify` is now
-  refused for Apple's own hosts, since it disables the only check that the host
-  answering for `api.push.apple.com` is Apple.
-
-- Testing: **`go test ./srv/apns/` now drives the real HTTP/2 transport against
-  a simulator** (`srv/apns/apnstest`) that enforces Apple's documented contract
-  rather than accepting whatever arrives -- the path shape, the required
-  headers, priority 5 for background pushes, the payload ceiling, provider token
-  validity, and duplicate headers. `go test -tags apns_live
-  ./srv/apns/http_api/` checks reachability and error parsing against Apple's
-  real sandbox, which answers unauthenticated requests.
-
-  Delivery to a device is still unverified and needs a paid Apple Developer
-  Program membership. See `docs/apns-verification-plan.md`.
-
-### FCM: migrated to HTTP v1
-
-- Bugfix: **`fcm` now uses FCM's HTTP v1 API.** It previously posted to
-  `https://fcm.googleapis.com/fcm/send` with an `Authorization: key=` server
-  key, which Google decommissioned on **20 June 2024**. That endpoint now
-  answers with an HTML 404, so every Android push has been failing since.
-
-  Three things changed, and the first two need action from operators:
-
-  - **Auth.** A static server key is replaced by an OAuth2 token minted from a
-    Firebase service account. `/addpsp` now takes `projectid` and
-    `credentialsfile` (a path to the service-account JSON) instead of `apikey`.
-    The file is read at push time and the access token is refreshed
-    automatically.
-  - **`data` values must all be strings.** The legacy API accepted arbitrary
-    JSON and uniqush passed it through, so a `uniqush.payload.fcm` containing
-    numbers, booleans or nested objects used to work and now does not. uniqush
-    rejects it locally with a message naming the offending field, rather than
-    letting FCM answer with an opaque 400.
-  - **No more multicast.** The legacy API accepted up to 1000 registration ids
-    per request; v1 takes exactly one. A push to N devices is now N requests
-    over a shared HTTP/2 connection. This is Google's own recommended
-    replacement and needs no configuration, but it does change the shape of the
-    traffic uniqush generates.
-
-  Unchanged: `/subscribe` still takes `regid`, so **no device has to
-  re-subscribe**.
-
-- Bugfix: **Dead registrations are detected more carefully than before.** Only
-  `UNREGISTERED` and `SENDER_ID_MISMATCH` remove a subscription. v1 collapses a
-  lot of what the legacy API reported separately into `INVALID_ARGUMENT` --
-  including an oversized payload or a non-string data value -- so treating that
-  as a dead device would delete working subscriptions because of a bad payload.
-  `QUOTA_EXCEEDED`, `UNAVAILABLE` and `INTERNAL` are retried, honouring
-  `Retry-After`. `THIRD_PARTY_AUTH_ERROR` is reported against the provider,
-  since it means the APNs certificate or web push key uploaded to the Firebase
-  project is wrong rather than anything about the device.
-
-- Maintenance: **`gcm` is now an alias for `fcm`, not a separate backend.** The
-  two have been identical since 2018, when uniqush repointed gcm at the FCM
-  endpoint. The name is kept because a delivery point's database key is
-  `<pushservicetype>:<hash>`: retiring it would strand every stored gcm
-  subscription, unpushable and not even removable through `/unsubscribe`.
-
-  A gcm provider keeps `projectid` in its fixed data and an fcm provider does
-  not, exactly as before, so that existing providers of either kind can be
-  updated in place. `/addpsp` rejects an update whose fixed data changed, so
-  this detail is what makes upgrading possible without re-subscribing devices.
-
-  The one-call migration, for either name:
-
-      curl http://localhost:9898/addpsp \
-        -d service=myservice \
-        -d pushservicetype=fcm \
-        -d projectid=my-firebase-project \
-        -d credentialsfile=/etc/uniqush/service-account.json
-
-- Maintenance: The implementation is hand-rolled against `net/http` and
-  `golang.org/x/oauth2`, adding one direct dependency. Using Google's
-  firebase-admin-go SDK would have pulled in roughly 55 indirect ones -- grpc,
-  OpenTelemetry, Firestore, Cloud Storage, monitoring -- for a daemon that makes
-  a single API call.
-
-### New backend: UnifiedPush / Web Push
-
-- New provider: **`webpush`, also registered as `unifiedpush`.** Implements
-  RFC 8030 delivery, RFC 8291 `aes128gcm` payload encryption and RFC 8292 VAPID
-  authentication, which is what [UnifiedPush](https://unifiedpush.org/) uses
-  between an application server and a push server. The same backend drives
-  browser Web Push.
-
-  This is the only uniqush backend with no vendor account, no certificate and no
-  API key: the user chooses their own push provider. It reaches de-Googled
-  Android devices, Linux desktops and browsers.
-
-  Registration takes `vapidpublickey`, `vapidprivatekey` and `subscriber` on
-  `/addpsp`; a subscription takes `endpoint`, `p256dh` and `auth` on
-  `/subscribe`, all three of which a UnifiedPush connector library produces on
-  the device. `uniqush.payload.webpush` sends a raw body verbatim. See the
-  README for worked examples.
-
-  The two names behave identically, but a `pushservicetype` is part of a
-  subscription's identity, so pick one per service and stay with it.
-- New feature: `uniqush-push -generate-vapid-keys` prints a fresh VAPID key
-  pair. Keys are minted by the binary rather than over the REST API, which has
-  no authentication.
-- New feature: optional `[webpush]` / `[unifiedpush]` config sections with
-  `allow_private_addresses` and `allowed_hosts`.
-
-  **Security note.** For every other backend the destination host is a constant
-  compiled into uniqush. For Web Push it is supplied by whoever called
-  `/subscribe`, which makes an unguarded implementation a server-side request
-  forgery primitive. uniqush therefore refuses by default to POST to addresses
-  that are not globally routable — loopback, RFC 1918, carrier-grade NAT,
-  link-local (including `169.254.169.254`), documentation and reserved ranges,
-  and the IPv6 equivalents. Redirects are never followed, and the check runs
-  before every push rather than only at subscribe time, so DNS rebinding does
-  not defeat it. Self-hosted push servers on a private network are supported via
-  the config options above.
-
-### APNs
-
-Together these are the difference between iOS notifications arriving and
-silently not arriving; anyone running uniqush for APNs should treat this as a
-required upgrade.
-
-**These changes have not been verified against Apple's servers.** They are
-covered by unit tests against a mocked APNs and follow Apple's current published
-documentation, but no one has yet run them with real credentials against a real
-device. Reports from anyone who can are very welcome.
-
-- Bugfix: **HTTP/2 is now the default APNs transport.** Previously uniqush used
-  Apple's binary protocol unless a push passed `uniqush.http2=1`. Apple shut the
-  binary protocol down on 31 March 2021, so the default path could not deliver
-  anything. Passing `uniqush.http2=0` still selects it and now logs a
-  deprecation warning; that fallback will be removed in a future release.
-- Bugfix: **Send the `apns-push-type` header.** Apple has required this on
-  watchOS since watchOS 6 and recommends it everywhere. Its absence is worst for
-  background pushes: on iOS 13 and later APNs accepts the request, returns 200,
-  and then discards the notification, so the failure never appears in logs.
-- Bugfix: **Derive `apns-priority` from the push type.** It was hardcoded to 10.
-  Apple's documentation for background pushes says "Always use priority 5. Using
-  priority 10 is an error", which APNs enforces with a 400 `BadPriority`, so
-  background pushes were rejected outright.
-- Bugfix: **Unsubscribe on the full set of permanent token failures.** Only
-  `BadDeviceToken` and a bare 410 were handled. `Unregistered`, `ExpiredToken`
-  and `DeviceTokenNotForTopic` now also remove the subscription, so dead tokens
-  no longer accumulate. Provider and payload errors such as `PayloadTooLarge`,
-  `BadTopic` and `BadCertificate` deliberately do *not* unsubscribe, since those
-  indicate a problem on our side rather than a dead device.
-- New feature: `uniqush.apns_push_type` can be set on `/push` to choose the push
-  type. Valid values are `alert` (the default), `background`, `complication`,
-  `controls`, `fileprovider`, `liveactivity`, `location`, `mdm`, `pushtotalk`,
-  `voip` and `widgets`. An unrecognised value is rejected by uniqush rather than
-  being sent on for APNs to answer with an opaque 400.
-  The older `uniqush.apns_voip=1` continues to work and implies `voip`.
-- New feature: Send an `apns-id` header, unique per notification. APNs generates
-  one when it is omitted, but only returns it in a response uniqush does not
-  keep, which made "did this specific push arrive" unanswerable.
-- Maintenance: Update `golang.org/x/net` from a March 2020 revision to v0.57.0.
-  It backs the APNs HTTP/2 client, so it predated every HTTP/2 hardening fix
-  since, including CVE-2023-44487 (rapid reset) and CVE-2023-45288
-  (CONTINUATION flood). `govulncheck` is now part of CI.
-- Maintenance: **Building now requires Go 1.25 or newer** (was 1.14). A
-  non-vulnerable `golang.org/x/net` is not reachable from Go 1.24.
-- Maintenance: Replace Travis CI with GitHub Actions, and migrate
-  `.golangci.yml` to the v2 config format.
-
-Known limitation: a 410 response carries a `timestamp` recording when APNs last
-saw the token as invalid, and Apple's guidance is to keep the subscription if
-the device re-registered the same token after that point. Acting on it needs a
-reliable per-delivery-point registration time, which uniqush does not yet track
-consistently, so the token is currently dropped unconditionally.
+- `http_api.HTTPPushRequestProcessor.GetClient` now returns `(HTTPClient, func(), error)`.
+  Call the second value exactly once to release the client; it is nil on the error path.
+- `TryGetClient` is removed. It had been returning nil for every caller since the cache moved to a composite key.
 
 25 Nov 2019, uniqush-push 2.7.0
 -------------------------------

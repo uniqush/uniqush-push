@@ -58,7 +58,9 @@ server side, you can send push notifications to any supported mobile platform.
 > - **UnifiedPush / Web Push — new, and the one backend with no vendor
 >   dependency.** See below.
 >
-> Building requires **Go 1.25 or newer**.
+> Building requires **Go 1.25 or newer**. If you are upgrading from 2.7.0,
+> [docs/upgrading.md](docs/upgrading.md) walks through what changes for each
+> backend and what needs action.
 
 ## Supported Platforms ##
 
@@ -66,6 +68,52 @@ server side, you can send push notifications to any supported mobile platform.
 - [APNS](https://developer.apple.com/documentation/usernotifications/sending-notification-requests-to-apns) from Apple for the iOS platform
 - [ADM](https://developer.amazon.com/sdk/adm.html) from Amazon for Kindle tablets
 - [UnifiedPush](https://unifiedpush.org/) / [Web Push](https://datatracker.ietf.org/wg/webpush/documents/), for de-Googled Android, Linux desktops and browsers
+
+## Building and running ##
+
+`uniqush-push` is a single binary. Building it needs Go 1.25 or newer; running
+it needs a [Redis](https://redis.io) server.
+
+```
+git clone https://github.com/uniqush/uniqush-push.git
+cd uniqush-push
+go build          # produces ./uniqush-push
+```
+
+or, without a checkout, `go install github.com/uniqush/uniqush-push@master`.
+
+Copy [conf/uniqush-push.conf](conf/uniqush-push.conf) to
+`/etc/uniqush/uniqush-push.conf`, the default location, or point at it with
+`-config`. The settings you are most likely to touch:
+
+- `[WebFrontend] addr` — where the REST API listens. It defaults to
+  `localhost:9898`, and there is a reason to leave it there: **the API has no
+  authentication.** Anything that can reach `/addpsp` can decide where a
+  service's pushes go. Bind to localhost, or put it behind a reverse proxy that
+  authenticates.
+- `[Database] host`, `port` and `password` — the Redis server (`port=0` means
+  the default, 6379). `slave_host`/`slave_port` route reads to a replica.
+- `logfile`, and a `loglevel` per section: `alert`, `error`, `warn`, `info`
+  (also spelled `standard` or `verbose`) or `debug`.
+
+Make sure Redis has [persistence](https://redis.io/docs/latest/operate/oss_and_stack/management/persistence/)
+enabled. Every subscription lives there, and by default Redis only snapshots
+periodically.
+
+Then:
+
+```
+uniqush-push                      # or: uniqush-push -config /path/to/uniqush-push.conf
+curl http://localhost:9898/version
+```
+
+`uniqush-push -version` prints the version and `uniqush-push -generate-vapid-keys`
+mints a key pair for a Web Push provider; both exit without starting the
+server. `go test ./...` runs the test suite, including the APNs conformance
+suite against a local simulator; the live tests that talk to Apple and Google
+are behind build tags and described in
+[docs/apns-verification-plan.md](docs/apns-verification-plan.md) and
+[examples/fcm-demo](examples/fcm-demo).
 
 ## UnifiedPush / Web Push ##
 
@@ -181,58 +229,57 @@ disabled certificate verification on connections to Apple.
 
 ## FAQ ##
 
-- Q: Is this a general push notification platform for all types of devices? How does this differ
-  from services such as [Urban Airship](http://urbanairship.com)?
-- A: [Urban Airship](http://urbanairship.com) is a great service, and there are
-  other similar services available, like [OpenPush](http://openpush.im/),
-[Notificare](https://notifica.re/), etc. All of them are wonderful services.
-However, [Uniqush](http://uniqush.org) is different from them.
-[Uniqush](http://uniqush.org) is not a service. Instead,
-**[Uniqush](http://uniqush.org) is a system, which runs on your own
-server**. In fact, if you wish, you can use Uniqush to set up a service similar to [Urban Airship](http://urbanairship.com).
+- Q: Is this a hosted push service, like OneSignal or Airship?
+- A: No. `uniqush-push` is a program that runs on your own server, the way
+  Apache does: you build it, run it, and point it at a Redis server. It talks
+  to Apple, Google, Amazon and Web Push servers on your behalf. If you wanted
+  to, you could build a hosted service on top of it.
 
-- Q: OK. Then is it a library? Like
-  [java-apns](https://github.com/notnoop/java-apns)?
-- A: Well.. Not actually. I mean, it is a program, like Apache HTTP Server. You download it, you run it. It does require a [Redis](http://redis.io/) server, but, other than that, you don't need to worry about which language to use, package dependencies, etc.
+- Q: Is it a library, then? Do I need to write Go?
+- A: No. It is a daemon with a REST API over plain HTTP, so any language with
+  an HTTP client can drive it — `curl` is enough to try it. Go is needed to
+  *build* it, since there are no prebuilt binaries for the current version; the
+  downloads on uniqush.org stop at 2.6.1, which can no longer deliver to APNs
+  or FCM at all.
 
-- Q: But wait, how can I use it anyway? I mean, if my program wants to send
-  a push notification, I need to tell Uniqush about this action. How can I
-  communicate with Uniqush? There must be some library so that I can use it
-  in my program to talk with Uniqush, right?
-- A: We are trying to make it easier. `uniqush-push` provides RESTful APIs. In
-  other words, you talk with `uniqush-push` through HTTP protocol. As long as
-there's an HTTP client library for your language, you can use it and talk with
-`uniqush-push`. For details about our RESTful APIs, see [our API
-documentation](http://uniqush.org/documentation/usage.html).
+- Q: Where is the API documented?
+- A: The per-backend `/addpsp` and `/subscribe` parameters for this version are
+  in this README and in [docs/upgrading.md](docs/upgrading.md). The
+  [reference on uniqush.org](http://uniqush.org/documentation/usage.html)
+  covers the endpoints and the `/push` parameters, but its FCM and APNs
+  registration examples predate this release and will not work as written.
 
-- Q: Then that's cool. But I noticed that you are using [Go](http://golang.org) programming language. Do I need to install [Go](http://golang.org) compiler and other stuff to run `uniqush-push`?
-- A: No. There are no installation dependencies. All you need to do is to download the
-  binary file from the [download page](http://uniqush.org/downloads.html) and
-install it. But you do need to set up a [Redis](http://redis.io) server running
-somewhere, preferably with persistence, so that `uniqush-push` can store the
-user data in [Redis](http://redis.io). For more details, see the
-[installation guide](http://uniqush.org/documentation/install.html)
+- Q: I'm upgrading from 2.7.0 or earlier. Will my subscriptions survive?
+- A: Yes; no device has to re-subscribe for anything in this release. FCM
+  providers need a new `/addpsp` with `projectid` and `credentialsfile` in
+  place of `apikey`; APNs providers keep working with their existing
+  certificate, and can move to a `.p8` key with `replace=true`. Do not use
+  `/rmpsp` to change a provider's credentials: in 2.7.0 that silently deleted
+  every subscription in the service. [docs/upgrading.md](docs/upgrading.md)
+  has the details.
 
-- Q: This is nice. I want to give it a try. But you are keep talking about `uniqush-push`, and I'm talking about *Uniqush*, are they the same thing?
-- A: Thank you for your support! *Uniqush* is intended to be the name of a
-  system which provides a full stack solution for communication between mobile
-devices and the app's server. `uniqush-push` is one piece of the system.
-However, right now, `uniqush-push` is the only piece and others are under
-active development. If you want to know more details about the *Uniqush*
-system's plan, you can read the [blog
-post](http://blog.uniqush.org/uniqush-after-go1.html). If you want to find out
-about the latest progress with *Uniqush*, please check out [our
- blog](http://blog.uniqush.org/). And, if you are really impatient, there's
- always our [our GitHub account](http://github.com/uniqush) which could have
- brand-new stuff that hasn't been released yet.
+- Q: My services are registered as `gcm`. Do I have to rename them?
+- A: No, and you should not: `gcm` is an alias for `fcm`, and the name is part
+  of every stored subscription's key. Keep the name and re-run `/addpsp` with
+  the new parameters.
 
-## Setting Up Redis ##
+- Q: Is the API authenticated?
+- A: No. It binds to `localhost:9898` by default so that only local processes
+  can reach it. Keep it there, or put it behind a reverse proxy that
+  authenticates, because whoever can call `/addpsp` controls where every push
+  for a service is sent. The same reasoning is why VAPID keys are generated by
+  a command-line flag rather than an endpoint, and why a non-Apple APNs
+  `endpoint` has to be enabled in the config file.
 
-[Redis persistence](http://redis.io/topics/persistence) describes the details
-of how Redis saves data on shutdown, as well as how one might back up that
-data. Make sure that the Redis server you use has persistence enabled - your
-redis.conf should have contents similar to the section `**PERSISTENCE**` of
-redis.conf in the example config files linked in http://redis.io/topics/config
+- Q: What is the difference between *Uniqush* and `uniqush-push`?
+- A: *Uniqush* was conceived as a suite of components for mobile messaging;
+  `uniqush-push` is the piece that was built, and the names are used
+  interchangeably.
+
+- Q: Something doesn't work. Where do I ask?
+- A: The [issue tracker](https://github.com/uniqush/uniqush-push/issues).
+  Reports from anyone who can verify APNs delivery to a real device are
+  especially welcome — see the status note at the top.
 
 ## Contributing ##
 
