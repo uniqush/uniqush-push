@@ -32,16 +32,21 @@ Unreleased
   can be rolled back without repairing anything.
 
   `replace=true` is opt-in because the conflict it bypasses also catches a
-  certificate path pasted into the wrong service.
+  certificate path pasted into the wrong service. The replacement is a single
+  redis transaction, so it cannot leave a service holding two providers of one
+  type -- neither by being interrupted, nor by racing a second uniqush process.
 
 - Feature: **`/checkdb` reports database inconsistencies.** Read-only: it
   repairs nothing, so it is safe to run against production. It reports services
   with more than one provider of a type -- the one case where deriving a
-  provider is ambiguous -- along with dangling providers, stale bindings,
-  orphaned delivery points and leaked counters.
+  provider is ambiguous -- along with dangling and orphaned providers, stale
+  bindings, orphaned delivery points and leaked counters.
 
-  It uses redis `KEYS`, which blocks the server for the duration, as
-  `/rebuildserviceset` already does. Not something to put on a timer.
+  It walks the keyspace with `SCAN` and takes no lock, so it does not block
+  pushes while it runs. Run it before upgrading if your database was created
+  before uniqush 2.6.0, which is the release that stopped `/addpsp` accepting a
+  second provider of one push service type for a service. Such a service is the
+  only case this release handles differently, and `/checkdb` is what finds it.
 
 ### APNs: HTTP/2 endpoint is configurable, and non-Apple destinations are opt-in
 

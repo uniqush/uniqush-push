@@ -1,4 +1,25 @@
-# Scope: unbinding delivery points from a provider's credential hash
+# Unbinding delivery points from a provider's credential hash
+
+> **Status: phases 0-4 are implemented.** An APNs service can be moved from a
+> certificate to a `.p8` signing key without re-subscribing anything:
+>
+> ```
+> curl http://localhost:9898/addpsp \
+>   -d service=myservice -d pushservicetype=apns \
+>   -d authkey=/etc/uniqush/AuthKey_ABCDE12345.p8 \
+>   -d keyid=ABCDE12345 -d teamid=TEAM123456 \
+>   -d bundleid=com.example.app \
+>   -d replace=true
+> ```
+>
+> Run `/checkdb` first on a database created before uniqush 2.6.0 — the release
+> that stopped `/addpsp` accepting a second provider of one push service type
+> for a service. Such a service is the only case where this release behaves
+> differently from the last, and that is the report that finds it.
+>
+> Phase 5, retiring the `srv.dp-2-psp` index, is deliberately left for a later
+> release so that a downgrade stays possible. The sections below explain what
+> `/checkdb` reports and why each phase is shaped the way it is.
 
 ## The problem
 
@@ -296,17 +317,58 @@ That last one is the acceptance test, and it can run against the simulator in
 
 ## Sizing
 
-| Phase | Effort | Value on its own |
-|---|---|---|
-| 0. Stop deleting on read | ½ day | High — fixes data loss today |
-| 1. Minimal doctor | 1 day | Medium — gates 2 |
-| 2. Derive the provider | 1-2 days | Low alone; enables 3 |
-| 3. `/addpsp` replace | 1 day | **The goal** |
-| 4. Full doctor | 2 days, later | High — no such tool exists |
-| 5. Retire the index | ½ day, later | Cleanup |
+| Phase | Effort | Value on its own | State |
+|---|---|---|---|
+| 0. Stop deleting on read | ½ day | High — fixes data loss today | done |
+| 1. Minimal doctor | 1 day | Medium — gates 2 | done, as `/checkdb` |
+| 2. Derive the provider | 1-2 days | Low alone; enables 3 | done |
+| 3. `/addpsp` replace | 1 day | **The goal** | done |
+| 4. Full doctor | 2 days, later | High — no such tool exists | done, with phase 1 |
+| 5. Retire the index | ½ day, later | Cleanup | deferred a release |
 
 Roughly a week of focused work for Phases 0-3, and Phase 0 is worth doing
 immediately whatever happens to the rest.
+
+## What landed, against what was planned
+
+Three things came out differently.
+
+**The orphan cleanup moved out from under the read lock.** `pushDatabaseOpts`
+guards everything with a `sync.RWMutex`, and the old code cleaned up orphans
+while holding `RLock`, which admits concurrent readers. Completing the teardown
+would have made that a double teardown whenever two readers found the same
+orphan. The read pass now collects orphans and cleans them up afterwards under
+the write lock, re-checking each one.
+
+**Phase 4 landed with Phase 1.** The plan split the doctor in two to keep the
+critical path short, but the remaining checks turned out to be a few lines each
+on scaffolding the first two already needed. Splitting them would have cost
+more than writing them. `/checkdb` also grew a check the plan did not list —
+provider records in no service's set, which is what an in-flight push can
+resurrect across a replace.
+
+**`/checkdb` reports rather than repairs.** The scope left this open; it is
+worth being explicit. Every problem it finds already has an operation that
+fixes it, and a repair running unattended against a database nobody has looked
+at is how a consistency check becomes an outage. It is also what makes it safe
+to run against production — a check that repairs as it goes is one nobody dares
+run on the database they are actually worried about.
+
+The replace is the transaction the plan asked for, and the ordering argument it
+replaced is gone: there is no interrupted state left to reason about, and
+`WATCH` on the provider set means a second uniqush process gets a failed `EXEC`
+rather than a silent double write.
+
+## Still open
+
+**Multi-process deployments, everywhere else.** `dblock` is per process, so two
+uniqush instances against one redis have no mutual exclusion. Phase 3 closes
+this for the replace path only. The rest of the write API keeps the
+pre-existing hazard; a general fix is separate work.
+
+**Phase 5.** Stop writing `srv.dp-2-psp`, then delete the keys. Wait for a
+release with phases 0-4 in it, and for `/checkdb` to report
+`binding_disagrees=0` on the databases that matter.
 
 ## Alternatives considered
 
