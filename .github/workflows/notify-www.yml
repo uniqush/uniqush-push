@@ -1,0 +1,29 @@
+name: Notify uniqush-www
+
+# Tells uniqush-www to rebuild when docs/api.md, docs/upgrading.md or NEWS.md
+# change, so the site never carries a stale copy.
+#
+# Requires a repo secret WWW_DISPATCH_TOKEN: a fine-grained PAT scoped to the
+# uniqush/uniqush-www repository with "Contents: read" and "Actions: write"
+# (or a classic PAT with "repo" scope). Until that secret is set, this step
+# fails harmlessly -- uniqush-www still rebuilds weekly and can be triggered
+# by hand from its own Actions tab.
+on:
+  push:
+    branches: [master]
+    paths:
+      - "docs/api.md"
+      - "docs/upgrading.md"
+      - "NEWS.md"
+
+jobs:
+  notify:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Dispatch to uniqush-www
+        run: |
+          curl -sS -X POST \
+            -H "Authorization: Bearer ${{ secrets.WWW_DISPATCH_TOKEN }}" \
+            -H "Accept: application/vnd.github+json" \
+            https://api.github.com/repos/uniqush/uniqush-www/dispatches \
+            -d '{"event_type":"docs-updated"}'
