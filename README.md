@@ -32,9 +32,10 @@ server side, you can send push notifications to any supported mobile platform.
 >   requests.
 >
 >   Token (`.p8`) authentication is now supported alongside certificates:
->   `/addpsp` takes `authkey`, `keyid` and `teamid`. Note that an existing
->   certificate-based service **cannot be switched to `.p8` in place** — see
->   the plan below for why, and why the obvious workaround loses subscriptions.
+>   `/addpsp` takes `authkey`, `keyid` and `teamid`. To move an existing
+>   certificate-based service across, add `replace=true`; subscriptions survive
+>   it. Do **not** use `/rmpsp` for this — see
+>   [docs/delivery-point-rebinding.md](docs/delivery-point-rebinding.md).
 >
 >   What remains is delivery to a device, and that needs a paid Apple Developer
 >   Program membership — Apple sells no free route to one. **If you have an

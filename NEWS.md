@@ -3,6 +3,51 @@ uniqush-push NEWS
 Unreleased
 -------------------------------
 
+### Database: a delivery point is no longer bound to its provider's credentials
+
+- Bugfix: **a read no longer deletes delivery points.**
+  `GetPushServiceProviderDeliveryPointPairs` used to delete any delivery point
+  whose push service provider it could not find, which made `/rmpsp`
+  unrecoverable: it reported success, and every device in the service was
+  silently unsubscribed later, during an unrelated push. Re-adding the provider
+  did not bring them back.
+
+  Such a delivery point is now skipped and logged. The one case still cleaned up
+  is a name in a subscriber's set whose record has already gone, and that
+  teardown is now complete -- it used to delete the record, which was by
+  definition already absent, while leaving the subscriber's set entry and
+  leaking the refcount.
+
+- Feature: **`/addpsp` accepts `replace=true`.** A provider of the same service
+  and push service type whose fixed data differs -- a credential change, most
+  usefully a move from an APNs certificate to a `.p8` signing key -- now
+  replaces the existing one instead of being rejected, and the service's
+  subscriptions survive.
+
+  This works because a delivery point's provider is now derived from the service
+  and the device's push service type rather than read from `srv.dp-2-psp`. That
+  index was never a source of truth: `/subscribe` computes exactly this answer
+  and then stores it. It is still written, and still consulted to break a tie in
+  databases old enough to have several providers of one type, so this release
+  can be rolled back without repairing anything.
+
+  `replace=true` is opt-in because the conflict it bypasses also catches a
+  certificate path pasted into the wrong service. The replacement is a single
+  redis transaction, so it cannot leave a service holding two providers of one
+  type -- neither by being interrupted, nor by racing a second uniqush process.
+
+- Feature: **`/checkdb` reports database inconsistencies.** Read-only: it
+  repairs nothing, so it is safe to run against production. It reports services
+  with more than one provider of a type -- the one case where deriving a
+  provider is ambiguous -- along with dangling and orphaned providers, stale
+  bindings, orphaned delivery points and leaked counters.
+
+  It walks the keyspace with `SCAN` and takes no lock, so it does not block
+  pushes while it runs. Run it before upgrading if your database was created
+  before uniqush 2.6.0, which is the release that stopped `/addpsp` accepting a
+  second provider of one push service type for a service. Such a service is the
+  only case this release handles differently, and `/checkdb` is what finds it.
+
 ### APNs: HTTP/2 endpoint is configurable, and non-Apple destinations are opt-in
 
 - Feature: **`/addpsp` accepts `endpoint` and `cacert` for `apns`.** `endpoint`
@@ -131,15 +176,8 @@ Unreleased
   so it is retried -- after Apple's floor, which is what sets the delay -- rather
   than failing the push.
 
-  **An existing certificate-based service cannot be switched to `.p8` in
-  place.** A provider's name hashes its fixed data; `cert` and `key` are part of
-  that and a signing key deliberately is not, so the two auth modes produce
-  different provider names and `/addpsp` rejects the second as a conflicting
-  provider. `/rmpsp` followed by `/addpsp` is *not* a workaround -- a delivery
-  point whose provider has gone is deleted on the next read, so it silently
-  unsubscribes every device. Token auth is therefore for new services, until
-  delivery points stop being bound to a provider's credential hash. Existing
-  certificate providers are unaffected and keep updating in place as before.
+  To move an existing certificate-based service across, add `replace=true`; see
+  the database section above. Do **not** use `/rmpsp` for this.
 
 - Feature: **`/addpsp` accepts `endpoint` and `cacert` for APNs.** The HTTP/2
   destination was previously chosen by string-matching the binary protocol's

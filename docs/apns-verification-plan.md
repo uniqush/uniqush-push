@@ -171,29 +171,38 @@ backoff, and credential or configuration failures are reported against the
 provider instead of against the notification. Before this, every non-permanent
 reason became a `BadNotification` and the push was dropped.
 
-#### Switching an existing service to `.p8` is not an in-place change
+#### Switching an existing service to `.p8`
 
-This is the sharp edge, and it is worth understanding before recommending token
-auth to anyone with a running deployment.
+Pass `replace=true`:
 
-A provider's name is a hash of its `FixedData`, a delivery point is stored
-against that name, and `GetPushServiceProviderDeliveryPointPairs` **deletes any
-delivery point whose provider has gone**. Certificate auth keeps `cert` and
-`key` in `FixedData`; token auth cannot, because a signing key has to be
-rotatable. So the two auth modes give a service two different provider names,
-and `/addpsp` refuses the second as a conflicting provider.
+```
+curl http://localhost:9898/addpsp \
+  -d service=myservice -d pushservicetype=apns \
+  -d authkey=/etc/uniqush/AuthKey_ABCDE12345.p8 \
+  -d keyid=ABCDE12345 -d teamid=TEAM123456 \
+  -d bundleid=com.example.app \
+  -d replace=true
+```
 
-The workaround an operator would reach for — `/rmpsp` then `/addpsp` — is
-exactly what destroys the subscriptions: every device bound to the removed
-provider is dropped on the next read.
+Subscriptions survive it; no device re-subscribes.
 
-So today, token auth is for new services. Existing certificate-based services
-keep working exactly as before and are not touched by any of this.
+This needed work in the database layer, because a provider's name is a hash of
+its `FixedData`, a delivery point was stored against that name, and the read
+path deleted any delivery point whose provider had gone. Certificate auth keeps
+`cert` and `key` in `FixedData`; token auth cannot, since a signing key has to
+be rotatable. So the two auth modes give a service different provider names, and
+until recently `/addpsp` had no choice but to refuse the second — while the
+workaround an operator would reach for, `/rmpsp` then `/addpsp`, silently
+deleted every subscription in the service.
 
-Fixing it properly means decoupling a delivery point from the provider's
-credential hash — binding it to service and push service type instead — which is
-a database migration and a change to how `/addpsp` identifies a provider. That
-is worth doing, and is much larger than this.
+A delivery point's provider is now derived from *(service, push service type)*
+rather than read from that binding. See
+[delivery-point-rebinding.md](delivery-point-rebinding.md). Run `/checkdb`
+first if the database predates 2018: a service with two providers of one type is
+the one case where the derivation is ambiguous.
+
+`replace=true` is deliberately opt-in. The conflict it bypasses is also what
+catches a certificate path pasted into the wrong service.
 
 ## What is left
 

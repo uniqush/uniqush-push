@@ -57,8 +57,11 @@ func NewPushBackEnd(psm *push.PushServiceManager, database db.PushDatabase, logg
 }
 
 // AddPushServiceProvider is used by /addpsp to add a push service provider (for a service+push type) to the database.
-func (backend *PushBackEnd) AddPushServiceProvider(service string, psp *push.PushServiceProvider) error {
-	return backend.db.AddPushServiceProviderToService(service, psp)
+//
+// replace supersedes an existing provider of the same push service type whose
+// fixed data differs, keeping the service's subscriptions.
+func (backend *PushBackEnd) AddPushServiceProvider(service string, psp *push.PushServiceProvider, replace bool) error {
+	return backend.db.AddPushServiceProviderToService(service, psp, replace)
 }
 
 // RemovePushServiceProvider is used by /rmpsp to remove a push service provider (for a service+push type) from the database.
@@ -404,7 +407,7 @@ func (backend *PushBackEnd) collectResult(
 
 // NumberOfDeliveryPoints returns the number of delivery points for a given service+subscriber.
 func (backend *PushBackEnd) NumberOfDeliveryPoints(service, sub string, logger log.Logger) int {
-	pspDpList, err := backend.db.GetPushServiceProviderDeliveryPointPairs(service, sub, nil)
+	pspDpList, err := backend.db.GetPushServiceProviderDeliveryPointPairs(service, sub, nil, logger)
 	if err != nil {
 		logger.Errorf("Query=NumberOfDeliveryPoints Service=%v Subscriber=%v Failed: Database Error %v", service, sub, err)
 		return 0
@@ -448,6 +451,11 @@ func (backend *PushBackEnd) RebuildServiceSet() error {
 	return backend.db.RebuildServiceSet()
 }
 
+// CheckDatabase scans the database and reports inconsistencies, changing nothing.
+func (backend *PushBackEnd) CheckDatabase() (*db.ConsistencyReport, error) {
+	return backend.db.CheckConsistency()
+}
+
 // Push will send a push notification to the given subscriber(s) of a push service.
 func (backend *PushBackEnd) Push(reqID string, remoteAddr string, service string, subs []string, dpNamesRequested []string, notif *push.Notification, perdp map[string][]string, logger log.Logger, handler APIResponseHandler) {
 	backend.pushImpl(reqID, remoteAddr, service, subs, dpNamesRequested, notif, perdp, logger, nil, nil, 0*time.Second, handler)
@@ -489,7 +497,7 @@ func (backend *PushBackEnd) pushImpl(
 			pspDpList[0].DeliveryPoint = dest
 		} else {
 			var err error
-			pspDpList, err = backend.db.GetPushServiceProviderDeliveryPointPairs(service, sub, dpNamesRequested)
+			pspDpList, err = backend.db.GetPushServiceProviderDeliveryPointPairs(service, sub, dpNamesRequested, logger)
 			if err != nil {
 				logger.Errorf("RequestID=%v Service=%v Subscriber=%v Failed: Database Error: %v", reqID, service, sub, err)
 				handler.AddDetailsToHandler(APIResponseDetails{RequestID: &reqID, From: &remoteAddr, Service: &service, Subscriber: &sub, Code: UNIQUSH_ERROR_DATABASE, ErrorMsg: strPtrOfErr(err)})
