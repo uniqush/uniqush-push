@@ -243,11 +243,11 @@ disabled certificate verification on connections to Apple.
   or FCM at all.
 
 - Q: Where is the API documented?
-- A: The per-backend `/addpsp` and `/subscribe` parameters for this version are
-  in this README and in [docs/upgrading.md](docs/upgrading.md). The
-  [reference on uniqush.org](http://uniqush.org/documentation/usage.html)
-  covers the endpoints and the `/push` parameters, but its FCM and APNs
-  registration examples predate this release and will not work as written.
+- A: [docs/api.md](docs/api.md) is the reference: every endpoint, the
+  parameters each backend takes on `/addpsp` and `/subscribe`, what `/push`
+  accepts, and the response formats. The older reference on uniqush.org
+  predates this release; its FCM and APNs registration examples will not work
+  as written.
 
 - Q: I'm upgrading from 2.7.0 or earlier. Will my subscriptions survive?
 - A: Yes; no device has to re-subscribe for anything in this release. FCM
@@ -300,6 +300,7 @@ Code contributions to `uniqush-push` can be made using pull requests. To submit 
 ## Related Links ##
 - [This story](http://uniqush.org/documentation/intro.html) may help you to understand
 the basic idea of *Uniqush*.
-- [Documentation](http://uniqush.org/documentation/index.html)
-- [The Uniqush blog](http://blog.uniqush.org) announces the latest news about Uniqush.
-- [Redis persistence](http://redis.io/topics/persistence)
+- [API reference](docs/api.md), [upgrade notes](docs/upgrading.md), and the rest of [docs/](docs/)
+- [Documentation on uniqush.org](http://uniqush.org/documentation/index.html) (older; being updated)
+- [The Uniqush blog](https://uniqush.org/blog/) announces releases.
+- [Redis persistence](https://redis.io/docs/latest/operate/oss_and_stack/management/persistence/)
