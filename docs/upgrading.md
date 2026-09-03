@@ -4,7 +4,8 @@ The unreleased version repairs the two backends whose upstream APIs were shut
 down while the project was dormant, adds a third, and changes how a delivery
 point finds its provider. [NEWS.md](../NEWS.md) lists every change in one line
 each; this document is the longer version for operators, and points at the
-documents that go deeper still.
+documents that go deeper still. [api.md](api.md) is the reference for the
+API as it is now.
 
 ## Before you start
 
