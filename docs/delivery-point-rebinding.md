@@ -60,15 +60,29 @@ rather than guessing.
 
 Both are independent of the goal, and worth fixing regardless.
 
-**The read path deletes user data, incompletely.** In
-`GetPushServiceProviderDeliveryPointPairs`, a missing provider triggers
-`RemoveDeliveryPoint(dpName)`, which deletes `delivery.point:<dp>` and nothing
-else. The name stays in `srv.sub-2-dp:<service>:<subscriber>`, and
-`delivery.point.counter:<dp>` is leaked. Compare
-`RemoveDeliveryPointFromServiceSubscriber`, which decrements the counter and
-removes the set membership — the correct teardown. So the current behaviour is
-both destructive and inconsistent: a garbage-collection step that creates
-garbage.
+**The read path deletes user data, incompletely.**
+`GetPushServiceProviderDeliveryPointPairs` has three garbage-collection
+branches, and each is wrong in its own way:
+
+- `delivery.point:<dp>` missing → `RemoveDeliveryPoint(dpName)`, which DELs a
+  key that is already gone. A no-op that leaves the name in
+  `srv.sub-2-dp:<service>:<subscriber>` and leaks
+  `delivery.point.counter:<dp>`. This is the source of the debris.
+- `srv.dp-2-psp` binding missing → `RemoveDeliveryPoint(dpName)`, deleting the
+  blob of a perfectly valid delivery point. Destructive.
+- provider missing → deletes the blob and the binding, leaves the set member
+  and the counter. Destructive and incomplete.
+
+The correct orphan teardown already exists:
+`removeMissingDeliveryPointFromServiceSubscriber` (`db/pushredisdb.go:479`),
+which `GetSubscriptions` uses. The two paths simply disagree. (Whether the
+counter is decremented or deleted does not matter in practice: a delivery
+point's name hashes `{service, subscriber, devtoken}` and subscribe uses the
+same service and subscriber for the set key, so the counter never exceeds 1.)
+
+All of these deletes also run under `dblock.RLock()`, so two concurrent reads
+can both be writing. Removing the writes from the read path fixes that as a
+side effect.
 
 **Three config options are inert.** `cachesize`, `everysec` and `leastdirty` are
 parsed in `configparser.go` and describe `NewPushDatabaseOpts`, which is
@@ -82,26 +96,49 @@ config file promises something it does not do.
 
 Independent of everything else, and worth landing first.
 
-A read must not destroy data. When a delivery point's provider is missing, skip
-it and report it; do not delete it. If a provider is later restored, the device
-starts working again instead of having quietly vanished.
+A read must not destroy data. When a delivery point's provider or binding is
+missing, skip it and report it; do not delete it. If the provider is later
+restored, the device starts working again instead of having quietly vanished.
 
 Where a delivery point genuinely is orphaned (its `delivery.point:` blob is
-gone), tear it down completely — counter and set membership included — rather
-than half of it.
+gone), tear it down completely — counter and set membership included — by
+calling the existing `removeMissingDeliveryPointFromServiceSubscriber`, so the
+two read paths agree.
 
-- `db/pushdb.go`, one function.
-- Existing behaviour is covered by `db/missingkey_test.go`, so those tests state
-  the current contract and will need to change deliberately.
+- `db/pushdb.go`, one function, plus the comment at `db/pushredisdb.go:301`
+  which describes the garbage collection being removed.
+- Nothing currently tests these branches. `db/missingkey_test.go` covers the
+  `errors.Is` predicate and its wrapping, not what the caller does with the
+  answer. Phase 0 needs new tests, not changed ones.
 - After this, `/rmpsp` followed by `/addpsp` is recoverable rather than
   destructive. That alone makes the auth migration *survivable*, though still
   manual.
 
 **Small. Half a day, most of it in tests.**
 
-### Phase 1 — derive the provider instead of reading it
+### Phase 1 — a minimal doctor command
 
-Add a single lookup used by the read path:
+Before anyone can trust the derivation on real data, they need to know whether
+their database contains the ambiguous case. This has to ship *before* Phase 2,
+not after it, so it is deliberately cut down to the two checks that gate
+Phase 2:
+
+- services with more than one provider of the same push service type
+- `srv.dp-2-psp` entries disagreeing with what the derivation would choose
+
+Add `/checkdb`. Read-only. Both checks walk `srv-2-psp:<service>` for every
+service in `services{0}`, then the subscriber sets for each service. That
+enumeration needs `SCAN`, not `KEYS` — `KEYS` blocks a production redis for
+the duration of a full keyspace walk. `redisClient` only exposes `Keys` today
+(`RebuildServiceSet` uses it); add `Scan` alongside.
+
+**Small-to-medium. A day**, mostly test fixtures. The fuller consistency
+report is Phase 4.
+
+### Phase 2 — derive the provider instead of reading it
+
+Add a single lookup used by **both** the read path and
+`AddDeliveryPointToService`:
 
 ```go
 // resolveProvider returns the provider a delivery point belongs to:
@@ -115,33 +152,27 @@ func (f *pushDatabaseOpts) resolveProvider(service string, dp *push.DeliveryPoin
 - more than one match — consult `srv.dp-2-psp`; if it names one of them, use it;
   otherwise report the ambiguity rather than picking arbitrarily
 
+It must serve the write path too. `AddDeliveryPointToService` has the same
+"first match in an unordered set" pick as the read path, and if only the read
+path is fixed, the ambiguous case binds new subscriptions nondeterministically
+while resolving reads deterministically.
+
+Resolve once per service per call, not per delivery point: one `SMEMBERS
+srv-2-psp:<service>` and one `MGET` of its providers, then a map lookup by
+type. Today the read path does a `GET` of the binding and a `GET` of the
+provider for every delivery point, so this is fewer round trips on the `/push`
+hot path, not more.
+
 Keep writing `srv.dp-2-psp` throughout this phase. It costs nothing and means a
 rollback is a one-line revert rather than a data-repair exercise.
 
 **Small-to-medium. A day or two.** The risk is behavioural, not structural: this
-changes which provider serves a push in the ambiguous case, so the doctor
-command below should come first for anyone with old data.
-
-### Phase 2 — a doctor command
-
-Before anyone can trust Phase 1 on real data, they need to know whether their
-database contains the ambiguous case. Extend `/rebuildserviceset`, or add
-`/checkdb`, to report:
-
-- services with more than one provider of the same push service type
-- `srv.dp-2-psp` entries naming a provider that no longer exists
-- `srv.dp-2-psp` entries disagreeing with what the derivation would choose
-- delivery points in a subscriber set with no `delivery.point:` blob
-- leaked `delivery.point.counter:` keys (the Phase 0 bug's existing debris)
-
-Read-only, and useful independently of this work — it is the tool for answering
-"is my database consistent?", which today has no answer.
-
-**Medium. Two or three days**, mostly output design and test fixtures.
+changes which provider serves a push in the ambiguous case, which is exactly
+what Phase 1 exists to detect first.
 
 ### Phase 3 — let `/addpsp` replace a provider
 
-This is the actual goal, and it is small once Phase 1 has landed.
+This is the actual goal, and it is small once Phase 2 has landed.
 
 Relax the conflict check in `AddPushServiceProviderToService` so that a provider
 of the same *(service, push service type)* whose fixed data differs **replaces**
@@ -152,41 +183,93 @@ points are untouched, because nothing references the old name any more.
 Guard it behind an explicit opt-in — `-d replace=true` — because the existing
 check is also what catches an operator pasting the wrong certificate path into
 the wrong service, and that protection should not be lost as a side effect.
+Strip `replace` from `kv` in `restapi.go` before
+`BuildPushServiceProviderFromMap` sees it. The APNs builder only reads keys it
+knows, so nothing breaks today, but that is luck rather than a contract.
 
-Ordering matters here. The `redisClient` interface exposes no `MULTI` or
-pipeline, so this is three separate commands and a crash mid-sequence is
-possible. Write the new provider *first* and remove the old one last: an
-interruption then leaves a service with two providers of one type, which the
-doctor command reports and which Phase 1 resolves via the stored binding — not
-zero providers, which would fail every push.
+**Make it a transaction.** `redisClient` exposes no `MULTI` today, but it is a
+project-owned subset of go-redis, and `*redis.Client` has `Watch` and
+`TxPipelined`. Adding both to the interface, and forwarding them to the master
+in `redisMultiClient`, is a dozen lines. Then the replace is:
+
+```
+WATCH srv-2-psp:<service>
+  read the set, run the conflict check
+MULTI
+  SET  push.service.provider:<new>
+  SADD srv-2-psp:<service> <new>
+  SREM srv-2-psp:<service> <old>
+  DEL  push.service.provider:<old>
+EXEC
+```
+
+This is worth doing rather than ordering the writes defensively, for two
+reasons. First, the "write new first, delete old last, let the doctor find the
+leftovers" argument only works while `srv.dp-2-psp` still exists as a
+tie-breaker; after Phase 5 an interrupted replace leaves two providers of one
+type with nothing to choose between them, and every push to that service
+fails. Second, `WATCH` on the set closes the multi-process race the Risks
+section describes: two uniqush instances against one redis get an `EXEC`
+failure instead of a silent double write. The existing conflict check has the
+same race, and it also reads the set from the slave, so a replication lag can
+let a duplicate through today; `WATCH` is master-only.
 
 **Small. A day**, including the API surface and docs.
 
-### Phase 4 — retire the index
+### Phase 4 — the full doctor command
+
+Extend `/checkdb` with the rest of the consistency report:
+
+- `srv.dp-2-psp` entries naming a provider that no longer exists
+- delivery points in a subscriber set with no `delivery.point:` blob
+- leaked `delivery.point.counter:` keys (the Phase 0 bug's existing debris)
+- `push.service.provider:` records that are in no `srv-2-psp` set. These can
+  appear after a Phase 3 replace: the push error path
+  (`fixError` → `ModifyPushServiceProvider`, `pushbackend.go:235`) will
+  happily resurrect the old provider's record from an in-flight push that
+  started before the replace.
+
+Still read-only, still `SCAN`. Useful independently of this work — it is the
+tool for answering "is my database consistent?", which today has no answer —
+but not on the critical path to the goal, which is why it is here and not
+earlier.
+
+**Medium. Two days**, mostly output design and test fixtures.
+
+### Phase 5 — retire the index
 
 Stop writing `srv.dp-2-psp`, keep reading it for one release as the
-ambiguity tie-breaker, then delete both the reads and the keys.
+ambiguity tie-breaker, then delete the reads. Deleting the keys themselves is
+a `SCAN srv.dp-2-psp:*` walk — a one-off `/checkdb` action, not something
+that runs at startup.
 
-Worth doing only after a release has shipped with Phases 1-3, so that a
-downgrade remains possible. **Small, and not urgent.**
+Worth doing only after a release has shipped with Phases 0-3, so that a
+downgrade remains possible. This is the phase that makes Phase 3's transaction
+non-negotiable: once the tie-breaker is gone, nothing else can resolve two
+providers of one type. **Small, and not urgent.**
 
 ## Risks
 
 **Multi-process deployments.** `pushDatabaseOpts` serialises everything behind
 one `sync.RWMutex`, which is per process. Two uniqush instances against one
-redis have no mutual exclusion at all today, and Phase 3's replace sequence is a
-read-modify-write. This is a pre-existing hazard rather than a new one — the
-current `/addpsp` conflict check has the same shape — but Phase 3 makes the
-consequence larger. Worth stating in the docs; a redis lock is a separate piece
-of work.
+redis have no mutual exclusion at all today, and the current `/addpsp` conflict
+check is an unguarded read-modify-write — one that reads from the slave, when
+there is one, so replication lag alone can let a duplicate through. Phase 3's
+`WATCH`/`MULTI` closes this for the replace path. The rest of the write API
+keeps the pre-existing hazard; a general fix is a separate piece of work.
 
-**Ambiguous legacy data.** Mitigated by Phase 2, and by keeping the stored
-binding as a tie-breaker through Phase 4.
+**Ambiguous legacy data.** Mitigated by Phase 1, and by keeping the stored
+binding as a tie-breaker through Phase 5.
 
-**Silent behaviour change.** After Phase 1, a delivery point whose stored
+**Silent behaviour change.** After Phase 2, a delivery point whose stored
 binding disagreed with the derivation moves to a different provider. This should
-be impossible under the post-PR-#201 invariant. The doctor command exists to
-turn "should be impossible" into "checked".
+be impossible under the post-PR-#201 invariant. Phase 1 exists to turn "should
+be impossible" into "checked" before Phase 2 ships.
+
+**In-flight pushes across a replace.** A push that started before Phase 3's
+replace holds the old provider in memory; its retries keep using it, and a
+`PushServiceProviderUpdate` from it re-creates the old record. Neither loses a
+push. The resurrected record is an orphan that Phase 4 reports.
 
 ## Test plan
 
@@ -194,11 +277,15 @@ turn "should be impossible" into "checked".
 integration tests rather than mocked:
 
 - a delivery point whose provider was removed — survives a read (Phase 0)
-- a delivery point orphaned for real — fully torn down, no leaked counter
-- a service with two providers of one type — reported, and resolved via the
-  stored binding
+- a delivery point whose binding was removed — survives a read (Phase 0)
+- a delivery point orphaned for real — fully torn down, no leaked counter, no
+  stale set member
+- a service with two providers of one type — reported by `/checkdb`, and
+  resolved via the stored binding on both read and subscribe
 - `/addpsp` with `replace=true` — subscriptions survive; the old provider record
   and set membership are gone
+- `/addpsp` with `replace=true` racing a concurrent write to `srv-2-psp` —
+  `EXEC` fails and nothing is half-applied
 - `/addpsp` without it — still rejected, with the existing message
 - the end-to-end case that motivated this: subscribe devices to a
   certificate-based APNs service, replace it with a `.p8` provider, and push to
@@ -212,25 +299,35 @@ That last one is the acceptance test, and it can run against the simulator in
 | Phase | Effort | Value on its own |
 |---|---|---|
 | 0. Stop deleting on read | ½ day | High — fixes data loss today |
-| 1. Derive the provider | 1-2 days | Low alone; enables 3 |
-| 2. Doctor command | 2-3 days | High — no such tool exists |
+| 1. Minimal doctor | 1 day | Medium — gates 2 |
+| 2. Derive the provider | 1-2 days | Low alone; enables 3 |
 | 3. `/addpsp` replace | 1 day | **The goal** |
-| 4. Retire the index | ½ day, later | Cleanup |
+| 4. Full doctor | 2 days, later | High — no such tool exists |
+| 5. Retire the index | ½ day, later | Cleanup |
 
 Roughly a week of focused work for Phases 0-3, and Phase 0 is worth doing
 immediately whatever happens to the rest.
 
-## Alternative considered
+## Alternatives considered
 
-Keep the binding, and add a `/repointpsp` admin endpoint that rewrites every
-`srv.dp-2-psp` entry for a service from an old provider name to a new one.
+**`/repointpsp`.** Keep the binding, and add an admin endpoint that rewrites
+every `srv.dp-2-psp` entry for a service from an old provider name to a new
+one. Smaller, and it solves the migration case without touching the read path.
+Rejected because it leaves the underlying arrangement intact — a provider's
+credentials stay part of its identity, and every future credential change
+needs an operator to remember to run a repair command. It trades a week of
+work for a permanent operational obligation.
 
-Smaller, and it solves the migration case without touching the read path. It was
-rejected because it leaves the underlying arrangement intact — a provider's
-credentials stay part of its identity, the read path keeps deleting delivery
-points, and every future credential change needs an operator to remember to run
-a repair command. It trades a week of work for a permanent operational
-obligation.
+**`/addpsp replace=true` rewrites the bindings itself.** The same rewrite,
+done automatically as part of the replace, so no operator has to remember
+anything. This is the more serious alternative and it is rejected on different
+grounds: there is no index from a service to its delivery points, so the
+rewrite has to enumerate `srv.sub-2-dp:<service>:*` — a keyspace walk on an
+admin call, O(subscribers) commands behind a `SCAN`, and unbounded time during
+which pushes go to whichever provider each device's binding currently names.
+It also keeps an index that Phase 2 shows is redundant, so every future bug in
+this area has two sources of truth to disagree between. Derivation costs
+nothing at replace time and one `SMEMBERS` at read time.
 
-Worth revisiting only if Phase 1 turns up ambiguous data in the wild that cannot
-be resolved automatically.
+Either is worth revisiting only if Phase 1 turns up ambiguous data in the wild
+that cannot be resolved automatically.
