@@ -1,9 +1,11 @@
 #!/bin/bash -xeu
-# Depends on the ruby gem "fpm" being installed.
-# Exits immediately on error.
+# Depends on 'nfpm' (https://nfpm.goreleaser.com) being installed.
+# Packaging itself is config-driven -- see nfpm.yaml next to this script.
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+OUT_DIR="`pwd`"
 
 TEMP=`pwd`/tmpgopath
-LICENSE=Apache-2.0
 
 if [ -d "$TEMP" ]; then
 	rm -rf "$TEMP"
@@ -27,16 +29,18 @@ ARCH="`uname -m`"
 
 cp "$TEMP/uniqush-push/uniqush-push" "$BUILD/usr/bin"
 cp "$TEMP/uniqush-push/conf/uniqush-push.conf" "$BUILD/etc/uniqush"
-cp "$TEMP/uniqush-push/LICENSE" "$LICENSE"
+cp "$TEMP/uniqush-push/LICENSE" LICENSE
 
-fpm -s dir -t rpm -v "$VERSION" -n uniqush-push --license="$LICENSE" --maintainer="Nan Deng" --vendor "uniqush" --url="http://uniqush.org" --category Network --description "Uniqush is a free and open source software which provides a unified push service for server-side notification to apps on mobile devices" -a "$ARCH" -C "$BUILD" .
-
-fpm -s dir -t deb -v "$VERSION" -n uniqush-push --license="$LICENSE" --maintainer="Nan Deng" --vendor "uniqush" --url="http://uniqush.org" --category Network --description "Uniqush is a free and open source software which provides a unified push service for server-side notification to apps on mobile devices" -a "$ARCH" -C "$BUILD" .
+export VERSION ARCH
+pushd "$BUILD"
+nfpm package -f "$SCRIPT_DIR/nfpm.yaml" -p rpm -t "$OUT_DIR"
+nfpm package -f "$SCRIPT_DIR/nfpm.yaml" -p deb -t "$OUT_DIR"
+popd
 
 TARBALLNAME="uniqush-push_${VERSION}_$ARCH"
 TARBALLDIR=`pwd`/"$TARBALLNAME"
 mkdir -p "$TARBALLDIR"
-cp "$LICENSE" "$TARBALLDIR"
+cp LICENSE "$TARBALLDIR"
 cp "$TEMP/uniqush-push/uniqush-push" "$TARBALLDIR"
 cp "$TEMP/uniqush-push/conf/uniqush-push.conf" "$TARBALLDIR/uniqush-push.conf"
 
@@ -56,6 +60,6 @@ rm -rf "$BUILD"
 rm -rf "$TARBALLDIR"
 rm -f uniqush-push
 rm -f uniqush-push.conf
-rm -f "$LICENSE"
+rm -f LICENSE
 
 echo "Packages are found in uniqush-push_${VERSION}...rpm/.deb/.tar.gz"

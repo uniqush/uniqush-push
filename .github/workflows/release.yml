@@ -1,0 +1,97 @@
+name: Release assets
+
+# Builds uniqush-push's .deb, .rpm and .tar.gz from the tagged commit and
+# attaches them to that tag's GitHub Release. softprops/action-gh-release
+# creates the release if one doesn't exist yet for the tag, or adds/replaces
+# the assets on it if it does -- so this is safe to re-run.
+#
+# Trigger by publishing a GitHub Release for a tag (matching the site's
+# convention of unprefixed version tags, e.g. "2.8.0"), or manually via
+# workflow_dispatch to (re)build assets for an existing tag.
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Tag to build and attach assets to, e.g. 2.8.0"
+        required: true
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Resolve tag, version and arch
+        id: vars
+        run: |
+          TAG="${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.event.release.tag_name }}"
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          # Strip a leading 'v' in case a tag is ever prefixed; uniqush-push's
+          # own tags (and the download links on uniqush.org) are not.
+          echo "version=${TAG#v}" >> "$GITHUB_OUTPUT"
+          echo "arch=$(uname -m)" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ steps.vars.outputs.tag }}
+
+      - uses: actions/setup-go@v5
+        with:
+          # Must stay >= the `go` directive in go.mod, same as ci.yml.
+          go-version: '1.25'
+          check-latest: true
+
+      - name: Build uniqush-push
+        run: go build -o uniqush-push .
+
+      - name: Install nfpm
+        run: |
+          curl -sL -o /tmp/nfpm.tar.gz \
+            https://github.com/goreleaser/nfpm/releases/download/v2.47.0/nfpm_2.47.0_Linux_x86_64.tar.gz
+          tar xzf /tmp/nfpm.tar.gz -C /tmp nfpm
+          sudo install /tmp/nfpm /usr/local/bin/nfpm
+          nfpm --version
+
+      - name: Stage package root
+        run: |
+          mkdir -p pkgroot/usr/bin pkgroot/etc/uniqush dist
+          cp uniqush-push pkgroot/usr/bin/
+          cp conf/uniqush-push.conf pkgroot/etc/uniqush/
+
+      - name: Build .rpm and .deb
+        env:
+          VERSION: ${{ steps.vars.outputs.version }}
+          ARCH: ${{ steps.vars.outputs.arch }}
+        run: |
+          cd pkgroot
+          nfpm package -f "$GITHUB_WORKSPACE/build/nfpm.yaml" -p rpm -t "$GITHUB_WORKSPACE/dist"
+          nfpm package -f "$GITHUB_WORKSPACE/build/nfpm.yaml" -p deb -t "$GITHUB_WORKSPACE/dist"
+
+      - name: Build .tar.gz
+        env:
+          VERSION: ${{ steps.vars.outputs.version }}
+          ARCH: ${{ steps.vars.outputs.arch }}
+        run: |
+          NAME="uniqush-push_${VERSION}_${ARCH}"
+          mkdir -p "$NAME"
+          cp LICENSE "$NAME/"
+          cp uniqush-push "$NAME/"
+          cp conf/uniqush-push.conf "$NAME/uniqush-push.conf"
+          cat > "$NAME/install.sh" << 'INSTALLEOF'
+          #!/bin/sh
+          mkdir -p /etc/uniqush
+          cp uniqush-push /usr/local/bin
+          cp uniqush-push.conf /etc/uniqush
+          echo "Success!"
+          INSTALLEOF
+          chmod +x "$NAME/install.sh"
+          tar czf "dist/$NAME.tar.gz" "$NAME"
+
+      - name: Attach assets to the release
+        uses: softprops/action-gh-release@v3
+        with:
+          tag_name: ${{ steps.vars.outputs.tag }}
+          files: dist/*
