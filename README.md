@@ -19,10 +19,10 @@ server side, you can send push notifications to any supported mobile platform.
 > upstream APIs it depends on were shut down.
 >
 > - **APNs — repaired, and verified as far as Apple allows without an account.**
->   As of the unreleased version it uses the HTTP/2 API by default and sends the
->   `apns-push-type` header that iOS 13+ requires. Earlier releases defaulted to
->   the binary protocol, which Apple switched off on 31 March 2021, and could
->   not deliver at all.
+>   As of 2.8.0 it uses the HTTP/2 API by default and sends the `apns-push-type`
+>   header that iOS 13+ requires. Earlier releases defaulted to the binary
+>   protocol, which Apple switched off on 31 March 2021, and could not deliver
+>   at all.
 >
 >   `go test ./srv/apns/` now drives the real HTTP/2 transport against a
 >   simulator that enforces Apple's documented contract, and

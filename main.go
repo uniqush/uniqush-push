@@ -30,7 +30,7 @@ var uniqushPushShowVersionFlag = flag.Bool("version", false, "Version info")
 var uniqushPushGenerateVAPIDKeysFlag = flag.Bool("generate-vapid-keys", false,
 	"Print a new VAPID key pair for a webpush/unifiedpush push service provider, then exit")
 
-var uniqushPushVersion = "uniqush-push 2.7.0"
+var uniqushPushVersion = "uniqush-push 2.8.0"
 
 func installPushServices() {
 	// InstallFCM registers both "fcm" and "gcm"; the latter is an alias kept so

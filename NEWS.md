@@ -1,6 +1,6 @@
 uniqush-push NEWS
 
-Unreleased
+03 Sep 2026, uniqush-push 2.8.0
 -------------------------------
 
 The longer version of everything below, for operators, is in
