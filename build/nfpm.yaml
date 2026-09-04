@@ -1,0 +1,27 @@
+# nfpm (https://nfpm.goreleaser.com) config for uniqush-push's .deb and .rpm
+# packages. build-uniqush-push.sh sets VERSION, ARCH and LICENSE and cds
+# into the staging root (the package's file tree, rooted at /) before
+# running `nfpm package -f nfpm.yaml`.
+#
+# ARCH is fed uname -m's output (e.g. x86_64); nfpm maps that to each
+# packager's own architecture name (amd64 for deb, x86_64 for rpm) --
+# see https://nfpm.goreleaser.com/docs/arch-mapping/.
+name: "uniqush-push"
+arch: "${ARCH}"
+platform: "linux"
+version: "${VERSION}"
+version_schema: "none"
+section: "net"
+maintainer: "Misha Nasledov <misha@nasledov.com>"
+description: "Push notification server for APNs, FCM and Web Push, written in Go."
+vendor: "uniqush"
+homepage: "https://uniqush.org"
+license: "Apache-2.0"
+
+contents:
+  - src: "."
+    dst: /
+    type: tree
+
+rpm:
+  group: "Applications/Internet"
