@@ -1,9 +1,16 @@
 name: Release assets
 
-# Builds uniqush-push's .deb, .rpm and .tar.gz from the tagged commit and
-# attaches them to that tag's GitHub Release. softprops/action-gh-release
-# creates the release if one doesn't exist yet for the tag, or adds/replaces
-# the assets on it if it does -- so this is safe to re-run.
+# Builds uniqush-push's .deb, .rpm and .tar.gz and attaches them to the
+# GitHub Release for a tag. softprops/action-gh-release creates the release
+# if one doesn't exist yet for the tag, or adds/replaces the assets on it if
+# it does -- so this is safe to re-run.
+#
+# The source being packaged is checked out at the release tag (into src/),
+# but the packaging recipe (build/nfpm.yaml) is checked out from master
+# (into tooling/), on purpose: a tag doesn't need to carry its own working
+# copy of the packaging tooling to be releasable here. That means a fix to
+# nfpm.yaml on master can be used to (re)build assets for *any* past tag,
+# without editing or moving that tag after it's been pushed.
 #
 # Trigger by publishing a GitHub Release for a tag (matching the site's
 # convention of unprefixed version tags, e.g. "2.8.0"), or manually via
@@ -34,9 +41,17 @@ jobs:
           echo "version=${TAG#v}" >> "$GITHUB_OUTPUT"
           echo "arch=$(uname -m)" >> "$GITHUB_OUTPUT"
 
-      - uses: actions/checkout@v4
+      - name: Check out the tagged source being released
+        uses: actions/checkout@v4
         with:
           ref: ${{ steps.vars.outputs.tag }}
+          path: src
+
+      - name: Check out packaging tooling from master
+        uses: actions/checkout@v4
+        with:
+          ref: master
+          path: tooling
 
       - uses: actions/setup-go@v5
         with:
@@ -45,6 +60,7 @@ jobs:
           check-latest: true
 
       - name: Build uniqush-push
+        working-directory: src
         run: go build -o uniqush-push .
 
       - name: Install nfpm
@@ -58,8 +74,8 @@ jobs:
       - name: Stage package root
         run: |
           mkdir -p pkgroot/usr/bin pkgroot/etc/uniqush dist
-          cp uniqush-push pkgroot/usr/bin/
-          cp conf/uniqush-push.conf pkgroot/etc/uniqush/
+          cp src/uniqush-push pkgroot/usr/bin/
+          cp src/conf/uniqush-push.conf pkgroot/etc/uniqush/
 
       - name: Build .rpm and .deb
         env:
@@ -67,8 +83,8 @@ jobs:
           ARCH: ${{ steps.vars.outputs.arch }}
         run: |
           cd pkgroot
-          nfpm package -f "$GITHUB_WORKSPACE/build/nfpm.yaml" -p rpm -t "$GITHUB_WORKSPACE/dist"
-          nfpm package -f "$GITHUB_WORKSPACE/build/nfpm.yaml" -p deb -t "$GITHUB_WORKSPACE/dist"
+          nfpm package -f "$GITHUB_WORKSPACE/tooling/build/nfpm.yaml" -p rpm -t "$GITHUB_WORKSPACE/dist"
+          nfpm package -f "$GITHUB_WORKSPACE/tooling/build/nfpm.yaml" -p deb -t "$GITHUB_WORKSPACE/dist"
 
       - name: Build .tar.gz
         env:
@@ -77,9 +93,9 @@ jobs:
         run: |
           NAME="uniqush-push_${VERSION}_${ARCH}"
           mkdir -p "$NAME"
-          cp LICENSE "$NAME/"
-          cp uniqush-push "$NAME/"
-          cp conf/uniqush-push.conf "$NAME/uniqush-push.conf"
+          cp src/LICENSE "$NAME/"
+          cp src/uniqush-push "$NAME/"
+          cp src/conf/uniqush-push.conf "$NAME/uniqush-push.conf"
           cat > "$NAME/install.sh" << 'INSTALLEOF'
           #!/bin/sh
           mkdir -p /etc/uniqush
