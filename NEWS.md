@@ -1,5 +1,22 @@
 uniqush-push NEWS
 
+Unreleased
+----------
+
+UnifiedPush / Web Push:
+
+- Change: The RFC 8188 record size is now 4096 rather than 2048, so every message is 4096 bytes on the wire and
+  a payload may be up to 3993 bytes (was 1945). 4096 is what the rest of the ecosystem emits, and google/tink's
+  `apps-webpush` rejects any record smaller than the 4096 it expects, so 2048 was unreadable to clients built
+  on it. Set `record_size=2048` in `[webpush]` or `[unifiedpush]` to halve egress again.
+- New feature: `record_size` in the `[webpush]` and `[unifiedpush]` config sections.
+
+Logging:
+
+- Bugfix: Log why a push is being retried. `RetryError` carried the reason and nothing printed it, so a push that
+  retried and then vanished left only "Retry after 1m0s". The webpush backend now also quotes the push server's
+  response body, which is where the explanation usually is.
+
 03 Sep 2026, uniqush-push 2.8.0
 -------------------------------
 

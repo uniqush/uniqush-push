@@ -55,20 +55,47 @@ const (
 	// choice.
 	defaultTTL = 12 * 60 * 60
 
+	// contentCodingHeaderSize is the RFC 8188 aes128gcm header: 16 salt + 4 rs + 1 idlen +
+	// 65 keyid, where keyid is the sender's (application server's) uncompressed P-256 ECDH public key.
+	contentCodingHeaderSize = 16 + 4 + 1 + 65
+
+	// gcmTagSize and paddingDelimiterSize are the rest of what a record spends
+	// on something other than the payload.
+	gcmTagSize           = 16
+	paddingDelimiterSize = 1
+
 	// defaultRecordSize is the RFC 8188 record size, which determines the size
-	// of the encrypted body.
+	// of the encrypted body. Override it with record_size in the [webpush] or
+	// [unifiedpush] config section.
 	//
 	// webpush-go pads every message to completely fill the record, so the POST
 	// body is always exactly this many bytes no matter how short the payload.
-	// The library's own default is 4096, which is exactly the maximum the
-	// UnifiedPush spec allows -- sitting on the limit with no margin, and
-	// spending a full MTU on a 20-byte wakeup ping. 2048 leaves room.
-	defaultRecordSize = 2048
+	// 4096 is therefore not free -- it spends a full MTU on a 20-byte wakeup
+	// ping -- but it is the right default anyway:
+	//
+	//   - It is what every other application server emits (webpush-go's own
+	//     default, pywebpush's, web-push's), and one client family reads the
+	//     field strictly. google/tink's apps-webpush requires the record size in
+	//     the header to *equal* its configured size, which defaults to 4096, so
+	//     it rejects anything smaller outright. UnifiedPush forked Tink to fix
+	//     that (connector 3.0.4 and later), but an app on an older connector, or
+	//     one using stock apps-webpush directly, cannot read a 2048-byte record.
+	//   - It is the largest the UnifiedPush spec permits, which makes the
+	//     payload ceiling below match the spec's own 3993 bytes. A smaller
+	//     record silently caps what an app can send.
+	//
+	// Servers sending mostly wakeup pings can halve their egress by setting
+	// record_size=2048, at the cost of the Tink-based clients above.
+	defaultRecordSize = 4096
 
-	// maxPayloadSize is the largest plaintext that fits in defaultRecordSize
-	// after the RFC 8188 header (16 salt + 4 rs + 1 idlen + 65 keyid = 86),
-	// the AES-GCM tag (16) and the padding delimiter (1).
-	maxPayloadSize = defaultRecordSize - 86 - 16 - 1
+	// minRecordSize is the smallest record that can carry a one-byte payload.
+	// RFC 8188's own floor is 18, which is below the fixed overhead here.
+	minRecordSize = contentCodingHeaderSize + gcmTagSize + paddingDelimiterSize + 1
+
+	// maxRecordSize is the UnifiedPush spec's ceiling on a push message, and
+	// also what browser push services accept. A larger record would be refused
+	// with a 413 by everything worth sending to.
+	maxRecordSize = 4096
 
 	// maxConcurrentPushes bounds the worker pool. Web Push has no multicast, so
 	// a push to N subscribers is N requests to N third-party hosts of unknown
@@ -92,9 +119,18 @@ type pushService struct {
 	// serve both "webpush" and "unifiedpush".
 	name string
 
+	// recordSize is the RFC 8188 record size every push is padded to, and so
+	// also the size of every POST body. See defaultRecordSize.
+	recordSize uint32
+
 	client  *http.Client
 	policy  *EndpointPolicy
 	errChan chan<- push.Error
+}
+
+// maxPayloadSize is the largest plaintext that fits in one record.
+func (ps *pushService) maxPayloadSize() int {
+	return int(ps.recordSize) - contentCodingHeaderSize - gcmTagSize - paddingDelimiterSize
 }
 
 var _ push.PushServiceType = &pushService{}
@@ -102,9 +138,10 @@ var _ push.PushServiceType = &pushService{}
 // NewPushService creates a Web Push push service registered under the given name.
 func NewPushService(name string) push.PushServiceType {
 	return &pushService{
-		name:   name,
-		policy: NewEndpointPolicy(),
-		client: newHTTPClient(),
+		name:       name,
+		recordSize: defaultRecordSize,
+		policy:     NewEndpointPolicy(),
+		client:     newHTTPClient(),
 	}
 }
 
@@ -146,10 +183,14 @@ func (ps *pushService) SetErrorReportChan(errChan chan<- push.Error) {
 }
 
 // SetPushServiceConfig reads the optional config section named after this push
-// service, i.e. [webpush] or [unifiedpush] in uniqush-push.conf.
+// service, i.e. [webpush] or [unifiedpush] in uniqush-push.conf. A server that
+// registers both names configures them separately, since they are two
+// registrations of this type.
 //
-// Both options exist for self-hosted push servers, which are a first-class
-// UnifiedPush use case and may legitimately live on a private network.
+// allow_private_addresses and allowed_hosts exist for self-hosted push servers,
+// which are a first-class UnifiedPush use case and may legitimately live on a
+// private network. record_size trades egress against client compatibility; see
+// defaultRecordSize.
 func (ps *pushService) SetPushServiceConfig(c *push.PushServiceConfig) {
 	if c == nil {
 		return
@@ -164,6 +205,16 @@ func (ps *pushService) SetPushServiceConfig(c *push.PushServiceConfig) {
 		// SetAllowedHosts lowercases entries, since DNS hostnames are
 		// case-insensitive and a mixed-case config entry would never match.
 		ps.policy.SetAllowedHosts(strings.Split(hosts, ","))
+	}
+
+	// Written unconditionally, so that deleting the option restores the default
+	// rather than leaving whatever an earlier config set. An out-of-range or
+	// unparseable value falls back to the default too: the alternative is a
+	// server that starts up and then rejects every payload over some size
+	// nobody chose, or one that emits records no client will accept.
+	ps.recordSize = defaultRecordSize
+	if size, err := c.GetInt("record_size"); err == nil && size >= minRecordSize && size <= maxRecordSize {
+		ps.recordSize = uint32(size)
 	}
 }
 
@@ -347,9 +398,9 @@ func (ps *pushService) Push(psp *push.PushServiceProvider, dpQueue <-chan *push.
 	defer close(resQueue)
 
 	payload, payloadErr := toWebPushPayload(notif)
-	if payloadErr == nil && len(payload) > maxPayloadSize {
+	if payloadErr == nil && len(payload) > ps.maxPayloadSize() {
 		payloadErr = push.NewBadNotificationWithDetails(
-			fmt.Sprintf("payload is too large: %d > %d", len(payload), maxPayloadSize))
+			fmt.Sprintf("payload is too large: %d > %d", len(payload), ps.maxPayloadSize()))
 	}
 	if payloadErr != nil {
 		// Drain dpQueue so the caller is not blocked, then report once.
@@ -411,7 +462,7 @@ func (ps *pushService) optionsForPSP(psp *push.PushServiceProvider) (*webpush.Op
 		VAPIDPublicKey:  publicKey,
 		VAPIDPrivateKey: privateKey,
 		TTL:             defaultTTL,
-		RecordSize:      defaultRecordSize,
+		RecordSize:      ps.recordSize,
 		Urgency:         webpush.UrgencyNormal,
 	}, nil
 }

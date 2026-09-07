@@ -185,6 +185,25 @@ Self-hosted push servers on a private network are a supported UnifiedPush
 setup, so this can be relaxed per service in `uniqush-push.conf` with
 `allow_private_addresses`, ideally alongside an `allowed_hosts` list.
 
+### Message size ###
+
+Every message is padded to fill one RFC 8188 record, so the POST body is the
+same size whatever the payload: a wakeup ping and a full notification are
+indistinguishable on the wire. `record_size` sets it, in the `[webpush]` or
+`[unifiedpush]` section.
+
+The default is 4096, the largest UnifiedPush permits, which puts the payload
+ceiling at 3993 bytes and matches what every other application server emits.
+That last part matters more than it sounds: google/tink's `apps-webpush`
+requires the record size in the header to *equal* the 4096 it expects and
+rejects anything smaller, so a smaller record is unreadable to clients built on
+it. UnifiedPush's own connector carries a patched fork and is fine from 3.0.4
+onwards.
+
+Setting `record_size=2048` halves egress, which is worth it for a server sending
+mostly wakeup pings to clients you control. It also halves the payload ceiling,
+to 1945 bytes.
+
 ## APNs ##
 
 `/addpsp` for `apns` takes the usual `cert`, `key` and `bundleid`. Two optional

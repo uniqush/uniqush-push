@@ -8,9 +8,13 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
+
+	"github.com/uniqush/goconf/conf"
 
 	"github.com/uniqush/uniqush-push/push"
 )
@@ -54,7 +58,15 @@ func newTestService(t *testing.T, handler roundTripFunc) *pushService {
 	t.Helper()
 	service := NewPushService("webpush").(*pushService)
 	service.policy.AllowPrivateAddresses = true
-	service.client.Transport = handler
+	// http.RoundTripper's contract is that the transport closes the request
+	// body, including on error. Every round tripper in these tests goes through
+	// here, so do it once rather than in each of them.
+	service.client.Transport = roundTripFunc(func(request *http.Request) (*http.Response, error) {
+		if request.Body != nil {
+			defer request.Body.Close()
+		}
+		return handler(request)
+	})
 	return service
 }
 
@@ -607,7 +619,7 @@ func TestPushRejectsOversizedPayload(t *testing.T) {
 	psp := newTestPSP(t, service)
 	dp := newTestDP(t, service)
 	notif := &push.Notification{Data: map[string]string{
-		payloadKey: strings.Repeat("x", maxPayloadSize+1),
+		payloadKey: strings.Repeat("x", service.maxPayloadSize()+1),
 	}}
 
 	result := pushOnce(t, service, psp, dp, notif)
@@ -762,4 +774,103 @@ func cloneMap(source map[string]string) map[string]string {
 		clone[key] = value
 	}
 	return clone
+}
+
+// The record size is configurable because it is a trade-off: smaller records
+// halve the bytes on the wire, larger ones are what Tink-based clients insist on
+// and raise the payload ceiling. Whatever it is set to, the body must come out
+// exactly that size, since webpush-go pads to fill it.
+func TestRecordSizeConfiguration(t *testing.T) {
+	t.Run("a new service starts at the default", func(t *testing.T) {
+		service := NewPushService("webpush").(*pushService)
+		defer service.Finalize()
+		if service.recordSize != defaultRecordSize {
+			t.Errorf("Expected a record size of %d, got %d", defaultRecordSize, service.recordSize)
+		}
+		// The default has to be a value the config would accept, or removing
+		// record_size from a config file would produce a service that cannot
+		// send anything.
+		if defaultRecordSize < minRecordSize || defaultRecordSize > maxRecordSize {
+			t.Errorf("The default record size %d is outside the accepted range %d-%d",
+				defaultRecordSize, minRecordSize, maxRecordSize)
+		}
+	})
+
+	// The arithmetic, against figures that come from outside this package: 3993
+	// is the UnifiedPush spec's own number for the largest cleartext that fits
+	// in a 4096-byte message.
+	t.Run("payload ceilings", func(t *testing.T) {
+		testCases := map[uint32]int{4096: 3993, 2048: 1945}
+		for recordSize, want := range testCases {
+			service := NewPushService("webpush").(*pushService)
+			service.recordSize = recordSize
+			if got := service.maxPayloadSize(); got != want {
+				t.Errorf("record size %d gives a payload ceiling of %d, want %d", recordSize, got, want)
+			}
+			service.Finalize()
+		}
+	})
+
+	t.Run("a configured size reaches the wire", func(t *testing.T) {
+		var body []byte
+		service := newTestService(t, func(request *http.Request) (*http.Response, error) {
+			body, _ = io.ReadAll(request.Body)
+			return newResponse(201, nil), nil
+		})
+		defer service.Finalize()
+		// Through the config, not by assignment: what matters is that the
+		// supported way of setting this reaches the bytes on the wire.
+		service.SetPushServiceConfig(configWithRecordSize(t, 2048))
+		if service.recordSize != 2048 {
+			t.Fatalf("Expected the config to set a record size of 2048, got %d", service.recordSize)
+		}
+
+		psp := newTestPSP(t, service)
+		dp := newTestDP(t, service)
+		if result := pushOnce(t, service, psp, dp, &push.Notification{
+			Data: map[string]string{"msg": "hi"},
+		}); result.Err != nil {
+			t.Fatalf("Unexpected error: %v", result.Err)
+		}
+		if len(body) != 2048 {
+			t.Errorf("Expected a 2048-byte body, got %d", len(body))
+		}
+	})
+
+	t.Run("out-of-range values fall back to the default", func(t *testing.T) {
+		for _, size := range []int{0, -1, 17, minRecordSize - 1, maxRecordSize + 1, 1 << 20} {
+			service := NewPushService("webpush").(*pushService)
+			service.recordSize = 2048 // as if a previous config had set it
+			service.SetPushServiceConfig(configWithRecordSize(t, size))
+			if service.recordSize != defaultRecordSize {
+				t.Errorf("record_size=%d gave a record size of %d, expected the default %d",
+					size, service.recordSize, defaultRecordSize)
+			}
+			service.Finalize()
+		}
+	})
+
+	t.Run("an in-range value is accepted", func(t *testing.T) {
+		service := NewPushService("webpush").(*pushService)
+		defer service.Finalize()
+		service.SetPushServiceConfig(configWithRecordSize(t, minRecordSize))
+		if service.recordSize != minRecordSize {
+			t.Errorf("Expected a record size of %d, got %d", minRecordSize, service.recordSize)
+		}
+	})
+}
+
+// configWithRecordSize builds a [webpush] section containing just record_size.
+func configWithRecordSize(t *testing.T, size int) *push.PushServiceConfig {
+	t.Helper()
+	path := filepath.Join(t.TempDir(), "uniqush.conf")
+	contents := fmt.Sprintf("[webpush]\nrecord_size=%d\n", size)
+	if err := os.WriteFile(path, []byte(contents), 0o600); err != nil {
+		t.Fatalf("Could not write the test config: %v", err)
+	}
+	file, err := conf.ReadConfigFile(path)
+	if err != nil {
+		t.Fatalf("Could not read the test config: %v", err)
+	}
+	return push.NewPushServiceConfig(file, "webpush")
 }
