@@ -203,12 +203,26 @@ func (backend *PushBackEnd) fixRetryError(
 
 	providerName := err.Provider.Name()
 	destinationName := err.Destination.Name()
+
+	// Why we are retrying is the only part of this an operator can act on, and
+	// a push that quietly retries and then disappears with no reason recorded
+	// is the hardest kind of failure to diagnose. RetryError has carried the
+	// reason all along; nothing used to print it.
+	//
+	// Logged with %q rather than %v because a reason can quote a remote server:
+	// FCM's error strings and the response bodies the webpush backend includes
+	// are not ours, and an unescaped newline in one would forge a log record.
+	reason := "no reason given"
+	if err.Reason != nil {
+		reason = err.Reason.Error()
+	}
+
 	if after > ceiling {
-		logger.Errorf("RequestID=%v Service=%v Subscriber=%v PushServiceProvider=%v DeliveryPoint=%v Failed after retry", reqID, service, sub, providerName, destinationName)
+		logger.Errorf("RequestID=%v Service=%v Subscriber=%v PushServiceProvider=%v DeliveryPoint=%v Failed after retry: %q", reqID, service, sub, providerName, destinationName, reason)
 		handler.AddDetailsToHandler(APIResponseDetails{RequestID: &reqID, From: &remoteAddr, Service: &service, Subscriber: &sub, PushServiceProvider: &providerName, DeliveryPoint: &destinationName, Code: UNIQUSH_ERROR_FAILED_RETRY})
 		return
 	}
-	logger.Infof("RequestID=%v Service=%v Subscriber=%v PushServiceProvider=%v DeliveryPoint=%v Retry after %v", reqID, service, sub, providerName, destinationName, after)
+	logger.Infof("RequestID=%v Service=%v Subscriber=%v PushServiceProvider=%v DeliveryPoint=%v Retry after %v: %q", reqID, service, sub, providerName, destinationName, after, reason)
 	go func() {
 		<-time.After(after)
 		subs := make([]string, 1)

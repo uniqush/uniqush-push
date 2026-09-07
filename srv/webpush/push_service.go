@@ -31,10 +31,12 @@ import (
 	"encoding/base64"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"strings"
 	"sync"
 	"time"
+	"unicode"
 
 	webpush "github.com/SherClockHolmes/webpush-go"
 
@@ -457,8 +459,13 @@ func (ps *pushService) pushOne(psp *push.PushServiceProvider, dp *push.DeliveryP
 		return result
 	}
 	// webpush-go returns the raw response and neither inspects the status nor
-	// closes the body. Both are ours to do.
-	defer response.Body.Close()
+	// closes the body. Both are ours to do. The nil check is not paranoia about
+	// net/http, which always sets a body, but about the transports tests and
+	// middleware substitute for it: a nil body here would panic on a path that
+	// only runs when a push has already failed.
+	if response.Body != nil {
+		defer response.Body.Close()
+	}
 
 	switch classifyStatus(response.StatusCode) {
 	case outcomeSuccess:
@@ -469,7 +476,7 @@ func (ps *pushService) pushOne(psp *push.PushServiceProvider, dp *push.DeliveryP
 		return result
 	case outcomeBadNotification:
 		result.Err = push.NewBadNotificationWithDetails(
-			fmt.Sprintf("push server rejected the request with HTTP %d", response.StatusCode))
+			fmt.Sprintf("push server rejected the request with HTTP %d%s", response.StatusCode, describeBody(response)))
 		return result
 	default:
 		delay := retryAfter(response.Header, time.Now())
@@ -477,9 +484,52 @@ func (ps *pushService) pushOne(psp *push.PushServiceProvider, dp *push.DeliveryP
 			delay = defaultRetryAfter
 		}
 		result.Err = push.NewRetryErrorWithReason(psp, dp, notif, delay,
-			fmt.Errorf("push server returned HTTP %d", response.StatusCode))
+			fmt.Errorf("push server returned HTTP %d%s", response.StatusCode, describeBody(response)))
 		return result
 	}
+}
+
+// maxErrorBodyBytes is how much of a failed response to quote. Push servers say
+// why in a sentence or a small JSON object; nobody needs more than this, and the
+// body is remote input going into a log line.
+const maxErrorBodyBytes = 256
+
+// describeBody quotes the start of an error response, ready to append to a
+// message. Push servers explain their refusals in the body -- ntfy answers
+// {"code":40301,"http":403,"error":"forbidden"}, Mozilla autopush names the
+// header it did not like -- and a status code alone leaves an operator guessing
+// between a rate limit, a rejected VAPID key and a topic that does not exist.
+//
+// The result ends up in log lines and in API responses, so this is the boundary
+// where remote bytes are made safe to embed: control characters go, and the rest
+// is flattened to one line. A push server could otherwise put a newline and a
+// plausible-looking prefix in its body and forge a log record.
+func describeBody(response *http.Response) string {
+	// A response with no body is legal for an http.Client to return, and this
+	// runs on a path where something has already gone wrong. Panicking here
+	// would turn a failed push into a failed server.
+	if response.Body == nil {
+		return ""
+	}
+	body, err := io.ReadAll(io.LimitReader(response.Body, maxErrorBodyBytes))
+	if err != nil || len(body) == 0 {
+		return ""
+	}
+	printable := strings.Map(func(r rune) rune {
+		if unicode.IsSpace(r) {
+			return ' '
+		}
+		if !unicode.IsPrint(r) {
+			return -1
+		}
+		return r
+	}, string(body))
+	// Collapse the runs of spaces the mapping above can leave behind.
+	flattened := strings.Join(strings.Fields(printable), " ")
+	if flattened == "" {
+		return ""
+	}
+	return fmt.Sprintf(": %s", flattened)
 }
 
 // GenerateVAPIDKeys returns a fresh VAPID keypair, raw-url base64 encoded.

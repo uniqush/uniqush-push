@@ -5,6 +5,7 @@ import (
 	"crypto/rand"
 	"encoding/base64"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"strings"
@@ -354,6 +355,121 @@ func TestPushOutcomes(t *testing.T) {
 			result := pushOnce(t, service, psp, dp, &push.Notification{Data: map[string]string{"msg": "hi"}})
 			testCase.check(t, result)
 		})
+	}
+}
+
+// A push server explains its refusal in the response body, and the status code
+// alone leaves an operator guessing. ntfy's 507 is the case that motivated this:
+// it means the UnifiedPush topic has no registered subscriber, which no amount
+// of staring at "507" would tell anyone.
+func TestPushQuotesTheErrorBody(t *testing.T) {
+	const body = `{"code":50701,"http":507,"error":"cannot publish to UnifiedPush topic without previously active subscriber"}`
+
+	testCases := []struct {
+		name       string
+		statusCode int
+		want       string
+	}{
+		{name: "retryable status", statusCode: 507, want: "50701"},
+		{name: "bad notification", statusCode: 400, want: "50701"},
+	}
+
+	for _, testCase := range testCases {
+		t.Run(testCase.name, func(t *testing.T) {
+			service := newTestService(t, func(*http.Request) (*http.Response, error) {
+				response := newResponse(testCase.statusCode, nil)
+				response.Body = io.NopCloser(strings.NewReader(body))
+				return response, nil
+			})
+			defer service.Finalize()
+
+			psp := newTestPSP(t, service)
+			dp := newTestDP(t, service)
+			result := pushOnce(t, service, psp, dp, &push.Notification{Data: map[string]string{"msg": "hi"}})
+
+			if result.Err == nil {
+				t.Fatalf("Expected an error for HTTP %d", testCase.statusCode)
+			}
+			message := result.Err.Error()
+			if !strings.Contains(message, testCase.want) {
+				t.Errorf("Expected the error to quote the response body, got: %s", message)
+			}
+			// "HTTP 507" and not bare "507": the body itself contains 507 twice,
+			// so a looser check would pass on an error message that named no
+			// status code at all.
+			if status := fmt.Sprintf("HTTP %d", testCase.statusCode); !strings.Contains(message, status) {
+				t.Errorf("Expected the error to name %q, got: %s", status, message)
+			}
+		})
+	}
+}
+
+// A push server's body reaches log lines, so it must not be able to carry a
+// newline and forge a record. Flattening happens where the bytes are read.
+func TestPushFlattensControlCharactersInErrorBodies(t *testing.T) {
+	service := newTestService(t, func(*http.Request) (*http.Response, error) {
+		response := newResponse(503, nil)
+		response.Body = io.NopCloser(strings.NewReader("rate limited\n[Push][Info] forged record\x00\x1b[31m"))
+		return response, nil
+	})
+	defer service.Finalize()
+
+	psp := newTestPSP(t, service)
+	dp := newTestDP(t, service)
+	result := pushOnce(t, service, psp, dp, &push.Notification{Data: map[string]string{"msg": "hi"}})
+
+	if result.Err == nil {
+		t.Fatal("Expected an error for HTTP 503")
+	}
+	message := result.Err.Error()
+	if strings.ContainsAny(message, "\n\r\x00\x1b") {
+		t.Errorf("Expected control characters to be removed, got: %q", message)
+	}
+	if !strings.Contains(message, "rate limited [Push][Info] forged record") {
+		t.Errorf("Expected the body text to survive flattening, got: %q", message)
+	}
+}
+
+// An http.Client may return a response with no body. This runs on a path where
+// the push has already failed, so a panic here would take the server with it.
+func TestPushHandlesNilResponseBody(t *testing.T) {
+	service := newTestService(t, func(*http.Request) (*http.Response, error) {
+		response := newResponse(503, nil)
+		response.Body = nil
+		return response, nil
+	})
+	defer service.Finalize()
+
+	psp := newTestPSP(t, service)
+	dp := newTestDP(t, service)
+	result := pushOnce(t, service, psp, dp, &push.Notification{Data: map[string]string{"msg": "hi"}})
+
+	if result.Err == nil {
+		t.Fatal("Expected an error for HTTP 503")
+	}
+	if !strings.Contains(result.Err.Error(), "HTTP 503") {
+		t.Errorf("Expected the error to name the status code, got: %s", result.Err)
+	}
+}
+
+// A body long enough to swamp a log line is truncated rather than quoted whole.
+func TestPushTruncatesLongErrorBodies(t *testing.T) {
+	service := newTestService(t, func(*http.Request) (*http.Response, error) {
+		response := newResponse(503, nil)
+		response.Body = io.NopCloser(strings.NewReader(strings.Repeat("x", 4096)))
+		return response, nil
+	})
+	defer service.Finalize()
+
+	psp := newTestPSP(t, service)
+	dp := newTestDP(t, service)
+	result := pushOnce(t, service, psp, dp, &push.Notification{Data: map[string]string{"msg": "hi"}})
+
+	if result.Err == nil {
+		t.Fatal("Expected an error for HTTP 503")
+	}
+	if quoted := strings.Count(result.Err.Error(), "x"); quoted > maxErrorBodyBytes {
+		t.Errorf("Quoted %d bytes of the body, expected at most %d", quoted, maxErrorBodyBytes)
 	}
 }
 
