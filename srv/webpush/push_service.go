@@ -35,6 +35,7 @@ import (
 	"net/http"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 	"unicode"
 
@@ -121,28 +122,47 @@ type pushService struct {
 
 	// recordSize is the RFC 8188 record size every push is padded to, and so
 	// also the size of every POST body. See defaultRecordSize.
-	recordSize uint32
+	//
+	// Atomic for the same reason as policy below: a reconfiguration writes it
+	// while pushes are reading it, and a push that read a stale size would
+	// build a record of one size and declare another in the header.
+	recordSize atomic.Uint32
+
+	// policy is swapped, never mutated in place. SetPushServiceConfig can be
+	// called again -- RegisterPushServiceType calls it too, and nothing stops a
+	// future config reload from calling it once uniqush is serving -- while
+	// /subscribe and every push are reading it. Publishing a whole new policy
+	// through an atomic pointer means a reader sees one config or the other and
+	// never a half-applied one, and never a map being written as it reads it.
+	// srv/apns holds its equivalent gate in an atomic.Bool for the same reason.
+	policy atomic.Pointer[EndpointPolicy]
 
 	client  *http.Client
-	policy  *EndpointPolicy
 	errChan chan<- push.Error
+}
+
+// endpointPolicy returns the policy in force right now. The value it returns is
+// immutable; a reconfiguration replaces it rather than editing it.
+func (ps *pushService) endpointPolicy() *EndpointPolicy {
+	return ps.policy.Load()
 }
 
 // maxPayloadSize is the largest plaintext that fits in one record.
 func (ps *pushService) maxPayloadSize() int {
-	return int(ps.recordSize) - contentCodingHeaderSize - gcmTagSize - paddingDelimiterSize
+	return int(ps.recordSize.Load()) - contentCodingHeaderSize - gcmTagSize - paddingDelimiterSize
 }
 
 var _ push.PushServiceType = &pushService{}
 
 // NewPushService creates a Web Push push service registered under the given name.
 func NewPushService(name string) push.PushServiceType {
-	return &pushService{
-		name:       name,
-		recordSize: defaultRecordSize,
-		policy:     NewEndpointPolicy(),
-		client:     newHTTPClient(),
+	service := &pushService{
+		name:   name,
+		client: newHTTPClient(),
 	}
+	service.recordSize.Store(defaultRecordSize)
+	service.policy.Store(NewEndpointPolicy())
+	return service
 }
 
 // newHTTPClient builds the shared client.
@@ -195,27 +215,44 @@ func (ps *pushService) SetPushServiceConfig(c *push.PushServiceConfig) {
 	if c == nil {
 		return
 	}
-	if value, err := c.GetString("allow_private_addresses"); err == nil {
-		switch strings.ToLower(strings.TrimSpace(value)) {
-		case "true", "yes", "on", "1":
-			ps.policy.AllowPrivateAddresses = true
-		}
+	// Both of the next two are written unconditionally, including when the
+	// option is absent or unparseable. They relax the endpoint policy, so a
+	// missing option has to mean "closed" rather than "leave whatever was there":
+	// SetPushServiceConfig runs again whenever the push service manager
+	// reconfigures, and only writing on success would leave a gate an earlier
+	// config had opened still open after the line was deleted or corrupted.
+	// Deleting a line has to undo it. srv/apns does the same for
+	// allow_non_apple_endpoints.
+	policy := NewEndpointPolicy()
+
+	allow, err := c.GetBool("allow_private_addresses")
+	policy.AllowPrivateAddresses = err == nil && allow
+
+	// SetAllowedHosts lowercases entries, since DNS hostnames are
+	// case-insensitive and a mixed-case config entry would never match. An empty
+	// or all-blank list clears the allow-list, which is what an absent option
+	// should mean.
+	hosts, err := c.GetString("allowed_hosts")
+	if err != nil {
+		hosts = ""
 	}
-	if hosts, err := c.GetString("allowed_hosts"); err == nil && strings.TrimSpace(hosts) != "" {
-		// SetAllowedHosts lowercases entries, since DNS hostnames are
-		// case-insensitive and a mixed-case config entry would never match.
-		ps.policy.SetAllowedHosts(strings.Split(hosts, ","))
-	}
+	policy.SetAllowedHosts(strings.Split(hosts, ","))
+
+	// Published only once it is fully built, so no reader ever sees a policy
+	// with the allow-list of one config and the private-address setting of
+	// another.
+	ps.policy.Store(policy)
 
 	// Written unconditionally, so that deleting the option restores the default
 	// rather than leaving whatever an earlier config set. An out-of-range or
 	// unparseable value falls back to the default too: the alternative is a
 	// server that starts up and then rejects every payload over some size
 	// nobody chose, or one that emits records no client will accept.
-	ps.recordSize = defaultRecordSize
+	recordSize := uint32(defaultRecordSize)
 	if size, err := c.GetInt("record_size"); err == nil && size >= minRecordSize && size <= maxRecordSize {
-		ps.recordSize = uint32(size)
+		recordSize = uint32(size)
 	}
+	ps.recordSize.Store(recordSize)
 }
 
 // BuildPushServiceProviderFromMap reads the VAPID identity for a service.
@@ -295,7 +332,7 @@ func (ps *pushService) BuildDeliveryPointFromMap(kv map[string]string, dp *push.
 	if !ok || endpoint == "" {
 		return errors.New("NoEndpoint")
 	}
-	if err := ps.policy.ValidateSyntax(endpoint); err != nil {
+	if err := ps.endpointPolicy().ValidateSyntax(endpoint); err != nil {
 		return fmt.Errorf("invalid delivery point: %v", err)
 	}
 	dp.FixedData["endpoint"] = endpoint
@@ -462,7 +499,7 @@ func (ps *pushService) optionsForPSP(psp *push.PushServiceProvider) (*webpush.Op
 		VAPIDPublicKey:  publicKey,
 		VAPIDPrivateKey: privateKey,
 		TTL:             defaultTTL,
-		RecordSize:      ps.recordSize,
+		RecordSize:      ps.recordSize.Load(),
 		Urgency:         webpush.UrgencyNormal,
 	}, nil
 }
@@ -479,7 +516,7 @@ func (ps *pushService) pushOne(psp *push.PushServiceProvider, dp *push.DeliveryP
 
 	// Re-check immediately before connecting. Checking only at /subscribe time
 	// is defeated by DNS rebinding.
-	if err := ps.policy.ValidateForSend(endpoint); err != nil {
+	if err := ps.endpointPolicy().ValidateForSend(endpoint); err != nil {
 		result.Err = push.NewBadDeliveryPointWithDetails(dp, err.Error())
 		return result
 	}

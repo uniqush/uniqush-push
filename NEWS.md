@@ -10,6 +10,12 @@ UnifiedPush / Web Push:
   `apps-webpush` rejects any record smaller than the 4096 it expects, so 2048 was unreadable to clients built
   on it. Set `record_size=2048` in `[webpush]` or `[unifiedpush]` to halve egress again.
 - New feature: `record_size` in the `[webpush]` and `[unifiedpush]` config sections.
+- Bugfix: `allow_private_addresses` and `allowed_hosts` are re-read on every reconfiguration, so deleting one
+  closes what it opened. Previously they were only written when the option parsed, which left a policy an
+  earlier config had relaxed still relaxed after the line was removed. `allow_private_addresses` now also
+  accepts the config file's usual boolean spellings, including the negative ones. The endpoint policy is
+  published as a whole rather than edited in place, so a reconfiguration cannot be seen half-applied by a
+  push in flight.
 
 Logging:
 

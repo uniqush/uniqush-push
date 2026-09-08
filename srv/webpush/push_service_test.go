@@ -52,12 +52,21 @@ func newResponse(statusCode int, header http.Header) *http.Response {
 	}
 }
 
+// allowPrivate replaces the service's endpoint policy with one that does or
+// does not permit private addresses. Policies are published, not edited, so a
+// test sets one the same way a config does.
+func allowPrivate(service *pushService, allow bool) {
+	policy := NewEndpointPolicy()
+	policy.AllowPrivateAddresses = allow
+	service.policy.Store(policy)
+}
+
 // newTestService builds a service whose network calls are captured and whose
 // SSRF policy permits the fake endpoint.
 func newTestService(t *testing.T, handler roundTripFunc) *pushService {
 	t.Helper()
 	service := NewPushService("webpush").(*pushService)
-	service.policy.AllowPrivateAddresses = true
+	allowPrivate(service, true)
 	// http.RoundTripper's contract is that the transport closes the request
 	// body, including on error. Every round tripper in these tests goes through
 	// here, so do it once rather than in each of them.
@@ -559,7 +568,7 @@ func TestPushRejectsPrivateEndpointAtSendTime(t *testing.T) {
 
 	// Re-enable the policy after the delivery point was accepted, standing in
 	// for a name that has since started resolving to a private address.
-	service.policy.AllowPrivateAddresses = false
+	allowPrivate(service, false)
 
 	result := pushOnce(t, service, psp, dp, &push.Notification{Data: map[string]string{"msg": "hi"}})
 	if called {
@@ -784,8 +793,8 @@ func TestRecordSizeConfiguration(t *testing.T) {
 	t.Run("a new service starts at the default", func(t *testing.T) {
 		service := NewPushService("webpush").(*pushService)
 		defer service.Finalize()
-		if service.recordSize != defaultRecordSize {
-			t.Errorf("Expected a record size of %d, got %d", defaultRecordSize, service.recordSize)
+		if service.recordSize.Load() != defaultRecordSize {
+			t.Errorf("Expected a record size of %d, got %d", defaultRecordSize, service.recordSize.Load())
 		}
 		// The default has to be a value the config would accept, or removing
 		// record_size from a config file would produce a service that cannot
@@ -803,7 +812,7 @@ func TestRecordSizeConfiguration(t *testing.T) {
 		testCases := map[uint32]int{4096: 3993, 2048: 1945}
 		for recordSize, want := range testCases {
 			service := NewPushService("webpush").(*pushService)
-			service.recordSize = recordSize
+			service.recordSize.Store(recordSize)
 			if got := service.maxPayloadSize(); got != want {
 				t.Errorf("record size %d gives a payload ceiling of %d, want %d", recordSize, got, want)
 			}
@@ -821,8 +830,8 @@ func TestRecordSizeConfiguration(t *testing.T) {
 		// Through the config, not by assignment: what matters is that the
 		// supported way of setting this reaches the bytes on the wire.
 		service.SetPushServiceConfig(configWithRecordSize(t, 2048))
-		if service.recordSize != 2048 {
-			t.Fatalf("Expected the config to set a record size of 2048, got %d", service.recordSize)
+		if service.recordSize.Load() != 2048 {
+			t.Fatalf("Expected the config to set a record size of 2048, got %d", service.recordSize.Load())
 		}
 
 		psp := newTestPSP(t, service)
@@ -840,11 +849,11 @@ func TestRecordSizeConfiguration(t *testing.T) {
 	t.Run("out-of-range values fall back to the default", func(t *testing.T) {
 		for _, size := range []int{0, -1, 17, minRecordSize - 1, maxRecordSize + 1, 1 << 20} {
 			service := NewPushService("webpush").(*pushService)
-			service.recordSize = 2048 // as if a previous config had set it
+			service.recordSize.Store(2048) // as if a previous config had set it
 			service.SetPushServiceConfig(configWithRecordSize(t, size))
-			if service.recordSize != defaultRecordSize {
+			if service.recordSize.Load() != defaultRecordSize {
 				t.Errorf("record_size=%d gave a record size of %d, expected the default %d",
-					size, service.recordSize, defaultRecordSize)
+					size, service.recordSize.Load(), defaultRecordSize)
 			}
 			service.Finalize()
 		}
@@ -854,17 +863,17 @@ func TestRecordSizeConfiguration(t *testing.T) {
 		service := NewPushService("webpush").(*pushService)
 		defer service.Finalize()
 		service.SetPushServiceConfig(configWithRecordSize(t, minRecordSize))
-		if service.recordSize != minRecordSize {
-			t.Errorf("Expected a record size of %d, got %d", minRecordSize, service.recordSize)
+		if service.recordSize.Load() != minRecordSize {
+			t.Errorf("Expected a record size of %d, got %d", minRecordSize, service.recordSize.Load())
 		}
 	})
 }
 
-// configWithRecordSize builds a [webpush] section containing just record_size.
-func configWithRecordSize(t *testing.T, size int) *push.PushServiceConfig {
+// testConfig builds a [webpush] section from the given option lines.
+func testConfig(t *testing.T, options ...string) *push.PushServiceConfig {
 	t.Helper()
 	path := filepath.Join(t.TempDir(), "uniqush.conf")
-	contents := fmt.Sprintf("[webpush]\nrecord_size=%d\n", size)
+	contents := "[webpush]\n" + strings.Join(options, "\n") + "\n"
 	if err := os.WriteFile(path, []byte(contents), 0o600); err != nil {
 		t.Fatalf("Could not write the test config: %v", err)
 	}
@@ -873,4 +882,139 @@ func configWithRecordSize(t *testing.T, size int) *push.PushServiceConfig {
 		t.Fatalf("Could not read the test config: %v", err)
 	}
 	return push.NewPushServiceConfig(file, "webpush")
+}
+
+// configWithRecordSize is a config a test service can take wholesale: it keeps
+// private addresses allowed, since the test endpoint is one.
+func configWithRecordSize(t *testing.T, size int) *push.PushServiceConfig {
+	t.Helper()
+	return testConfig(t, "allow_private_addresses=true", fmt.Sprintf("record_size=%d", size))
+}
+
+// The endpoint policy only ever widens what uniqush will connect to, so a
+// config that no longer says to widen it has to close it again. Anything else
+// makes reconfiguration fail open.
+func TestEndpointPolicyConfiguration(t *testing.T) {
+	t.Run("an absent option closes what a previous config opened", func(t *testing.T) {
+		service := NewPushService("webpush").(*pushService)
+		defer service.Finalize()
+
+		service.SetPushServiceConfig(testConfig(t,
+			"allow_private_addresses=true", "allowed_hosts=ntfy.example.org"))
+		if !service.endpointPolicy().AllowPrivateAddresses {
+			t.Fatal("Expected allow_private_addresses=true to be honoured")
+		}
+		if !service.endpointPolicy().AllowedHosts["ntfy.example.org"] {
+			t.Fatal("Expected the allow-list to be set")
+		}
+
+		// The operator deletes both lines and uniqush reconfigures.
+		service.SetPushServiceConfig(testConfig(t, "record_size=2048"))
+		if service.endpointPolicy().AllowPrivateAddresses {
+			t.Error("Removing allow_private_addresses left private addresses allowed")
+		}
+		if len(service.endpointPolicy().AllowedHosts) != 0 {
+			t.Errorf("Removing allowed_hosts left the allow-list as %v", service.endpointPolicy().AllowedHosts)
+		}
+	})
+
+	t.Run("an explicit false closes it too", func(t *testing.T) {
+		service := NewPushService("webpush").(*pushService)
+		defer service.Finalize()
+		service.SetPushServiceConfig(testConfig(t, "allow_private_addresses=true"))
+		service.SetPushServiceConfig(testConfig(t, "allow_private_addresses=false"))
+		if service.endpointPolicy().AllowPrivateAddresses {
+			t.Error("allow_private_addresses=false did not close it")
+		}
+	})
+
+	t.Run("an unparseable value is not an opening", func(t *testing.T) {
+		service := NewPushService("webpush").(*pushService)
+		defer service.Finalize()
+		service.SetPushServiceConfig(testConfig(t, "allow_private_addresses=maybe"))
+		if service.endpointPolicy().AllowPrivateAddresses {
+			t.Error("An unparseable allow_private_addresses opened the policy")
+		}
+	})
+
+	t.Run("the spellings a config file might use", func(t *testing.T) {
+		for _, value := range []string{"true", "yes", "on", "1", "t", "y", "TRUE", "Yes"} {
+			service := NewPushService("webpush").(*pushService)
+			service.SetPushServiceConfig(testConfig(t, "allow_private_addresses="+value))
+			if !service.endpointPolicy().AllowPrivateAddresses {
+				t.Errorf("allow_private_addresses=%s was not read as true", value)
+			}
+			service.Finalize()
+		}
+		for _, value := range []string{"false", "no", "off", "0", "n"} {
+			service := NewPushService("webpush").(*pushService)
+			allowPrivate(service, true)
+			service.SetPushServiceConfig(testConfig(t, "allow_private_addresses="+value))
+			if service.endpointPolicy().AllowPrivateAddresses {
+				t.Errorf("allow_private_addresses=%s was not read as false", value)
+			}
+			service.Finalize()
+		}
+	})
+}
+
+// Reconfiguration while pushes are in flight. Before the policy and the record
+// size were published atomically this failed under -race: SetPushServiceConfig
+// wrote the bool, replaced the allow-list map and rewrote the record size while
+// ValidateForSend and Push were reading them. The map is the serious one -- a
+// concurrent map read and write is a crash, not just a race report.
+//
+// uniqush does not reload its config today: SetConfigFile runs once, before the
+// REST API starts serving, so this guards the invariant rather than a live bug.
+// It is worth guarding because the invariant is invisible from in here, and a
+// config reload is an obvious thing for this server to grow.
+func TestPolicyIsSafeToReplaceDuringPushes(t *testing.T) {
+	service := newTestService(t, func(*http.Request) (*http.Response, error) {
+		return newResponse(201, nil), nil
+	})
+	defer service.Finalize()
+	psp := newTestPSP(t, service)
+	dp := newTestDP(t, service)
+
+	// Both configs keep private addresses allowed, so the pushes succeed and the
+	// test is about the reads rather than the outcome. What must not happen is a
+	// torn read, or a map being written while it is read.
+	configs := []*push.PushServiceConfig{
+		testConfig(t, "allow_private_addresses=true", "allowed_hosts=10.0.0.1, ntfy.example.org", "record_size=4096"),
+		testConfig(t, "allow_private_addresses=true", "allowed_hosts=10.0.0.1", "record_size=2048"),
+	}
+
+	done := make(chan struct{})
+	var reconfigures sync.WaitGroup
+	reconfigures.Add(1)
+	go func() {
+		defer reconfigures.Done()
+		for i := 0; ; i++ {
+			select {
+			case <-done:
+				return
+			default:
+			}
+			service.SetPushServiceConfig(configs[i%len(configs)])
+		}
+	}()
+
+	var pushes sync.WaitGroup
+	for range 8 {
+		pushes.Add(1)
+		go func() {
+			defer pushes.Done()
+			for range 25 {
+				if result := pushOnce(t, service, psp, dp, &push.Notification{
+					Data: map[string]string{"msg": "hi"},
+				}); result.Err != nil {
+					t.Errorf("Unexpected error: %v", result.Err)
+					return
+				}
+			}
+		}()
+	}
+	pushes.Wait()
+	close(done)
+	reconfigures.Wait()
 }
