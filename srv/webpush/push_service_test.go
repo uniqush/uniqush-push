@@ -784,8 +784,8 @@ func TestRecordSizeConfiguration(t *testing.T) {
 	t.Run("a new service starts at the default", func(t *testing.T) {
 		service := NewPushService("webpush").(*pushService)
 		defer service.Finalize()
-		if service.recordSize != defaultRecordSize {
-			t.Errorf("Expected a record size of %d, got %d", defaultRecordSize, service.recordSize)
+		if service.recordSize.Load() != defaultRecordSize {
+			t.Errorf("Expected a record size of %d, got %d", defaultRecordSize, service.recordSize.Load())
 		}
 		// The default has to be a value the config would accept, or removing
 		// record_size from a config file would produce a service that cannot
@@ -803,7 +803,7 @@ func TestRecordSizeConfiguration(t *testing.T) {
 		testCases := map[uint32]int{4096: 3993, 2048: 1945}
 		for recordSize, want := range testCases {
 			service := NewPushService("webpush").(*pushService)
-			service.recordSize = recordSize
+			service.recordSize.Store(recordSize)
 			if got := service.maxPayloadSize(); got != want {
 				t.Errorf("record size %d gives a payload ceiling of %d, want %d", recordSize, got, want)
 			}
@@ -821,8 +821,8 @@ func TestRecordSizeConfiguration(t *testing.T) {
 		// Through the config, not by assignment: what matters is that the
 		// supported way of setting this reaches the bytes on the wire.
 		service.SetPushServiceConfig(configWithRecordSize(t, 2048))
-		if service.recordSize != 2048 {
-			t.Fatalf("Expected the config to set a record size of 2048, got %d", service.recordSize)
+		if service.recordSize.Load() != 2048 {
+			t.Fatalf("Expected the config to set a record size of 2048, got %d", service.recordSize.Load())
 		}
 
 		psp := newTestPSP(t, service)
@@ -840,11 +840,11 @@ func TestRecordSizeConfiguration(t *testing.T) {
 	t.Run("out-of-range values fall back to the default", func(t *testing.T) {
 		for _, size := range []int{0, -1, 17, minRecordSize - 1, maxRecordSize + 1, 1 << 20} {
 			service := NewPushService("webpush").(*pushService)
-			service.recordSize = 2048 // as if a previous config had set it
+			service.recordSize.Store(2048) // as if a previous config had set it
 			service.SetPushServiceConfig(configWithRecordSize(t, size))
-			if service.recordSize != defaultRecordSize {
+			if service.recordSize.Load() != defaultRecordSize {
 				t.Errorf("record_size=%d gave a record size of %d, expected the default %d",
-					size, service.recordSize, defaultRecordSize)
+					size, service.recordSize.Load(), defaultRecordSize)
 			}
 			service.Finalize()
 		}
@@ -854,8 +854,8 @@ func TestRecordSizeConfiguration(t *testing.T) {
 		service := NewPushService("webpush").(*pushService)
 		defer service.Finalize()
 		service.SetPushServiceConfig(configWithRecordSize(t, minRecordSize))
-		if service.recordSize != minRecordSize {
-			t.Errorf("Expected a record size of %d, got %d", minRecordSize, service.recordSize)
+		if service.recordSize.Load() != minRecordSize {
+			t.Errorf("Expected a record size of %d, got %d", minRecordSize, service.recordSize.Load())
 		}
 	})
 }

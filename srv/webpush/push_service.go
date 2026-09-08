@@ -35,6 +35,7 @@ import (
 	"net/http"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 	"unicode"
 
@@ -121,7 +122,13 @@ type pushService struct {
 
 	// recordSize is the RFC 8188 record size every push is padded to, and so
 	// also the size of every POST body. See defaultRecordSize.
-	recordSize uint32
+	//
+	// Atomic because SetPushServiceConfig writes it -- RegisterPushServiceType
+	// calls that too, and nothing stops a future config reload from calling it
+	// once uniqush is serving -- while pushes are reading it. A push that read a
+	// torn value would build a record of one size and declare another in the
+	// header, which no client could decrypt.
+	recordSize atomic.Uint32
 
 	client  *http.Client
 	policy  *EndpointPolicy
@@ -130,19 +137,20 @@ type pushService struct {
 
 // maxPayloadSize is the largest plaintext that fits in one record.
 func (ps *pushService) maxPayloadSize() int {
-	return int(ps.recordSize) - contentCodingHeaderSize - gcmTagSize - paddingDelimiterSize
+	return int(ps.recordSize.Load()) - contentCodingHeaderSize - gcmTagSize - paddingDelimiterSize
 }
 
 var _ push.PushServiceType = &pushService{}
 
 // NewPushService creates a Web Push push service registered under the given name.
 func NewPushService(name string) push.PushServiceType {
-	return &pushService{
-		name:       name,
-		recordSize: defaultRecordSize,
-		policy:     NewEndpointPolicy(),
-		client:     newHTTPClient(),
+	service := &pushService{
+		name:   name,
+		policy: NewEndpointPolicy(),
+		client: newHTTPClient(),
 	}
+	service.recordSize.Store(defaultRecordSize)
+	return service
 }
 
 // newHTTPClient builds the shared client.
@@ -212,10 +220,11 @@ func (ps *pushService) SetPushServiceConfig(c *push.PushServiceConfig) {
 	// unparseable value falls back to the default too: the alternative is a
 	// server that starts up and then rejects every payload over some size
 	// nobody chose, or one that emits records no client will accept.
-	ps.recordSize = defaultRecordSize
+	recordSize := uint32(defaultRecordSize)
 	if size, err := c.GetInt("record_size"); err == nil && size >= minRecordSize && size <= maxRecordSize {
-		ps.recordSize = uint32(size)
+		recordSize = uint32(size)
 	}
+	ps.recordSize.Store(recordSize)
 }
 
 // BuildPushServiceProviderFromMap reads the VAPID identity for a service.
@@ -462,7 +471,7 @@ func (ps *pushService) optionsForPSP(psp *push.PushServiceProvider) (*webpush.Op
 		VAPIDPublicKey:  publicKey,
 		VAPIDPrivateKey: privateKey,
 		TTL:             defaultTTL,
-		RecordSize:      ps.recordSize,
+		RecordSize:      ps.recordSize.Load(),
 		Urgency:         webpush.UrgencyNormal,
 	}, nil
 }
