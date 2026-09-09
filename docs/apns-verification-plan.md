@@ -232,10 +232,13 @@ Worth asking for specifically, since these have no coverage:
   `BadDeviceToken` and unsubscribe
 - a push to an uninstalled app, expected to come back 410 `Unregistered`
 
-Note that `srv/apns/apns-test/apns-test.sh` and the `uniqush/apns-simulator` it
-drives are binary-protocol only, and so exercise a path Apple switched off on
-2021-03-31. The conformance suite replaces them for HTTP/2; the script is worth
-retiring or rewriting against `endpoint`.
+`srv/apns/apns-test/apns-test.sh` has been retired, and `uniqush/apns-simulator`
+archived. Both were binary-protocol only, so they exercised a path Apple switched
+off on 2021-03-31, and the conformance suite covers the HTTP/2 equivalent. The
+one thing that went with them and has no replacement is a smoke test of
+`/subscriptions`, `/psps` and `/rebuildserviceset` over HTTP: the Go tests reach
+those code paths through the packages rather than by serving a request. See
+`srv/apns/apns-test/README.md`.
 
 ## Status
 
