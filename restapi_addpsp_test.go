@@ -108,6 +108,12 @@ func (d *recordingDatabase) RemoveDeliveryPointFromService(string, string, *push
 	return nil
 }
 func (d *recordingDatabase) ModifyDeliveryPoint(*push.DeliveryPoint) error { return nil }
+
+// RemoveAllDeliveryPointsFromService is overridden by the /unsubscribe tests;
+// the stub reports a subscriber who had nothing.
+func (d *recordingDatabase) RemoveAllDeliveryPointsFromService(string, string) (int, error) {
+	return 0, nil
+}
 func (d *recordingDatabase) GetPushServiceProviderDeliveryPointPairs(string, string, []string, log.Logger) ([]db.PushServiceProviderDeliveryPointPair, error) {
 	return nil, nil
 }

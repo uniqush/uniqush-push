@@ -85,6 +85,17 @@ func (backend *PushBackEnd) Unsubscribe(service, sub string, dp *push.DeliveryPo
 	return backend.db.RemoveDeliveryPointFromService(service, sub, dp)
 }
 
+// UnsubscribeAll removes every device a subscriber has in a service, and
+// reports how many it removed.
+//
+// The subscriber is not required to have any. An application calls this when an
+// account is deleted, and that account having already had its last device
+// unsubscribed is not a different outcome from uniqush's point of view -- both
+// leave the subscriber with nothing.
+func (backend *PushBackEnd) UnsubscribeAll(service, sub string) (int, error) {
+	return backend.db.RemoveAllDeliveryPointsFromService(service, sub)
+}
+
 func (backend *PushBackEnd) processError() {
 	for err := range backend.errChan {
 		rid := randomUniqID()

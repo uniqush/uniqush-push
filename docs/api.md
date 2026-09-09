@@ -216,6 +216,20 @@ device from the subscriber. The device is identified by rebuilding it from
 `pushservicetype` and its token, so those are required; a `delivery_point_id`
 from `/subscriptions` is not accepted here.
 
+`alldevices=1` instead removes every device the subscriber has in the service,
+and then `service` and `subscriber` are the only parameters needed — no
+`pushservicetype`, no token. It is meant for an account being deleted, where the
+application knows the subscriber is finished and not which devices they had.
+Removing nothing is a success, and the response reports how many devices went:
+
+    curl http://localhost:9898/unsubscribe -d service=myservice -d subscriber=alice -d alldevices=1
+    {"type":"UnsubscribeResponse","date":...,"status":0,"details":{"service":"myservice","subscriber":"alice","devicesRemoved":2,"code":"UNIQUSH_SUCCESS"}}
+
+One service per call, and no wildcards in either name: `alldevices=1` deletes
+every device behind a name, so a pattern is refused rather than expanded. The
+removal is not atomic, so a failure reports how many devices it had already
+removed and the call can safely be retried.
+
 ### `/subscriptions`
 
 | Parameter | |

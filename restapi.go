@@ -217,7 +217,67 @@ func (api *RestAPI) changePushServiceProvider(kv map[string]string, logger log.L
 	return APIResponseDetails{From: &remoteAddr, Service: &service, PushServiceProvider: &pspName, Code: UNIQUSH_SUCCESS}
 }
 
+// allDevicesKey asks /unsubscribe to remove every device a subscriber has in a
+// service, rather than the one named by the request.
+const allDevicesKey = "alldevices"
+
+// unsubscribeAllDevices removes every device a subscriber has in a service.
+//
+// The case it exists for is an account being deleted: the application knows the
+// subscriber is finished, and does not know or care which devices they had. The
+// alternative was /subscriptions followed by an /unsubscribe per device, which
+// is several round trips, requires reconstructing each device's token, and
+// races anything that subscribes in between.
+//
+// Removing nothing is success. A subscriber with no devices already satisfies
+// what the caller asked for, and an account-deletion path that had to treat
+// "already gone" as an error would have to special-case it everywhere.
+func (api *RestAPI) unsubscribeAllDevices(kv map[string]string, logger log.Logger, remoteAddr string) APIResponseDetails {
+	service, err := getServiceFromMap(kv)
+	if err != nil {
+		logger.Errorf("From=%v Cannot get service name: %v; %v", remoteAddr, service, err)
+		return APIResponseDetails{From: &remoteAddr, Service: &service, Code: UNIQUSH_ERROR_CANNOT_GET_SERVICE, ErrorMsg: strPtrOfErr(err)}
+	}
+	// Validated, as every other subscription operation validates it. This one
+	// deletes in bulk from a name, so a wildcard reaching the database here
+	// would empty every subscriber it matched.
+	subs, err := getSubscribersFromMap(kv, true)
+	if err != nil {
+		logger.Errorf("From=%v Service=%v Cannot get subscriber: %v", remoteAddr, service, err)
+		return APIResponseDetails{From: &remoteAddr, Service: &service, Code: UNIQUSH_ERROR_CANNOT_GET_SUBSCRIBER, ErrorMsg: strPtrOfErr(err)}
+	}
+	// "subscriber=" and "subscriber=,,," are neither an error nor a subscriber:
+	// the parameter is present, so it is not NoSubscriber, and nothing survives
+	// dropping the empty entries. Every other caller is shielded from that by
+	// accident -- changeSubscription builds a delivery point first, and that
+	// fails for a subscriber it cannot read -- and this path exists to skip
+	// that build. /push checks the same way a few lines below.
+	if len(subs) == 0 {
+		logger.Errorf("From=%v Service=%v NoSubscriber", remoteAddr, service)
+		return APIResponseDetails{From: &remoteAddr, Service: &service, Code: UNIQUSH_ERROR_NO_SUBSCRIBER}
+	}
+
+	removed, err := api.backend.UnsubscribeAll(service, subs[0])
+	if err != nil {
+		// Reported with the count, because the removal is not a transaction:
+		// telling the caller how far it got is what makes a retry an informed
+		// decision rather than a guess.
+		logger.Errorf("From=%v Service=%v Subscriber=%v Removed=%v Failed: %v", remoteAddr, service, subs[0], removed, err)
+		return APIResponseDetails{From: &remoteAddr, Service: &service, Subscriber: &subs[0],
+			DevicesRemoved: &removed, Code: UNIQUSH_ERROR_GENERIC, ErrorMsg: strPtrOfErr(err)}
+	}
+
+	logger.Infof("From=%v Service=%v Subscriber=%v Removed=%v Success!", remoteAddr, service, subs[0], removed)
+	return APIResponseDetails{From: &remoteAddr, Service: &service, Subscriber: &subs[0],
+		DevicesRemoved: &removed, Code: UNIQUSH_SUCCESS}
+}
+
 func (api *RestAPI) changeSubscription(kv map[string]string, logger log.Logger, remoteAddr string, issub bool) APIResponseDetails {
+	// Before the delivery point is built, because this is the one subscription
+	// request that does not name a device and has nothing to build one from.
+	if !issub && kv[allDevicesKey] == "1" {
+		return api.unsubscribeAllDevices(kv, logger, remoteAddr)
+	}
 	dp, err := api.psm.BuildDeliveryPointFromMap(kv)
 	if err != nil {
 		logger.Errorf("Cannot build delivery point: %v", err)
@@ -232,6 +292,15 @@ func (api *RestAPI) changeSubscription(kv map[string]string, logger log.Logger, 
 	if err != nil {
 		logger.Errorf("From=%v Service=%v Cannot get subscriber: %v", remoteAddr, service, err)
 		return APIResponseDetails{From: &remoteAddr, Service: &service, Code: UNIQUSH_ERROR_CANNOT_GET_SUBSCRIBER, ErrorMsg: strPtrOfErr(err)}
+	}
+	// The same guard the bulk path above has, and for the same reason. This one
+	// is narrower than it looks: "subscriber=" is caught earlier, because
+	// building the delivery point needs a subscriber and fails without one. A
+	// value of "," or ",,," is not -- it is a perfectly good subscriber name as
+	// far as that build is concerned, and splits into nothing here.
+	if len(subs) == 0 {
+		logger.Errorf("From=%v Service=%v NoSubscriber", remoteAddr, service)
+		return APIResponseDetails{From: &remoteAddr, Service: &service, Code: UNIQUSH_ERROR_NO_SUBSCRIBER}
 	}
 
 	var psp *push.PushServiceProvider
