@@ -19,6 +19,7 @@ package main
 
 import (
 	"errors"
+	"fmt"
 	"sync"
 	"time"
 
@@ -94,10 +95,31 @@ func (backend *PushBackEnd) processError() {
 			case *push.InfoReport:
 				backend.loggers[LoggerPush].Infof("%v", e0)
 			default: // Includes *ErrorReport
-				backend.loggers[LoggerPush].Errorf("Error: %v", e0)
+				// These arrive with no push around them: APNs reports a response
+				// it read after the push had already answered its caller. So
+				// there is no result to take a subscriber from, and naming the
+				// device is the only way the line can be acted on.
+				backend.loggers[LoggerPush].Errorf("%vError: %v", describeDestination(push.DestinationOf(e0)), e0)
 			}
 		}
 	}
+}
+
+// describeDestination renders the device an error is about as log fields, or
+// nothing at all when the error is not about one.
+//
+// Nothing rather than "Unknown": a line that says Subscriber=Unknown reads like
+// a lookup that failed, when the truth is usually that the error was never
+// about a device -- a bad provider credential, say, which is about every device
+// at once.
+func describeDestination(dp *push.DeliveryPoint) string {
+	if dp == nil {
+		return ""
+	}
+	if sub, ok := dp.FixedData["subscriber"]; ok && sub != "" {
+		return fmt.Sprintf("Subscriber=%v DeliveryPoint=%v ", sub, dp.Name())
+	}
+	return fmt.Sprintf("DeliveryPoint=%v ", dp.Name())
 }
 
 func (backend *PushBackEnd) fixError(
@@ -382,6 +404,14 @@ func (backend *PushBackEnd) collectResult(
 	handler APIResponseHandler,
 ) {
 	for res := range resChan {
+		// A backend builds its own Result and can leave the destination out --
+		// srv/apns does, for every error its request processor reports over a
+		// channel -- so the error is asked when the result does not say. That
+		// is the whole of #265 from the logger's side: the answer was already
+		// travelling with the error and nothing looked at it.
+		if res.Destination == nil {
+			res.Destination = push.DestinationOf(res.Err)
+		}
 		var sub string
 		ok := false
 		if res.Destination != nil {

@@ -425,21 +425,21 @@ func apnsresToError(apnsres *common.APNSResult, psp *push.PushServiceProvider, d
 	case common.Status2MissingDeviceToken:
 		err = push.NewBadDeliveryPointWithDetails(dp, "Missing Device Token")
 	case common.Status3MissingTopic:
-		err = push.NewBadNotificationWithDetails("Missing topic")
+		err = push.NewBadNotificationForDeliveryPoint(dp, "Missing topic")
 	case common.Status4MissingPayload:
-		err = push.NewBadNotificationWithDetails("Missing payload")
+		err = push.NewBadNotificationForDeliveryPoint(dp, "Missing payload")
 	case common.Status5InvalidTokenSize:
-		err = push.NewBadNotificationWithDetails("Invalid token size")
+		err = push.NewBadNotificationForDeliveryPoint(dp, "Invalid token size")
 	case common.Status6InvalidTopicSize:
-		err = push.NewBadNotificationWithDetails("Invalid topic size")
+		err = push.NewBadNotificationForDeliveryPoint(dp, "Invalid topic size")
 	case common.Status7InvalidPayloadSize:
-		err = push.NewBadNotificationWithDetails("Invalid payload size")
+		err = push.NewBadNotificationForDeliveryPoint(dp, "Invalid payload size")
 	case common.Status8Unsubscribe:
 		// err = push.NewBadDeliveryPointWithDetails(req.dp, "Invalid Token")
 		// This token is invalid, we should unsubscribe this device.
 		err = push.NewUnsubscribeUpdate(psp, dp)
 	default:
-		err = push.NewErrorf("Unknown Error: %d", apnsres.Status)
+		err = push.NewErrorfForDeliveryPoint(dp, "Unknown Error: %d", apnsres.Status)
 	}
 	return err
 }
@@ -594,8 +594,17 @@ func (ps *pushService) Push(psp *push.PushServiceProvider, dpQueue <-chan *push.
 		res := new(push.Result)
 		res.Provider = psp
 		res.Content = notif
+		// Which device this went wrong for, when the error knows. These results
+		// are built from a channel rather than from the loop over delivery
+		// points, so there is nothing else here to take it from -- and this is
+		// the path that produced the Subscriber=Unknown DeliveryPoint=Unknown
+		// in #265.
+		res.Destination = push.DestinationOf(err)
 		if _, ok := err.(*push.ErrorReport); ok {
-			res.Err = push.NewErrorf("Failed to send payload to APNS: %v", err)
+			// Wrapped, so the destination has to be carried across explicitly:
+			// a new error would otherwise arrive at the logger knowing less
+			// than the one it replaced.
+			res.Err = push.NewErrorfForDeliveryPoint(res.Destination, "Failed to send payload to APNS: %v", err)
 		} else {
 			res.Err = err
 		}

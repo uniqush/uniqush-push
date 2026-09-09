@@ -32,6 +32,45 @@ type implementsPushError struct{}
 
 func (*implementsPushError) isPushError() {}
 
+// destinationCarrier is implemented by the errors that know which device they
+// are about.
+//
+// The method name is unexported, which seals the interface rather than merely
+// discouraging implementations of it. A lower-case identifier is qualified by
+// the package that declares it, so a method named pushDestination in any other
+// package is a different method and does not satisfy this -- see
+// TestAForeignErrorCannotClaimADestination, which is in package push_test for
+// exactly that reason. What can satisfy it is a type embedding one of these
+// errors, and that is the intended behaviour: it answers with the embedded
+// error's own destination.
+//
+// Worth sealing because the answer is used to name a subscriber in a log line
+// an operator is about to act on, and an error that claimed the wrong device
+// would send them after an innocent one.
+type destinationCarrier interface {
+	pushDestination() *DeliveryPoint
+}
+
+// DestinationOf returns the delivery point an error is about, or nil when the
+// error is not about one device.
+//
+// The point of it is one fallback in one place. Every backend builds its own
+// push.Result and can forget to fill in the destination -- and an error that
+// travelled through a channel, or was reported asynchronously after the push
+// returned, may reach the logger with no result around it at all. Asking the
+// error itself works wherever it came from, including from backends written
+// after this.
+//
+// Some errors are legitimately about no device: a BadPushServiceProvider is
+// about credentials, and an InfoReport is a message. Those return nil, and the
+// caller keeps whatever it was going to say instead.
+func DestinationOf(err error) *DeliveryPoint {
+	if carrier, ok := err.(destinationCarrier); ok {
+		return carrier.pushDestination()
+	}
+	return nil
+}
+
 var _ Error = &InfoReport{}
 var _ Error = &ErrorReport{}
 var _ Error = &RetryError{}
@@ -69,10 +108,27 @@ func NewInfof(f string, v ...interface{}) *InfoReport {
 type ErrorReport struct {
 	implementsPushError
 	msg string
+	// Destination is the device this went wrong for, when it went wrong for one
+	// device rather than for the push as a whole. Often nil: NewError and
+	// NewErrorf are the generic constructors and most of their callers have no
+	// device in hand.
+	Destination *DeliveryPoint
 }
 
 func (e *ErrorReport) Error() string {
 	return e.msg
+}
+
+func (e *ErrorReport) pushDestination() *DeliveryPoint { return e.Destination }
+
+// NewErrorForDeliveryPoint returns an ErrorReport about one device.
+func NewErrorForDeliveryPoint(dp *DeliveryPoint, msg string) *ErrorReport {
+	return &ErrorReport{msg: msg, Destination: dp}
+}
+
+// NewErrorfForDeliveryPoint returns a formatted ErrorReport about one device.
+func NewErrorfForDeliveryPoint(dp *DeliveryPoint, f string, v ...interface{}) *ErrorReport {
+	return &ErrorReport{msg: fmt.Sprintf(f, v...), Destination: dp}
 }
 
 // NewError returns an ErrorReport for the given error message to be reported to the user (with a severity of 'error')
@@ -103,6 +159,8 @@ func (e *RetryError) Error() string {
 	}
 	return "Retry"
 }
+
+func (e *RetryError) pushDestination() *DeliveryPoint { return e.Destination }
 
 // NewRetryErrorWithReason builds a RetryError with the associated error causing uniqush-push to retry the push after the given duration.
 func NewRetryErrorWithReason(psp *PushServiceProvider, dp *DeliveryPoint, notif *Notification, after time.Duration, reason error) *RetryError {
@@ -155,6 +213,8 @@ func (e *DeliveryPointUpdate) Error() string {
 	return fmt.Sprintf("DeliveryPoint=%v Update", e.Destination.Name())
 }
 
+func (e *DeliveryPointUpdate) pushDestination() *DeliveryPoint { return e.Destination }
+
 // NewDeliveryPointUpdate returns a DeliveryPointUpdate indicating error handler should updating the passed in delivery point.
 func NewDeliveryPointUpdate(dp *DeliveryPoint) *DeliveryPointUpdate {
 	return &DeliveryPointUpdate{Destination: dp}
@@ -192,6 +252,8 @@ func (e *BadDeliveryPoint) Error() string {
 	return fmt.Sprintf("BadDeliveryPoint %v", e.Destination.Name())
 }
 
+func (e *BadDeliveryPoint) pushDestination() *DeliveryPoint { return e.Destination }
+
 // NewBadDeliveryPointWithDetails creates a BadDeliveryPoint error with the delivery point, along with an error message.
 func NewBadDeliveryPointWithDetails(dp *DeliveryPoint, details string) *BadDeliveryPoint {
 	return &BadDeliveryPoint{Destination: dp, Details: details}
@@ -224,6 +286,10 @@ func NewBadPushServiceProviderWithDetails(psp *PushServiceProvider, details stri
 type BadNotification struct {
 	implementsPushError
 	Details string
+	// Destination is the device the notification was rejected for, when the
+	// rejection was about one device. Nil when the payload itself is bad, which
+	// is the same for every device in the push.
+	Destination *DeliveryPoint
 }
 
 func (e *BadNotification) Error() string {
@@ -233,9 +299,22 @@ func (e *BadNotification) Error() string {
 	return "Bad Notification"
 }
 
+func (e *BadNotification) pushDestination() *DeliveryPoint { return e.Destination }
+
 // NewBadNotificationWithDetails returns a BadNotification with an error message.
 func NewBadNotificationWithDetails(details string) *BadNotification {
 	return &BadNotification{Details: details}
+}
+
+// NewBadNotificationForDeliveryPoint returns a BadNotification about one
+// device.
+//
+// A payload rejected for one device and accepted for the next is the normal
+// case rather than a curiosity: APNs answers DeviceTokenNotForTopic against the
+// token, not the notification, and that is the report in #265 -- an error that
+// named neither the subscriber nor the device it was about.
+func NewBadNotificationForDeliveryPoint(dp *DeliveryPoint, details string) *BadNotification {
+	return &BadNotification{Details: details, Destination: dp}
 }
 
 /*********************/
@@ -250,6 +329,8 @@ type UnsubscribeUpdate struct {
 func (e *UnsubscribeUpdate) Error() string {
 	return fmt.Sprintf("RequestUnsubscribe %v", e.Destination.Name())
 }
+
+func (e *UnsubscribeUpdate) pushDestination() *DeliveryPoint { return e.Destination }
 
 // NewUnsubscribeUpdate returns an UnsubscribeUpdate for the given psp and dp.
 func NewUnsubscribeUpdate(psp *PushServiceProvider, dp *DeliveryPoint) *UnsubscribeUpdate {
@@ -272,6 +353,8 @@ func (e *InvalidRegistrationUpdate) Error() string {
 	return fmt.Sprintf("InvalidRegistration dropping %v", e.Destination.Name())
 }
 
+func (e *InvalidRegistrationUpdate) pushDestination() *DeliveryPoint { return e.Destination }
+
 // NewInvalidRegistrationUpdate returns an InvalidRegistrationUpdate for this delivery point and push service provider.
 func NewInvalidRegistrationUpdate(psp *PushServiceProvider, dp *DeliveryPoint) *InvalidRegistrationUpdate {
 	return &InvalidRegistrationUpdate{
@@ -286,13 +369,24 @@ func NewInvalidRegistrationUpdate(psp *PushServiceProvider, dp *DeliveryPoint) *
 type ConnectionError struct {
 	implementsPushError
 	Err error
+	// Destination is the device whose request failed, when the failure happened
+	// on a request for one device rather than while setting a connection up.
+	Destination *DeliveryPoint
 }
 
 func (e *ConnectionError) Error() string {
 	return fmt.Sprintf("ConnectionError %v", e.Err)
 }
 
+func (e *ConnectionError) pushDestination() *DeliveryPoint { return e.Destination }
+
 // NewConnectionError returns a new ConnectionError.
 func NewConnectionError(err error) *ConnectionError {
 	return &ConnectionError{Err: err}
+}
+
+// NewConnectionErrorForDeliveryPoint returns a ConnectionError about the
+// request for one device.
+func NewConnectionErrorForDeliveryPoint(dp *DeliveryPoint, err error) *ConnectionError {
+	return &ConnectionError{Err: err, Destination: dp}
 }
