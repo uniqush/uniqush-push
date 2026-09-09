@@ -63,6 +63,11 @@ Logging:
 
 REST API:
 
+- Security: `/subscriptions` withholds a Web Push subscription's `auth` secret unless
+  `include_subscription_secrets=1` is passed. A `devtoken` or a `regid` is useless without the provider
+  credentials uniqush holds, but `endpoint`, `p256dh` and `auth` together are everything needed to push to
+  that browser, with nothing of uniqush's involved, so anyone who reached the API once could keep pushing
+  afterwards. The secret is omitted rather than blanked; every other field is unchanged.
 - Security: `/psps` no longer reports credentials. It answered with every field of every provider, so an
   unauthenticated GET returned each Web Push provider's VAPID private key, each ADM provider's `clientsecret`,
   and the access token ADM had issued it. It now answers from an allowlist of configuration fields --

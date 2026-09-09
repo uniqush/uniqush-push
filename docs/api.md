@@ -216,10 +216,11 @@ from `/subscriptions` is not accepted here.
 | `subscriber` | Required. |
 | `services` | Optional. Comma-separated list of services to look in; default is every service. |
 | `include_delivery_point_ids` | Optional. `1` to include each subscription's `delivery_point_id`, for use with `/push` and `/unsubscribe`. |
+| `include_subscription_secrets` | Optional. `1` to include the Web Push `auth` secret, which is withheld by default. See below. |
 
 Returns a JSON array with one object per device, carrying `service`,
 `pushservicetype`, the device identifier for its type (`devtoken`, `regid`,
-or `endpoint`/`p256dh`/`auth`), and whichever of `devid`, `old_devid`,
+or `endpoint`/`p256dh`), and whichever of `devid`, `old_devid`,
 `subscribe_date` and `app_version` were set:
 
     curl 'http://localhost:9898/subscriptions?subscriber=alice&include_delivery_point_ids=1'
@@ -228,6 +229,15 @@ or `endpoint`/`p256dh`/`auth`), and whichever of `devid`, `old_devid`,
 An empty array is returned when the subscriber has nothing, and also on a
 database error (which is logged). Databases created before uniqush 2.2.0 need
 [`/rebuildserviceset`](#rebuildserviceset) once.
+
+A Web Push subscription's `auth` secret is withheld unless
+`include_subscription_secrets=1` is passed. A `devtoken` or a `regid` names a
+device and is useless without the provider credentials uniqush holds, but
+`endpoint`, `p256dh` and `auth` together are everything an application server
+needs to encrypt a push for that browser — with nothing of uniqush's involved,
+and no way for the subscriber to tell the difference. Ask for it when you need
+to move a subscription to another push server or rebuild one after a restore;
+`p256dh` and `endpoint` on their own cannot encrypt anything.
 
 ### `/nrdp`
 

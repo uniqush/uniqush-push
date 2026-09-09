@@ -414,7 +414,16 @@ func (api *RestAPI) querySubscriptions(kv map[string][]string, logger log.Logger
 	if v, ok := kv["include_delivery_point_ids"]; ok && len(v) > 0 && v[0] == "1" {
 		includeDPIds = true
 	}
+	includeSecrets := false
+	if v, ok := kv["include_subscription_secrets"]; ok && len(v) > 0 && v[0] == "1" {
+		includeSecrets = true
+	}
 	subscriptions := api.backend.Subscriptions(services, subscriberParam[0], logger, includeDPIds)
+	if !includeSecrets {
+		for _, subscription := range subscriptions {
+			removeSubscriptionSecrets(subscription)
+		}
+	}
 	json, err := json.Marshal(subscriptions)
 	if err != nil {
 		logger.Errorf("Service=%v Subscriber=%v %s", services, subscriberParam[0], err)
@@ -422,6 +431,47 @@ func (api *RestAPI) querySubscriptions(kv map[string][]string, logger log.Logger
 	}
 
 	return json
+}
+
+// subscriptionSecrets are the delivery point fields `/subscriptions` withholds
+// unless the caller asks for them with include_subscription_secrets=1.
+//
+// Only credential material belongs here, and only the kind that works for
+// whoever holds it. A device token or an FCM registration id identifies a
+// device and is useless without the provider credentials uniqush holds, so a
+// copy of one buys nothing; those stay, because reconciling them against an
+// application's own records is what this endpoint is for.
+//
+// A Web Push subscription is not like that. RFC 8291 derives the content
+// encryption key from the auth secret, so the endpoint, p256dh and auth
+// together are everything an application server needs to push to that browser
+// -- with no credential of uniqush's involved, and no way for the subscriber to
+// tell the difference. That is the one thing this API gave away that keeps
+// working after the reader loses access to it.
+//
+// A list of fields to withhold rather than a list to allow, unlike
+// pspFieldsSafeToReport below. The two endpoints answer different questions:
+// /psps describes configuration to a person, where a field nobody thought of is
+// better withheld than published, while this one hands a program back its own
+// per-device records, where dropping a field nobody thought of breaks a caller
+// that was relying on it. A backend that stores new credential material on a
+// delivery point has to be added here.
+var subscriptionSecrets = map[string]bool{
+	// Web Push and UnifiedPush (RFC 8291 s3.2).
+	"auth": true,
+}
+
+// removeSubscriptionSecrets drops the withheld fields from one subscription.
+//
+// Dropped rather than replaced with a placeholder, which is the opposite of
+// what /psps does with a provider. A person reading /psps wants to know a
+// private key is set; a program reading this is going to write whatever it
+// finds into its own store, and "[redacted]" is a worse thing to end up with
+// there than a key that is plainly absent.
+func removeSubscriptionSecrets(subscription map[string]string) {
+	for field := range subscriptionSecrets {
+		delete(subscription, field)
+	}
 }
 
 // pspFieldsSafeToReport is what /psps is allowed to answer with. Everything
