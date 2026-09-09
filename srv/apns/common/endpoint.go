@@ -154,6 +154,25 @@ func ResolveEndpoint(psp *push.PushServiceProvider) string {
 	return HostProduction
 }
 
+// BundleIDForDeliveryPoint returns the apns-topic a push to this device should
+// carry.
+//
+// The device's own bundle id wins, and the provider's is the default. A
+// provider serving one app -- which is every provider that existed before a
+// delivery point could name one -- sets it once and no device has to say
+// anything.
+func BundleIDForDeliveryPoint(psp *push.PushServiceProvider, dp *push.DeliveryPoint) string {
+	if dp != nil {
+		if bundleid := dp.VolatileData["bundleid"]; bundleid != "" {
+			return bundleid
+		}
+	}
+	if psp != nil {
+		return psp.VolatileData["bundleid"]
+	}
+	return ""
+}
+
 // IsAppleHost reports whether an endpoint points at APNs itself.
 //
 // The hostname is normalised before comparing. A fully qualified name may carry

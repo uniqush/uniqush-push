@@ -191,7 +191,7 @@ Plus the device identifier for its type:
 
 | Type | Parameter | |
 |---|---|---|
-| `apns` | `devtoken` | The device token, hex-encoded. |
+| `apns` | `devtoken` | The device token, hex-encoded. An optional `bundleid` overrides the provider's for this device; see below. |
 | `fcm`, `gcm` | `regid` | The FCM registration token. An optional `account` is stored alongside it. |
 | `adm` | `regid` | The ADM registration ID. |
 | `webpush`, `unifiedpush` | `endpoint`, `p256dh`, `auth` | The push subscription: endpoint URL, client public key and auth secret, as produced by the browser or UnifiedPush connector. |
@@ -201,6 +201,13 @@ Plus the device identifier for its type:
 
 The response's `details` names the `deliveryPoint` (the device's identifier,
 `<pushservicetype>:<hash>`) and the `pushServiceProvider` it was bound to.
+
+An APNs `bundleid` on `/subscribe` is for the case where one certificate serves
+several bundle ids — an app and its enterprise or release-testing builds. The
+device's own is sent as `apns-topic`, and the provider's is used for every
+device that does not name one, so an existing setup needs no change. Sending an
+empty `bundleid` clears it, putting the device back on the provider's. A push to
+a device with no bundle id from either is refused, and only that device is.
 
 ### `/unsubscribe`
 

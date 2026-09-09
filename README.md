@@ -221,6 +221,14 @@ settings control where HTTP/2 pushes actually go:
 Both are cleared if a later `/addpsp` omits them, the same way `bundleid`
 behaves.
 
+`/subscribe` accepts a `bundleid` too, for one device. HTTP/2 requires an
+`apns-topic` on every push and uniqush takes it from the provider, so a
+certificate valid for several bundle ids — an app and its enterprise or
+release-testing builds — used to need a service per bundle id, with each device
+subscribed to the right one. A device that names its own bundle id is pushed to
+under that; every other device uses the provider's, so nothing existing
+changes.
+
 ### A note on endpoints ###
 
 An `endpoint` decides where every push for a service goes. It carries device
