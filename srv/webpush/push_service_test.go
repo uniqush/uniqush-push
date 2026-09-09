@@ -14,7 +14,7 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/uniqush/goconf/conf"
+	"github.com/uniqush/uniqush-push/conf"
 
 	"github.com/uniqush/uniqush-push/push"
 )

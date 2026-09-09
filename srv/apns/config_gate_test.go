@@ -3,7 +3,7 @@ package apns
 import (
 	"testing"
 
-	"github.com/uniqush/goconf/conf"
+	"github.com/uniqush/uniqush-push/conf"
 
 	"github.com/uniqush/uniqush-push/push"
 	"github.com/uniqush/uniqush-push/srv/apns/common"
