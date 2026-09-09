@@ -86,6 +86,19 @@ REST API:
   and no configuration field is hidden. This does not make the API safe to expose: `/subscriptions` still
   returns any subscriber's device tokens, and `/push` still sends notifications.
 
+Startup:
+
+- New behaviour: uniqush refuses to start when the operating system's root certificate store cannot be
+  loaded, naming the store and what to install. Every backend verifies TLS against those roots, so without
+  them nothing can be delivered to anyone -- and crypto/x509 loads the store once and caches the outcome for
+  the life of the process, so the first failure is permanent: every push after it failed with an
+  `x509.SystemRootsError` buried in a handshake error, on a server that had started cleanly and reported
+  itself healthy. A store that loads but is empty is accepted, because it is not detectable portably, and
+  presents as an unknown certificate authority instead.
+- Bugfix: uniqush exits non-zero when it cannot start. It printed "Cannot start: ..." and exited 0, so
+  systemd's `Restart=on-failure` never fired and `docker run` reported success for a container that had done
+  nothing.
+
 Configuration:
 
 - Bugfix: A configuration file that fails to read part way through is now an error. The parser returned success
