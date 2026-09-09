@@ -46,7 +46,7 @@ func validateRawAPNSPayload(payload string) ([]byte, push.Error) {
 		return nil, push.NewBadNotificationWithDetails("aps is not a dictionary")
 	}
 	if _, ok := apsDict["alert"]; !ok {
-		if contentAvailable, ok := apsDict["content-available"]; !ok || contentAvailable != "1" {
+		if !isBackgroundNotification(apsDict["content-available"]) {
 			return nil, push.NewBadNotificationWithDetails("Missing alert and this is not a silent notification(content-available is not 1)")
 		}
 	}
@@ -55,6 +55,32 @@ func validateRawAPNSPayload(payload string) ([]byte, push.Error) {
 	// Creating a custom struct would make it simpler.
 	// (E.g. body, action-loc-key, loc-key, loc-args, badge, sound, content-available, launch-image)
 	return []byte(payload), nil
+}
+
+// isBackgroundNotification reports whether an aps dictionary's
+// content-available value marks a notification with no alert as one meant to
+// wake the app rather than to be shown.
+//
+// Apple documents the value as the number 1, and encoding/json decodes a JSON
+// number into a float64. The string comparison this replaces could therefore
+// never be true for a payload written the way the documentation says, and
+// rejected it. What it did accept was "1" quoted -- which iOS ignores, so a
+// caller who worked around the rejection by quoting the value got a payload
+// delivered that never woke the app.
+//
+// Both are accepted now: the number because it is correct, and the string
+// because refusing it would turn that workaround into an outage on upgrade.
+// Neither is rewritten. uniqush.payload.apns is documented as going to APNs
+// verbatim, and a caller who asked for that is entitled to be able to predict
+// what Apple receives.
+func isBackgroundNotification(contentAvailable interface{}) bool {
+	switch value := contentAvailable.(type) {
+	case float64:
+		return value == 1
+	case string:
+		return value == "1"
+	}
+	return false
 }
 
 // toAPNSPayload builds the notification APNs receives from the push

@@ -22,6 +22,12 @@ APNs:
 - Removal: `pool_size` in the `[apns]` config section. It sized the binary protocol's pool of TCP
   connections; HTTP/2 multiplexes a provider's pushes over one connection. A `pool_size` left in
   `uniqush.conf` is ignored rather than rejected.
+- Bugfix: A background push sent through `uniqush.payload.apns` is accepted when `content-available` is the
+  number `1`. The check for a payload with no alert compared that value against the string `"1"`, and JSON
+  decodes a number into a float, so the one form Apple documents was the one form uniqush refused, as a bad
+  notification, for a correct payload. The quoted `"1"` it did accept is ignored by iOS, so a caller who
+  worked around the rejection by quoting the value got a notification delivered that never woke the app.
+  Both are accepted now, and neither is rewritten: `uniqush.payload.apns` still goes to APNs verbatim.
 
 UnifiedPush / Web Push:
 
