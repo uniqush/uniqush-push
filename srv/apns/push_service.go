@@ -300,14 +300,28 @@ func (ps *pushService) buildProviderFromMap(kv map[string]string, psp *push.Push
 	} else {
 		psp.VolatileData["bundleid"] = ""
 	}
+	// Which of Apple's two environments this provider pushes to, recorded as
+	// the answer rather than as something to infer later.
+	//
+	// This used to store addr, the binary protocol's gateway host:port, and
+	// ResolveEndpoint recovered the environment by looking for "sandbox" in it.
+	// Nothing has connected to that gateway since Apple shut the protocol down
+	// in 2021, so what was left was a provider carrying a dead hostname whose
+	// only remaining job was to be substring-matched.
+	//
+	// addr is still accepted, because scripts written years ago still send it
+	// and an /addpsp that started ignoring it would move a sandbox service to
+	// production -- where every one of its device tokens is invalid. It is read
+	// here and translated; it is no longer stored. A provider stored before this
+	// change still has one, and ResolveEndpoint still reads it.
+	//
+	// Written on every /addpsp like bundleid, never left alone, so that dropping
+	// sandbox=true from a registration moves the service back to production.
+	psp.VolatileData[common.EnvironmentKey] = common.EnvironmentProduction
 	if sandbox, ok := kv["sandbox"]; ok && sandbox == "true" {
-		psp.VolatileData[common.AddrKey] = "gateway.sandbox.push.apple.com:2195"
-	} else {
-		if addr, ok := kv[common.AddrKey]; ok {
-			psp.VolatileData[common.AddrKey] = addr
-		} else {
-			psp.VolatileData[common.AddrKey] = "gateway.push.apple.com:2195"
-		}
+		psp.VolatileData[common.EnvironmentKey] = common.EnvironmentDevelopment
+	} else if addr, ok := kv[common.AddrKey]; ok {
+		psp.VolatileData[common.EnvironmentKey] = common.EnvironmentFromAddr(addr)
 	}
 
 	return buildHTTP2Destination(kv, psp, skipVerify)

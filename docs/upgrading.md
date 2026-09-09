@@ -138,9 +138,10 @@ to the `/addpsp` call.** Do **not** use `/rmpsp` followed by `/addpsp`: in
 `cacert` (a PEM bundle to verify it against), which together make it possible
 to point uniqush at a simulator or a relay without disabling certificate
 verification. A provider that sets neither keeps sending exactly where it did
-before: the environment is still inferred from the binary protocol's `addr`.
-Both are cleared when omitted from a later `/addpsp`, the same way `bundleid`
-has always behaved.
+before: a provider stored with an `addr` is still routed by it, and a new
+`/addpsp` records the environment that `sandbox` -- or an `addr`, if your
+registration still sends one -- selects. Both are cleared when omitted from a
+later `/addpsp`, the same way `bundleid` has always behaved.
 
 Two things are refused that were not before:
 

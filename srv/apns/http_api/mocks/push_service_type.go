@@ -26,7 +26,7 @@ func (pst *MockPushServiceType) BuildPushServiceProviderFromMap(kv map[string]st
 		// srv/apns/common reaches this mock too. A mock that silently disagreed
 		// with the provider it stands in for would make the tests using it
 		// prove the wrong thing.
-		case common.AddrKey, common.SkipVerifyKey, common.EndpointKey, common.CACertKey, "bundleid":
+		case common.AddrKey, common.EnvironmentKey, common.SkipVerifyKey, common.EndpointKey, common.CACertKey, "bundleid":
 			psp.VolatileData[key] = value
 		case "service", "pushservicetype", "cert", "subscriber", "key":
 			psp.FixedData[key] = value

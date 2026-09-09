@@ -87,9 +87,9 @@ and:
 | Parameter | |
 |---|---|
 | `bundleid` | The app's bundle identifier, sent as the `apns-topic`. Effectively required for HTTP/2; cleared when omitted. |
-| `sandbox` | `true` to use Apple's development environment. Otherwise production. |
-| `addr` | The retired binary protocol's gateway address. Nothing connects to it any more, but its host is still what `sandbox`/production is inferred from when `endpoint` is unset, so an existing provider keeps working. |
-| `endpoint` | Base URL HTTP/2 pushes go to (e.g. `https://api.sandbox.push.apple.com`), with no path, query or fragment. Omitted, the environment comes from `sandbox`/`addr`. A host outside `push.apple.com` is refused unless `allow_non_apple_endpoints=true` is set in the `[apns]` section of the config. |
+| `sandbox` | `true` to use Apple's development environment. Otherwise production. Recorded as `environment`, which is what `/psps` reports and what pushes are routed by when `endpoint` is unset. |
+| `addr` | The retired binary protocol's gateway address. Still accepted, so a registration script that has always sent it keeps selecting the same environment, but no longer stored: a host containing `sandbox` records `environment=development`, anything else production. A provider registered before this and not re-registered still carries an `addr`, and is still routed by it. |
+| `endpoint` | Base URL HTTP/2 pushes go to (e.g. `https://api.sandbox.push.apple.com`), with no path, query or fragment. Omitted, the destination comes from `environment`. A host outside `push.apple.com` is refused unless `allow_non_apple_endpoints=true` is set in the `[apns]` section of the config. |
 | `cacert` | PEM bundle to verify `endpoint` against instead of the system roots. Read and validated at `/addpsp`. |
 | `skipverify` | `true` disables certificate verification for a non-Apple `endpoint`. Refused for Apple's hosts. |
 
