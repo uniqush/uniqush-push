@@ -54,6 +54,13 @@ Redis:
 
 Logging:
 
+- Bugfix: An error about one device names that device. A push that failed for one subscriber was logged as
+  `Subscriber=Unknown DeliveryPoint=Unknown` whenever the failure came back through a channel rather than
+  from the loop over delivery points, which is every request-time error the APNs backend reports -- so a
+  rejection APNs made against one token said only that something, somewhere in the service, was wrong.
+  Errors that are about one device now carry it, and the backend reads it from the error when the result
+  does not say. Errors that are about no single device, such as rejected provider credentials, still name
+  none rather than blaming a device that happened to be in hand.
 - Bugfix: Log why a push is being retried. `RetryError` carried the reason and nothing printed it, so a push
   that retried and then vanished left only "Retry after 1m0s". The webpush backend also quotes the push
   server's response body, which is usually where the explanation is.
@@ -119,6 +126,10 @@ Maintenance:
 
 Changes to APIs (embedders only):
 
+- `push.DestinationOf(err)` returns the delivery point an error is about, or nil. `push.ErrorReport`,
+  `push.BadNotification` and `push.ConnectionError` gain a `Destination` field, with
+  `NewErrorForDeliveryPoint`, `NewErrorfForDeliveryPoint`, `NewBadNotificationForDeliveryPoint` and
+  `NewConnectionErrorForDeliveryPoint` to set it. The existing constructors are unchanged and leave it nil.
 - The `log.Logger` taken by `NewPushBackEnd` and by the `db.RawDB` methods now comes from
   `github.com/uniqush/uniqush-push/log`. Change the import and the `LOGLEVEL_*` constant names; the interface
   itself is unchanged.

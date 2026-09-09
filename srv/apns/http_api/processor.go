@@ -485,14 +485,32 @@ func (prp *HTTPPushRequestProcessor) SetPushServiceConfig(c *push.PushServiceCon
 	prp.timeout.Store(int64(c.GetSeconds(optionRequestTimeout, defaultRequestTimeout, minRequestTimeout, maxRequestTimeout)))
 }
 
+// deliveryPointAt returns the delivery point for the i-th device token, or nil.
+//
+// DPList is documented as parallel to Devtokens, but it is filled in by the
+// caller and a push assembled by hand -- every test in this package does it --
+// may leave it short. A missing delivery point costs a log line its subscriber;
+// indexing past the end would cost the push.
+func deliveryPointAt(request *common.PushRequest, i int) *push.DeliveryPoint {
+	if i < 0 || i >= len(request.DPList) {
+		return nil
+	}
+	return request.DPList[i]
+}
+
 // sendRequests will send a push to one or more device tokens. It will send the response over ResChan or ErrChan.
 func (prp *HTTPPushRequestProcessor) sendRequests(request *common.PushRequest) {
 	defer close(request.ErrChan)
 
 	bundleid, ok := request.PSP.VolatileData["bundleid"]
 	if !ok || bundleid == "" {
-		for range request.Devtokens {
-			request.ErrChan <- push.NewError("Must add bundleid to PSP by calling /addpsp again")
+		// One error per device, each naming its device. They are identical
+		// otherwise, and an operator reading a hundred of them needs to know
+		// the answer is "every subscriber in this service" rather than to guess
+		// at it.
+		for i := range request.Devtokens {
+			request.ErrChan <- push.NewErrorForDeliveryPoint(deliveryPointAt(request, i),
+				"Must add bundleid to PSP by calling /addpsp again")
 		}
 		return
 	}
@@ -650,7 +668,7 @@ func (prp *HTTPPushRequestProcessor) sendRequests(request *common.PushRequest) {
 			// over it blocks with it. One unbuildable URL wedges the push and
 			// leaks two goroutines, silently and permanently.
 			wg.Done()
-			request.ErrChan <- push.NewError(err.Error())
+			request.ErrChan <- push.NewErrorForDeliveryPoint(deliveryPointAt(request, i), err.Error())
 			return nil, 0, nil, false
 		}
 		// Clone rather than share: apns-id differs per device token. If apns-id
@@ -776,7 +794,7 @@ func (prp *HTTPPushRequestProcessor) sendRequest(wg *sync.WaitGroup, client HTTP
 	defer cancel()
 	httpRequest = httpRequest.WithContext(ctx)
 
-	response, responseBody, err := doRequest(client, httpRequest, request.Payload)
+	response, responseBody, err := doRequest(client, httpRequest, request.Payload, deliveryPoint)
 	if err != nil {
 		errChan <- err
 		return
@@ -822,7 +840,7 @@ func (prp *HTTPPushRequestProcessor) sendRequest(wg *sync.WaitGroup, client HTTP
 		retry.Body = io.NopCloser(bytes.NewReader(request.Payload))
 		retry.Header["authorization"] = []string{fallbackAuthorization}
 
-		retryResponse, retryBody, retryErr := doRequest(client, retry, request.Payload)
+		retryResponse, retryBody, retryErr := doRequest(client, retry, request.Payload, deliveryPoint)
 		if retryErr != nil {
 			// Reported, not swallowed.
 			//
@@ -872,20 +890,25 @@ func (prp *HTTPPushRequestProcessor) sendRequest(wg *sync.WaitGroup, client HTTP
 	prp.handlePushResponseBody(response, responseBody, messageID, request, deliveryPoint)
 }
 
-// doRequest sends one request and reads its body.
-func doRequest(client HTTPClient, httpRequest *http.Request, payload []byte) (*http.Response, []byte, push.Error) {
+// doRequest sends one request for one device and reads its body.
+//
+// It takes the delivery point only to name it in the two errors it builds. A
+// connection that failed and a body that would not read are both about this
+// device rather than about the push, and an operator reading either wants to
+// know which subscriber lost a notification.
+func doRequest(client HTTPClient, httpRequest *http.Request, payload []byte, deliveryPoint *push.DeliveryPoint) (*http.Response, []byte, push.Error) {
 	if httpRequest.Body == nil && payload != nil {
 		httpRequest.Body = io.NopCloser(bytes.NewReader(payload))
 	}
 	response, err := client.Do(httpRequest)
 	if err != nil {
-		return nil, nil, push.NewConnectionError(err)
+		return nil, nil, push.NewConnectionErrorForDeliveryPoint(deliveryPoint, err)
 	}
 	defer response.Body.Close()
 
 	body, err := io.ReadAll(response.Body)
 	if err != nil {
-		return nil, nil, push.NewError(err.Error())
+		return nil, nil, push.NewErrorForDeliveryPoint(deliveryPoint, err.Error())
 	}
 	return response, body, nil
 }
@@ -1051,7 +1074,7 @@ func (prp *HTTPPushRequestProcessor) handlePushResponseBody(response *http.Respo
 	// "Unknown error, no response body" below, which tells an operator nothing
 	// about what actually happened or why uniqush declined to go along with it.
 	if response.StatusCode >= 300 && response.StatusCode < 400 {
-		errChan <- push.NewErrorf("APNs replied with HTTP %d redirecting to %q, which uniqush "+
+		errChan <- push.NewErrorfForDeliveryPoint(deliveryPoint, "APNs replied with HTTP %d redirecting to %q, which uniqush "+
 			"does not follow: the next hop would receive the device token, the notification and "+
 			"this provider's client certificate",
 			response.StatusCode, response.Header.Get("Location"))
@@ -1077,13 +1100,13 @@ func (prp *HTTPPushRequestProcessor) handlePushResponseBody(response *http.Respo
 			}
 			return
 		}
-		errChan <- push.NewErrorf("Unknown error. No response body, HTTP status code is %d", response.StatusCode)
+		errChan <- push.NewErrorfForDeliveryPoint(deliveryPoint, "Unknown error. No response body, HTTP status code is %d", response.StatusCode)
 		return
 	}
 
 	apnsError := new(APNSErrorResponse)
 	if err := json.Unmarshal(responseBody, apnsError); err != nil {
-		errChan <- push.NewErrorf("Could not parse APNs error response (HTTP %d): %v", response.StatusCode, err)
+		errChan <- push.NewErrorfForDeliveryPoint(deliveryPoint, "Could not parse APNs error response (HTTP %d): %v", response.StatusCode, err)
 		return
 	}
 
@@ -1108,5 +1131,5 @@ func (prp *HTTPPushRequestProcessor) handlePushResponseBody(response *http.Respo
 
 	// Whatever is left really is about this notification: BadPriority,
 	// PayloadTooLarge, InvalidPushType and the rest.
-	errChan <- push.NewBadNotificationWithDetails(apnsError.Reason)
+	errChan <- push.NewBadNotificationForDeliveryPoint(deliveryPoint, apnsError.Reason)
 }
