@@ -16,7 +16,10 @@ maintainer: "Misha Nasledov <misha@nasledov.com>"
 description: "Push notification server for APNs, FCM and Web Push, written in Go."
 vendor: "uniqush"
 homepage: "https://uniqush.org"
-license: "Apache-2.0"
+# uniqush-push's own code is Apache-2.0. The binary statically links BSD- and
+# MIT-licensed modules, so the package as distributed is the combination; see
+# THIRD-PARTY-LICENSES, which installs alongside this package.
+license: "Apache-2.0 AND BSD-2-Clause AND BSD-3-Clause AND MIT"
 
 contents:
   - src: "."
