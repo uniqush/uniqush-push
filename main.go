@@ -75,6 +75,13 @@ func main() {
 
 	err := Run(*uniqushPushConfFlags, uniqushPushVersion)
 	if err != nil {
+		// Non-zero, so that a service manager can tell a refusal to start from
+		// a clean shutdown. uniqush exited 0 whatever went wrong, which meant
+		// systemd's Restart=on-failure never fired and `docker run` reported
+		// success for a container that had done nothing -- and a startup check
+		// that refuses to start is worth very little if the refusal looks like
+		// an orderly exit.
 		fmt.Fprintf(os.Stderr, "Cannot start: %v\n", err)
+		os.Exit(1)
 	}
 }

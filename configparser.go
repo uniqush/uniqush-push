@@ -215,6 +215,13 @@ func LoadRestAddr(c *conf.ConfigFile) (string, error) {
 
 // Run will load the configuration and start the uniqush-push server and REST API based on that config.
 func Run(conf, version string) error {
+	// Before anything else, and before the config file: a uniqush that cannot
+	// verify a TLS certificate cannot deliver a notification to anyone, and
+	// finding that out at startup is worth more than finding it out one failed
+	// push at a time. See checkSystemRoots.
+	if err := checkSystemRoots(); err != nil {
+		return err
+	}
 	c, err := OpenConfig(conf)
 	if err != nil {
 		return err
