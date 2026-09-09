@@ -73,9 +73,14 @@ jobs:
 
       - name: Stage package root
         run: |
-          mkdir -p pkgroot/usr/bin pkgroot/etc/uniqush pkgroot/usr/share/doc/uniqush-push dist
+          mkdir -p pkgroot/usr/bin pkgroot/etc/uniqush pkgroot/usr/share/doc/uniqush-push \
+                   pkgroot/lib/systemd/system dist
           cp src/uniqush-push pkgroot/usr/bin/
           cp src/conf/uniqush-push.conf pkgroot/etc/uniqush/
+          # The service unit. Installed, not enabled: uniqush needs a redis and
+          # a push service provider before it is any use, so starting it on
+          # install would only produce a failing service.
+          cp src/conf/systemd/uniqush-push.service pkgroot/lib/systemd/system/
           # The binary links BSD- and MIT-licensed code, whose licences ask to
           # travel with it. Both files, not just ours.
           cp src/LICENSE src/THIRD-PARTY-LICENSES pkgroot/usr/share/doc/uniqush-push/
