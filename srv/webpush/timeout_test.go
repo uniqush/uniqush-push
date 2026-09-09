@@ -54,10 +54,21 @@ func deadlineOfNextPush(t *testing.T, service *pushService) time.Duration {
 	return remaining
 }
 
+// deadlineSkew is how much of a configured timeout may have elapsed between the
+// deadline being set and a test reading it.
+//
+// Both happen inside one synchronous request against a mocked transport, so the
+// real figure is microseconds and a second is three orders of magnitude of slack
+// for a loaded CI runner. It was five seconds, which for a five-second timeout
+// put the lower bound at zero: the assertion said a deadline existed, not that
+// it was the one configured, and a push running on the one-second minimum would
+// have passed it.
+const deadlineSkew = time.Second
+
 func expectAbout(t *testing.T, got, want time.Duration) {
 	t.Helper()
-	if got > want || got < want-5*time.Second {
-		t.Errorf("Expected a deadline of about %v, got %v", want, got)
+	if got > want || got < want-deadlineSkew {
+		t.Errorf("Expected a deadline of about %v (within %v), got %v", want, deadlineSkew, got)
 	}
 }
 
