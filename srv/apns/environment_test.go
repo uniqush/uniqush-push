@@ -70,6 +70,14 @@ func TestAddPSPRecordsTheEnvironment(t *testing.T) {
 			expected: common.EnvironmentDevelopment,
 		},
 		{
+			// The other half of the legacy rule, and the half easy to forget:
+			// an addr may name one of Apple's api.development. hosts rather
+			// than a sandbox gateway.
+			name:     "a legacy api.development. addr still selects development",
+			extra:    map[string]string{"addr": "api.development.push.apple.com:443"},
+			expected: common.EnvironmentDevelopment,
+		},
+		{
 			name:     "a legacy production addr still selects production",
 			extra:    map[string]string{"addr": "gateway.push.apple.com:2195"},
 			expected: common.EnvironmentProduction,

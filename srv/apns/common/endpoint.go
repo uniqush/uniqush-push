@@ -104,12 +104,16 @@ const (
 // EnvironmentFromAddr reads an environment out of a binary protocol gateway
 // address.
 //
-// A substring match rather than a comparison against Apple's two documented
-// gateway hostnames, because addr also accepted a host:port for a local
+// An addr naming a sandbox gateway, or one of Apple's api.development. hosts,
+// is the development environment; anything else is production.
+//
+// A substring match rather than a comparison against Apple's documented gateway
+// hostnames, because addr also accepted a host:port for a local
 // binary-protocol simulator, and those were conventionally named after the
 // environment they stood in for. This is the rule ResolveEndpoint has always
-// applied to addr, kept exactly as it was: it decides where the pushes of every
-// provider registered before endpoints existed go.
+// applied to addr, kept exactly as it was, and it is now applied in two places:
+// /addpsp translates an incoming addr through it, and ResolveEndpoint falls
+// back to it for a provider stored with an addr and no recorded environment.
 func EnvironmentFromAddr(addr string) string {
 	if strings.Contains(addr, "sandbox") || strings.Contains(addr, "api.development.") {
 		return EnvironmentDevelopment

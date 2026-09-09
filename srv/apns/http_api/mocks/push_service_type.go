@@ -18,9 +18,13 @@ func (pst *MockPushServiceType) BuildPushServiceProviderFromMap(kv map[string]st
 	for key, value := range kv {
 		switch key {
 		// Everything that can change without changing the provider's identity.
-		// endpoint and cacert belong here for the same reason addr does: a name
-		// hashes FixedData, so anything an operator may need to update in place
-		// has to stay out of it.
+		// A name hashes FixedData, so anything an operator may need to update in
+		// place -- the environment a service pushes to, where it pushes, how
+		// that destination is trusted -- has to stay out of it.
+		//
+		// addr is not among them. It is accepted below and translated into an
+		// environment, exactly as /addpsp does, and stored no more than /addpsp
+		// stores it.
 		//
 		// Named by the constants rather than by literals, so a rename in
 		// srv/apns/common reaches this mock too. A mock that silently disagreed

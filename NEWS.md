@@ -22,7 +22,7 @@ APNs:
 - Change: `/addpsp` records which of Apple's two environments a provider pushes to, as `environment`
   (`production` or `development`), instead of storing `addr` -- the retired binary protocol's gateway
   host:port, which nothing has connected to since 2021 and whose only remaining job was to be searched for
-  the substring "sandbox". `addr` is still accepted, and still selects the same environment it always did, so
+  the substrings that named an environment ("sandbox", or one of Apple's `api.development.` hosts). `addr` is still accepted, and still selects the same environment it always did, so
   a registration script that has always sent it keeps working; it is simply no longer stored. A provider
   registered before this and not re-registered keeps its `addr` and no `environment`, and is still routed by
   that `addr`, so no device re-subscribes and no service moves. `/psps` reports whichever of the two a
