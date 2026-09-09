@@ -93,8 +93,8 @@ Startup:
   them nothing can be delivered to anyone -- and crypto/x509 loads the store once and caches the outcome for
   the life of the process, so the first failure is permanent: every push after it failed with an
   `x509.SystemRootsError` buried in a handshake error, on a server that had started cleanly and reported
-  itself healthy. A store that loads but is empty is still not detectable portably, and presents as an
-  unknown certificate authority instead.
+  itself healthy. A store that loads but is empty is accepted, because it is not detectable portably, and
+  presents as an unknown certificate authority instead.
 - Bugfix: uniqush exits non-zero when it cannot start. It printed "Cannot start: ..." and exited 0, so
   systemd's `Restart=on-failure` never fired and `docker run` reported success for a container that had done
   nothing.

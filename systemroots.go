@@ -49,20 +49,36 @@ var systemCertPool = x509.SystemCertPool
 // image without a ca-certificates package usually gives. CertPool has no
 // portable way to count what is in it -- Subjects is deprecated and returns
 // nothing for the system pool on macOS and Windows -- and a handshake against
-// an empty pool fails as an unknown authority rather than as missing roots.
+// an empty pool fails as an unknown authority rather than as missing roots. An
+// empty store is therefore accepted here; only a failure to load one, or no
+// store at all, is refused.
 func checkSystemRoots() error {
 	pool, err := systemCertPool()
 	if err != nil {
-		return fmt.Errorf("cannot load the system root certificates, so no push service can be reached: %w.\n"+
-			"Install your distribution's CA certificate bundle (ca-certificates on Debian and Red Hat "+
-			"derivatives, or the equivalent in the container image), or point SSL_CERT_FILE or SSL_CERT_DIR "+
-			"at one", err)
+		return fmt.Errorf("cannot load the system root certificates, so no push service can be reached: %w"+
+			rootCertificateRemedy, err)
 	}
 	if pool == nil {
-		return errors.New("the system root certificates loaded as an empty store, so no push service can be reached.\n" +
-			"Install your distribution's CA certificate bundle (ca-certificates on Debian and Red Hat " +
-			"derivatives, or the equivalent in the container image), or point SSL_CERT_FILE or SSL_CERT_DIR " +
-			"at one")
+		// Distinct from a store that loaded and holds nothing, which this
+		// cannot see and which fails later as an unknown certificate authority.
+		// x509.SystemCertPool is documented to return an error rather than a nil
+		// pool, so this is unreachable in practice -- but nothing in the
+		// signature says so, and handing a nil pool onwards would mean
+		// verifying against nothing.
+		return errors.New("the system root certificates loaded as no store at all, so no push service can be reached" +
+			rootCertificateRemedy)
 	}
 	return nil
 }
+
+// rootCertificateRemedy is the second half of both messages above: what an
+// operator can do about it. Shared because the two differ only in what went
+// wrong, and an operator staring at a server that will not start needs the same
+// answer either way.
+//
+// It opens with a newline rather than sentence punctuation, so that neither
+// message has to end in a full stop -- including the one whose last clause
+// before it is a wrapped error, which will not have one.
+const rootCertificateRemedy = "\nInstall your distribution's CA certificate bundle (ca-certificates on Debian " +
+	"and Red Hat derivatives, or the equivalent in the container image), or point SSL_CERT_FILE or " +
+	"SSL_CERT_DIR at one"

@@ -35,20 +35,42 @@ func TestStartupRefusesWhenTheSystemRootsCannotBeLoaded(t *testing.T) {
 	}
 }
 
-// TestStartupRefusesWhenTheSystemRootsAreEmpty covers the other shape of the
-// same answer.
+// TestStartupRefusesWhenThereIsNoCertPoolAtAll covers the other shape of the
+// same answer: no error, and no pool either.
 //
 // x509.SystemCertPool is documented to return an error rather than a nil pool,
 // but nothing in the type system says so, and a nil pool would otherwise be
 // handed to crypto/tls as "verify against nothing".
-func TestStartupRefusesWhenTheSystemRootsAreEmpty(t *testing.T) {
+func TestStartupRefusesWhenThereIsNoCertPoolAtAll(t *testing.T) {
 	previous := systemCertPool
 	t.Cleanup(func() { systemCertPool = previous })
 
 	systemCertPool = func() (*x509.CertPool, error) { return nil, nil }
 
 	if err := checkSystemRoots(); err == nil {
-		t.Error("Expected an empty system certificate store to stop uniqush starting")
+		t.Error("Expected a nil system certificate pool to stop uniqush starting")
+	}
+}
+
+// TestStartupAcceptsAnEmptyCertPool documents the case this check does not
+// cover, so that the limitation is a decision on the record rather than
+// something to be discovered.
+//
+// A store that loads and holds nothing is what a container image without a
+// ca-certificates package usually gives, and it is not the same thing as a nil
+// pool. CertPool offers no portable way to count what is in it -- Subjects is
+// deprecated and returns nothing for the system pool on macOS and Windows -- so
+// this starts, and the failure surfaces later as an unknown certificate
+// authority instead.
+func TestStartupAcceptsAnEmptyCertPool(t *testing.T) {
+	previous := systemCertPool
+	t.Cleanup(func() { systemCertPool = previous })
+
+	systemCertPool = func() (*x509.CertPool, error) { return x509.NewCertPool(), nil }
+
+	if err := checkSystemRoots(); err != nil {
+		t.Errorf("An empty but present certificate store is not distinguishable from a full one here, "+
+			"so it must not stop uniqush starting: %v", err)
 	}
 }
 
