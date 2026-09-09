@@ -23,7 +23,7 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/uniqush/goconf/conf"
+	"github.com/uniqush/uniqush-push/conf"
 )
 
 // serviceType encapsulates the objects associated with the name of a push service type.

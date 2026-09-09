@@ -1,7 +1,7 @@
 package push
 
 import "errors"
-import "github.com/uniqush/goconf/conf"
+import "github.com/uniqush/uniqush-push/conf"
 
 // errNoConfig is what every accessor returns when uniqush was started without a
 // configuration file, so there is no section to read anything from.

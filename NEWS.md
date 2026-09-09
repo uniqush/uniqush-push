@@ -39,6 +39,12 @@ Logging:
   start: bind failed on port 8080" came out as "cannot start: [bind failed 8080] on port %!d(MISSING)". The
   logger forwarded its arguments to the standard library as a single slice rather than expanding them.
 
+Configuration:
+
+- Bugfix: A configuration file that fails to read part way through is now an error. The parser returned success
+  with whatever it had managed to parse, so a truncated or unreadable `uniqush.conf` would start uniqush with
+  some of its options silently missing.
+
 Maintenance:
 
 - The levelled logger is now `github.com/uniqush/uniqush-push/log` rather than `github.com/uniqush/log`, which
@@ -46,12 +52,26 @@ Maintenance:
   had been unable to see it while the code lived in a repository with no CI. The level constants are renamed to
   Go's naming convention: `log.LOGLEVEL_INFO` is `log.LevelInfo`, and so on. `MultiLogger` is dropped, having
   had no callers.
+- The configuration parser is now `github.com/uniqush/uniqush-push/conf` rather than
+  `github.com/uniqush/goconf/conf`, which is archived: it was a fork of `ifwe/goconf`, itself descended from a
+  project abandoned in 2012, so there was no upstream left to send the fix above to. Parsing is unchanged --
+  verified option by option against the old parser on the shipped `uniqush-push.conf` -- and the package keeps
+  its BSD 3-clause licence, in `conf/LICENSE`, rather than this project's Apache 2.0.
+- `HasOption` and `GetOptions` no longer consult the default section. They were the only functions that did, so
+  `HasOption` could report an option that `GetString` then said was missing. The accessors are unchanged, since
+  inheriting the default section would have altered what every existing `uniqush.conf` means.
+- `WriteConfigFile` and the rest of the config writing API are dropped, having had no callers. Variable
+  substitution (`%(name)s`) is documented as unsupported, which it has been since 2012.
+- With those two, `go.mod` no longer requires anything owned by uniqush. Every remaining dependency is either
+  `golang.org/x` or actively maintained elsewhere.
 
 Changes to APIs (embedders only):
 
 - The `log.Logger` taken by `NewPushBackEnd` and by the `db.RawDB` methods now comes from
   `github.com/uniqush/uniqush-push/log`. Change the import and the `LOGLEVEL_*` constant names; the interface
   itself is unchanged.
+- `push.NewPushServiceConfig` takes a `*conf.ConfigFile` from `github.com/uniqush/uniqush-push/conf`. Change the
+  import; the type and its methods are unchanged.
 
 03 Sep 2026, uniqush-push 2.8.0
 -------------------------------
