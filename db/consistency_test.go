@@ -272,13 +272,15 @@ func TestConsistencyCheckChangesNothing(t *testing.T) {
 
 func snapshotKeys(t *testing.T, fixture *rebindingFixture) map[string]bool {
 	t.Helper()
-	keys, err := fixture.raw.client.Keys(context.Background(), "*").Result()
+	snapshot := make(map[string]bool)
+	err := fixture.raw.scanKeys("*", func(page []string) error {
+		for _, key := range page {
+			snapshot[key] = true
+		}
+		return nil
+	})
 	if err != nil {
 		t.Fatalf("Could not list keys: %v", err)
-	}
-	snapshot := make(map[string]bool, len(keys))
-	for _, key := range keys {
-		snapshot[key] = true
 	}
 	return snapshot
 }

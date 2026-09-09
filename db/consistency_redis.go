@@ -30,9 +30,12 @@ import (
 // check here is a statement about how the keys relate, and splitting it from
 // the constants that define them would mean two files to keep in step.
 //
-// Every keyspace walk here uses SCAN. KEYS would hold the redis event loop for
-// the length of the walk, and a database big enough to be worth checking is
-// exactly the one where that stalls every push.
+// Every keyspace walk here goes through scanKeys, and takes SCAN's duplicates
+// rather than paying a keyspace-sized set to remove them: every finding is
+// re-checked against the keys it names before it is reported, so a key that has
+// gone raises no alarm and a key seen twice is merely checked twice. That can
+// nudge a total up by one, on a report whose actionable content is its problem
+// counts.
 func (r *PushRedisDB) CheckConsistency() (*ConsistencyReport, error) {
 	report := new(ConsistencyReport)
 
@@ -66,49 +69,6 @@ func (r *PushRedisDB) CheckConsistency() (*ConsistencyReport, error) {
 		return left.Subject < right.Subject
 	})
 	return report, nil
-}
-
-// scanKeysCount is the COUNT hint on each SCAN: fewer round trips against less
-// work per call for redis. Nobody should need to tune it.
-const scanKeysCount = 500
-
-// scanKeys walks every key matching pattern, handing each page to visit.
-//
-// Streaming rather than returning the keys, because two of the patterns walked
-// here -- one key per binding, one per counter -- have a key per device. A
-// database big enough to be worth checking is exactly one where holding that
-// list, plus a set to deduplicate it, is a way to run the server out of memory:
-// a diagnostic that kills the process it was run to diagnose.
-//
-// SCAN trades KEYS's single long stall for a series of short ones, and gives up
-// the snapshot in exchange. A key added or removed mid-walk may or may not
-// appear; a key present throughout appears at least once, and can appear twice
-// if redis resizes its table underneath the cursor. Neither is worth preventing
-// here. Every finding is re-checked against the keys it names before it is
-// reported, so a key that has gone raises no alarm, and a key seen twice is
-// merely checked twice -- which can nudge a total up by one, on a report whose
-// actionable content is its problem counts. Preventing that would cost the
-// keyspace-sized set this exists to avoid.
-func (r *PushRedisDB) scanKeys(pattern string, visit func(page []string) error) error {
-	var cursor uint64
-	for {
-		page, next, err := r.client.Scan(r.ctx, cursor, pattern, scanKeysCount).Result()
-		if err != nil {
-			return err
-		}
-		if len(page) > 0 {
-			if err := visit(page); err != nil {
-				return err
-			}
-		}
-		// A zero cursor means the walk is complete. It is the only termination
-		// condition: an empty page is normal, because SCAN's COUNT bounds the
-		// work done rather than the rows returned.
-		if next == 0 {
-			return nil
-		}
-		cursor = next
-	}
 }
 
 func (r *PushRedisDB) report(report *ConsistencyReport, kind, service, subject, format string, args ...interface{}) {

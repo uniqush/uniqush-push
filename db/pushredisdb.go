@@ -58,12 +58,12 @@ type redisClient interface {
 	FlushDB(ctx context.Context) *redis.StatusCmd // for tests only
 	Get(ctx context.Context, key string) *redis.StringCmd
 	Incr(ctx context.Context, key string) *redis.IntCmd
-	Keys(ctx context.Context, key string) *redis.StringSliceCmd
 	MGet(ctx context.Context, keys ...string) *redis.SliceCmd
 	Save(ctx context.Context) *redis.StatusCmd
-	// Scan is how anything that walks the keyspace should do it. KEYS holds the
-	// redis event loop for the whole walk, which on a database large enough to
-	// be worth inspecting means stalling every push for the duration.
+	// Scan is how anything here walks the keyspace, and KEYS is deliberately
+	// absent so that there is no second way to do it: KEYS holds the redis event
+	// loop for the whole walk, which on a database large enough to be worth
+	// walking means stalling every push for the duration. See scanKeys.
 	Scan(ctx context.Context, cursor uint64, match string, count int64) *redis.ScanCmd
 	SAdd(ctx context.Context, key string, members ...interface{}) *redis.IntCmd
 	SRem(ctx context.Context, key string, members ...interface{}) *redis.IntCmd
@@ -104,10 +104,6 @@ func (mc *redisMultiClient) Get(ctx context.Context, key string) *redis.StringCm
 
 func (mc *redisMultiClient) Incr(ctx context.Context, key string) *redis.IntCmd {
 	return mc.masterClient.Incr(ctx, key)
-}
-
-func (mc *redisMultiClient) Keys(ctx context.Context, key string) *redis.StringSliceCmd {
-	return mc.slaveClient.Keys(ctx, key)
 }
 
 func (mc *redisMultiClient) Scan(ctx context.Context, cursor uint64, match string, count int64) *redis.ScanCmd {
@@ -164,6 +160,81 @@ const (
 	// ServicesSet is the key for a redis SET - This is a set of service names.
 	ServicesSet string = "services{0}"
 )
+
+// scanKeysCount is the COUNT hint on each SCAN: fewer round trips against less
+// work per call for redis. Nobody should need to tune it.
+const scanKeysCount = 500
+
+// scanKeys walks every key matching pattern, handing each page to visit.
+//
+// This is the only way anything here walks the keyspace, and redisClient no
+// longer offers KEYS so that it stays that way. KEYS answers the same question
+// in one command, and that is the problem: redis runs it to completion on the
+// single thread that serves every other client, so on a database large enough
+// for the walk to take a while it stalls every push -- pushes to unrelated
+// services included, and, when the server is shared, every other application's
+// traffic with them.
+//
+// Streaming rather than returning the keys, because some of the patterns walked
+// here -- one key per binding, one per counter -- have a key per device. A
+// database big enough to be worth walking is exactly one where holding that
+// list, plus a set to deduplicate it, is a way to run the process out of
+// memory. A caller whose own result is already proportional to the matched keys
+// has nothing to save by streaming and can use scanUniqueKeys instead.
+//
+// SCAN trades KEYS's single long stall for a series of short ones, and gives up
+// the snapshot in exchange. A key added or removed mid-walk may or may not
+// appear; a key present throughout appears at least once, and can appear twice
+// if redis resizes its table underneath the cursor. Both are the caller's to
+// handle -- scanUniqueKeys for the callers that cannot take a repeat, and see
+// CheckConsistency for why one caller can.
+func (r *PushRedisDB) scanKeys(pattern string, visit func(page []string) error) error {
+	var cursor uint64
+	for {
+		page, next, err := r.client.Scan(r.ctx, cursor, pattern, scanKeysCount).Result()
+		if err != nil {
+			return err
+		}
+		if len(page) > 0 {
+			if err := visit(page); err != nil {
+				return err
+			}
+		}
+		// A zero cursor means the walk is complete. It is the only termination
+		// condition: an empty page is normal, because SCAN's COUNT bounds the
+		// work done rather than the rows returned.
+		if next == 0 {
+			return nil
+		}
+		cursor = next
+	}
+}
+
+// scanUniqueKeys collects every key matching pattern, without the repeats a
+// SCAN can hand back.
+//
+// Only for callers that were going to hold a row per matched key regardless, so
+// that the set kept here is bounded by an allocation they already make. A walk
+// over a pattern with a key per device should stream through scanKeys instead
+// and cope with the duplicates itself.
+func (r *PushRedisDB) scanUniqueKeys(pattern string) ([]string, error) {
+	var keys []string
+	seen := make(map[string]bool)
+	err := r.scanKeys(pattern, func(page []string) error {
+		for _, key := range page {
+			if seen[key] {
+				continue
+			}
+			seen[key] = true
+			keys = append(keys, key)
+		}
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	return keys, nil
+}
 
 // buildRedisSlaveClient will optionally returns a redis client for uniqush-push to use for read-only operations (such as fetching subscriptions and services).
 func buildRedisSlaveClient(c *DatabaseConfig) (*redis.Client, error) {
@@ -410,13 +481,24 @@ func (r *PushRedisDB) RemovePushServiceProvider(psp string) error {
 }
 
 // GetDeliveryPointsNameByServiceSubscriber will get the delivery point for a service and it's subscriber
+//
+// A "*" in either name makes this a pattern covering many subscribers, which
+// /push accepts and does not validate. That is the one keyspace walk uniqush
+// does on a request path, and it ran KEYS: a single wildcard push held redis
+// for the length of a full walk, so every other push -- and everything else
+// sharing the server -- waited on it. It scans now.
+//
+// The keys come back deduplicated, which matters more here than the stall did.
+// A SCAN can hand the same key back twice, and each repeat would be a second
+// copy of every delivery point behind it: a duplicate notification on the
+// subscriber's phone. The set that prevents that holds an entry per matched
+// subscriber, which is what the returned map holds anyway.
 func (r *PushRedisDB) GetDeliveryPointsNameByServiceSubscriber(srv, sub string) (map[string][]string, error) {
-	keys := make([]string, 1)
-	if !strings.Contains(sub, "*") && !strings.Contains(srv, "*") {
-		keys[0] = ServiceSubscriberToDeliveryPointsPrefix + srv + ":" + sub
-	} else {
+	pattern := ServiceSubscriberToDeliveryPointsPrefix + srv + ":" + sub
+	keys := []string{pattern}
+	if strings.Contains(sub, "*") || strings.Contains(srv, "*") {
 		var err error
-		keys, err = r.client.Keys(r.ctx, ServiceSubscriberToDeliveryPointsPrefix+srv+":"+sub).Result()
+		keys, err = r.scanUniqueKeys(pattern)
 		if err != nil {
 			return nil, fmt.Errorf("GetDPsNameByServiceSubscriber dp lookup '%s:%s' failed: %w", srv, sub, err)
 		}
@@ -688,11 +770,16 @@ func (r *PushRedisDB) GetServiceNames() ([]string, error) {
 
 // RebuildServiceSet builds the set of unique service. It should only be needed for migrating from old uniqush installations.
 func (r *PushRedisDB) RebuildServiceSet() error {
-	// Run KEYS, then replace the PSP set with the result of KEYS.
-	// If any step fails, then return an error.
-	pspKeys, err := r.client.Keys(r.ctx, PushServiceProviderPrefix+"*").Result()
+	// Walk the provider keys, then add the services they name to the set. If
+	// any step fails, then return an error.
+	//
+	// Collected whole rather than streamed: there is one key per provider per
+	// service, tens of them on a large deployment, and the lookup below wants
+	// them in one call. Deduplicated because a repeat would fetch and parse the
+	// same provider twice for a set membership it already has.
+	pspKeys, err := r.scanUniqueKeys(PushServiceProviderPrefix + "*")
 	if err != nil {
-		return fmt.Errorf("failed to fetch PSPs using redis KEYS command: %w", err)
+		return fmt.Errorf("failed to scan for PSPs: %w", err)
 	}
 
 	if len(pspKeys) == 0 {
@@ -703,7 +790,7 @@ func (r *PushRedisDB) RebuildServiceSet() error {
 	N := len(PushServiceProviderPrefix)
 	for i, key := range pspKeys {
 		if len(key) < N || key[:N] != PushServiceProviderPrefix {
-			return fmt.Errorf("KEYS %s* returned %q - this shouldn't happen", PushServiceProviderPrefix, key)
+			return fmt.Errorf("SCAN MATCH %s* returned %q - this shouldn't happen", PushServiceProviderPrefix, key)
 		}
 		pspNames[i] = key[N:]
 	}

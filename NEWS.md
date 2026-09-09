@@ -29,6 +29,16 @@ UnifiedPush / Web Push:
   published as a whole rather than edited in place, so a reconfiguration cannot be seen half-applied by a
   push in flight.
 
+Redis:
+
+- Bugfix: A `/push` whose `service` or `subscriber` contains a `*` no longer runs `KEYS`. Redis executes that
+  command to completion on the single thread it serves every client from, so one wildcard push stalled every
+  other push -- and, on a shared redis, every other application -- for as long as a full walk of the keyspace
+  took. Both keyspace walks left in uniqush, this one and `/rebuildserviceset`, page through `SCAN` instead,
+  and the delivery points behind a wildcard are deduplicated: `SCAN` can return the same key twice, and each
+  repeat would have been a second notification on somebody's phone. Wildcards match the same subscribers as
+  before.
+
 Logging:
 
 - Bugfix: Log why a push is being retried. `RetryError` carried the reason and nothing printed it, so a push that
