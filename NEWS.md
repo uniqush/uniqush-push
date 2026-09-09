@@ -5,104 +5,77 @@ Unreleased
 
 APNs:
 
-- Removal: The binary provider protocol is gone. Apple shut it down on 31 March 2021 and 2.8.0 already
-  defaulted to HTTP/2 with a deprecation warning for `uniqush.http2=0`. That parameter is still accepted:
-  the push is sent over HTTP/2 and the response reports that the option no longer does anything, so a
-  caller who never updated goes from undeliverable pushes to delivered ones. With it go the APNs feedback
-  service client -- Apple retired that alongside the protocol, and an unregistered token now comes back as
-  410 `Unregistered` on the push itself -- and the `github.com/uniqush/cache2` dependency.
-- Bugfix: `mutable-content` reaches iOS. It was passed through beside the `aps` dictionary rather than
-  inside it, so the notification service extension it exists to trigger never ran: a caller asking for a
-  rich notification got a plain one, delivered and reported successful. `category`, `thread-id` and
-  `target-content-id` were in the same position, and `interruption-level` and `relevance-score` -- keys
-  Apple added after this code was written -- were not handled at all. All of them are now placed in `aps`,
-  and `mutable-content` is sent as the number `1` rather than the string `"1"`, which iOS ignores. A push
-  sending one of these keys and expecting it to arrive as custom data beside `aps` will now find it inside
-  `aps`; `uniqush.payload.apns` sends a payload verbatim if that is what you need.
-- Change: `/addpsp` records which of Apple's two environments a provider pushes to, as `environment`
-  (`production` or `development`), instead of storing `addr` -- the retired binary protocol's gateway
-  host:port, which nothing has connected to since 2021 and whose only remaining job was to be searched for
-  the substrings that named an environment ("sandbox", or one of Apple's `api.development.` hosts). `addr` is still accepted, and still selects the same environment it always did, so
-  a registration script that has always sent it keeps working; it is simply no longer stored. A provider
-  registered before this and not re-registered keeps its `addr` and no `environment`, and is still routed by
-  that `addr`, so no device re-subscribes and no service moves. `/psps` reports whichever of the two a
-  provider actually carries: `environment` once it has been registered again, and `addr` until then.
-- Removal: `pool_size` in the `[apns]` config section. It sized the binary protocol's pool of TCP
-  connections; HTTP/2 multiplexes a provider's pushes over one connection. A `pool_size` left in
-  `uniqush.conf` is ignored rather than rejected.
+- Bugfix: `mutable-content`, `category`, `thread-id` and `target-content-id` go inside the `aps` dictionary
+  rather than beside it, where iOS ignored them, and `interruption-level` and `relevance-score` are supported.
+  Numbers are sent as numbers, since iOS ignores `"1"` where it wants `1`. A push sending one of these keys and
+  expecting it beside `aps` as custom data will now find it inside; `uniqush.payload.apns` sends a payload
+  verbatim.
 - Bugfix: A background push sent through `uniqush.payload.apns` is accepted when `content-available` is the
-  number `1`. The check for a payload with no alert compared that value against the string `"1"`, and JSON
-  decodes a number into a float, so the one form Apple documents was the one form uniqush refused, as a bad
-  notification, for a correct payload. The quoted `"1"` it did accept is ignored by iOS, so a caller who
-  worked around the rejection by quoting the value got a notification delivered that never woke the app.
-  Both are accepted now, and neither is rewritten: `uniqush.payload.apns` still goes to APNs verbatim.
+  number `1` -- the form Apple documents, and the only one uniqush used to refuse. The quoted `"1"` it did
+  accept is ignored by iOS but is still accepted, for callers who worked around that; neither form is rewritten.
+- Change: `/addpsp` records the environment a provider pushes to as `environment` (`production` or
+  `development`), instead of the retired binary protocol's `addr`. `addr` is still accepted and selects the
+  same environment as before, but is no longer stored. A provider registered before this keeps its `addr`, is
+  still routed by it, and still shows it in `/psps` until it is registered again.
+- Removal: The binary provider protocol, the APNs feedback service client, and the `github.com/uniqush/cache2`
+  dependency they needed. Apple shut the protocol down on 31 March 2021 and 2.8.0 already defaulted to HTTP/2.
+  `uniqush.http2=0` is still accepted: the push goes over HTTP/2 and the response says the parameter no longer
+  does anything. An unregistered token now arrives as 410 `Unregistered` on the push itself.
+- Removal: `pool_size` in the `[apns]` config section. It sized the binary protocol's TCP connection pool;
+  HTTP/2 multiplexes a provider's pushes over one connection. A `pool_size` left in `uniqush.conf` is ignored
+  rather than rejected.
 
 FCM:
 
-- New feature: `uniqush.priority` on `/push`, `high` or `normal`, which becomes FCM's `android.priority`. A
-  normal-priority message may be held until the device next leaves Doze, so this is the difference between a
-  notification arriving now and arriving eventually. Absent, the field is left off the message and FCM
-  applies its own default, which depends on whether the message carries a notification block. A value that is
-  neither `high` nor `normal` is refused rather than ignored: sending FCM's default under a misspelled
-  parameter would look like it worked. The name is not FCM-specific, since APNs already derives its priority
-  from `uniqush.apns_push_type` and Web Push has an urgency of its own; no other backend reads it today.
+- New feature: `uniqush.priority` on `/push`, `high` or `normal`, becoming FCM's `android.priority`. A
+  normal-priority message may be held until the device next leaves Doze. Absent, FCM applies its own default;
+  any other value is refused. No other backend reads it, since APNs derives its priority from
+  `uniqush.apns_push_type`.
 
 UnifiedPush / Web Push:
 
 - Change: The RFC 8188 record size is now 4096 rather than 2048, so every message is 4096 bytes on the wire and
-  a payload may be up to 3993 bytes (was 1945). 4096 is what the rest of the ecosystem emits, and google/tink's
-  `apps-webpush` rejects any record smaller than the 4096 it expects, so 2048 was unreadable to clients built
-  on it. Set `record_size=2048` in `[webpush]` or `[unifiedpush]` to halve egress again.
-- New feature: `record_size` in the `[webpush]` and `[unifiedpush]` config sections.
+  a payload may be up to 3993 bytes (was 1945). google/tink's `apps-webpush` rejects any record smaller than
+  the 4096 it expects, so 2048 was unreadable to clients built on it.
+- New feature: `record_size` in the `[webpush]` and `[unifiedpush]` config sections. `record_size=2048` halves
+  egress, and the payload ceiling.
 - Bugfix: `allow_private_addresses` and `allowed_hosts` are re-read on every reconfiguration, so deleting one
-  closes what it opened. Previously they were only written when the option parsed, which left a policy an
-  earlier config had relaxed still relaxed after the line was removed. `allow_private_addresses` now also
-  accepts the config file's usual boolean spellings, including the negative ones. The endpoint policy is
-  published as a whole rather than edited in place, so a reconfiguration cannot be seen half-applied by a
-  push in flight.
+  closes what it opened; previously a policy an earlier config had relaxed stayed relaxed. The policy is
+  published whole, so a push in flight cannot see it half-applied, and `allow_private_addresses` now accepts
+  the config file's usual boolean spellings.
 
 Redis:
 
-- Bugfix: A `/push` whose `service` or `subscriber` contains a `*` no longer runs `KEYS`. Redis executes that
-  command to completion on the single thread it serves every client from, so one wildcard push stalled every
-  other push -- and, on a shared redis, every other application -- for as long as a full walk of the keyspace
-  took. Both keyspace walks left in uniqush, this one and `/rebuildserviceset`, page through `SCAN` instead,
-  and the delivery points behind a wildcard are deduplicated: `SCAN` can return the same key twice, and each
-  repeat would have been a second notification on somebody's phone. Wildcards match the same subscribers as
-  before.
+- Bugfix: A `/push` whose `service` or `subscriber` contains a `*` no longer runs `KEYS`, which redis runs to
+  completion on the thread it serves every client from: one wildcard push stalled every other push, and every
+  other application on a shared redis, for the length of a keyspace walk. That walk and `/rebuildserviceset`
+  page through `SCAN` instead, deduplicated because `SCAN` can return a key twice and each repeat would have
+  been a second notification. Wildcards match the same subscribers as before.
 
 Logging:
 
-- Bugfix: Log why a push is being retried. `RetryError` carried the reason and nothing printed it, so a push that
-  retried and then vanished left only "Retry after 1m0s". The webpush backend now also quotes the push server's
-  response body, which is where the explanation usually is.
-- Bugfix: A fatal message says what went wrong when logging is switched off. `log=off` silences every level, but
-  fatals still print, because a process about to exit should say why -- and that one line was mangled: "cannot
-  start: bind failed on port 8080" came out as "cannot start: [bind failed 8080] on port %!d(MISSING)". The
-  logger forwarded its arguments to the standard library as a single slice rather than expanding them.
+- Bugfix: Log why a push is being retried. `RetryError` carried the reason and nothing printed it, so a push
+  that retried and then vanished left only "Retry after 1m0s". The webpush backend also quotes the push
+  server's response body, which is usually where the explanation is.
+- Bugfix: A fatal message says what went wrong when logging is switched off. `log=off` silences every level but
+  fatals still print, and that line was mangled: "cannot start: bind failed on port 8080" came out as
+  "cannot start: [bind failed 8080] on port %!d(MISSING)".
 
 REST API:
 
-- Security: `/psps` no longer reports credentials. It merged each provider's fixed and volatile data and
-  answered with all of it, so an unauthenticated GET returned every Web Push provider's VAPID private key,
-  every ADM provider's `clientsecret`, and the access token ADM had issued it. Key material is usable long
-  after whoever fetched it has lost access to the server, and a leaked VAPID key lets someone else push to
-  your subscribers as you. The endpoint now answers from a list of fields it may report -- an allowlist, so
-  that a credential a future backend adds is withheld by default rather than published until somebody
-  notices -- and reports everything else as `[redacted]`. Credential file *paths* are still reported: which
-  certificate a provider loads is most of what the endpoint is for. Nothing else about the response changes,
-  and no configuration field is hidden. This does not make the API safe to expose: `/subscriptions` still
-  returns any subscriber's device tokens, and `/push` still sends notifications.
+- Security: `/psps` no longer reports credentials. It answered with every field of every provider, so an
+  unauthenticated GET returned each Web Push provider's VAPID private key, each ADM provider's `clientsecret`,
+  and the access token ADM had issued it. It now answers from an allowlist of configuration fields --
+  credential file paths included -- and reports everything else as `[redacted]`. This does not make the API
+  safe to expose: `/subscriptions` still returns any subscriber's device tokens, and `/push` still sends.
 
 Startup:
 
-- New behaviour: uniqush refuses to start when the operating system's root certificate store cannot be
-  loaded, naming the store and what to install. Every backend verifies TLS against those roots, so without
-  them nothing can be delivered to anyone -- and crypto/x509 loads the store once and caches the outcome for
-  the life of the process, so the first failure is permanent: every push after it failed with an
-  `x509.SystemRootsError` buried in a handshake error, on a server that had started cleanly and reported
-  itself healthy. A store that loads but is empty is accepted, because it is not detectable portably, and
-  presents as an unknown certificate authority instead.
+- Change: uniqush refuses to start when the operating system's root certificate store cannot be loaded,
+  naming what to install. Every backend verifies TLS against those roots, and `crypto/x509` caches the failure
+  for the life of the process, so every push failed with an `x509.SystemRootsError` inside a handshake error on
+  a server that had started cleanly and reported itself healthy. A store that loads but is empty is accepted,
+  not being detectable portably; it presents as an unknown certificate authority instead.
 - Bugfix: uniqush exits non-zero when it cannot start. It printed "Cannot start: ..." and exited 0, so
   systemd's `Restart=on-failure` never fired and `docker run` reported success for a container that had done
   nothing.
@@ -110,37 +83,30 @@ Startup:
 Configuration:
 
 - New feature: `request_timeout`, in seconds, in the `[apns]`, `[fcm]`, `[gcm]`, `[webpush]` and
-  `[unifiedpush]` sections. How long one request to a push service has to complete was fixed at 20 seconds
-  for APNs and 30 for the rest, which is the wrong number for anyone whose own client gives up sooner: `/push`
-  answers when the push services do, so a caller that waits five seconds and a uniqush that waits thirty
-  spend twenty-five of them waiting for an answer nobody will read. Values outside 1-300 fall back to the
-  default, as does one that will not parse, and deleting the line restores the default.
-- Change: that timeout is now enforced per request rather than by the HTTP client, which is what makes it
-  reconfigurable -- a client is cached for the life of a push service provider and would have gone on
-  applying whatever the timeout was when it was built. The APNs retry against a previous signing token gets a
-  full timeout of its own, as it did before. The FCM OAuth2 token fetch keeps a fixed timeout: it is a
-  different operation, against a different host, and `request_timeout` is not about it.
+  `[unifiedpush]` sections. How long one request to a push service may take was fixed at 20 seconds for APNs
+  and 30 for the rest, which is the wrong number for anyone whose own client gives up sooner. Values outside
+  1-300 fall back to the default, as does one that will not parse, and deleting the line restores it.
+- Change: the push request timeout is enforced per request rather than by the HTTP client, which is what makes it
+  reconfigurable: a client is cached for the life of a provider and would have gone on applying whatever the
+  timeout was when it was built. The APNs retry against a previous signing token still gets a full timeout of
+  its own, and the FCM OAuth2 token fetch keeps a fixed one.
 - Bugfix: A configuration file that fails to read part way through is now an error. The parser returned success
   with whatever it had managed to parse, so a truncated or unreadable `uniqush.conf` would start uniqush with
-  some of its options silently missing. A file that fails to parse is also closed rather than leaked, which the
-  fix above made reachable: the early return had been all but unreachable while read errors were being
-  swallowed.
+  some of its options silently missing. Such a file is also closed rather than leaked.
 
 Maintenance:
 
-- The levelled logger is now `github.com/uniqush/uniqush-push/log` rather than `github.com/uniqush/log`, which
-  is archived. It is the same logger with the fatal-formatting bug above fixed; `go vet` reports that bug, and
-  had been unable to see it while the code lived in a repository with no CI. The level constants are renamed to
-  Go's naming convention: `log.LOGLEVEL_INFO` is `log.LevelInfo`, and so on. `MultiLogger` is dropped, having
-  had no callers.
-- The configuration parser is now `github.com/uniqush/uniqush-push/conf` rather than
-  `github.com/uniqush/goconf/conf`, which is archived: it was a fork of `ifwe/goconf`, itself descended from a
-  project abandoned in 2012, so there was no upstream left to send the fix above to. Parsing is unchanged --
-  verified option by option against the old parser on the shipped `uniqush-push.conf` -- and the package keeps
-  its BSD 3-clause licence, in `conf/LICENSE`, rather than this project's Apache 2.0.
-- `HasOption` and `GetOptions` no longer consult the default section. They were the only functions that did, so
-  `HasOption` could report an option that `GetString` then said was missing. The accessors are unchanged, since
-  inheriting the default section would have altered what every existing `uniqush.conf` means.
+- The levelled logger is now `github.com/uniqush/uniqush-push/log` rather than the archived
+  `github.com/uniqush/log`, with the fatal-formatting bug above fixed. The level constants take Go's naming
+  convention: `log.LOGLEVEL_INFO` is `log.LevelInfo`, and so on. `MultiLogger` is dropped, having had no
+  callers.
+- The configuration parser is now `github.com/uniqush/uniqush-push/conf` rather than the archived
+  `github.com/uniqush/goconf/conf`, a fork of `ifwe/goconf` whose upstream was abandoned in 2012. Parsing is
+  unchanged, verified option by option against the old parser on the shipped `uniqush-push.conf`, and the
+  package keeps its BSD 3-clause licence in `conf/LICENSE`.
+- `HasOption` and `GetOptions` no longer consult the default section, so `HasOption` can no longer report an
+  option that `GetString` then says is missing. The accessors are unchanged, since inheriting the default
+  section would alter what every existing `uniqush.conf` means.
 - `WriteConfigFile` and the rest of the config writing API are dropped, having had no callers. Variable
   substitution (`%(name)s`) is documented as unsupported, which it has been since 2012.
 - With those two, `go.mod` no longer requires anything owned by uniqush. Every remaining dependency is either
@@ -157,11 +123,10 @@ Changes to APIs (embedders only):
 Packaging:
 
 - Bugfix: Releases carry the licences of the code they bundle. uniqush-push links BSD- and MIT-licensed Go
-  modules statically, and those licences ask that their copyright notice accompany a binary distribution --
-  the `.deb` and `.rpm` shipped no licence text at all, and the archive shipped only uniqush's own. All three
-  now carry `THIRD-PARTY-LICENSES`, and the packages install it and `LICENSE` to
-  `/usr/share/doc/uniqush-push/`. The package metadata says `Apache-2.0 AND BSD-2-Clause AND BSD-3-Clause AND
-  MIT` rather than `Apache-2.0`, which described the source but not what was in the package.
+  modules statically, and the `.deb` and `.rpm` shipped no licence text at all while the archive shipped only
+  uniqush's own. All three now carry `THIRD-PARTY-LICENSES`, the packages install it and `LICENSE` to
+  `/usr/share/doc/uniqush-push/`, and the metadata says `Apache-2.0 AND BSD-2-Clause AND BSD-3-Clause AND MIT`
+  rather than `Apache-2.0`.
 
 03 Sep 2026, uniqush-push 2.8.0
 -------------------------------
