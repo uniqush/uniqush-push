@@ -24,8 +24,9 @@ APNs:
   host:port, which nothing has connected to since 2021 and whose only remaining job was to be searched for
   the substring "sandbox". `addr` is still accepted, and still selects the same environment it always did, so
   a registration script that has always sent it keeps working; it is simply no longer stored. A provider
-  registered before this and not re-registered keeps its `addr` and is still routed by it, so no device
-  re-subscribes and no service moves. `/psps` reports `environment` where it used to report `addr`.
+  registered before this and not re-registered keeps its `addr` and no `environment`, and is still routed by
+  that `addr`, so no device re-subscribes and no service moves. `/psps` reports whichever of the two a
+  provider actually carries: `environment` once it has been registered again, and `addr` until then.
 - Removal: `pool_size` in the `[apns]` config section. It sized the binary protocol's pool of TCP
   connections; HTTP/2 multiplexes a provider's pushes over one connection. A `pool_size` left in
   `uniqush.conf` is ignored rather than rejected.

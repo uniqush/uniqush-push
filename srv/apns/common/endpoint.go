@@ -37,14 +37,16 @@ import (
 // and how that destination is trusted.
 const (
 	// EndpointKey holds an explicit base URL, e.g. "https://localhost:8443".
-	// When absent, the destination comes from EnvironmentKey; see
+	// When absent, the destination comes from EnvironmentKey, or from AddrKey
+	// for a provider stored before an environment was recorded; see
 	// ResolveEndpoint.
 	EndpointKey = "endpoint"
 
 	// EnvironmentKey names which of Apple's two environments a provider pushes
 	// to: EnvironmentProduction or EnvironmentDevelopment. Written by /addpsp,
 	// from the sandbox parameter or -- for a caller still sending one -- from
-	// addr.
+	// addr. A provider registered before this existed and not re-registered
+	// since does not have one, and is routed by its AddrKey instead.
 	//
 	// It exists because the answer used to be inferred from AddrKey, a
 	// binary-protocol host:port that nothing has connected to since Apple shut
