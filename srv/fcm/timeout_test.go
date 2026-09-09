@@ -73,24 +73,40 @@ func TestRequestTimeoutIsConfigurable(t *testing.T) {
 // has to restore the default rather than leave the previous value in place --
 // the same rule allow_non_apple_endpoints and record_size follow.
 func TestRequestTimeoutFallsBackToTheDefault(t *testing.T) {
-	service := newTestService(t, "fcm", nil)
-	defer service.Finalize()
-
 	testCases := []struct {
-		name    string
+		name string
+		// preconfigure applies request_timeout=5 first, so the case has a
+		// value to undo rather than merely never setting one.
+		preconfigure bool
+		// apply says whether the service is handed a configuration at all.
+		// Without one it has never seen SetPushServiceConfig, which is its own
+		// path: an embedder that registers nothing, or any reader of the
+		// timeout before the first configuration arrives.
+		apply   bool
 		value   string
 		present bool
 	}{
-		{name: "never configured", present: false},
-		{name: "removed after being set", present: false},
-		{name: "not a number", value: "quickly", present: true},
-		{name: "below the minimum", value: "0", present: true},
-		{name: "beyond the maximum", value: "3600", present: true},
+		{name: "never configured"},
+		{name: "configured without the option", apply: true},
+		{name: "removed after being set", preconfigure: true, apply: true},
+		{name: "not a number", preconfigure: true, apply: true, value: "quickly", present: true},
+		{name: "below the minimum", preconfigure: true, apply: true, value: "0", present: true},
+		{name: "beyond the maximum", preconfigure: true, apply: true, value: "3600", present: true},
 	}
 	for _, testCase := range testCases {
 		t.Run(testCase.name, func(t *testing.T) {
-			configureTimeout(t, service, "5", true)
-			configureTimeout(t, service, testCase.value, testCase.present)
+			// A service per case, so that "never configured" means a service
+			// that has never been configured rather than one the previous case
+			// left behind.
+			service := newTestService(t, "fcm", nil)
+			defer service.Finalize()
+
+			if testCase.preconfigure {
+				configureTimeout(t, service, "5", true)
+			}
+			if testCase.apply {
+				configureTimeout(t, service, testCase.value, testCase.present)
+			}
 			expectAbout(t, deadlineOfNextPush(t, service), defaultRequestTimeout)
 		})
 	}
