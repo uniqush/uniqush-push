@@ -79,6 +79,25 @@ const (
 	// legacyGCMName is the alias this backend is also registered under. It only
 	// matters for where projectid is stored; see BuildPushServiceProviderFromMap.
 	legacyGCMName = "gcm"
+
+	// priorityKey is the /push parameter that sets android.priority.
+	//
+	// Not namespaced per backend, unlike uniqush.payload.fcm, because priority
+	// is a push concept rather than an FCM one: APNs derives its own from
+	// uniqush.apns_push_type, and Web Push has RFC 8030's Urgency header. It is
+	// in the reserved uniqush.* namespace, so it cannot collide with a data
+	// field an app already receives, and backends that do not read it strip it
+	// with the rest of that namespace.
+	priorityKey = "uniqush.priority"
+
+	// priorityNormal and priorityHigh are FCM's AndroidMessagePriority values.
+	//
+	// Sent as the enum's declared name, in upper case. Firebase's own
+	// documentation writes them in lower case and its Admin SDKs send that, so
+	// both are evidently accepted, but the upper-case form is the one protobuf
+	// JSON defines and it is not the sort of thing to guess about.
+	priorityNormal = "NORMAL"
+	priorityHigh   = "HIGH"
 )
 
 // HTTPClient is the mockable subset of http.Client used here.
@@ -337,6 +356,39 @@ type androidConfig struct {
 	CollapseKey string `json:"collapse_key,omitempty"`
 	// TTL is a duration string with a seconds suffix, e.g. "3600s".
 	TTL string `json:"ttl,omitempty"`
+	// Priority is "NORMAL" or "HIGH", and is omitted when the caller does not
+	// ask, so that FCM applies its own default rather than uniqush choosing one
+	// on every push. That default differs by message kind -- HIGH for a
+	// notification message, NORMAL for a data-only one -- which is not a rule
+	// worth reimplementing here.
+	Priority string `json:"priority,omitempty"`
+}
+
+// resolvePriority maps the uniqush.priority parameter onto android.priority.
+//
+// Absent means absent: the field is left off the message. A value that is
+// neither normal nor high is refused rather than ignored, the same way an
+// invalid uniqush.apns_push_type is, because the two ways of getting this wrong
+// are a typo and a misunderstanding, and silently sending FCM's default would
+// leave both looking like they worked. Delivery latency is the whole point of
+// the parameter: a normal-priority message can be held until the device leaves
+// Doze, which is a difference a caller notices in production and not in a test.
+//
+// Case-insensitive, because Firebase documents these in lower case and defines
+// them in upper.
+func resolvePriority(data map[string]string) (string, push.Error) {
+	raw, ok := data[priorityKey]
+	if !ok || raw == "" {
+		return "", nil
+	}
+	switch strings.ToLower(strings.TrimSpace(raw)) {
+	case "normal":
+		return priorityNormal, nil
+	case "high":
+		return priorityHigh, nil
+	}
+	return "", push.NewBadNotificationWithDetails(
+		fmt.Sprintf("invalid %s %q, expected one of: high, normal", priorityKey, raw))
 }
 
 // buildMessage turns a uniqush notification into a v1 message body for one token.
@@ -356,6 +408,12 @@ func (ps *pushService) buildMessage(notif *push.Notification, regID string) (*me
 	}
 	// v1 wants a Duration string rather than a bare integer.
 	android.TTL = strconv.FormatUint(ttl, 10) + "s"
+
+	priority, priorityErr := resolvePriority(data)
+	if priorityErr != nil {
+		return nil, priorityErr
+	}
+	android.Priority = priority
 	body.Android = android
 
 	if raw, ok := data[ps.rawNotificationKey()]; ok && raw != "" {

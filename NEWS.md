@@ -29,6 +29,16 @@ APNs:
   worked around the rejection by quoting the value got a notification delivered that never woke the app.
   Both are accepted now, and neither is rewritten: `uniqush.payload.apns` still goes to APNs verbatim.
 
+FCM:
+
+- New feature: `uniqush.priority` on `/push`, `high` or `normal`, which becomes FCM's `android.priority`. A
+  normal-priority message may be held until the device next leaves Doze, so this is the difference between a
+  notification arriving now and arriving eventually. Absent, the field is left off the message and FCM
+  applies its own default, which depends on whether the message carries a notification block. A value that is
+  neither `high` nor `normal` is refused rather than ignored: sending FCM's default under a misspelled
+  parameter would look like it worked. The name is not FCM-specific, since APNs already derives its priority
+  from `uniqush.apns_push_type` and Web Push has an urgency of its own; no other backend reads it today.
+
 UnifiedPush / Web Push:
 
 - Change: The RFC 8188 record size is now 4096 rather than 2048, so every message is 4096 bytes on the wire and

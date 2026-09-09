@@ -457,6 +457,68 @@ func TestPushPayloadMapping(t *testing.T) {
 			},
 		},
 		{
+			// The reason #164 was filed: a normal-priority message can be held
+			// until the device leaves Doze, and there was no way to ask for
+			// either priority.
+			name: "priority becomes android priority",
+			data: map[string]string{"msg": "x", "uniqush.priority": "high"},
+			check: func(t *testing.T, message map[string]interface{}) {
+				android, _ := message["android"].(map[string]interface{})
+				if android["priority"] != "HIGH" {
+					t.Errorf("Expected android.priority of HIGH, got %v", android["priority"])
+				}
+			},
+		},
+		{
+			// Firebase documents these in lower case and defines the enum in
+			// upper, so a caller may reasonably send either.
+			name: "priority is case-insensitive",
+			data: map[string]string{"msg": "x", "uniqush.priority": "Normal"},
+			check: func(t *testing.T, message map[string]interface{}) {
+				android, _ := message["android"].(map[string]interface{})
+				if android["priority"] != "NORMAL" {
+					t.Errorf("Expected android.priority of NORMAL, got %v", android["priority"])
+				}
+			},
+		},
+		{
+			// Omitted rather than defaulted, so FCM applies its own rule --
+			// which depends on whether the message is a notification or
+			// data-only.
+			name: "no priority leaves the field off the message",
+			data: map[string]string{"msg": "x"},
+			check: func(t *testing.T, message map[string]interface{}) {
+				android, _ := message["android"].(map[string]interface{})
+				if _, ok := android["priority"]; ok {
+					t.Errorf("Expected no android.priority, got %v", android["priority"])
+				}
+			},
+		},
+		{
+			// The parameter is in the reserved namespace, so it must not also
+			// arrive at the app as a data field.
+			name: "priority does not leak into data",
+			data: map[string]string{"msg": "x", "uniqush.priority": "high"},
+			check: func(t *testing.T, message map[string]interface{}) {
+				data, _ := message["data"].(map[string]interface{})
+				if _, ok := data["uniqush.priority"]; ok {
+					t.Errorf("uniqush.priority should not appear in data, got %v", data)
+				}
+			},
+		},
+		{
+			// A raw payload replaces data wholesale but not the android block,
+			// so the two features compose.
+			name: "priority survives a raw payload",
+			data: map[string]string{"uniqush.payload.fcm": `{"custom":"value"}`, "uniqush.priority": "normal"},
+			check: func(t *testing.T, message map[string]interface{}) {
+				android, _ := message["android"].(map[string]interface{})
+				if android["priority"] != "NORMAL" {
+					t.Errorf("Expected android.priority of NORMAL, got %v", android["priority"])
+				}
+			},
+		},
+		{
 			name: "msggroup becomes android collapse_key",
 			data: map[string]string{"msg": "x", "msggroup": "chat-42"},
 			check: func(t *testing.T, message map[string]interface{}) {
@@ -514,6 +576,39 @@ func TestPushPayloadMapping(t *testing.T) {
 			}
 			testCase.check(t, message)
 		})
+	}
+}
+
+// TestInvalidPriorityIsRejectedLocally checks that a priority uniqush does not
+// recognise stops the push rather than being dropped.
+//
+// Dropping it would send FCM's default and report success, so a caller who
+// typed "urgent" would see delivered notifications and a latency problem with
+// no cause -- the same silent-success failure that made #192 take eight years
+// to notice. An invalid uniqush.apns_push_type is refused the same way.
+func TestInvalidPriorityIsRejectedLocally(t *testing.T) {
+	service := newTestService(t, "fcm", func(*http.Request) (*http.Response, error) {
+		t.Error("No request should be made for an invalid priority")
+		return newResponse(200, `{}`, nil), nil
+	})
+	defer service.Finalize()
+	psp := newTestPSP(t, service)
+	dp := newTestDP(t, service, "token-1")
+
+	for _, priority := range []string{"urgent", "10", "HIGHEST", " "} {
+		notif := &push.Notification{Data: map[string]string{"msg": "x", "uniqush.priority": priority}}
+		result := pushOnce(t, service, psp, dp, notif)
+		if result.Err == nil {
+			t.Errorf("Expected priority %q to be rejected", priority)
+			continue
+		}
+		if _, isBad := result.Err.(*push.BadNotification); !isBad {
+			t.Errorf("Expected a BadNotification for priority %q, got %T: %v", priority, result.Err, result.Err)
+			continue
+		}
+		if !strings.Contains(result.Err.Error(), "uniqush.priority") {
+			t.Errorf("Expected the error to name the parameter, got: %v", result.Err)
+		}
 	}
 }
 

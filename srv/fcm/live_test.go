@@ -242,6 +242,45 @@ func TestLivePayloadRulesMatchGoogles(t *testing.T) {
 	}
 }
 
+// TestLiveGoogleAcceptsBothPriorities checks the one thing about #164 that
+// cannot be checked against a mock: that FCM understands the value uniqush puts
+// in android.priority.
+//
+// AndroidMessagePriority is a protobuf enum, so the wire form is a name rather
+// than a number and getting the case wrong is a real possibility -- Firebase's
+// documentation writes "normal" and "high", its Admin SDKs send those, and the
+// enum declares NORMAL and HIGH. uniqush sends the declared form.
+//
+// The token here is fabricated, so FCM rejects the message either way. What
+// distinguishes the two rejections is what it names: a request FCM parsed
+// complains about the token, and one it did not complains about the field. So
+// the assertion is that the error does not mention priority.
+func TestLiveGoogleAcceptsBothPriorities(t *testing.T) {
+	service, psp := liveService(t)
+	defer service.Finalize()
+
+	dp := liveDeliveryPoint(t, service, "uniqush-live-test-not-a-real-registration-token")
+	for _, priority := range []string{"high", "normal"} {
+		notif := &push.Notification{Data: map[string]string{
+			"msg":              "uniqush live priority check",
+			"uniqush.priority": priority,
+		}}
+		result := pushLive(t, service, psp, dp, notif)
+		if result.Err == nil {
+			t.Errorf("A fabricated token was accepted with priority %q, which should be impossible", priority)
+			continue
+		}
+		if strings.Contains(strings.ToLower(result.Err.Error()), "priority") {
+			t.Errorf("FCM rejected the priority field rather than the token, for %q: %v\n"+
+				"AndroidMessagePriority is sent as the enum name; if Google now wants a "+
+				"different spelling, priorityNormal and priorityHigh are where to change it.",
+				priority, result.Err)
+			continue
+		}
+		t.Logf("FCM parsed the message and rejected the token, as expected, for priority %q: %v", priority, result.Err)
+	}
+}
+
 // TestLiveDeliveryToRealDevice is the only test here that proves delivery.
 //
 // Everything above confirms that Google accepts uniqush's credentials and
