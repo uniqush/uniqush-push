@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/uniqush/log"
+	"github.com/uniqush/uniqush-push/log"
 	"github.com/uniqush/uniqush-push/push"
 )
 
@@ -734,7 +734,7 @@ func TestOrDiscardNeverReturnsNil(t *testing.T) {
 	}
 	// A logger that was supplied is handed back untouched, so normalising cannot
 	// silently swallow a caller's logs.
-	supplied := log.NewLogger(io.Discard, "[test]", log.LOGLEVEL_INFO)
+	supplied := log.NewLogger(io.Discard, "[test]", log.LevelInfo)
 	if got := orDiscard(supplied); got != supplied {
 		t.Error("orDiscard replaced a logger that was already there")
 	}

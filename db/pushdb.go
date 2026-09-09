@@ -24,7 +24,7 @@ import (
 	"sync"
 
 	"github.com/redis/go-redis/v9"
-	"github.com/uniqush/log"
+	"github.com/uniqush/uniqush-push/log"
 	"github.com/uniqush/uniqush-push/push"
 )
 
@@ -637,7 +637,7 @@ func (f *pushDatabaseOpts) forgetOrphanedDeliveryPoints(subscriber string, orpha
 // A logger built over a nil writer: log.NewLogger substitutes a writer that
 // discards, so this needs no type of its own. Package-level because the read
 // path allocating one per call would be silly.
-var discardLogger = log.NewLogger(nil, "", log.LOGLEVEL_SILENT)
+var discardLogger = log.NewLogger(nil, "", log.LevelSilent)
 
 // orDiscard turns a nil logger into one that discards, at the boundary.
 //

@@ -26,7 +26,7 @@ import (
 	"time"
 
 	"github.com/redis/go-redis/v9"
-	"github.com/uniqush/log"
+	"github.com/uniqush/uniqush-push/log"
 	"github.com/uniqush/uniqush-push/push"
 )
 

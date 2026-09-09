@@ -24,8 +24,8 @@ import (
 	"strings"
 
 	"github.com/uniqush/goconf/conf"
-	"github.com/uniqush/log"
 	"github.com/uniqush/uniqush-push/db"
+	"github.com/uniqush/uniqush-push/log"
 	"github.com/uniqush/uniqush-push/push"
 )
 
@@ -49,18 +49,18 @@ func extractLogLevel(loglevel string) (int, string) {
 	var level int
 	switch strings.ToLower(loglevel) {
 	case "alert":
-		level = log.LOGLEVEL_ALERT
+		level = log.LevelAlert
 	case "error":
-		level = log.LOGLEVEL_ERROR
+		level = log.LevelError
 	case "warn", "warning":
-		level = log.LOGLEVEL_WARN
+		level = log.LevelWarn
 	case "standard", "verbose", "info":
-		level = log.LOGLEVEL_INFO
+		level = log.LevelInfo
 	case "debug":
-		level = log.LOGLEVEL_DEBUG
+		level = log.LevelDebug
 	default:
 		warningMsg = fmt.Sprintf("Unsupported loglevel %q. Supported values: alert, error, warn/warning, standard/verbose/info, and debug", loglevel)
-		level = log.LOGLEVEL_INFO
+		level = log.LevelInfo
 	}
 	return level, warningMsg
 }
@@ -89,7 +89,7 @@ func loadLogger(writer io.Writer, c *conf.ConfigFile, field string, prefix strin
 	if logswitch {
 		level, warningMsg = extractLogLevel(loglevel)
 	} else {
-		level = log.LOGLEVEL_SILENT
+		level = log.LevelSilent
 	}
 
 	logger := log.NewLogger(writer, prefix, level)

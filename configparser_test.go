@@ -4,8 +4,8 @@ import (
 	"fmt"
 	"testing"
 
-	"github.com/uniqush/log"
 	"github.com/uniqush/uniqush-push/db"
+	"github.com/uniqush/uniqush-push/log"
 	"github.com/uniqush/uniqush-push/push"
 	"github.com/uniqush/uniqush-push/testutil"
 )
@@ -50,11 +50,11 @@ func TestExtractLogLevel(t *testing.T) {
 		testutil.ExpectStringEquals(t, "", warningMsg, "expected no warning")
 		testutil.ExpectEquals(t, level, actualLevel, "expected log level to be parsed")
 	}
-	expectLogLevelForName(log.LOGLEVEL_WARN, "warn")
-	expectLogLevelForName(log.LOGLEVEL_ERROR, "error")
-	expectLogLevelForName(log.LOGLEVEL_INFO, "standard")
+	expectLogLevelForName(log.LevelWarn, "warn")
+	expectLogLevelForName(log.LevelError, "error")
+	expectLogLevelForName(log.LevelInfo, "standard")
 
 	level, warningMsg := extractLogLevel("blue")
 	testutil.ExpectStringEquals(t, `Unsupported loglevel "blue". Supported values: alert, error, warn/warning, standard/verbose/info, and debug`, warningMsg, "expected a warning message")
-	testutil.ExpectEquals(t, log.LOGLEVEL_INFO, level, "expected INFO level fallback")
+	testutil.ExpectEquals(t, log.LevelInfo, level, "expected INFO level fallback")
 }

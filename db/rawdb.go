@@ -18,7 +18,7 @@
 package db
 
 import (
-	"github.com/uniqush/log"
+	"github.com/uniqush/uniqush-push/log"
 	"github.com/uniqush/uniqush-push/push"
 )
 

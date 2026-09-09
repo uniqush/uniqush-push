@@ -9,8 +9,8 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/uniqush/log"
 	"github.com/uniqush/uniqush-push/db"
+	"github.com/uniqush/uniqush-push/log"
 	"github.com/uniqush/uniqush-push/push"
 )
 
@@ -27,7 +27,7 @@ import (
 func silentLoggers() []log.Logger {
 	loggers := make([]log.Logger, NumberOfLoggers)
 	for i := range loggers {
-		loggers[i] = log.NewLogger(io.Discard, "[test]", log.LOGLEVEL_SILENT)
+		loggers[i] = log.NewLogger(io.Discard, "[test]", log.LevelSilent)
 	}
 	return loggers
 }
