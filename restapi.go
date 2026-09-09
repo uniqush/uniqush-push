@@ -293,6 +293,15 @@ func (api *RestAPI) changeSubscription(kv map[string]string, logger log.Logger, 
 		logger.Errorf("From=%v Service=%v Cannot get subscriber: %v", remoteAddr, service, err)
 		return APIResponseDetails{From: &remoteAddr, Service: &service, Code: UNIQUSH_ERROR_CANNOT_GET_SUBSCRIBER, ErrorMsg: strPtrOfErr(err)}
 	}
+	// The same guard the bulk path above has, and for the same reason. This one
+	// is narrower than it looks: "subscriber=" is caught earlier, because
+	// building the delivery point needs a subscriber and fails without one. A
+	// value of "," or ",,," is not -- it is a perfectly good subscriber name as
+	// far as that build is concerned, and splits into nothing here.
+	if len(subs) == 0 {
+		logger.Errorf("From=%v Service=%v NoSubscriber", remoteAddr, service)
+		return APIResponseDetails{From: &remoteAddr, Service: &service, Code: UNIQUSH_ERROR_NO_SUBSCRIBER}
+	}
 
 	var psp *push.PushServiceProvider
 	if issub {

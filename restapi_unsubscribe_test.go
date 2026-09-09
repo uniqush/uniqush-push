@@ -185,3 +185,51 @@ func TestUnsubscribeAllDevicesSurvivesAnEmptySubscriber(t *testing.T) {
 		}
 	}
 }
+
+// TestSubscriptionChangesSurviveACommaOnlySubscriber covers the ordinary
+// /subscribe and /unsubscribe path, which this PR does not otherwise change.
+//
+// "subscriber=" is caught before it can do harm, because building the delivery
+// point needs a subscriber and fails without one. "," is not: it is a
+// serviceable subscriber name as far as that build is concerned, and splits
+// into nothing afterwards -- so the handler indexed an empty slice and the
+// request died on a panic rather than an error. Both endpoints go through this
+// function.
+func TestSubscriptionChangesSurviveACommaOnlySubscriber(t *testing.T) {
+	registerAddPSPTestTypeOnce.Do(func() {
+		if err := push.GetPushServiceManager().RegisterPushServiceType(&echoingPushServiceType{}); err != nil {
+			t.Fatalf("Could not register the test push service type: %v", err)
+		}
+	})
+
+	for _, endpoint := range []string{AddDeliveryPointToServiceURL, RemoveDeliveryPointFromServiceURL} {
+		for _, subscriber := range []string{"", ",", ",,,"} {
+			form := url.Values{
+				"service":         {"chat"},
+				"subscriber":      {subscriber},
+				"pushservicetype": {addPSPTestType},
+				"devtoken":        {"abcdef"},
+			}
+
+			psm := push.GetPushServiceManager()
+			database := &unsubscribeAllDatabase{}
+			api := NewRestAPI(psm, silentLoggers(), "test", NewPushBackEnd(psm, database, silentLoggers()))
+
+			recorder := httptest.NewRecorder()
+			request := httptest.NewRequest(http.MethodPost, endpoint, strings.NewReader(form.Encode()))
+			request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+			api.ServeHTTP(recorder, request)
+
+			var response APISimpleResponse
+			body := strings.TrimSpace(recorder.Body.String())
+			if err := json.Unmarshal([]byte(body), &response); err != nil {
+				t.Errorf("%s with subscriber=%q answered %q, which is not a response: %v",
+					endpoint, subscriber, body, err)
+				continue
+			}
+			if response.Details.Code == UNIQUSH_SUCCESS {
+				t.Errorf("%s accepted subscriber=%q", endpoint, subscriber)
+			}
+		}
+	}
+}

@@ -84,6 +84,9 @@ REST API:
   alternative was `/subscriptions` followed by an `/unsubscribe` per device, which races anything that
   subscribes in between. Removing nothing is a success, and the response reports `devicesRemoved`. Neither
   name may contain a wildcard.
+- Bugfix: `/subscribe` and `/unsubscribe` reject a subscriber of `,` or `,,,` instead of crashing the
+  request. Such a value is a serviceable subscriber name to the code that builds the device, and splits into
+  nothing afterwards, so the handler indexed an empty list. An empty `subscriber=` was already refused.
 - Security: `/subscriptions` withholds a Web Push subscription's `auth` secret unless
   `include_subscription_secrets=1` is passed. A `devtoken` or a `regid` is useless without the provider
   credentials uniqush holds, but `endpoint`, `p256dh` and `auth` together are everything needed to push to
