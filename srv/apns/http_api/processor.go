@@ -3,6 +3,7 @@ package http_api //nolint:revive
 
 import (
 	"bytes"
+	"context"
 	"crypto/rand"
 	"crypto/tls"
 	"encoding/hex"
@@ -13,6 +14,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"golang.org/x/net/http2"
@@ -79,6 +81,40 @@ type HTTPPushRequestProcessor struct {
 	// now is overridden by tests that need to move through the token refresh
 	// window without waiting for it.
 	now func() time.Time
+
+	// timeout is the per-request deadline, in nanoseconds, as an atomic because
+	// SetPushServiceConfig can run while pushes are in flight. Zero means the
+	// default.
+	timeout atomic.Int64
+}
+
+// defaultRequestTimeout is how long one request to APNs has to complete, and is
+// what request_timeout in the [apns] section overrides.
+//
+// Twenty seconds because that is what this backend has always waited. The other
+// two default to thirty; nobody asked for their APNs pushes to start waiting
+// half as long again on the strength of a change about making the value
+// configurable.
+const defaultRequestTimeout = 20 * time.Second
+
+// minRequestTimeout and maxRequestTimeout bound request_timeout. Below a second
+// nothing completes, so a smaller value would only fail every push; above five
+// minutes the caller waiting on /push has given up long before uniqush does.
+const (
+	minRequestTimeout = 1 * time.Second
+	maxRequestTimeout = 5 * time.Minute
+)
+
+// optionRequestTimeout is the uniqush.conf option, in the [apns] section,
+// holding a per-request timeout in seconds.
+const optionRequestTimeout = "request_timeout"
+
+// requestTimeout is the deadline for one request to APNs.
+func (prp *HTTPPushRequestProcessor) requestTimeout() time.Duration {
+	if timeout := prp.timeout.Load(); timeout > 0 {
+		return time.Duration(timeout)
+	}
+	return defaultRequestTimeout
 }
 
 // NewRequestProcessor returns a new HTTPPushProcessor using net/http DefaultClient connection pool
@@ -329,7 +365,9 @@ func (prp *HTTPPushRequestProcessor) SetClock(now func() time.Time) {
 func defaultClientFactory(transport *http.Transport) HTTPClient {
 	return &http.Client{
 		Transport: transport,
-		Timeout:   20 * time.Second,
+		// No client-level Timeout: sendRequest gives every attempt a context
+		// carrying the configured deadline. See defaultRequestTimeout.
+		Timeout: 0,
 		// Redirects are refused, not followed.
 		//
 		// APNs does not redirect, so nothing is lost -- and following one would
@@ -435,8 +473,17 @@ func (prp *HTTPPushRequestProcessor) Finalize() {
 // SetErrorReportChan will set the report chan used for asynchronous feedback that is not associated with a request. (not needed when using APNs's HTTP/2 API, but needed for the binary API)
 func (prp *HTTPPushRequestProcessor) SetErrorReportChan(errChan chan<- push.Error) {}
 
-// SetPushServiceConfig is called during initialization to provide the unserialized contents of uniqush.conf. (does nothing for cloud messaging)
-func (prp *HTTPPushRequestProcessor) SetPushServiceConfig(c *push.PushServiceConfig) {}
+// SetPushServiceConfig is called during initialization to provide the
+// unserialized contents of uniqush.conf.
+//
+// request_timeout is written unconditionally, so that deleting the option
+// restores the default rather than leaving whatever an earlier config set.
+func (prp *HTTPPushRequestProcessor) SetPushServiceConfig(c *push.PushServiceConfig) {
+	if c == nil {
+		return
+	}
+	prp.timeout.Store(int64(c.GetSeconds(optionRequestTimeout, defaultRequestTimeout, minRequestTimeout, maxRequestTimeout)))
+}
 
 // sendRequests will send a push to one or more device tokens. It will send the response over ResChan or ErrChan.
 func (prp *HTTPPushRequestProcessor) sendRequests(request *common.PushRequest) {
@@ -721,6 +768,14 @@ func (prp *HTTPPushRequestProcessor) sendRequest(wg *sync.WaitGroup, client HTTP
 
 	errChan := request.ErrChan
 
+	// The deadline lives here rather than on the client, because clients are
+	// cached for the life of a provider: one built before a reconfiguration
+	// would go on enforcing the old timeout, and would silently cap a longer one
+	// configured later.
+	ctx, cancel := context.WithTimeout(context.Background(), prp.requestTimeout())
+	defer cancel()
+	httpRequest = httpRequest.WithContext(ctx)
+
 	response, responseBody, err := doRequest(client, httpRequest, request.Payload)
 	if err != nil {
 		errChan <- err
@@ -756,7 +811,14 @@ func (prp *HTTPPushRequestProcessor) sendRequest(wg *sync.WaitGroup, client HTTP
 			token.noteRefused(signingBucket, prp.currentTime())
 		}
 
-		retry := httpRequest.Clone(httpRequest.Context())
+		// A deadline of its own, not the one the first attempt was running
+		// against. This retry is a second request to Apple, and a client-level
+		// Timeout gave it a full budget; sharing one would mean a slow first
+		// attempt leaving the fallback no time to run, under exactly the load
+		// that produces the 429 being recovered from.
+		retryCtx, retryCancel := context.WithTimeout(context.Background(), prp.requestTimeout())
+		defer retryCancel()
+		retry := httpRequest.Clone(retryCtx)
 		retry.Body = io.NopCloser(bytes.NewReader(request.Payload))
 		retry.Header["authorization"] = []string{fallbackAuthorization}
 

@@ -46,6 +46,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"golang.org/x/oauth2"
@@ -69,9 +70,27 @@ const (
 	// connection; this caps how many are in flight per push.
 	maxConcurrentPushes = 32
 
-	// requestTimeout applies per request. Google's scaling guide asks for at
-	// least 10 seconds before retrying.
-	requestTimeout = 30 * time.Second
+	// defaultRequestTimeout applies per push, and is what request_timeout in
+	// the [fcm] section overrides. Google's scaling guide asks for at least 10
+	// seconds before retrying.
+	defaultRequestTimeout = 30 * time.Second
+
+	// minRequestTimeout and maxRequestTimeout bound request_timeout. Below a
+	// second nothing on the public internet completes, so a smaller value would
+	// only fail every push; above five minutes the caller waiting on /push has
+	// given up long before uniqush does.
+	minRequestTimeout = 1 * time.Second
+	maxRequestTimeout = 5 * time.Minute
+
+	// optionRequestTimeout is the uniqush.conf option, in this push service's
+	// own section, holding a per-push timeout in seconds.
+	optionRequestTimeout = "request_timeout"
+
+	// tokenFetchTimeout bounds an OAuth2 token fetch, which is a different
+	// operation from a push: it is Google's token endpoint rather than FCM, it
+	// happens once per hour per provider rather than once per device, and it is
+	// not the thing request_timeout is about. Fixed, and generous.
+	tokenFetchTimeout = 30 * time.Second
 
 	// defaultTTLSeconds matches the legacy backend's default of one hour.
 	defaultTTLSeconds = 60 * 60
@@ -107,6 +126,12 @@ type pushService struct {
 	// clientFactory is overridden by tests to avoid needing real credentials.
 	clientFactory func(psp *push.PushServiceProvider) (HTTPClient, error)
 
+	// timeout is the per-push deadline, in nanoseconds, as an atomic because
+	// SetPushServiceConfig can run while pushes are in flight. Zero means the
+	// default; it is only zero before the first configuration, which is a state
+	// reachable by an embedder that never registers this service.
+	timeout atomic.Int64
+
 	errChan chan<- push.Error
 }
 
@@ -126,7 +151,27 @@ func (ps *pushService) Name() string { return ps.name }
 
 func (ps *pushService) SetErrorReportChan(errChan chan<- push.Error) { ps.errChan = errChan }
 
-func (ps *pushService) SetPushServiceConfig(_ *push.PushServiceConfig) {}
+// requestTimeout is the deadline for one push request.
+func (ps *pushService) requestTimeout() time.Duration {
+	if timeout := ps.timeout.Load(); timeout > 0 {
+		return time.Duration(timeout)
+	}
+	return defaultRequestTimeout
+}
+
+// SetPushServiceConfig reads the optional config section named after this push
+// service, i.e. [fcm] or [gcm] in uniqush-push.conf. A server that registers
+// both names configures them separately, since they are two registrations of
+// this type.
+//
+// request_timeout is written unconditionally, so that deleting the option
+// restores the default rather than leaving whatever an earlier config set.
+func (ps *pushService) SetPushServiceConfig(c *push.PushServiceConfig) {
+	if c == nil {
+		return
+	}
+	ps.timeout.Store(int64(c.GetSeconds(optionRequestTimeout, defaultRequestTimeout, minRequestTimeout, maxRequestTimeout)))
+}
 
 func (ps *pushService) Finalize() {
 	ps.clientsLock.Lock()
@@ -193,11 +238,16 @@ func (ps *pushService) newAuthenticatedClient(psp *push.PushServiceProvider) (HT
 		ExpectContinueTimeout: 1 * time.Second,
 		ForceAttemptHTTP2:     true,
 	}
-	base := &http.Client{Transport: transport, Timeout: requestTimeout}
+	base := &http.Client{Transport: transport, Timeout: tokenFetchTimeout}
 	ctx := context.WithValue(context.Background(), oauth2.HTTPClient, base)
 
 	client := oauth2.NewClient(ctx, credentials.TokenSource)
-	client.Timeout = requestTimeout
+	// No Timeout on the client that sends pushes: pushOne gives every request a
+	// context carrying the configured deadline. A client-level timeout would be
+	// a second, invisible one -- fixed at whatever request_timeout said when
+	// this client was built, and silently overriding a longer value configured
+	// later, since these clients are cached for the life of the provider.
+	client.Timeout = 0
 	return client, nil
 }
 
@@ -533,7 +583,7 @@ func (ps *pushService) pushOne(client HTTPClient, url string, psp *push.PushServ
 		return result
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), requestTimeout)
+	ctx, cancel := context.WithTimeout(context.Background(), ps.requestTimeout())
 	defer cancel()
 
 	request, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(encoded))

@@ -103,8 +103,16 @@ const (
 	// latency; unbounded goroutines would be a poor neighbour to both.
 	maxConcurrentPushes = 16
 
-	// requestTimeout applies per push.
-	requestTimeout = 30 * time.Second
+	// defaultRequestTimeout applies per push, and is what request_timeout in
+	// this service's config section overrides.
+	defaultRequestTimeout = 30 * time.Second
+
+	// minRequestTimeout and maxRequestTimeout bound request_timeout. Below a
+	// second nothing on the public internet completes, so a smaller value would
+	// only fail every push; above five minutes the caller waiting on /push has
+	// given up long before uniqush does.
+	minRequestTimeout = 1 * time.Second
+	maxRequestTimeout = 5 * time.Minute
 
 	// defaultRetryAfter is used when a push server rate-limits us without
 	// saying for how long.
@@ -119,6 +127,11 @@ type pushService struct {
 	// name is the registered pushservicetype, so the same implementation can
 	// serve both "webpush" and "unifiedpush".
 	name string
+
+	// timeout is the per-push deadline, in nanoseconds. Atomic for the same
+	// reason as recordSize below. Zero means the default, which is only the
+	// case before the first configuration.
+	timeout atomic.Int64
 
 	// recordSize is the RFC 8188 record size every push is padded to, and so
 	// also the size of every POST body. See defaultRecordSize.
@@ -147,6 +160,14 @@ func (ps *pushService) endpointPolicy() *EndpointPolicy {
 	return ps.policy.Load()
 }
 
+// requestTimeout is the deadline for one push request.
+func (ps *pushService) requestTimeout() time.Duration {
+	if timeout := ps.timeout.Load(); timeout > 0 {
+		return time.Duration(timeout)
+	}
+	return defaultRequestTimeout
+}
+
 // maxPayloadSize is the largest plaintext that fits in one record.
 func (ps *pushService) maxPayloadSize() int {
 	return int(ps.recordSize.Load()) - contentCodingHeaderSize - gcmTagSize - paddingDelimiterSize
@@ -172,7 +193,10 @@ func NewPushService(name string) push.PushServiceType {
 // push. Supplying one is not optional for a long-lived server.
 func newHTTPClient() *http.Client {
 	return &http.Client{
-		Timeout: requestTimeout,
+		// No client-level Timeout: every push carries a context with the
+		// configured deadline, and a second timeout fixed at construction
+		// would silently cap a longer request_timeout set later.
+		Timeout: 0,
 		// The UnifiedPush spec: "Redirects MUST NOT be followed on push
 		// endpoints." Go's default follows up to 10, which would also sidestep
 		// the SSRF checks in EndpointPolicy, since only the first URL is vetted.
@@ -210,7 +234,10 @@ func (ps *pushService) SetErrorReportChan(errChan chan<- push.Error) {
 // allow_private_addresses and allowed_hosts exist for self-hosted push servers,
 // which are a first-class UnifiedPush use case and may legitimately live on a
 // private network. record_size trades egress against client compatibility; see
-// defaultRecordSize.
+// defaultRecordSize. request_timeout is how long one push server has to answer,
+// which matters more here than for the vendor backends: the endpoint is chosen
+// by whoever called /subscribe, so its latency is not something uniqush can
+// assume anything about.
 func (ps *pushService) SetPushServiceConfig(c *push.PushServiceConfig) {
 	if c == nil {
 		return
@@ -253,7 +280,15 @@ func (ps *pushService) SetPushServiceConfig(c *push.PushServiceConfig) {
 		recordSize = uint32(size)
 	}
 	ps.recordSize.Store(recordSize)
+
+	// Unconditional for the same reason, and bounded because a push server on
+	// the far side of the internet is not uniqush's to wait on indefinitely.
+	ps.timeout.Store(int64(c.GetSeconds(optionRequestTimeout, defaultRequestTimeout, minRequestTimeout, maxRequestTimeout)))
 }
+
+// optionRequestTimeout is the uniqush.conf option, in this push service's own
+// section, holding a per-push timeout in seconds.
+const optionRequestTimeout = "request_timeout"
 
 // BuildPushServiceProviderFromMap reads the VAPID identity for a service.
 //
@@ -538,7 +573,7 @@ func (ps *pushService) pushOne(psp *push.PushServiceProvider, dp *push.DeliveryP
 	message := make([]byte, len(payload))
 	copy(message, payload)
 
-	ctx, cancel := context.WithTimeout(context.Background(), requestTimeout)
+	ctx, cancel := context.WithTimeout(context.Background(), ps.requestTimeout())
 	defer cancel()
 
 	response, err := webpush.SendNotificationWithContext(ctx, message, subscription, options)

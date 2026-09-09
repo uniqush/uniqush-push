@@ -1,0 +1,132 @@
+package fcm
+
+import (
+	"net/http"
+	"testing"
+	"time"
+
+	"github.com/uniqush/uniqush-push/conf"
+	"github.com/uniqush/uniqush-push/push"
+)
+
+// configureTimeout applies a [fcm] section holding request_timeout, or one
+// holding nothing when present is false.
+func configureTimeout(t *testing.T, service *pushService, value string, present bool) {
+	t.Helper()
+	file := conf.NewConfigFile()
+	if present {
+		file.AddOption("fcm", "request_timeout", value)
+	}
+	service.SetPushServiceConfig(push.NewPushServiceConfig(file, "fcm"))
+}
+
+// deadlineOfNextPush sends one push and reports how long the request it made
+// had left to run.
+func deadlineOfNextPush(t *testing.T, service *pushService) time.Duration {
+	t.Helper()
+	var remaining time.Duration
+	var seen bool
+	service.OverrideClientFactory(func(*push.PushServiceProvider) (HTTPClient, error) {
+		return &http.Client{Transport: roundTripFunc(func(r *http.Request) (*http.Response, error) {
+			if deadline, ok := r.Context().Deadline(); ok {
+				remaining = time.Until(deadline)
+				seen = true
+			}
+			return newResponse(200, `{"name":"n"}`, nil), nil
+		})}, nil
+	})
+	psp := newTestPSP(t, service)
+	dp := newTestDP(t, service, "token-1")
+	if result := pushOnce(t, service, psp, dp, &push.Notification{Data: map[string]string{"msg": "x"}}); result.Err != nil {
+		t.Fatalf("Unexpected error: %v", result.Err)
+	}
+	if !seen {
+		t.Fatal("The request carried no deadline, so nothing bounds a push that never answers")
+	}
+	return remaining
+}
+
+// expectAbout checks a deadline is the configured one, allowing for the time
+// between setting it and reading it.
+func expectAbout(t *testing.T, got, want time.Duration) {
+	t.Helper()
+	if got > want || got < want-5*time.Second {
+		t.Errorf("Expected a deadline of about %v, got %v", want, got)
+	}
+}
+
+// TestRequestTimeoutIsConfigurable is the point of #272: 30 seconds is a
+// reasonable default and a bad fit for a caller that expects /push to answer
+// within five.
+func TestRequestTimeoutIsConfigurable(t *testing.T) {
+	service := newTestService(t, "fcm", nil)
+	defer service.Finalize()
+
+	configureTimeout(t, service, "5", true)
+	expectAbout(t, deadlineOfNextPush(t, service), 5*time.Second)
+}
+
+// TestRequestTimeoutFallsBackToTheDefault covers every way of not asking for a
+// timeout, including the reconfiguration that removes one.
+//
+// The setting is stored unconditionally, so a config that no longer names it
+// has to restore the default rather than leave the previous value in place --
+// the same rule allow_non_apple_endpoints and record_size follow.
+func TestRequestTimeoutFallsBackToTheDefault(t *testing.T) {
+	service := newTestService(t, "fcm", nil)
+	defer service.Finalize()
+
+	testCases := []struct {
+		name    string
+		value   string
+		present bool
+	}{
+		{name: "never configured", present: false},
+		{name: "removed after being set", present: false},
+		{name: "not a number", value: "quickly", present: true},
+		{name: "below the minimum", value: "0", present: true},
+		{name: "beyond the maximum", value: "3600", present: true},
+	}
+	for _, testCase := range testCases {
+		t.Run(testCase.name, func(t *testing.T) {
+			configureTimeout(t, service, "5", true)
+			configureTimeout(t, service, testCase.value, testCase.present)
+			expectAbout(t, deadlineOfNextPush(t, service), defaultRequestTimeout)
+		})
+	}
+}
+
+// TestRequestTimeoutActuallyStopsAPush proves the deadline is enforced rather
+// than merely attached.
+//
+// The client no longer carries a Timeout of its own -- it cannot, being cached
+// for the life of a provider, since it would freeze whatever the timeout was
+// when it was built -- so the context is the only thing standing between a push
+// and a push server that never answers.
+func TestRequestTimeoutActuallyStopsAPush(t *testing.T) {
+	service := newTestService(t, "fcm", nil)
+	defer service.Finalize()
+	configureTimeout(t, service, "1", true)
+
+	service.OverrideClientFactory(func(*push.PushServiceProvider) (HTTPClient, error) {
+		return &http.Client{Transport: roundTripFunc(func(r *http.Request) (*http.Response, error) {
+			<-r.Context().Done()
+			return nil, r.Context().Err()
+		})}, nil
+	})
+
+	psp := newTestPSP(t, service)
+	dp := newTestDP(t, service, "token-1")
+
+	start := time.Now()
+	result := pushOnce(t, service, psp, dp, &push.Notification{Data: map[string]string{"msg": "x"}})
+	if result.Err == nil {
+		t.Fatal("Expected a push that outran its timeout to fail")
+	}
+	if _, isConnection := result.Err.(*push.ConnectionError); !isConnection {
+		t.Errorf("Expected a ConnectionError, got %T: %v", result.Err, result.Err)
+	}
+	if elapsed := time.Since(start); elapsed > 10*time.Second {
+		t.Errorf("Expected the push to give up after about a second, took %v", elapsed)
+	}
+}
