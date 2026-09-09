@@ -211,8 +211,9 @@ settings control where HTTP/2 pushes actually go:
 
 - `endpoint` — the base URL to push to, e.g. `https://api.sandbox.push.apple.com`.
   uniqush appends `/3/device/<token>`, so it must have no path, query or
-  fragment. Omitted, the environment is inferred from `addr` exactly as it was
-  before this setting existed.
+  fragment. Omitted, pushes go to the environment recorded at `/addpsp` — the
+  one `sandbox` selected, or the one a legacy `addr` implies for a provider
+  registered before uniqush recorded it.
 - `cacert` — a PEM bundle to verify that endpoint against. Prefer this to
   `skipverify` when testing: the certificate and hostname are still checked, so
   a simulator has to present one you actually issued.

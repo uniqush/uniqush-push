@@ -37,8 +37,23 @@ import (
 // and how that destination is trusted.
 const (
 	// EndpointKey holds an explicit base URL, e.g. "https://localhost:8443".
-	// When absent, the destination is derived from AddrKey; see ResolveEndpoint.
+	// When absent, the destination comes from EnvironmentKey, or from AddrKey
+	// for a provider stored before an environment was recorded; see
+	// ResolveEndpoint.
 	EndpointKey = "endpoint"
+
+	// EnvironmentKey names which of Apple's two environments a provider pushes
+	// to: EnvironmentProduction or EnvironmentDevelopment. Written by /addpsp,
+	// from the sandbox parameter or -- for a caller still sending one -- from
+	// addr. A provider registered before this existed and not re-registered
+	// since does not have one, and is routed by its AddrKey instead.
+	//
+	// It exists because the answer used to be inferred from AddrKey, a
+	// binary-protocol host:port that nothing has connected to since Apple shut
+	// that protocol down. Storing the environment says what is meant instead of
+	// leaving it to be read back out of the name of a gateway that no longer
+	// exists.
+	EnvironmentKey = "environment"
 
 	// CACertKey holds a path to a PEM bundle to verify the endpoint against,
 	// instead of the system roots.
@@ -47,9 +62,14 @@ const (
 	// SkipVerifyKey disables certificate verification entirely when "true".
 	SkipVerifyKey = "skipverify"
 
-	// AddrKey is the binary protocol's host:port. It predates EndpointKey and
-	// is still what selects between Apple's two environments for providers that
-	// do not set an endpoint.
+	// AddrKey is the binary protocol's host:port.
+	//
+	// Read, never written. /addpsp still accepts it, because scripts that
+	// registered providers years ago still send it, but what it records now is
+	// EnvironmentKey. It is read for providers stored before that changed:
+	// their VolatileData has an addr and no environment, and the environment
+	// they have been pushing to for years is the one encoded in that string.
+	// See ResolveEndpoint.
 	AddrKey = "addr"
 
 	// CredentialRevisionKey holds a digest of the credential *files* a provider
@@ -75,23 +95,60 @@ const (
 	HostDevelopment = "https://api.development.push.apple.com"
 )
 
+// The values EnvironmentKey takes.
+const (
+	EnvironmentProduction  = "production"
+	EnvironmentDevelopment = "development"
+)
+
+// EnvironmentFromAddr reads an environment out of a binary protocol gateway
+// address.
+//
+// An addr naming a sandbox gateway, or one of Apple's api.development. hosts,
+// is the development environment; anything else is production.
+//
+// A substring match rather than a comparison against Apple's documented gateway
+// hostnames, because addr also accepted a host:port for a local
+// binary-protocol simulator, and those were conventionally named after the
+// environment they stood in for. This is the rule ResolveEndpoint has always
+// applied to addr, kept exactly as it was, and it is now applied in two places:
+// /addpsp translates an incoming addr through it, and ResolveEndpoint falls
+// back to it for a provider stored with an addr and no recorded environment.
+func EnvironmentFromAddr(addr string) string {
+	if strings.Contains(addr, "sandbox") || strings.Contains(addr, "api.development.") {
+		return EnvironmentDevelopment
+	}
+	return EnvironmentProduction
+}
+
 // ResolveEndpoint returns the base URL HTTP/2 pushes for this provider go to.
 //
-// An explicit endpoint wins. Without one the environment is inferred from the
-// binary protocol's addr, which is how this worked before endpoints could be
-// configured at all, and which is why every provider created before this change
-// keeps sending exactly where it used to.
+// Three sources, in order, and the order is the compatibility story:
 //
-// The inference is a substring match rather than a comparison against the two
-// documented gateway hostnames, because addr also accepts a host:port for a
-// local binary-protocol simulator, and those were conventionally named after
-// the environment they stood in for.
+//   - An explicit endpoint, which an operator set to point a service at a
+//     simulator or a relay, wins over anything inferred.
+//   - The environment recorded at /addpsp.
+//   - The binary protocol's addr, for providers stored before uniqush recorded
+//     an environment. Their VolatileData has an addr and nothing else to go on,
+//     and the environment encoded in that string is the one they have been
+//     pushing to for years. Nothing writes addr any more; this is the only
+//     thing that reads it.
+//
+// A provider with none of the three goes to production, which is both the old
+// default and the safe one: a development token is refused by production with
+// BadDeviceToken, where a production token pushed to development is accepted
+// and silently delivered nowhere.
 func ResolveEndpoint(psp *push.PushServiceProvider) string {
 	if endpoint := strings.TrimSpace(psp.VolatileData[EndpointKey]); endpoint != "" {
 		return strings.TrimSuffix(endpoint, "/")
 	}
-	addr := psp.VolatileData[AddrKey]
-	if strings.Contains(addr, "sandbox") || strings.Contains(addr, "api.development.") {
+	if environment := psp.VolatileData[EnvironmentKey]; environment != "" {
+		if environment == EnvironmentDevelopment {
+			return HostDevelopment
+		}
+		return HostProduction
+	}
+	if EnvironmentFromAddr(psp.VolatileData[AddrKey]) == EnvironmentDevelopment {
 		return HostDevelopment
 	}
 	return HostProduction

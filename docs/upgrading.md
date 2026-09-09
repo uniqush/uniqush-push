@@ -137,10 +137,16 @@ to the `/addpsp` call.** Do **not** use `/rmpsp` followed by `/addpsp`: in
 `/addpsp` for `apns` accepts `endpoint` (the base URL HTTP/2 pushes go to) and
 `cacert` (a PEM bundle to verify it against), which together make it possible
 to point uniqush at a simulator or a relay without disabling certificate
-verification. A provider that sets neither keeps sending exactly where it did
-before: the environment is still inferred from the binary protocol's `addr`.
-Both are cleared when omitted from a later `/addpsp`, the same way `bundleid`
-has always behaved.
+verification. `endpoint` and `cacert` are each cleared when omitted from a
+later `/addpsp`, the same way `bundleid` has always behaved.
+
+A provider that sets neither keeps sending exactly where it did before. One
+stored with an `addr` is still routed by that `addr`; a new `/addpsp` records
+an `environment` instead, taken from `sandbox` — or from an `addr`, if your
+registration still sends one. Unlike `endpoint` and `cacert`, `environment` is
+never cleared: it is rewritten on every registration and defaults to
+production, so a script that stops passing `sandbox=true` moves that service
+back to production rather than leaving it where it was.
 
 Two things are refused that were not before:
 

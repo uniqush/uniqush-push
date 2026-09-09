@@ -19,6 +19,14 @@ APNs:
   and `mutable-content` is sent as the number `1` rather than the string `"1"`, which iOS ignores. A push
   sending one of these keys and expecting it to arrive as custom data beside `aps` will now find it inside
   `aps`; `uniqush.payload.apns` sends a payload verbatim if that is what you need.
+- Change: `/addpsp` records which of Apple's two environments a provider pushes to, as `environment`
+  (`production` or `development`), instead of storing `addr` -- the retired binary protocol's gateway
+  host:port, which nothing has connected to since 2021 and whose only remaining job was to be searched for
+  the substrings that named an environment ("sandbox", or one of Apple's `api.development.` hosts). `addr` is still accepted, and still selects the same environment it always did, so
+  a registration script that has always sent it keeps working; it is simply no longer stored. A provider
+  registered before this and not re-registered keeps its `addr` and no `environment`, and is still routed by
+  that `addr`, so no device re-subscribes and no service moves. `/psps` reports whichever of the two a
+  provider actually carries: `environment` once it has been registered again, and `addr` until then.
 - Removal: `pool_size` in the `[apns]` config section. It sized the binary protocol's pool of TCP
   connections; HTTP/2 multiplexes a provider's pushes over one connection. A `pool_size` left in
   `uniqush.conf` is ignored rather than rejected.

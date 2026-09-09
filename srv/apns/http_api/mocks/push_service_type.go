@@ -18,19 +18,42 @@ func (pst *MockPushServiceType) BuildPushServiceProviderFromMap(kv map[string]st
 	for key, value := range kv {
 		switch key {
 		// Everything that can change without changing the provider's identity.
-		// endpoint and cacert belong here for the same reason addr does: a name
-		// hashes FixedData, so anything an operator may need to update in place
-		// has to stay out of it.
+		// A name hashes FixedData, so anything an operator may need to update in
+		// place -- the environment a service pushes to, where it pushes, how
+		// that destination is trusted -- has to stay out of it.
+		//
+		// addr is not among them. It is accepted below and translated into an
+		// environment, exactly as /addpsp does, and stored no more than /addpsp
+		// stores it.
 		//
 		// Named by the constants rather than by literals, so a rename in
 		// srv/apns/common reaches this mock too. A mock that silently disagreed
 		// with the provider it stands in for would make the tests using it
 		// prove the wrong thing.
-		case common.AddrKey, common.SkipVerifyKey, common.EndpointKey, common.CACertKey, "bundleid":
+		case common.EnvironmentKey, common.SkipVerifyKey, common.EndpointKey, common.CACertKey, "bundleid":
 			psp.VolatileData[key] = value
 		case "service", "pushservicetype", "cert", "subscriber", "key":
 			psp.FixedData[key] = value
 		}
+	}
+
+	// Which of Apple's environments the provider pushes to, resolved the way the
+	// real builder resolves it, and -- like the real builder -- without storing
+	// the addr it may have come from. A mock that stored an addr would let tests
+	// pass against provider data /addpsp would never write, and ResolveEndpoint
+	// reads the two by different rules.
+	//
+	// After the loop rather than inside it: kv may carry both an addr and an
+	// explicit environment, and deciding between them on map iteration order
+	// would make the provider a mock builds depend on which key came out first.
+	if _, explicit := psp.VolatileData[common.EnvironmentKey]; !explicit {
+		environment := common.EnvironmentProduction
+		if kv["sandbox"] == "true" {
+			environment = common.EnvironmentDevelopment
+		} else if addr, ok := kv[common.AddrKey]; ok {
+			environment = common.EnvironmentFromAddr(addr)
+		}
+		psp.VolatileData[common.EnvironmentKey] = environment
 	}
 
 	// The real builder records this once it has validated the credential files,

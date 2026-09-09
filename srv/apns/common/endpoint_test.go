@@ -47,6 +47,48 @@ func TestResolveEndpointKeepsExistingProvidersWhereTheyWere(t *testing.T) {
 	}
 }
 
+// TestResolveEndpointReadsTheRecordedEnvironment covers what /addpsp writes
+// now, in place of a binary protocol gateway address.
+func TestResolveEndpointReadsTheRecordedEnvironment(t *testing.T) {
+	cases := []struct {
+		environment string
+		want        string
+	}{
+		{EnvironmentProduction, HostProduction},
+		{EnvironmentDevelopment, HostDevelopment},
+		// Anything that is not the development environment is the production
+		// one. A provider whose environment has been edited into nonsense
+		// should push to the environment where a wrong token is refused rather
+		// than the one where it is accepted and delivered nowhere.
+		{"prod", HostProduction},
+		{"nonsense", HostProduction},
+	}
+	for _, testCase := range cases {
+		got := ResolveEndpoint(pspWith(map[string]string{EnvironmentKey: testCase.environment}))
+		if got != testCase.want {
+			t.Errorf("environment %q: expected %s, got %s", testCase.environment, testCase.want, got)
+		}
+	}
+}
+
+// TestResolveEndpointPrefersTheEnvironmentToAStoredAddr covers the provider
+// caught mid-migration: registered before uniqush recorded an environment, and
+// re-registered since.
+//
+// Both keys are present in that case, because the stored provider is replaced
+// wholesale by the new registration -- but a provider edited by hand, or one
+// whose /addpsp still sends addr out of habit, can carry the two disagreeing.
+// The recorded environment is the one somebody decided, so it wins.
+func TestResolveEndpointPrefersTheEnvironmentToAStoredAddr(t *testing.T) {
+	psp := pspWith(map[string]string{
+		AddrKey:        "gateway.push.apple.com:2195",
+		EnvironmentKey: EnvironmentDevelopment,
+	})
+	if got := ResolveEndpoint(psp); got != HostDevelopment {
+		t.Errorf("Expected the recorded environment to win over a stored addr, got %s", got)
+	}
+}
+
 func TestResolveEndpointPrefersAnExplicitEndpoint(t *testing.T) {
 	// Note the addr says production while the endpoint says otherwise: an
 	// explicit setting has to win, or it would be impossible to point a
