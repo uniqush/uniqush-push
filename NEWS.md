@@ -43,7 +43,9 @@ Configuration:
 
 - Bugfix: A configuration file that fails to read part way through is now an error. The parser returned success
   with whatever it had managed to parse, so a truncated or unreadable `uniqush.conf` would start uniqush with
-  some of its options silently missing.
+  some of its options silently missing. A file that fails to parse is also closed rather than leaked, which the
+  fix above made reachable: the early return had been all but unreachable while read errors were being
+  swallowed.
 
 Maintenance:
 

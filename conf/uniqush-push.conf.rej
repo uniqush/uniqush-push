@@ -1,0 +1,12 @@
+--- conf/uniqush-push.conf
++++ conf/uniqush-push.conf
+@@ -57,7 +57,8 @@ pool_size=13
+ # default, so that it cannot be used to reach services inside your network.
+ #
+ # Relax that only if you run a self-hosted push server on a private network,
+-# and prefer to pair it with allowed_hosts.
++# and prefer to pair it with allowed_hosts. Both are read afresh on every
++# reconfiguration, so deleting a line closes what it opened.
+ # record_size sets the RFC 8188 record every message is padded to, and so the
+ # size of every POST body: a 20-byte wakeup ping and a 3KB notification are both
+ # exactly this many bytes on the wire. The default, 4096, is what the rest of the

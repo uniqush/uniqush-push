@@ -32,9 +32,10 @@ func (c *ConfigFile) HasSection(section string) bool {
 	return ok
 }
 
-// GetOptions returns the list of options defined in the given section.
-// It returns an error if the section does not exist and an empty list if the
-// section is empty.
+// GetOptions returns the list of options defined in the given section, or an
+// error if the section does not exist. A section that defines no options gives
+// an empty list. An empty section name means the default section, as it does
+// for the accessors.
 //
 // Only that section's options. An option in the default section is not
 // inherited by the others -- see HasOption.

@@ -7,6 +7,9 @@ package conf
 import (
 	"errors"
 	"io"
+	"os"
+	"path/filepath"
+	"runtime"
 	"sort"
 	"strings"
 	"testing"
@@ -322,6 +325,79 @@ func TestAValueBeforeAnySectionGoesToTheDefaultSection(t *testing.T) {
 	if value, err := c.GetString(DefaultSection, "k"); err != nil || value != "v" {
 		t.Errorf("Expected the default section to hold the value, got %q, %v", value, err)
 	}
+}
+
+// TestALineLongerThanTheReadBufferIsNotTruncated covers the reader's own
+// buffer, which is 4096 bytes by default.
+//
+// bufio.ReadString accumulates fragments until it finds the delimiter, so a long
+// line arrives whole. It is ReadSlice, which this does not use, that gives up
+// with ErrBufferFull. Worth a test rather than a comment: the difference is one
+// method name, and getting it wrong would silently truncate a long value -- a
+// VAPID key or a certificate path -- rather than fail.
+func TestALineLongerThanTheReadBufferIsNotTruncated(t *testing.T) {
+	value := strings.Repeat("x", 100000)
+
+	c := readOrFail(t, "[s]\nk = "+value+"\n")
+
+	got, err := c.GetString("s", "k")
+	if err != nil {
+		t.Fatalf("GetString returned %v", err)
+	}
+	if got != value {
+		t.Errorf("Expected the whole %d-byte value, got %d bytes", len(value), len(got))
+	}
+}
+
+// TestReadConfigFileClosesTheFileWhenParsingFails guards a descriptor leak: the
+// early return on a parse error skipped the Close.
+//
+// It was close to unreachable before, because Read could not report a failure --
+// it returned its nil named return value -- so almost nothing made this path
+// taken. Fixing that made the leak reachable, which is why the two changes
+// belong in the same package.
+func TestReadConfigFileClosesTheFileWhenParsingFails(t *testing.T) {
+	if runtime.GOOS != "linux" {
+		t.Skip("counts open descriptors through /proc, which is Linux only")
+	}
+
+	path := filepath.Join(t.TempDir(), "broken.conf")
+	if err := os.WriteFile(path, []byte("[s]\nthis line has no separator\n"), 0o600); err != nil {
+		t.Fatalf("Could not write the fixture: %v", err)
+	}
+
+	// One call first, so anything opened lazily on the way is already open and
+	// does not read as a leak.
+	if _, err := ReadConfigFile(path); err == nil {
+		t.Fatal("Expected the fixture to fail to parse")
+	}
+
+	before := openDescriptors(t)
+	const attempts = 50
+	for i := 0; i < attempts; i++ {
+		if _, err := ReadConfigFile(path); err == nil {
+			t.Fatal("Expected the fixture to fail to parse")
+		}
+	}
+	after := openDescriptors(t)
+
+	// Not an equality check: the runtime opens and closes descriptors of its
+	// own, and an unclosed file may still be collected by its finalizer. A leak
+	// of one per call would show up as tens.
+	if leaked := after - before; leaked > attempts/5 {
+		t.Errorf("%d failed reads left %d descriptors open (%d -> %d)",
+			attempts, leaked, before, after)
+	}
+}
+
+func openDescriptors(t *testing.T) int {
+	t.Helper()
+
+	entries, err := os.ReadDir("/proc/self/fd")
+	if err != nil {
+		t.Fatalf("Could not count open descriptors: %v", err)
+	}
+	return len(entries)
 }
 
 func TestReadConfigFileReportsAMissingFile(t *testing.T) {

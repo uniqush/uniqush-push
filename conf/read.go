@@ -16,18 +16,24 @@ import (
 // ReadConfigFile reads a file and returns a new configuration representation.
 // This representation can be queried with GetString, etc.
 func ReadConfigFile(fname string) (c *ConfigFile, err error) {
-	var file *os.File
-
-	if file, err = os.Open(fname); err != nil {
+	file, err := os.Open(fname)
+	if err != nil {
 		return nil, err
 	}
+	// Closed on every path. Returning without closing leaked the descriptor,
+	// which mattered little while Read could not report a failure -- see the
+	// comment there -- and matters now that it can.
+	defer func() {
+		closeErr := file.Close()
+		// A close error is worth reporting only when the read itself succeeded.
+		// Otherwise the read error is the one that explains what went wrong.
+		if err == nil && closeErr != nil {
+			c, err = nil, closeErr
+		}
+	}()
 
 	c = NewConfigFile()
 	if err = c.Read(file); err != nil {
-		return nil, err
-	}
-
-	if err = file.Close(); err != nil {
 		return nil, err
 	}
 
