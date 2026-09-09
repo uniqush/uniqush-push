@@ -249,7 +249,9 @@ payload. These have meaning to uniqush or a backend:
 | `sound` | apns | `aps.sound`. |
 | `img` | apns | `aps.alert.launch-image`. |
 | `title`, `title-loc-key`, `title-loc-args`, `loc-key`, `loc-args`, `action-loc-key` | apns | Placed under `aps.alert`. The two `-args` values are comma-separated lists (escape a literal comma with `\`). |
-| `content-available` | apns | `aps.content-available`, as a number. |
+| `content-available`, `mutable-content` | apns | `aps.content-available` and `aps.mutable-content`, as numbers: `1` wakes the app in the background, and `1` runs its notification service extension so it can rewrite the notification before it is shown. A value that is not a number is dropped, because iOS ignores the string `"1"` where it wants the number `1`. |
+| `category`, `thread-id`, `target-content-id`, `interruption-level` | apns | Placed in `aps` as strings: the actions the notification offers, the conversation it groups under, the window it targets, and how far it may interrupt (`passive`, `active`, `time-sensitive` or `critical`). |
+| `relevance-score` | apns | `aps.relevance-score`, a number from 0 to 1, ranking the notification within its summary. |
 | `msggroup` | fcm, adm | The collapse key: a newer notification with the same group replaces an undelivered older one. |
 | `uniqush.apns_push_type` | apns | The `apns-push-type`: `alert` (default), `background`, `complication`, `controls`, `fileprovider`, `liveactivity`, `location`, `mdm`, `pushtotalk`, `voip` or `widgets`. Also sets the priority Apple requires for that type. |
 | `uniqush.apns_voip` | apns | `1` is shorthand for `uniqush.apns_push_type=voip`, and allows the 5120-byte VoIP payload limit instead of 4096. |

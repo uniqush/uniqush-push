@@ -57,6 +57,26 @@ func validateRawAPNSPayload(payload string) ([]byte, push.Error) {
 	return []byte(payload), nil
 }
 
+// toAPNSPayload builds the notification APNs receives from the push
+// parameters.
+//
+// Where a parameter lands is the whole job. Apple reads the reserved keys from
+// the "aps" dictionary and nowhere else, and everything not routed there ends
+// up beside it, where it reaches the app as custom data and means nothing to
+// iOS. A key put in the wrong place is not rejected by anyone: APNs accepts the
+// notification, reports success, and delivers something that does not do what
+// the caller asked for.
+//
+// That is what happened to mutable-content (#192). It is the key that tells
+// iOS to run the app's notification service extension, so a caller asking for
+// a rich notification got a plain one delivered successfully, with nothing
+// anywhere to say why. The other aps keys below were in the same position, and
+// the ones Apple has added since -- interruption-level and relevance-score, of
+// the notification's own presentation -- were never handled at all.
+//
+// A caller who needs a key this does not know about, or needs one of these
+// somewhere other than where Apple puts it, can send the whole notification as
+// uniqush.payload.apns.
 func toAPNSPayload(n *push.Notification) ([]byte, push.Error) {
 	// If "uniqush.payload.apns" is provided, then that will be used instead of the other POST parameters.
 	if payloadJSON, ok := n.Data["uniqush.payload.apns"]; ok {
@@ -72,17 +92,28 @@ func toAPNSPayload(n *push.Notification) ([]byte, push.Error) {
 			alert["body"] = v
 		case "title", "action-loc-key", "loc-key", "title-loc-key":
 			alert[k] = v
-		case "sound":
+		case "sound", "category", "thread-id", "target-content-id", "interruption-level":
 			aps[k] = v
 		case "loc-args", "title-loc-args":
 			alert[k] = parseList(v)
-		case "badge", "content-available":
+		case "badge", "content-available", "mutable-content":
+			// Numbers to APNs, not the strings they arrive as: Apple's
+			// documentation is explicit that content-available and
+			// mutable-content are the number 1, and iOS ignores "1".
 			b, err := strconv.Atoi(v)
 			if err != nil {
 				continue
 			} else {
 				aps[k] = b
 			}
+		case "relevance-score":
+			// The one aps number that is not an integer: 0 to 1, ranking
+			// notifications within a summary.
+			score, err := strconv.ParseFloat(v, 64)
+			if err != nil {
+				continue
+			}
+			aps[k] = score
 		case "img":
 			alert["launch-image"] = v
 		case "id", "expiry", "ttl":

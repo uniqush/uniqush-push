@@ -11,6 +11,14 @@ APNs:
   caller who never updated goes from undeliverable pushes to delivered ones. With it go the APNs feedback
   service client -- Apple retired that alongside the protocol, and an unregistered token now comes back as
   410 `Unregistered` on the push itself -- and the `github.com/uniqush/cache2` dependency.
+- Bugfix: `mutable-content` reaches iOS. It was passed through beside the `aps` dictionary rather than
+  inside it, so the notification service extension it exists to trigger never ran: a caller asking for a
+  rich notification got a plain one, delivered and reported successful. `category`, `thread-id` and
+  `target-content-id` were in the same position, and `interruption-level` and `relevance-score` -- keys
+  Apple added after this code was written -- were not handled at all. All of them are now placed in `aps`,
+  and `mutable-content` is sent as the number `1` rather than the string `"1"`, which iOS ignores. A push
+  sending one of these keys and expecting it to arrive as custom data beside `aps` will now find it inside
+  `aps`; `uniqush.payload.apns` sends a payload verbatim if that is what you need.
 - Removal: `pool_size` in the `[apns]` config section. It sized the binary protocol's pool of TCP
   connections; HTTP/2 multiplexes a provider's pushes over one connection. A `pool_size` left in
   `uniqush.conf` is ignored rather than rejected.
