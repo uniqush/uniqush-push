@@ -157,6 +157,16 @@ Changes to APIs (embedders only):
 
 Packaging:
 
+- New feature: The `.deb` and `.rpm` install a systemd unit at
+  `/lib/systemd/system/uniqush-push.service`. It is installed rather than enabled, since uniqush needs a
+  redis and a provider before it is any use; `systemctl enable --now uniqush-push` when the config is ready.
+  It runs under a transient unprivileged user, so the package creates no account and leaves nothing owned by
+  one, and it restarts on failure -- which only became correct once uniqush started exiting non-zero when it
+  cannot start. Prompted by a 2017 contribution from @p365labs (#146).
+- Change: the shipped `uniqush-push.conf` writes to `/var/log/uniqush/uniqush-push.log` rather than to
+  `/var/log/uniqush`, which is now the directory systemd creates for the service. A `.deb` or `.rpm` upgrade
+  keeps whatever is already in `/etc/uniqush/uniqush-push.conf`, so an existing installation's logging does
+  not move.
 - Bugfix: Releases carry the licences of the code they bundle. uniqush-push links BSD- and MIT-licensed Go
   modules statically, and the `.deb` and `.rpm` shipped no licence text at all while the archive shipped only
   uniqush's own. All three now carry `THIRD-PARTY-LICENSES`, the packages install it and `LICENSE` to

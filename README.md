@@ -114,6 +114,32 @@ are behind build tags and described in
 [docs/apns-verification-plan.md](docs/apns-verification-plan.md) and
 [examples/fcm-demo](examples/fcm-demo).
 
+### Running it as a service ###
+
+The `.deb` and `.rpm` install a systemd unit at
+`/lib/systemd/system/uniqush-push.service`, and do not enable it: uniqush needs
+a Redis to talk to and at least one push service provider before it is any use,
+so starting it the moment the package lands would only produce a failing
+service. When the config is ready:
+
+```
+systemctl enable --now uniqush-push
+systemctl status uniqush-push
+```
+
+It runs under a transient unprivileged user (`DynamicUser`), so there is no
+account to create and nothing left owned by one afterwards, and systemd creates
+`/var/log/uniqush` for it. Adjust it with `systemctl edit uniqush-push` rather
+than by editing the unit, which a package upgrade replaces.
+
+Only those packages install it. The release tarball does not carry the unit,
+because `install.sh` puts the binary in `/usr/local/bin` while the unit's
+`ExecStart` names `/usr/bin/uniqush-push` — a file that needs editing before it
+works is worse than one you fetched deliberately. Installing that way, or from
+source, copy it out of the source tree at
+[`conf/systemd/uniqush-push.service`](conf/systemd/uniqush-push.service) and
+point `ExecStart` at wherever your binary is.
+
 ## UnifiedPush / Web Push ##
 
 [UnifiedPush](https://unifiedpush.org/) is a decentralised push standard: the

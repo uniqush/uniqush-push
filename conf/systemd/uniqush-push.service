@@ -1,0 +1,73 @@
+# systemd unit for uniqush-push.
+#
+# Installed to /lib/systemd/system/ by the .deb and .rpm, and by those only:
+# ExecStart below hardcodes /usr/bin/uniqush-push, which is where those packages
+# put the binary and is not where the tarball's install.sh puts it. Anyone
+# installing another way copies this file and edits that line.
+#
+# It is not enabled on install: uniqush needs a redis to talk to and at least
+# one push service provider before it is any use, so starting it the moment the
+# package lands would only produce a failing service.
+#
+#     systemctl enable --now uniqush-push
+#
+# Adjust it with a drop-in rather than by editing this file, which a package
+# upgrade replaces:
+#
+#     systemctl edit uniqush-push
+
+[Unit]
+Description=uniqush-push, a unified push notification server
+Documentation=https://github.com/uniqush/uniqush-push
+Documentation=https://uniqush.org
+# uniqush listens on localhost by default, but it dials redis and Apple's and
+# Google's push services, so it wants routable networking rather than merely a
+# configured stack.
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+# uniqush-push runs in the foreground and handles SIGTERM itself, shutting down
+# gracefully, so systemd needs no PID file and no stop command: the default
+# SIGTERM is exactly right.
+Type=simple
+ExecStart=/usr/bin/uniqush-push -config=/etc/uniqush/uniqush-push.conf
+
+# Restarting on failure only became correct once uniqush started exiting
+# non-zero when it cannot start. Before that it printed "Cannot start: ..." and
+# exited 0, so a configuration it could not read looked like a clean shutdown
+# and systemd left it stopped.
+Restart=on-failure
+RestartSec=5s
+
+# A transient, unprivileged user created for each run. It is why this package
+# needs no useradd in a post-install script, and why nothing on disk is left
+# owned by an account that outlives the service.
+DynamicUser=yes
+# systemd creates /var/log/uniqush and gives it to that user, which is where the
+# shipped uniqush-push.conf writes. Without it, ProtectSystem=strict below
+# leaves nowhere writable and uniqush falls back to stderr -- which the journal
+# captures, so logging still works, but the operator gets a warning on every
+# start about a logfile it could not open.
+LogsDirectory=uniqush
+
+# Nothing here needs privilege beyond opening a port above 1024 and reading its
+# own configuration.
+NoNewPrivileges=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectSystem=strict
+ProtectHome=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+RestrictNamespaces=yes
+RestrictSUIDSGID=yes
+LockPersonality=yes
+MemoryDenyWriteExecute=yes
+SystemCallArchitectures=native
+SystemCallFilter=@system-service
+
+[Install]
+WantedBy=multi-user.target
