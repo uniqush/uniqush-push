@@ -39,9 +39,18 @@ very welcome.
 
 2.7.0 used Apple's binary protocol unless a push passed `uniqush.http2=1`.
 Apple shut the binary protocol down on 31 March 2021, so the default path could
-not deliver anything. HTTP/2 is now the default; `uniqush.http2=0` still selects
-the binary protocol and logs a deprecation warning, and that fallback will be
-removed in a future release.
+not deliver anything. HTTP/2 is now the default.
+
+In 2.8.0, `uniqush.http2=0` still selected the binary protocol and logged a
+deprecation warning. **After 2.8.0 the binary protocol is gone**: the parameter
+is still accepted, but the push is sent over HTTP/2 and the response reports
+that the option no longer does anything. Nothing to change before upgrading --
+a caller still sending `uniqush.http2=0` goes from undeliverable pushes to
+delivered ones -- but the parameter can be dropped from your requests.
+
+`pool_size` in the `[apns]` section went with it. It sized the binary
+protocol's pool of TCP connections; HTTP/2 multiplexes a provider's pushes over
+one connection. A `pool_size` left in `uniqush.conf` is ignored, not rejected.
 
 ### Headers that Apple now requires
 

@@ -1,6 +1,11 @@
 package common
 
-// Status codes for the binary API
+// Status codes uniqush uses internally to classify an APNs result.
+//
+// The numbering is the binary protocol's, which is where these came from. That
+// protocol is gone, but the codes stayed: the HTTP/2 processor translates
+// Apple's status and reason into them, and srv/apns maps them to push errors,
+// so they are now uniqush's own vocabulary rather than anything on the wire.
 const (
 	Status0Success            = 0
 	Status1ProcessingError    = 1

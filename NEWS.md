@@ -3,6 +3,18 @@ uniqush-push NEWS
 Unreleased
 ----------
 
+APNs:
+
+- Removal: The binary provider protocol is gone. Apple shut it down on 31 March 2021 and 2.8.0 already
+  defaulted to HTTP/2 with a deprecation warning for `uniqush.http2=0`. That parameter is still accepted:
+  the push is sent over HTTP/2 and the response reports that the option no longer does anything, so a
+  caller who never updated goes from undeliverable pushes to delivered ones. With it go the APNs feedback
+  service client -- Apple retired that alongside the protocol, and an unregistered token now comes back as
+  410 `Unregistered` on the push itself -- and the `github.com/uniqush/cache2` dependency.
+- Removal: `pool_size` in the `[apns]` config section. It sized the binary protocol's pool of TCP
+  connections; HTTP/2 multiplexes a provider's pushes over one connection. A `pool_size` left in
+  `uniqush.conf` is ignored rather than rejected.
+
 UnifiedPush / Web Push:
 
 - Change: The RFC 8188 record size is now 4096 rather than 2048, so every message is 4096 bytes on the wire and

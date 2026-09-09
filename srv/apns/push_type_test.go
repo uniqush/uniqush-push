@@ -110,17 +110,16 @@ func TestPriorityForPushType(t *testing.T) {
 	}
 }
 
-// newPushServiceWithSeparateProcessors builds a pushService whose two transports
-// are distinguishable, so a test can tell which one Push selected.
-func newPushServiceWithSeparateProcessors() (*pushService, *MockPushRequestProcessor, *MockPushRequestProcessor, chan push.Error) {
-	binary := newMockRequestProcessor(APNSSuccess)
+// newPushServiceWithRecordingProcessor builds a pushService whose transport
+// records what it was asked to send, so a test can assert on the request rather
+// than on a network.
+func newPushServiceWithRecordingProcessor() (*pushService, *MockPushRequestProcessor, chan push.Error) {
 	http2 := newMockRequestProcessor(APNSSuccess)
 	service := NewPushService().(*pushService)
-	service.binaryRequestProcessor = binary
 	service.httpRequestProcessor = http2
 	errChan := make(chan push.Error, 100)
 	service.SetErrorReportChan(errChan)
-	return service, binary, http2, errChan
+	return service, http2, errChan
 }
 
 func pushOnceForTransportTest(t *testing.T, service *pushService, notif *push.Notification) {
@@ -150,30 +149,35 @@ func pushOnceForTransportTest(t *testing.T, service *pushService, notif *push.No
 	wg.Wait()
 }
 
-// TestTransportDefaultsToHTTP2 is the regression test for the change that made
-// HTTP/2 the default. Apple shut the binary protocol down on 2021-03-31, so a
-// push that silently takes the binary path is a push that never arrives.
-func TestTransportDefaultsToHTTP2(t *testing.T) {
+// TestObsoleteHTTP2ParameterStillPushes covers what happens to a caller who was
+// passing uniqush.http2 when the binary protocol was removed.
+//
+// Every value has to end in a delivered push, including the 0 that used to
+// select binary. Refusing that push would convert a stale request parameter --
+// one that has been unable to deliver anything since 2021-03-31 -- into an
+// outage on upgrade, which is the opposite of the point. The caller is told
+// instead, which is what the warning is for, and only 0 earns it: 1 and the
+// unrecognised values were already asking for what they now get.
+func TestObsoleteHTTP2ParameterStillPushes(t *testing.T) {
 	testCases := []struct {
 		name          string
 		http2Value    string
 		setHTTP2      bool
-		expectBinary  bool
 		expectWarning bool
 	}{
-		{name: "unset defaults to http2", setHTTP2: false},
-		{name: "uniqush.http2=1 uses http2", setHTTP2: true, http2Value: "1"},
-		{name: "unrecognised value still uses http2", setHTTP2: true, http2Value: "yes"},
+		{name: "unset pushes over http2", setHTTP2: false},
+		{name: "uniqush.http2=1 pushes over http2", setHTTP2: true, http2Value: "1"},
+		{name: "unrecognised value pushes over http2", setHTTP2: true, http2Value: "yes"},
 		{
-			name:     "uniqush.http2=0 opts back in to binary, with a warning",
+			name:     "uniqush.http2=0 pushes over http2, with a notice",
 			setHTTP2: true, http2Value: "0",
-			expectBinary: true, expectWarning: true,
+			expectWarning: true,
 		},
 	}
 
 	for _, testCase := range testCases {
 		t.Run(testCase.name, func(t *testing.T) {
-			service, binary, http2, errChan := newPushServiceWithSeparateProcessors()
+			service, http2, errChan := newPushServiceWithRecordingProcessor()
 			defer service.Finalize()
 
 			notif := createNotification("Hello World")
@@ -182,16 +186,8 @@ func TestTransportDefaultsToHTTP2(t *testing.T) {
 			}
 			pushOnceForTransportTest(t, service, notif)
 
-			binaryCount := len(binary.recorded())
-			http2Count := len(http2.recorded())
-			if testCase.expectBinary {
-				if binaryCount != 1 || http2Count != 0 {
-					t.Errorf("Expected the binary processor to be used; binary=%d http2=%d", binaryCount, http2Count)
-				}
-			} else {
-				if http2Count != 1 || binaryCount != 0 {
-					t.Errorf("Expected the HTTP/2 processor to be used; binary=%d http2=%d", binaryCount, http2Count)
-				}
+			if pushed := len(http2.recorded()); pushed != 1 {
+				t.Errorf("Expected the push to be sent over HTTP/2; got %d requests", pushed)
 			}
 
 			var warned bool
@@ -201,7 +197,7 @@ func TestTransportDefaultsToHTTP2(t *testing.T) {
 				}
 			}
 			if warned != testCase.expectWarning {
-				t.Errorf("Expected deprecation warning=%v, got %v", testCase.expectWarning, warned)
+				t.Errorf("Expected notice=%v, got %v", testCase.expectWarning, warned)
 			}
 		})
 	}
@@ -210,7 +206,7 @@ func TestTransportDefaultsToHTTP2(t *testing.T) {
 // TestPushTypeReachesTheRequest checks the resolved push type is actually put on
 // the PushRequest, which is what the HTTP/2 processor turns into a header.
 func TestPushTypeReachesTheRequest(t *testing.T) {
-	service, _, http2, _ := newPushServiceWithSeparateProcessors()
+	service, http2, _ := newPushServiceWithRecordingProcessor()
 	defer service.Finalize()
 
 	notif := createNotification("Hello World")

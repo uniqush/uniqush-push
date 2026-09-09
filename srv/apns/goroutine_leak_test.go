@@ -10,15 +10,16 @@ import (
 // TestBuildingAProviderLeaksNoGoroutines guards a leak that is invisible until
 // something counts.
 //
-// NewPushService constructs the binary processor as well as the HTTP/2 one, and
-// the binary processor starts its pushMux goroutine at construction rather than
-// on first use. So a helper that builds a service only to call
-// BuildPushServiceProviderFromMap -- which never sends anything -- still leaves
-// a goroutine running for the life of the test binary unless it finalizes.
+// It was written for the binary protocol's processor, which started its pushMux
+// goroutine in NewPushService rather than on first use. A helper that built a
+// service only to call BuildPushServiceProviderFromMap -- which never sends
+// anything -- left that goroutine running for the life of the test binary. The
+// binary processor is gone now, and the HTTP/2 one starts nothing until it has a
+// request to send, so this should pass with room to spare.
 //
-// Nothing fails when that happens. The tests pass, the goroutines accumulate,
-// and the only symptom is a process that slowly grows while doing nothing. This
-// counts them instead.
+// It stays because nothing fails when a leak like that reappears. The tests
+// pass, the goroutines accumulate, and the only symptom is a process that slowly
+// grows while doing nothing. This counts them instead.
 func TestBuildingAProviderLeaksNoGoroutines(t *testing.T) {
 	// Let anything already in flight from earlier tests settle, so the baseline
 	// is not polluted by a neighbour's teardown.
@@ -35,8 +36,8 @@ func TestBuildingAProviderLeaksNoGoroutines(t *testing.T) {
 	// built, not for an exact match.
 	if leaked := after - before; leaked >= 5 {
 		t.Errorf("Building 5 providers left %d goroutines behind (%d -> %d).\n"+
-			"NewPushService starts the binary protocol's pushMux at construction, so a service "+
-			"that is built and dropped without Finalize leaks it for the life of the process.\n\n%s",
+			"Building a push service and dropping it without Finalize should leave nothing "+
+			"running: whatever started here outlives the process that stopped using it.\n\n%s",
 			leaked, before, after, goroutineDump())
 	}
 }

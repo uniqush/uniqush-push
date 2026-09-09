@@ -13,12 +13,11 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  *
- * This implements version 2 of the Binary Provider API
- *
  * ## A note on ttl and expiry (Expiration date)
  *
- * From
- * https://developer.apple.com/library/content/documentation/NetworkingInternet/Conceptual/RemoteNotificationsPG/BinaryProviderAPI.html#//apple_ref/doc/uid/TP40008194-CH13-SW1
+ * Quoted from Apple's documentation for the retired binary provider API, which
+ * is where this handling came from. HTTP/2's apns-expiration header has the same
+ * semantics, so the note still describes what uniqush sends:
  *
  * > A UNIX epoch date expressed in seconds (UTC) that identifies when the notification is no longer valid and can be discarded.
  * >
@@ -26,7 +25,7 @@
  * > Specify zero to indicate that the notification expires immediately and that APNs should not store the notification at all.
  */
 
-// Package apns implements sending pushes to (and receiving feedback from) APNs.
+// Package apns implements sending pushes to APNs over the HTTP/2 provider API.
 package apns
 
 import (
@@ -40,17 +39,9 @@ import (
 	"sync/atomic"
 	"time"
 
-	// There are two protocols for connecting to APNs: the binary protocol,
-	// which Apple shut down on 2021-03-31, and HTTP/2. HTTP/2 is the default;
-	// see apnsHTTP2Key.
 	"github.com/uniqush/uniqush-push/push"
-	"github.com/uniqush/uniqush-push/srv/apns/binary_api"
 	"github.com/uniqush/uniqush-push/srv/apns/common"
 	"github.com/uniqush/uniqush-push/srv/apns/http_api"
-)
-
-const (
-	maxNrConn int = 13
 )
 
 // Keys uniqush clients can set in the /push request to influence APNs behaviour.
@@ -60,18 +51,21 @@ const (
 	// apnsVoIPKey predates apnsPushTypeKey. It is still honoured, and implies
 	// a push type of "voip".
 	apnsVoIPKey = "uniqush.apns_voip"
-	// apnsHTTP2Key used to opt *in* to the HTTP/2 API. HTTP/2 is now the
-	// default, so only the value "0" is meaningful: it opts back in to the
-	// binary protocol.
+	// apnsHTTP2Key used to select the transport: first to opt in to HTTP/2,
+	// later -- once HTTP/2 was the default -- to opt back out to the binary
+	// protocol. HTTP/2 is now the only transport, so the key is still
+	// recognised, but only so that a caller sending it can be told it no
+	// longer does anything.
 	apnsHTTP2Key = "uniqush.http2"
 )
 
-// binaryProtocolDeprecationNotice is reported when a caller explicitly asks for
-// the binary protocol. Apple stopped serving it on 2021-03-31, so this is not a
-// performance or compatibility trade-off; it simply will not deliver.
-const binaryProtocolDeprecationNotice = "uniqush.http2=0 selects the APNs binary protocol, which Apple shut down on 2021-03-31. " +
-	"Pushes sent over it cannot be delivered. Remove uniqush.http2=0 from the request; " +
-	"this fallback will be removed in a future release."
+// binaryProtocolRemovedNotice is reported when a caller still asks for the
+// binary protocol. The push is sent over HTTP/2 rather than refused: HTTP/2 is
+// what the caller wanted to happen -- a delivered notification -- and refusing
+// would turn a stale parameter into an outage.
+const binaryProtocolRemovedNotice = "uniqush.http2=0 asks for the APNs binary protocol, which Apple shut down on 2021-03-31. " +
+	"uniqush no longer implements it, and sent this push over HTTP/2 instead. " +
+	"Remove uniqush.http2 from the request."
 
 // pushTypeForNotification resolves the apns-push-type for a notification.
 func pushTypeForNotification(notif *push.Notification) (string, push.Error) {
@@ -93,10 +87,9 @@ func pushTypeForNotification(notif *push.Notification) (string, push.Error) {
 
 // pushService is the APNs push service. It implements the two network protocols for sending requests to APNs and getting the corresponding response.
 type pushService struct {
-	binaryRequestProcessor common.PushRequestProcessor
-	httpRequestProcessor   common.PushRequestProcessor
-	errChan                chan<- push.Error
-	nextMessageID          uint32
+	httpRequestProcessor common.PushRequestProcessor
+	errChan              chan<- push.Error
+	nextMessageID        uint32
 }
 
 var _ push.PushServiceType = &pushService{}
@@ -104,13 +97,14 @@ var _ push.PushServiceType = &pushService{}
 // NewPushService creates a new APNs push service.
 func NewPushService() push.PushServiceType {
 	return &pushService{
-		binaryRequestProcessor: binary_api.NewRequestProcessor(maxNrConn),
-		httpRequestProcessor:   http_api.NewRequestProcessor(),
-		nextMessageID:          0,
+		httpRequestProcessor: http_api.NewRequestProcessor(),
+		nextMessageID:        0,
 	}
 }
 
-// getMessageIds is needed for the binary API of APNs.
+// getMessageIds reserves n consecutive message ids. waitResults maps a result
+// back to the delivery point it belongs to by its offset from the last id
+// reserved, so the ids have to be handed out in one contiguous block per push.
 func (ps *pushService) getMessageIds(n int) uint32 {
 	return atomic.AddUint32(&ps.nextMessageID, uint32(n))
 }
@@ -120,17 +114,21 @@ func (ps *pushService) Name() string {
 }
 
 func (ps *pushService) Finalize() {
-	ps.binaryRequestProcessor.Finalize()
 	ps.httpRequestProcessor.Finalize()
 }
 
 func (ps *pushService) SetErrorReportChan(errChan chan<- push.Error) {
 	ps.errChan = errChan
-	ps.binaryRequestProcessor.SetErrorReportChan(errChan)
 	ps.httpRequestProcessor.SetErrorReportChan(errChan)
 }
 
 // SetPushServiceConfig sets the config for this and the requestProcessor when the service is registered.
+//
+// pool_size is no longer read. It sized the binary protocol's pool of TCP
+// connections; HTTP/2 multiplexes a provider's pushes over one connection and
+// leaves the pooling to http.Transport. A pool_size left in uniqush.conf is
+// ignored rather than rejected, because an unknown key in a config file that
+// otherwise parses should not stop uniqush from starting.
 func (ps *pushService) SetPushServiceConfig(c *push.PushServiceConfig) {
 	// This uses the fact that registration takes place before any requests are sent, so pools aren't created yet.
 
@@ -147,7 +145,6 @@ func (ps *pushService) SetPushServiceConfig(c *push.PushServiceConfig) {
 	allow, err := c.GetBool(optionAllowNonAppleEndpoints)
 	common.SetAllowNonAppleEndpoints(err == nil && allow)
 
-	ps.binaryRequestProcessor.SetPushServiceConfig(c)
 	ps.httpRequestProcessor.SetPushServiceConfig(c)
 }
 
@@ -162,7 +159,7 @@ func (ps *pushService) BuildPushServiceProviderFromMap(kv map[string]string, psp
 		return errors.New("NoService")
 	}
 
-	return ps.buildBinaryPushServiceProviderFromMap(kv, psp)
+	return ps.buildProviderFromMap(kv, psp)
 }
 
 // buildCredentials records how this provider authenticates to APNs.
@@ -276,7 +273,7 @@ func buildCredentials(kv map[string]string, psp *push.PushServiceProvider) error
 	return nil
 }
 
-func (ps *pushService) buildBinaryPushServiceProviderFromMap(kv map[string]string, psp *push.PushServiceProvider) error {
+func (ps *pushService) buildProviderFromMap(kv map[string]string, psp *push.PushServiceProvider) error {
 	if err := buildCredentials(kv, psp); err != nil {
 		return err
 	}
@@ -473,22 +470,18 @@ func (ps *pushService) Push(psp *push.PushServiceProvider, dpQueue <-chan *push.
 	}
 	req.PushType = pushType
 
-	// HTTP/2 is the default. The binary protocol is only reachable by asking
-	// for it explicitly, and Apple stopped serving it in March 2021.
+	// HTTP/2 is the only transport. A caller still passing uniqush.http2=0 is
+	// told so, and the push goes out over HTTP/2 regardless.
 	requestProcessor := ps.httpRequestProcessor
-	if http2, ok := notif.Data[apnsHTTP2Key]; ok && http2 == "0" {
-		requestProcessor = ps.binaryRequestProcessor
-		if ps.errChan != nil {
-			ps.errChan <- push.NewError(binaryProtocolDeprecationNotice)
-		}
+	if http2, ok := notif.Data[apnsHTTP2Key]; ok && http2 == "0" && ps.errChan != nil {
+		ps.errChan <- push.NewError(binaryProtocolRemovedNotice)
 	}
 
 	maxPayloadSize := requestProcessor.GetMaxPayloadSize()
 	// A VoIP push may carry 5120 bytes rather than the usual 4096, assuming the
 	// PSP was set up with a VoIP certificate. https://github.com/uniqush/uniqush-push/issues/202
-	// The binary protocol has a smaller ceiling of its own, so only widen for HTTP/2.
 	// TODO: Automatically append ".voip" to apns-topic if it is not already the suffix
-	if requestProcessor == ps.httpRequestProcessor && pushType == common.PushTypeVoIP {
+	if pushType == common.PushTypeVoIP {
 		maxPayloadSize = 5120
 	}
 
@@ -605,7 +598,9 @@ func (ps *pushService) Push(psp *push.PushServiceProvider, dpQueue <-chan *push.
 	}
 
 	// Wait for the unserialized responses from APNs asynchronously - these will not affect what we send our clients for this request, but will affect subsequent requests.
-	// TODO: With HTTP/2, this can be refactored to become synchronous (not in this PR, not while binary provider is supported for a PSP). The map[string]T can be removed.
+	// TODO: This can be refactored to become synchronous, and the map[string]T removed.
+	// The binary protocol's asynchronous error reporting was the reason it could not be,
+	// and that is gone; what remains is unfinished work rather than a constraint.
 	go ps.waitResults(psp, dpList, lastID, resChan)
 }
 
