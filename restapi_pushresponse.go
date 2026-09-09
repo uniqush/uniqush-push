@@ -5,7 +5,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/uniqush/log"
+	"github.com/uniqush/uniqush-push/log"
 )
 
 // APIPushResponseHandler records information about push notification attempts to generate a JSON response.

@@ -8,8 +8,8 @@ import (
 	"testing"
 
 	"github.com/redis/go-redis/v9"
-	"github.com/uniqush/log"
 	"github.com/uniqush/uniqush-push/db"
+	"github.com/uniqush/uniqush-push/log"
 	"github.com/uniqush/uniqush-push/push"
 	"github.com/uniqush/uniqush-push/srv"
 	"github.com/uniqush/uniqush-push/srv/apns/apnstest"
@@ -209,7 +209,7 @@ func TestReplacingAPNsCredentialsKeepsDevicesReachable(t *testing.T) {
 	}}
 	backend.Push("acceptance-request", "127.0.0.1", acceptanceService,
 		[]string{acceptanceSubscriber}, nil, notification, nil,
-		log.NewLogger(io.Discard, "[test]", log.LOGLEVEL_SILENT), handler)
+		log.NewLogger(io.Discard, "[test]", log.LevelSilent), handler)
 
 	if failures := handler.errors(); len(failures) > 0 {
 		for _, failure := range failures {

@@ -34,6 +34,24 @@ Logging:
 - Bugfix: Log why a push is being retried. `RetryError` carried the reason and nothing printed it, so a push that
   retried and then vanished left only "Retry after 1m0s". The webpush backend now also quotes the push server's
   response body, which is where the explanation usually is.
+- Bugfix: A fatal message says what went wrong when logging is switched off. `log=off` silences every level, but
+  fatals still print, because a process about to exit should say why -- and that one line was mangled: "cannot
+  start: bind failed on port 8080" came out as "cannot start: [bind failed 8080] on port %!d(MISSING)". The
+  logger forwarded its arguments to the standard library as a single slice rather than expanding them.
+
+Maintenance:
+
+- The levelled logger is now `github.com/uniqush/uniqush-push/log` rather than `github.com/uniqush/log`, which
+  is archived. It is the same logger with the fatal-formatting bug above fixed; `go vet` reports that bug, and
+  had been unable to see it while the code lived in a repository with no CI. The level constants are renamed to
+  Go's naming convention: `log.LOGLEVEL_INFO` is `log.LevelInfo`, and so on. `MultiLogger` is dropped, having
+  had no callers.
+
+Changes to APIs (embedders only):
+
+- The `log.Logger` taken by `NewPushBackEnd` and by the `db.RawDB` methods now comes from
+  `github.com/uniqush/uniqush-push/log`. Change the import and the `LOGLEVEL_*` constant names; the interface
+  itself is unchanged.
 
 03 Sep 2026, uniqush-push 2.8.0
 -------------------------------
