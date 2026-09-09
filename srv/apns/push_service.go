@@ -411,6 +411,31 @@ func (ps *pushService) BuildDeliveryPointFromMap(kv map[string]string, dp *push.
 	} else {
 		return errors.New("NoDevToken")
 	}
+
+	// The app this token belongs to, when it is not the one the provider names.
+	//
+	// One APNs certificate can be valid for several bundle ids -- an app and
+	// its enterprise or release-testing builds -- while a provider holds one
+	// bundleid and a service holds one provider, so serving them all meant a
+	// service per bundle id and every device subscribed once per service.
+	// That is #181, and it lost its workaround when Apple shut the binary
+	// protocol down: that protocol sent no apns-topic at all, so the header
+	// only became unavoidable once HTTP/2 was the only transport.
+	//
+	// VolatileData, not FixedData, for the same reason the provider's bundleid
+	// is: a delivery point's name is a hash of its fixed data, so putting it
+	// there would make a device that corrected its bundle id a second, separate
+	// subscription rather than an update to the one it has.
+	if bundleid, ok := kv["bundleid"]; ok {
+		if bundleid = strings.TrimSpace(bundleid); bundleid == "" {
+			// Cleared rather than left alone, like the provider's: a
+			// /subscribe that stops sending one puts the device back on
+			// whatever the provider says.
+			delete(dp.VolatileData, "bundleid")
+		} else {
+			dp.VolatileData["bundleid"] = bundleid
+		}
+	}
 	return nil
 }
 

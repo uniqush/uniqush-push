@@ -502,19 +502,6 @@ func deliveryPointAt(request *common.PushRequest, i int) *push.DeliveryPoint {
 func (prp *HTTPPushRequestProcessor) sendRequests(request *common.PushRequest) {
 	defer close(request.ErrChan)
 
-	bundleid, ok := request.PSP.VolatileData["bundleid"]
-	if !ok || bundleid == "" {
-		// One error per device, each naming its device. They are identical
-		// otherwise, and an operator reading a hundred of them needs to know
-		// the answer is "every subscriber in this service" rather than to guess
-		// at it.
-		for i := range request.Devtokens {
-			request.ErrChan <- push.NewErrorForDeliveryPoint(deliveryPointAt(request, i),
-				"Must add bundleid to PSP by calling /addpsp again")
-		}
-		return
-	}
-
 	wg := new(sync.WaitGroup)
 	wg.Add(len(request.Devtokens))
 
@@ -536,9 +523,8 @@ func (prp *HTTPPushRequestProcessor) sendRequests(request *common.PushRequest) {
 		// it on a background push to iOS 13+ makes APNs return 200 and then
 		// silently drop the notification.
 		"apns-push-type": []string{pushType},
-		// This is kept in VolatileData. A PSP may need to be updated first in /addpsp to use this,
-		// by setting bundleid to the bundle id of the app.
-		"apns-topic": []string{bundleid},
+		// apns-topic is set per device below, because a delivery point may name
+		// its own bundle id. The provider's is the default.
 	}
 
 	psp := request.PSP
@@ -657,6 +643,25 @@ func (prp *HTTPPushRequestProcessor) sendRequests(request *common.PushRequest) {
 	// buildDeviceRequest prepares the request for one device token, or reports
 	// the failure and returns false.
 	buildDeviceRequest := func(i int, token []byte) (*http.Request, uint32, *push.DeliveryPoint, bool) {
+		deliveryPoint := deliveryPointAt(request, i)
+
+		// Which app this notification is for. A certificate can be valid for
+		// several bundle ids, so a device may name its own; the provider's is
+		// the default, and is what every provider written before this uses.
+		//
+		// Resolved per device rather than once for the provider, which is what
+		// this used to do. A provider that names no bundle id is serviceable
+		// now as long as its devices name theirs, so refusing the whole push
+		// up front would refuse the case this exists for.
+		bundleid := common.BundleIDForDeliveryPoint(request.PSP, deliveryPoint)
+		if bundleid == "" {
+			// Counted off explicitly, for the reason spelled out below.
+			wg.Done()
+			request.ErrChan <- push.NewErrorForDeliveryPoint(deliveryPoint,
+				"No bundleid: set one on the provider with /addpsp, or on this device with /subscribe")
+			return nil, 0, nil, false
+		}
+
 		url := fmt.Sprintf("%s/3/device/%s", http2UrlHost, hex.EncodeToString(token))
 		httpRequest, err := http.NewRequest("POST", url, bytes.NewReader(request.Payload))
 		if err != nil {
@@ -676,17 +681,13 @@ func (prp *HTTPPushRequestProcessor) sendRequests(request *common.PushRequest) {
 		// we do not persist, which makes supporting a "did this push arrive"
 		// question impossible.
 		httpRequest.Header = baseHeader.Clone()
+		// Lowercase, as the others are: HTTP/2 requires it on the wire, and
+		// http.Header.Set would add a second, canonicalised entry.
+		httpRequest.Header["apns-topic"] = []string{bundleid}
 		if apnsID, idErr := newAPNSID(); idErr == nil {
 			httpRequest.Header["apns-id"] = []string{apnsID}
 		}
 
-		// The delivery point this push is for, when the caller supplied one.
-		// A RetryError cannot be built without it, so a push whose DPList is
-		// short degrades to a plain error rather than a panic.
-		var deliveryPoint *push.DeliveryPoint
-		if i < len(request.DPList) {
-			deliveryPoint = request.DPList[i]
-		}
 		return httpRequest, request.GetID(i), deliveryPoint, true
 	}
 

@@ -5,6 +5,14 @@ Unreleased
 
 APNs:
 
+- New feature: `/subscribe` accepts a `bundleid` for one device, overriding the provider's. HTTP/2 requires
+  an `apns-topic` on every push and uniqush took it from the provider, so a certificate valid for several
+  bundle ids -- an app and its enterprise or release-testing builds -- needed a service per bundle id with
+  each device subscribed to the right one. The workaround the issue recorded, `uniqush.http2=0`, selected
+  the binary protocol, which sent no topic at all; that has not worked since Apple shut the protocol down in
+  2021. A device that names none uses the provider's, so nothing existing changes, and an empty `bundleid`
+  clears it. A provider that names none is now usable as long as its devices do: the check moved from the
+  provider to the device, so a push refuses only the devices with no bundle id from either.
 - Bugfix: `mutable-content`, `category`, `thread-id` and `target-content-id` go inside the `aps` dictionary
   rather than beside it, where iOS ignored them, and `interruption-level` and `relevance-score` are supported.
   Numbers are sent as numbers, since iOS ignores `"1"` where it wants `1`. A push sending one of these keys and
