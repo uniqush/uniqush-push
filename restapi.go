@@ -246,6 +246,16 @@ func (api *RestAPI) unsubscribeAllDevices(kv map[string]string, logger log.Logge
 		logger.Errorf("From=%v Service=%v Cannot get subscriber: %v", remoteAddr, service, err)
 		return APIResponseDetails{From: &remoteAddr, Service: &service, Code: UNIQUSH_ERROR_CANNOT_GET_SUBSCRIBER, ErrorMsg: strPtrOfErr(err)}
 	}
+	// "subscriber=" and "subscriber=,,," are neither an error nor a subscriber:
+	// the parameter is present, so it is not NoSubscriber, and nothing survives
+	// dropping the empty entries. Every other caller is shielded from that by
+	// accident -- changeSubscription builds a delivery point first, and that
+	// fails for a subscriber it cannot read -- and this path exists to skip
+	// that build. /push checks the same way a few lines below.
+	if len(subs) == 0 {
+		logger.Errorf("From=%v Service=%v NoSubscriber", remoteAddr, service)
+		return APIResponseDetails{From: &remoteAddr, Service: &service, Code: UNIQUSH_ERROR_NO_SUBSCRIBER}
+	}
 
 	removed, err := api.backend.UnsubscribeAll(service, subs[0])
 	if err != nil {

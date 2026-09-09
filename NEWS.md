@@ -82,7 +82,8 @@ REST API:
   service and needs only `service` and `subscriber` -- no `pushservicetype`, no token. It is for an account
   being deleted, where the application knows the subscriber is finished and not what they had; the
   alternative was `/subscriptions` followed by an `/unsubscribe` per device, which races anything that
-  subscribes in between. Removing nothing is a success, and the response reports `devicesRemoved`.
+  subscribes in between. Removing nothing is a success, and the response reports `devicesRemoved`. Neither
+  name may contain a wildcard.
 - Security: `/subscriptions` withholds a Web Push subscription's `auth` secret unless
   `include_subscription_secrets=1` is passed. A `devtoken` or a `regid` is useless without the provider
   credentials uniqush holds, but `endpoint`, `p256dh` and `auth` together are everything needed to push to

@@ -137,3 +137,42 @@ func TestRemoveAllDeliveryPointsRemovesOrphans(t *testing.T) {
 		t.Error("The orphaned delivery point's record was left behind")
 	}
 }
+
+// TestRemoveAllDeliveryPointsRefusesAPattern is the guard on the method rather
+// than on its caller.
+//
+// GetDeliveryPointsNameByServiceSubscriber reads a "*" as a pattern and answers
+// with the delivery points of every subscriber it matches, while the removal
+// below it is by exact name. A wildcard would therefore leave every one of
+// those devices subscribed -- the SREM is against a key spelled "*", which
+// matches nothing -- having deleted the provider binding of each on the way
+// past. /unsubscribe validates its subscriber, but the interface is exported
+// and its safety should not rest on one caller remembering.
+func TestRemoveAllDeliveryPointsRefusesAPattern(t *testing.T) {
+	fixture := newRebindingFixture(t)
+	fixture.addProvider(t, "first.cert")
+	dp := fixture.subscribe(t, "devtoken-1")
+
+	for _, pattern := range []struct{ service, subscriber string }{
+		{ServiceName, "*"},
+		{ServiceName, rebindingSubscriber[:4] + "*"},
+		{"*", rebindingSubscriber},
+	} {
+		removed, err := fixture.client.RemoveAllDeliveryPointsFromService(pattern.service, pattern.subscriber)
+		if err == nil {
+			t.Errorf("service %q subscriber %q was accepted", pattern.service, pattern.subscriber)
+		}
+		if removed != 0 {
+			t.Errorf("service %q subscriber %q removed %d delivery points", pattern.service, pattern.subscriber, removed)
+		}
+	}
+
+	// And the device it would have half-removed is untouched: still subscribed,
+	// still bound to its provider.
+	if pairs := fixture.pairs(t); len(pairs) != 1 {
+		t.Errorf("Expected the device to be readable, got %d pairs", len(pairs))
+	}
+	if !fixture.keyExists(t, ServiceDeliveryPointToPushServiceProviderPrefix+ServiceName+":"+dp.Name()) {
+		t.Error("The provider binding was deleted by a refused removal")
+	}
+}

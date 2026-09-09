@@ -21,6 +21,7 @@ package db
 import (
 	"errors"
 	"fmt"
+	"strings"
 	"sync"
 
 	"github.com/redis/go-redis/v9"
@@ -329,7 +330,20 @@ func (f *pushDatabaseOpts) RemoveDeliveryPointFromService(service string,
 // keys, as they are for a single unsubscribe -- so a caller that retries needs
 // to know the work was partly done, and retrying is safe: removing a device
 // that is already gone is a no-op.
+//
+// A "*" in either name is refused. The lookup below reads one as a pattern and
+// answers with the delivery points of every subscriber it matches, while the
+// removal is by exact name -- so a wildcard would leave every one of those
+// devices subscribed, having deleted the provider binding of each along the
+// way. /unsubscribe validates its subscriber and cannot reach this, but the
+// interface is exported and its safety should not depend on one caller
+// remembering.
 func (f *pushDatabaseOpts) RemoveAllDeliveryPointsFromService(service, subscriber string) (int, error) {
+	if strings.Contains(service, "*") || strings.Contains(subscriber, "*") {
+		return 0, fmt.Errorf("refusing to remove delivery points by pattern: service %q, subscriber %q",
+			service, subscriber)
+	}
+
 	f.dblock.Lock()
 	defer f.dblock.Unlock()
 
@@ -340,16 +354,20 @@ func (f *pushDatabaseOpts) RemoveAllDeliveryPointsFromService(service, subscribe
 	}
 
 	removed := 0
-	for service, deliveryPoints := range names {
+	// One key, since the names are not a pattern: the loop is over a map whose
+	// single entry is this service. Named rather than shadowing the parameter,
+	// so that the service a device is removed from is visibly the service it
+	// was found under.
+	for foundService, deliveryPoints := range names {
 		for _, name := range deliveryPoints {
 			// The same two steps a single unsubscribe takes, so the bookkeeping
 			// is identical: the subscriber's set loses its pointer, and the
 			// counter it decrements deletes the device's record once nothing
 			// else refers to it.
-			if err := f.db.RemoveDeliveryPointFromServiceSubscriber(service, subscriber, name); err != nil {
+			if err := f.db.RemoveDeliveryPointFromServiceSubscriber(foundService, subscriber, name); err != nil {
 				return removed, fmt.Errorf("failed to remove delivery point %s: %v", name, err)
 			}
-			if err := f.db.RemovePushServiceProviderOfServiceDeliveryPoint(service, name); err != nil {
+			if err := f.db.RemovePushServiceProviderOfServiceDeliveryPoint(foundService, name); err != nil {
 				return removed, fmt.Errorf("failed to remove psp info for delivery point %s: %v", name, err)
 			}
 			removed++

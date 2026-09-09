@@ -161,3 +161,27 @@ func TestUnsubscribeOneDeviceStillWorks(t *testing.T) {
 		}
 	}
 }
+
+// TestUnsubscribeAllDevicesSurvivesAnEmptySubscriber is a crash test.
+//
+// getSubscribersFromMap returns an empty slice and no error for "subscriber="
+// or a value that is nothing but commas: the parameter is present, so it is not
+// NoSubscriber, and there is nothing left after the empty entries are dropped.
+// Every other caller is shielded from that by accident -- changeSubscription
+// builds a delivery point first, which fails for a subscriber it cannot read --
+// and this path exists precisely to skip that build.
+func TestUnsubscribeAllDevicesSurvivesAnEmptySubscriber(t *testing.T) {
+	for _, subscriber := range []string{"", ",", ",,,"} {
+		database := &unsubscribeAllDatabase{removed: 99}
+		form := allDevicesForm()
+		form.Set("subscriber", subscriber)
+
+		details := postUnsubscribe(t, database, form)
+		if details.Code == UNIQUSH_SUCCESS {
+			t.Errorf("subscriber=%q was accepted", subscriber)
+		}
+		if database.calls != 0 {
+			t.Errorf("subscriber=%q reached the database", subscriber)
+		}
+	}
+}
