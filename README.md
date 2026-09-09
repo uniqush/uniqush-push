@@ -245,6 +245,26 @@ path and was silently ignored there, so operators who set it years ago for the
 binary-protocol simulator still have it stored; honouring it now would have
 disabled certificate verification on connections to Apple.
 
+## Timeouts ##
+
+How long one request to a push service has to complete is `request_timeout`, in
+seconds, in that service's section of `uniqush-push.conf` — `[apns]`, `[fcm]`,
+`[gcm]`, `[webpush]` or `[unifiedpush]`. The defaults are 20 seconds for APNs
+and 30 for the rest.
+
+The value worth changing is the one that does not match your caller. `/push`
+answers when the push services do, so a client that gives up after five seconds
+against a uniqush that waits thirty spends twenty-five seconds waiting for an
+answer nobody is listening for. Lowering it turns that into a reported failure
+you can retry. Raising it suits a slow or congested link, and Web Push most of
+all: that endpoint belongs to whoever called `/subscribe`, so it may be a
+self-hosted server rather than a CDN.
+
+A value outside 1–300 falls back to the default rather than being clamped, and
+so does one that will not parse — as with every other option here, deleting the
+line restores the default rather than leaving the last value that worked in
+force.
+
 ## FAQ ##
 
 - Q: Is this a hosted push service, like OneSignal or Airship?

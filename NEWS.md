@@ -101,6 +101,17 @@ Startup:
 
 Configuration:
 
+- New feature: `request_timeout`, in seconds, in the `[apns]`, `[fcm]`, `[gcm]`, `[webpush]` and
+  `[unifiedpush]` sections. How long one request to a push service has to complete was fixed at 20 seconds
+  for APNs and 30 for the rest, which is the wrong number for anyone whose own client gives up sooner: `/push`
+  answers when the push services do, so a caller that waits five seconds and a uniqush that waits thirty
+  spend twenty-five of them waiting for an answer nobody will read. Values outside 1-300 fall back to the
+  default, as does one that will not parse, and deleting the line restores the default.
+- Change: that timeout is now enforced per request rather than by the HTTP client, which is what makes it
+  reconfigurable -- a client is cached for the life of a push service provider and would have gone on
+  applying whatever the timeout was when it was built. The APNs retry against a previous signing token gets a
+  full timeout of its own, as it did before. The FCM OAuth2 token fetch keeps a fixed timeout: it is a
+  different operation, against a different host, and `request_timeout` is not about it.
 - Bugfix: A configuration file that fails to read part way through is now an error. The parser returned success
   with whatever it had managed to parse, so a truncated or unreadable `uniqush.conf` would start uniqush with
   some of its options silently missing. A file that fails to parse is also closed rather than leaked, which the
