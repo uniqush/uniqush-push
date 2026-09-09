@@ -29,11 +29,15 @@ licenceFileFor() {
 	done
 }
 
-# identify prints an SPDX identifier for a licence file. The order matters:
-# BSD-3 is BSD-2 plus a non-endorsement clause, so test for that clause first.
+# identify prints an SPDX identifier for a licence file.
 identify() {
 	local file="$1"
-	if grep -qi "Apache License" "$file"; then echo "Apache-2.0"
+	# Order matters twice over. BSD-3 is BSD-2 plus a non-endorsement clause, so
+	# that clause is tested first. And the Apache test looks for the licence's
+	# own title line, not the word Apache, so a file whose preamble mentions
+	# Apache -- conf/LICENSE says its terms are not this project's Apache ones --
+	# is not mistaken for one.
+	if grep -qi "Apache License, Version 2.0\|Apache License$" "$file"; then echo "Apache-2.0"
 	elif grep -qi "Permission is hereby granted, free of charge" "$file"; then echo "MIT"
 	elif grep -qi "Neither the name" "$file"; then echo "BSD-3-Clause"
 	elif grep -qi "Redistribution and use" "$file"; then echo "BSD-2-Clause"
@@ -71,6 +75,26 @@ while read -r module version; do
 	echo "    $module $version" >>"$work/$hash/modules"
 done < <(go list -deps -f '{{if .Module}}{{.Module.Path}} {{.Module.Version}}{{end}}' . | sort -u)
 
+# Code in this repository under a licence other than uniqush-push's own carries
+# its own LICENSE beside it, and is just as linked into the binary as a module
+# is. Anything vendored this way in future is picked up by being placed the same
+# way, rather than by remembering to edit a list.
+while read -r licence; do
+	[ "$licence" = "./LICENSE" ] && continue
+
+	spdx=$(identify "$licence")
+	if [ "$spdx" = "UNKNOWN" ]; then
+		echo "could not identify the licence in $licence" >&2
+		exit 1
+	fi
+
+	hash=$(sha256sum "$licence" | cut -d' ' -f1)
+	mkdir -p "$work/$hash"
+	cp -f "$licence" "$work/$hash/text"
+	echo "$spdx" >"$work/$hash/spdx"
+	echo "    $(dirname "${licence#./}")/ (in this repository)" >>"$work/$hash/modules"
+done < <(find . -path ./.git -prune -o \( -name LICENSE -o -name COPYRIGHT \) -print | sort)
+
 {
 	cat <<'HEADER'
 Third-party licences
@@ -78,13 +102,15 @@ Third-party licences
 
 uniqush-push itself is licensed under the Apache License 2.0; see LICENSE.
 
-The released binary statically links the Go modules listed below, so their code
-is inside it. The BSD and MIT licences require their copyright notice and
+The released binary statically links the Go modules listed below, along with any
+code in this repository carrying a licence of its own, so all of it is inside
+the binary. The BSD and MIT licences require their copyright notice and
 disclaimer to accompany a binary distribution, which is what this file is for.
 It ships in the release archive and installs to
 /usr/share/doc/uniqush-push/ in the .deb and .rpm.
 
-Regenerate with build/third-party-licences.sh after changing dependencies.
+Regenerate with build/third-party-licences.sh after changing dependencies or
+vendoring code.
 
 HEADER
 

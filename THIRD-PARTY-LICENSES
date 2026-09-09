@@ -3,13 +3,15 @@ Third-party licences
 
 uniqush-push itself is licensed under the Apache License 2.0; see LICENSE.
 
-The released binary statically links the Go modules listed below, so their code
-is inside it. The BSD and MIT licences require their copyright notice and
+The released binary statically links the Go modules listed below, along with any
+code in this repository carrying a licence of its own, so all of it is inside
+the binary. The BSD and MIT licences require their copyright notice and
 disclaimer to accompany a binary distribution, which is what this file is for.
 It ships in the release archive and installs to
 /usr/share/doc/uniqush-push/ in the .deb and .rpm.
 
-Regenerate with build/third-party-licences.sh after changing dependencies.
+Regenerate with build/third-party-licences.sh after changing dependencies or
+vendoring code.
 
 ================================================================================
 MIT -- covering:
@@ -43,9 +45,15 @@ SOFTWARE.
 ================================================================================
 BSD-3-Clause -- covering:
 
-    github.com/uniqush/goconf v0.0.1
+    conf/ (in this repository)
 
 --------------------------------------------------------------------------------
+
+The conf package in this directory was adopted from github.com/uniqush/goconf,
+a fork of github.com/ifwe/goconf, which descends from the goconf project by
+Stephen Weinberg. It is distributed under its original BSD 3-clause licence,
+reproduced below, rather than the Apache 2.0 licence covering the rest of
+uniqush-push.
 
 Copyright (c) 2010-2012, Stephen Weinberg
 All rights reserved.
@@ -57,6 +65,10 @@ Redistribution and use in source and binary forms, with or without modification,
     * Neither the name of goconf nor the names of its contributors may be used to endorse or promote products derived from this software without specific prior written permission.
 
 THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+
+Authors:
+
+Stephen Weinberg <stephen@q5comm.com>
 
 ================================================================================
 BSD-3-Clause -- covering:
@@ -135,7 +147,6 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 Apache-2.0 -- covering:
 
     cloud.google.com/go/compute/metadata v0.3.0
-    github.com/uniqush/log v0.0.1
 
 --------------------------------------------------------------------------------
 
