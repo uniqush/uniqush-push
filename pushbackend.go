@@ -506,6 +506,16 @@ func (backend *PushBackEnd) RebuildServiceSet() error {
 	return backend.db.RebuildServiceSet()
 }
 
+// PingDatabase reports whether the database is reachable.
+//
+// The only dependency uniqush cannot do anything without: every push reads the
+// devices to send to, and every subscription change writes one. It is also the
+// only dependency worth a health check asking about, which is a decision rather
+// than an omission -- see the /health handler.
+func (backend *PushBackEnd) PingDatabase() error {
+	return backend.db.Ping()
+}
+
 // CheckDatabase scans the database and reports inconsistencies, changing nothing.
 func (backend *PushBackEnd) CheckDatabase() (*db.ConsistencyReport, error) {
 	return backend.db.CheckConsistency()

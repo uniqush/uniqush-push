@@ -101,6 +101,10 @@ func (d *recordingDatabase) GetPushServiceProviderConfigs() ([]*push.PushService
 	return nil, nil
 }
 func (d *recordingDatabase) RebuildServiceSet() error { return nil }
+
+// Ping is overridden by the /health tests; the stub reports a reachable
+// database.
+func (d *recordingDatabase) Ping() error { return nil }
 func (d *recordingDatabase) AddDeliveryPointToService(string, string, *push.DeliveryPoint) (*push.PushServiceProvider, error) {
 	return nil, nil
 }

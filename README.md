@@ -254,6 +254,28 @@ path and was silently ignored there, so operators who set it years ago for the
 binary-protocol simulator still have it stored; honouring it now would have
 disabled certificate verification on connections to Apple.
 
+## Health checks ##
+
+`/health` answers `200` when redis is reachable and `503` when it is not, with
+the reason in a JSON body. Point a readiness probe at it:
+
+```yaml
+readinessProbe:
+  httpGet:
+    path: /health
+    port: 9898
+```
+
+Not a liveness probe. A liveness probe should not depend on another service:
+during a redis outage this would restart every uniqush over and over, which
+neither fixes redis nor helps the backlog drain when it returns.
+
+Redis is the only dependency checked, because it is the only one uniqush cannot
+work without at all. It deliberately does not probe Apple or Google — an
+endpoint that did would report their outage as this instance being unhealthy,
+and taking instances out of rotation is the wrong response to a push service
+being slow.
+
 ## Timeouts ##
 
 How long one request to a push service has to complete is `request_timeout`, in

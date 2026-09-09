@@ -59,6 +59,9 @@ type redisClient interface {
 	Get(ctx context.Context, key string) *redis.StringCmd
 	Incr(ctx context.Context, key string) *redis.IntCmd
 	MGet(ctx context.Context, keys ...string) *redis.SliceCmd
+	// Ping is the cheapest question redis answers, and the only one uniqush
+	// asks purely to find out whether it is being answered at all.
+	Ping(ctx context.Context) *redis.StatusCmd
 	Save(ctx context.Context) *redis.StatusCmd
 	// Scan is how anything here walks the keyspace, and KEYS is deliberately
 	// absent so that there is no second way to do it: KEYS holds the redis event
@@ -104,6 +107,20 @@ func (mc *redisMultiClient) Get(ctx context.Context, key string) *redis.StringCm
 
 func (mc *redisMultiClient) Incr(ctx context.Context, key string) *redis.IntCmd {
 	return mc.masterClient.Incr(ctx, key)
+}
+
+// Ping checks both halves of a master/replica pair.
+//
+// Reads go to the replica and writes to the master, so uniqush is only healthy
+// when both answer: a replica that has gone means every /push fails to read the
+// devices it should send to, however well the master is doing. The master is
+// checked first, and the first failure is what gets reported -- naming one
+// unreachable server is more use than saying "something is unreachable".
+func (mc *redisMultiClient) Ping(ctx context.Context) *redis.StatusCmd {
+	if cmd := mc.masterClient.Ping(ctx); cmd.Err() != nil || mc.slaveClient == nil {
+		return cmd
+	}
+	return mc.slaveClient.Ping(ctx)
 }
 
 func (mc *redisMultiClient) Scan(ctx context.Context, cursor uint64, match string, count int64) *redis.ScanCmd {
@@ -757,6 +774,19 @@ func (r *PushRedisDB) SetPushServiceProviderOfService(srv string, psp *push.Push
 	}
 	return fmt.Errorf("could not set the provider of service %q: the service was modified by something else %d times in a row",
 		srv, setProviderAttempts)
+}
+
+// Ping reports whether redis is reachable.
+//
+// One round trip and no keys read, so it is safe to call as often as a load
+// balancer likes. Bounded by the client's own read and dial timeouts, which
+// matters more than the cost: the caller is a health check, and a health check
+// that hangs is worse than one that fails.
+func (r *PushRedisDB) Ping() error {
+	if err := r.client.Ping(r.ctx).Err(); err != nil {
+		return fmt.Errorf("could not reach redis: %w", err)
+	}
+	return nil
 }
 
 // GetServiceNames will return the list of all services that have 1 or more push service providers.

@@ -78,6 +78,10 @@ const (
 	QuerySubscriptionsURL                   = "/subscriptions"
 	QueryPushServiceProviders               = "/psps"
 	RebuildServiceSetURL                    = "/rebuildserviceset"
+	// HealthURL reports whether uniqush can reach what it needs to serve. It is
+	// the one endpoint whose HTTP status code carries the answer, because that
+	// is what a load balancer reads.
+	HealthURL = "/health"
 	// CheckDatabaseURL scans the database and reports inconsistencies. It is
 	// read-only, repairs nothing, walks the keyspace with SCAN rather than KEYS
 	// and takes no lock, so it is safe to run against production.
@@ -657,6 +661,55 @@ func (api *RestAPI) queryPSPs(logger log.Logger) []byte {
 	return json
 }
 
+// health reports whether uniqush can serve, as a body and an HTTP status.
+//
+// Redis is the only thing checked, and that is a decision rather than an
+// omission. uniqush cannot do anything at all without it: every push reads the
+// devices to send to, and every subscription change writes one.
+//
+// It deliberately does not probe Apple, Google or a Web Push server. A health
+// endpoint that made outbound calls to third parties would report their outage
+// as this instance being unhealthy, and a load balancer would then take the
+// instance out of rotation -- removing capacity in response to a failure that
+// removing capacity cannot fix, at the moment the queue is growing. It would
+// also make an unauthenticated endpoint a way to make uniqush open connections
+// to Apple on request. What each provider is doing belongs in metrics, where a
+// number can be watched over time; see #299.
+//
+// Nor does it check the push service connection pools. They are built lazily,
+// per provider, on the first push -- so a pool that does not exist is the
+// normal state of a freshly started uniqush with nothing to say about its
+// health.
+//
+// Success is not logged. This is polled, by every load balancer and orchestrator
+// that has been pointed at it, and a line per poll would bury the logs it shares
+// with the pushes an operator is actually reading. A failure is logged, because
+// during an outage that line is the record of when it started.
+func (api *RestAPI) health(logger log.Logger) ([]byte, int) {
+	response := HealthResponse{Status: "ok", Database: "ok", Version: api.version, Code: UNIQUSH_SUCCESS}
+	status := http.StatusOK
+
+	if err := api.backend.PingDatabase(); err != nil {
+		logger.Errorf("Health check failed: %v", err)
+		response.Status = "unhealthy"
+		response.Database = err.Error()
+		response.Code = UNIQUSH_ERROR_DATABASE
+		// 503 rather than 500: this instance cannot serve now, and may be able
+		// to later. That is the distinction a load balancer acts on.
+		status = http.StatusServiceUnavailable
+	}
+
+	encoded, err := json.Marshal(response)
+	if err != nil {
+		// Unreachable for a struct of four strings, and still not a panic: the
+		// caller of a health check should be told something rather than have the
+		// connection dropped.
+		logger.Errorf("Could not serialize the health response: %v", err)
+		return []byte(`{"status":"unhealthy","code":"UNIQUSH_ERROR_GENERIC"}`), http.StatusServiceUnavailable
+	}
+	return encoded, status
+}
+
 // checkDatabase reports what does not add up in the database.
 //
 // The report is returned rather than acted on. A repair running unattended
@@ -769,6 +822,15 @@ func (api *RestAPI) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		n := api.rebuildServiceSet(api.loggers[LoggerServices])
 		fmt.Fprintf(w, "%s\r\n", n)
 		return
+	case HealthURL:
+		body, status := api.health(api.loggers[LoggerWeb])
+		// The only handler here that sets either of these. A health check is
+		// read by machines: the status code is the answer, and the content type
+		// says how to read the rest.
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(status)
+		fmt.Fprintf(w, "%s\r\n", body)
+		return
 	case CheckDatabaseURL:
 		n := api.checkDatabase(api.loggers[LoggerServices])
 		fmt.Fprintf(w, "%s\r\n", n)
@@ -853,6 +915,7 @@ func (api *RestAPI) Run(addr string, stopChan chan<- bool) {
 	http.Handle(QuerySubscriptionsURL, api)
 	http.Handle(QueryPushServiceProviders, api)
 	http.Handle(RebuildServiceSetURL, api)
+	http.Handle(HealthURL, api)
 	http.Handle(CheckDatabaseURL, api)
 
 	api.stopChan = stopChan
