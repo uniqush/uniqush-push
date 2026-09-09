@@ -63,6 +63,19 @@ Logging:
   start: bind failed on port 8080" came out as "cannot start: [bind failed 8080] on port %!d(MISSING)". The
   logger forwarded its arguments to the standard library as a single slice rather than expanding them.
 
+REST API:
+
+- Security: `/psps` no longer reports credentials. It merged each provider's fixed and volatile data and
+  answered with all of it, so an unauthenticated GET returned every Web Push provider's VAPID private key,
+  every ADM provider's `clientsecret`, and the access token ADM had issued it. Key material is usable long
+  after whoever fetched it has lost access to the server, and a leaked VAPID key lets someone else push to
+  your subscribers as you. The endpoint now answers from a list of fields it may report -- an allowlist, so
+  that a credential a future backend adds is withheld by default rather than published until somebody
+  notices -- and reports everything else as `[redacted]`. Credential file *paths* are still reported: which
+  certificate a provider loads is most of what the endpoint is for. Nothing else about the response changes,
+  and no configuration field is hidden. This does not make the API safe to expose: `/subscriptions` still
+  returns any subscriber's device tokens, and `/push` still sends notifications.
+
 Configuration:
 
 - Bugfix: A configuration file that fails to read part way through is now an error. The parser returned success

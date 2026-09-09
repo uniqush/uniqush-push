@@ -285,8 +285,14 @@ func (ps *pushService) BuildPushServiceProviderFromMap(kv map[string]string, psp
 	if err := validateVAPIDKey("vapidprivatekey", privateKey, 32); err != nil {
 		return err
 	}
-	// VolatileData so it is not part of the PSP's hashed identity, and so it is
-	// not echoed back by /psps.
+	// VolatileData so it is not part of the PSP's hashed identity: rotating the
+	// private key must not change the provider's name, or every device
+	// subscribed to the service would be orphaned.
+	//
+	// Which map it lives in has nothing to do with whether /psps reports it --
+	// that endpoint merged both halves and answered with everything until it was
+	// given an allowlist. This comment used to claim otherwise, and the key was
+	// published for as long as it did.
 	psp.VolatileData["vapidprivatekey"] = privateKey
 
 	subscriber, ok := kv["subscriber"]

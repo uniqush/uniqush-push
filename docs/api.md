@@ -156,9 +156,18 @@ fixed and volatile fields merged into one object each:
     {"services":{"myservice":[{"service":"myservice","bundleid":"com.example.app","cert":"/etc/uniqush/apns.crt", ...}]},"code":"UNIQUSH_SUCCESS"}
 
 Intended for checking a setup. It returns credential file *paths* rather than
-their contents, but for a Web Push provider it does include the VAPID private
-key itself — one more reason not to expose this API. Databases created before uniqush 2.2.0 need
+their contents, and reports every other field as `[redacted]` — a Web Push
+provider's VAPID private key, an ADM provider's `clientsecret` and its issued
+`token`, and anything a future backend stores that is not on the list of fields
+this endpoint may report. A redacted field is still present in the response, so
+you can see that a provider carries one. Databases created before uniqush 2.2.0 need
 [`/rebuildserviceset`](#rebuildserviceset) once before this returns anything.
+
+This is still an API with no authentication in front of it. Redaction removes
+the worst of what a reader gains, not the reason to keep the port closed:
+`/subscriptions` returns the device tokens, registration IDs and Web Push
+subscriptions of any subscriber whose name is guessed, and `/push` will send
+notifications to them.
 
 ### `/subscribe`
 
