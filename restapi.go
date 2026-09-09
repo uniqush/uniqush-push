@@ -424,13 +424,84 @@ func (api *RestAPI) querySubscriptions(kv map[string][]string, logger log.Logger
 	return json
 }
 
+// pspFieldsSafeToReport is what /psps is allowed to answer with. Everything
+// else in a provider is replaced by redactedValue.
+//
+// An allowlist rather than a list of secrets to withhold, because the two ways
+// of getting this wrong are not comparable. A field missing from here appears as
+// "[redacted]" in a debugging endpoint: visible to whoever wanted it, and a
+// one-line fix. A credential missing from a list of things to withhold is key
+// material on the wire, and nothing in the response says so. That is not
+// hypothetical -- it is how this endpoint published every Web Push provider's
+// VAPID private key for as long as uniqush has had Web Push support.
+//
+// Credential file *paths* are here on purpose. /psps exists to answer "is this
+// service set up the way I think it is", and which certificate or service
+// account file a provider loads is most of that question. What is not here is
+// the material itself: a private key is not configuration, and no amount of
+// debugging needs it echoed back.
+//
+// Adding a field: put it here if it is configuration, and leave it out if it is
+// a credential. Leaving it out is the safe mistake.
+var pspFieldsSafeToReport = map[string]bool{
+	// Every provider.
+	"service": true,
+
+	// APNs. cert, key and authkey are paths; keyid and teamid identify the
+	// signing key but are useless without the .p8 it names. credrev is a digest
+	// of the credential files, which is how the push path notices a certificate
+	// rotated in place.
+	"cert":        true,
+	"key":         true,
+	"authkey":     true,
+	"keyid":       true,
+	"teamid":      true,
+	"bundleid":    true,
+	"addr":        true,
+	"environment": true,
+	"endpoint":    true,
+	"cacert":      true,
+	"skipverify":  true,
+	"credrev":     true,
+
+	// FCM, and the same backend as gcm. credentialsfile is a path to the
+	// service account JSON, not its contents.
+	"projectid":       true,
+	"credentialsfile": true,
+
+	// Web Push and UnifiedPush. The public half of the VAPID pair and the
+	// contact address sent with it; vapidprivatekey is deliberately absent.
+	"vapidpublickey": true,
+	"subscriber":     true,
+
+	// ADM. clientid names the security profile; expire and type describe the
+	// access token ADM issued, while the token itself is deliberately absent,
+	// as is clientsecret.
+	"clientid": true,
+	"expire":   true,
+	"type":     true,
+}
+
+// redactedValue stands in for a field /psps will not report.
+//
+// Present rather than omitted, so that the response still says a provider
+// carries the field. An operator checking a Web Push setup can see the private
+// key is there without being handed it, and a field left out of the allowlist
+// by mistake shows up as this rather than vanishing.
+const redactedValue = "[redacted]"
+
 func encodePSPForAPI(psp *push.PushServiceProvider) map[string]string {
 	result := make(map[string]string)
-	for key, value := range psp.VolatileData {
-		result[key] = value
-	}
-	for key, value := range psp.FixedData {
-		result[key] = value
+	// Volatile first, then fixed, so that fixed data wins a collision. That is
+	// the order this has always merged them in.
+	for _, data := range []map[string]string{psp.VolatileData, psp.FixedData} {
+		for key, value := range data {
+			if pspFieldsSafeToReport[key] {
+				result[key] = value
+			} else {
+				result[key] = redactedValue
+			}
+		}
 	}
 	return result
 }
@@ -446,9 +517,11 @@ func (api *RestAPI) queryPSPs(logger log.Logger) []byte {
 	var r responseType
 	r.Services = make(map[string][]map[string]string)
 	for _, psp := range psps {
-		data := encodePSPForAPI(psp)
-		service := data["service"]
-		r.Services[service] = append(r.Services[service], data)
+		// Grouped by the provider's own service name rather than by the one in
+		// the encoded response, which is a redaction away from being the string
+		// every provider gets grouped under.
+		service := psp.FixedData["service"]
+		r.Services[service] = append(r.Services[service], encodePSPForAPI(psp))
 	}
 	if err != nil {
 		errorMsg := err.Error()
