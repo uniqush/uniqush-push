@@ -19,9 +19,9 @@
 // responses.
 //
 // It exists because uniqush had no way to test the HTTP/2 push path end to end.
-// The older uniqush/apns-simulator speaks the binary protocol, which Apple
-// switched off on 2021-03-31, so it could only ever exercise the code path that
-// no longer delivers anything.
+// The older uniqush/apns-simulator, now archived, speaks the binary protocol,
+// which Apple switched off on 2021-03-31, so it could only ever exercise the
+// code path that no longer delivers anything.
 //
 // The design goal is that passing means something. A permissive mock that
 // returns 200 for any request would have accepted every bug the HTTP/2 repairs
