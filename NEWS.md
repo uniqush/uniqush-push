@@ -78,6 +78,13 @@ Logging:
 
 REST API:
 
+- New feature: `/health` reports whether this instance can serve, as an HTTP status code -- `200` when redis
+  answers and `503` when it does not -- with the reason in a JSON body. It is the first endpoint here whose
+  status code carries the answer, because that is what a load balancer reads. Redis is the only thing
+  checked: an endpoint that probed Apple or Google would report their outage as this instance being
+  unhealthy, and a load balancer would then remove capacity in response to a failure that removing capacity
+  cannot fix. Use it for a readiness probe rather than a liveness one, which should not depend on another
+  service. `/checkdb` is unchanged and is still a consistency check rather than a probe.
 - New feature: `/unsubscribe` accepts `alldevices=1`, which removes every device a subscriber has in a
   service and needs only `service` and `subscriber` -- no `pushservicetype`, no token. It is for an account
   being deleted, where the application knows the subscriber is finished and not what they had; the
@@ -143,6 +150,8 @@ Maintenance:
 
 Changes to APIs (embedders only):
 
+- `db.PushDatabase` gains `Ping() error`, which backs `/health`. An implementation of that interface has to
+  provide it.
 - `db.PushDatabase` gains `RemoveAllDeliveryPointsFromService(service, subscriber string) (int, error)`,
   which backs `/unsubscribe?alldevices=1`. An implementation of that interface has to provide it.
 - `push.DestinationOf(err)` returns the delivery point an error is about, or nil. `push.ErrorReport`,

@@ -260,6 +260,31 @@ and no way for the subscriber to tell the difference. Ask for it when you need
 to move a subscription to another push server or rebuild one after a restore;
 `p256dh` and `endpoint` on their own cannot encrypt anything.
 
+### `/health`
+
+No parameters. Reports whether this instance can serve, as an HTTP status code
+and a JSON body:
+
+    curl -i http://localhost:9898/health
+    HTTP/1.1 200 OK
+    {"status":"ok","database":"ok","version":"uniqush-push 2.8.0","code":"UNIQUSH_SUCCESS"}
+
+`200` when redis answers, `503` when it does not, with the reason in
+`database`. It is the only endpoint here whose status code carries the answer,
+because that is what a load balancer reads.
+
+Redis is the only thing checked. uniqush can do nothing without it — every push
+reads the devices to send to, and every subscription change writes one — and
+nothing else it depends on belongs in a health check: an endpoint that probed
+Apple or Google would report *their* outage as this instance being unhealthy,
+and a load balancer would then remove capacity in response to a failure that
+removing capacity cannot fix. What each provider is doing belongs in metrics.
+
+Point a *readiness* probe at this. A liveness probe should not be pointed at
+anything that depends on another service: during a redis outage it would
+restart every uniqush repeatedly, which neither fixes redis nor helps the
+queue drain when it comes back.
+
 ### `/nrdp`
 
 `service` and `subscriber`. Returns the number of devices as a bare integer.

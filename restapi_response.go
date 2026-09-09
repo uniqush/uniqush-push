@@ -55,6 +55,23 @@ type APIResponseDetails struct {
 	DevicesRemoved *int `json:"devicesRemoved,omitempty"`
 }
 
+// HealthResponse is what /health answers with.
+//
+// Deliberately small. A health endpoint is read by a load balancer deciding
+// whether to send traffic here, and by a person deciding whether uniqush is the
+// thing that is broken; both are served by a verdict and a reason, and neither
+// by a catalogue.
+type HealthResponse struct {
+	// Status is "ok" or "unhealthy", which is the same thing the HTTP status
+	// code says. It is here as well because a body is what gets pasted into a
+	// chat window when someone asks what is wrong.
+	Status string `json:"status"`
+	// Database is "ok", or what went wrong reaching it.
+	Database string `json:"database"`
+	Version  string `json:"version"`
+	Code     string `json:"code"`
+}
+
 // PreviewAPIResponseDetails represents the response of /preview. It contains a representation of the payload that would be sent to external push services
 type PreviewAPIResponseDetails struct {
 	Code     string      `json:"code"`

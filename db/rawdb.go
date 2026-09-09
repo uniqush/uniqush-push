@@ -102,6 +102,10 @@ type pushRawDatabaseWriter interface { //nolint:staticcheck
 
 // These methods should be fast!
 type pushRawDatabaseReader interface { //nolint:staticcheck
+	// Ping reports whether the database is reachable, without reading anything
+	// from it.
+	Ping() error
+
 	GetDeliveryPoint(name string) (*push.DeliveryPoint, error)
 	GetPushServiceProvider(name string) (*push.PushServiceProvider, error)
 	GetServiceNames() ([]string, error)

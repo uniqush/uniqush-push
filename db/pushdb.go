@@ -110,6 +110,11 @@ type PushDatabase interface {
 
 	GetSubscriptions(services []string, user string, logger log.Logger) ([]map[string]string, error)
 
+	// Ping reports whether the database is reachable. It reads nothing and
+	// takes no lock, so a health check calling it on every request costs one
+	// round trip and cannot be blocked by a push in progress.
+	Ping() error
+
 	// CheckConsistency scans the database and reports what does not add up. It
 	// is read-only and changes nothing, including the problems it finds.
 	CheckConsistency() (*ConsistencyReport, error)
@@ -148,6 +153,16 @@ func NewPushDatabaseWithoutCache(conf *DatabaseConfig) (PushDatabase, error) {
 		return nil, fmt.Errorf("Failed to create database: %v", err)
 	}
 	return f, nil
+}
+
+// Ping reports whether the database is reachable.
+//
+// Deliberately without the lock every other method here takes. The question is
+// whether redis answers, and a health check that queued behind a push would
+// report the thing it is watching for -- an unresponsive uniqush -- as a
+// database failure, or hang until it became one.
+func (f *pushDatabaseOpts) Ping() error {
+	return f.db.Ping()
 }
 
 // FlushCache will save PSPs and subscriptions. NOTE: This is unnecessary if the database used is configured to auto-save.
