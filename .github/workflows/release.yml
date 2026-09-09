@@ -73,9 +73,12 @@ jobs:
 
       - name: Stage package root
         run: |
-          mkdir -p pkgroot/usr/bin pkgroot/etc/uniqush dist
+          mkdir -p pkgroot/usr/bin pkgroot/etc/uniqush pkgroot/usr/share/doc/uniqush-push dist
           cp src/uniqush-push pkgroot/usr/bin/
           cp src/conf/uniqush-push.conf pkgroot/etc/uniqush/
+          # The binary links BSD- and MIT-licensed code, whose licences ask to
+          # travel with it. Both files, not just ours.
+          cp src/LICENSE src/THIRD-PARTY-LICENSES pkgroot/usr/share/doc/uniqush-push/
 
       - name: Build .rpm and .deb
         env:
@@ -93,7 +96,7 @@ jobs:
         run: |
           NAME="uniqush-push_${VERSION}_${ARCH}"
           mkdir -p "$NAME"
-          cp src/LICENSE "$NAME/"
+          cp src/LICENSE src/THIRD-PARTY-LICENSES "$NAME/"
           cp src/uniqush-push "$NAME/"
           cp src/conf/uniqush-push.conf "$NAME/uniqush-push.conf"
           cat > "$NAME/install.sh" << 'INSTALLEOF'

@@ -75,6 +75,15 @@ Changes to APIs (embedders only):
 - `push.NewPushServiceConfig` takes a `*conf.ConfigFile` from `github.com/uniqush/uniqush-push/conf`. Change the
   import; the type and its methods are unchanged.
 
+Packaging:
+
+- Bugfix: Releases carry the licences of the code they bundle. uniqush-push links BSD- and MIT-licensed Go
+  modules statically, and those licences ask that their copyright notice accompany a binary distribution --
+  the `.deb` and `.rpm` shipped no licence text at all, and the archive shipped only uniqush's own. All three
+  now carry `THIRD-PARTY-LICENSES`, and the packages install it and `LICENSE` to
+  `/usr/share/doc/uniqush-push/`. The package metadata says `Apache-2.0 AND BSD-2-Clause AND BSD-3-Clause AND
+  MIT` rather than `Apache-2.0`, which described the source but not what was in the package.
+
 03 Sep 2026, uniqush-push 2.8.0
 -------------------------------
 
