@@ -47,6 +47,12 @@ type APIResponseDetails struct {
 	Code                string  `json:"code"`
 	ErrorMsg            *string `json:"errorMsg,omitempty"`
 	ModifiedDp          bool    `json:"modifiedDp,omitempty"`
+	// DevicesRemoved is how many devices an /unsubscribe?alldevices=1 removed.
+	// A pointer so that removing none reports 0 rather than being omitted:
+	// "there was nothing to remove" is the answer an account-deletion caller is
+	// checking for, and an absent field would leave them unable to tell it from
+	// a uniqush too old to know the parameter.
+	DevicesRemoved *int `json:"devicesRemoved,omitempty"`
 }
 
 // PreviewAPIResponseDetails represents the response of /preview. It contains a representation of the payload that would be sent to external push services
