@@ -1,6 +1,8 @@
 package apns
 
 import (
+	"fmt"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -25,6 +27,60 @@ import (
 // opening or closing a connection moves it underneath whoever is reading, which
 // makes the measurement flaky in both directions. The server knows exactly how
 // many sockets are its own.
+
+// settleDeadline is how long a count of open connections is given to come down
+// before it is called a leak.
+//
+// Generous, and deliberately so. Closing is prompt but not synchronous: a
+// connection still handing back its last response is closed by the borrow being
+// released rather than by Finalize, and on a loaded runner -- these tests run
+// under -race, with coverage, beside every other package -- the server can take
+// its time noticing the client has gone. Five seconds was not enough for that
+// on CI at least once, on a tree whose identical code passed on the next run.
+//
+// Waiting longer costs nothing when the test passes, because the loop stops as
+// soon as the count settles, and a real leak never settles at all: it is not a
+// count that comes down slowly, it is `cycles` connections that stay open
+// forever, since these transports have no idle timeout and nothing else
+// reclaims them. So the only thing a longer deadline buys is a slower failure
+// in the case where there is a genuine failure to report.
+const settleDeadline = 30 * time.Second
+
+// waitForConnectionsToSettle polls the simulators until at most tolerated
+// connections remain open, and reports what was left.
+func waitForConnectionsToSettle(servers []*apnstest.Server, tolerated int) int {
+	total := func() int {
+		sum := 0
+		for _, server := range servers {
+			sum += server.ActiveConnections()
+		}
+		return sum
+	}
+
+	deadline := time.Now().Add(settleDeadline)
+	settled := total()
+	for settled > tolerated && time.Now().Before(deadline) {
+		time.Sleep(10 * time.Millisecond)
+		settled = total()
+	}
+	return settled
+}
+
+// describeConnections lists which simulators are still holding connections, so
+// a failure says whether the leak is spread across every destination or stuck
+// on one.
+func describeConnections(servers []*apnstest.Server) string {
+	var held []string
+	for i, server := range servers {
+		if live := server.ActiveConnections(); live > 0 {
+			held = append(held, fmt.Sprintf("#%d: %d", i, live))
+		}
+	}
+	if len(held) == 0 {
+		return "none"
+	}
+	return strings.Join(held, ", ")
+}
 
 // TestFinalizedServicesDoNotAccumulateConnections is the regression test for a
 // Finalize that emptied its map and left every connection open.
@@ -61,28 +117,17 @@ func TestFinalizedServicesDoNotAccumulateConnections(t *testing.T) {
 		finalize()
 	}
 
-	total := func() int {
-		sum := 0
-		for _, server := range servers {
-			sum += server.ActiveConnections()
-		}
-		return sum
-	}
 	// A handful may still be closing. The tolerance is loose on purpose: this
 	// is a test about accumulation, and the two outcomes are far apart -- a
 	// Finalize that releases nothing leaves `cycles` connections open, where a
 	// slow close leaves one or two. Tightening it to exactly zero measures the
 	// scheduler under -race rather than the code.
 	const tolerated = 3
-	settled := total()
-	for i := 0; i < 500 && settled > tolerated; i++ {
-		time.Sleep(10 * time.Millisecond)
-		settled = total()
-	}
-	if settled > tolerated {
-		t.Errorf("After %d finalized services, %d connections are still open (at most %d "+
-			"expected, for a few still closing).\nFinalize marks every cached client retired and "+
-			"closes it, so the connection each push opened should be gone.", cycles, settled, tolerated)
+	if settled := waitForConnectionsToSettle(servers, tolerated); settled > tolerated {
+		t.Errorf("After %d finalized services, %d connections are still open after %v (at most %d "+
+			"expected, for a few still closing; still held: %s).\nFinalize marks every cached client "+
+			"retired and closes it, so the connection each push opened should be gone.",
+			cycles, settled, settleDeadline, tolerated, describeConnections(servers))
 	}
 }
 
@@ -143,26 +188,14 @@ func TestRetiringASupersededClientsDoNotAccumulate(t *testing.T) {
 	// are far apart, since without retirement this is `moves` and climbing,
 	// where a slow close leaves one or two behind. Tightening it measures the
 	// scheduler under -race rather than the code.
-	total := func() int {
-		sum := 0
-		for _, server := range servers {
-			sum += server.ActiveConnections()
-		}
-		return sum
-	}
 	const tolerated = 3
-	settled := total()
-	for i := 0; i < 500 && settled > tolerated; i++ {
-		time.Sleep(10 * time.Millisecond)
-		settled = total()
-	}
-	if settled > tolerated {
-		t.Errorf("After %d repoints, %d connections are still open across %d destinations "+
-			"(at most %d expected: the one in use, and a few still closing).\n"+
+	if settled := waitForConnectionsToSettle(servers, tolerated); settled > tolerated {
+		t.Errorf("After %d repoints, %d connections are still open across %d destinations after %v "+
+			"(at most %d expected: the one in use, and a few still closing; still held: %s).\n"+
 			"retireSupersededClient drops the old entry from the map and closes it, so the "+
 			"connections to destinations the provider has been moved off should not survive -- "+
 			"and these transports have no idle timeout, so nothing else will reclaim them.",
-			moves-1, settled, len(servers), tolerated)
+			moves-1, settled, len(servers), settleDeadline, tolerated, describeConnections(servers))
 	}
 
 	// And the destination actually in use is connected, so a broken final push
