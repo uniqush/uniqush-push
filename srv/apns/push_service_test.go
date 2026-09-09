@@ -378,6 +378,106 @@ func TestToAPNSPayloadAllParams(t *testing.T) {
 	testutil.ExpectJSONIsEquivalent(t, []byte(expectedJSON), payload)
 }
 
+// TestToAPNSPayloadPutsMutableContentInTheApsDictionary is the reproduction
+// from issue #192, spelled the way the reporter sent it.
+//
+// mutable-content used to land beside "aps" rather than inside it, where iOS
+// does not look for it: the notification service extension never ran, and the
+// push was delivered and reported successful all the same. There is nothing in
+// a response, a log or a device that says a key is in the wrong place, which is
+// why this went eight years.
+func TestToAPNSPayloadPutsMutableContentInTheApsDictionary(t *testing.T) {
+	expectedJSON := `{"aps":{"alert":{"body":"Hello World2"},"mutable-content":1}}`
+	notification := &push.Notification{
+		Data: map[string]string{
+			"msg":             "Hello World2",
+			"mutable-content": "1",
+		},
+	}
+	payload, err := toAPNSPayload(notification)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	testutil.ExpectJSONIsEquivalent(t, []byte(expectedJSON), payload)
+}
+
+// TestToAPNSPayloadRoutesTheReservedApsKeys covers the rest of the keys that
+// were in mutable-content's position.
+//
+// Each is a key Apple reads from the aps dictionary and nowhere else, so each
+// was silently doing nothing. The numbers are numbers: mutable-content and
+// content-available are the number 1 to iOS and are ignored as the string "1",
+// and relevance-score is the one fractional value in the dictionary.
+func TestToAPNSPayloadRoutesTheReservedApsKeys(t *testing.T) {
+	expectedJSON := `{"aps":{"alert":{"body":"hello world"},"category":"INVITE","thread-id":"conversation-42",` +
+		`"target-content-id":"window-7","interruption-level":"time-sensitive","relevance-score":0.75,` +
+		`"mutable-content":1,"content-available":1}}`
+	notification := &push.Notification{
+		Data: map[string]string{
+			"msg":                "hello world",
+			"category":           "INVITE",
+			"thread-id":          "conversation-42",
+			"target-content-id":  "window-7",
+			"interruption-level": "time-sensitive",
+			"relevance-score":    "0.75",
+			"mutable-content":    "1",
+			"content-available":  "1",
+		},
+	}
+	payload, err := toAPNSPayload(notification)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	testutil.ExpectJSONIsEquivalent(t, []byte(expectedJSON), payload)
+}
+
+// TestToAPNSPayloadLeavesUnreservedKeysAtTheRoot is the other half of the fix.
+//
+// Custom data belongs beside the aps dictionary, which is where the app reads
+// it from. Routing a key into aps that Apple has no meaning for would hide it
+// from the app and risk the notification being rejected, so the list of keys
+// that move is closed rather than a guess at what looks reserved.
+func TestToAPNSPayloadLeavesUnreservedKeysAtTheRoot(t *testing.T) {
+	expectedJSON := `{"aps":{"alert":{"body":"hello world"}},"category-id":"42","mutable":"yes","myKey":"myValue"}`
+	notification := &push.Notification{
+		Data: map[string]string{
+			"msg":         "hello world",
+			"myKey":       "myValue",
+			"category-id": "42",
+			"mutable":     "yes",
+		},
+	}
+	payload, err := toAPNSPayload(notification)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	testutil.ExpectJSONIsEquivalent(t, []byte(expectedJSON), payload)
+}
+
+// TestToAPNSPayloadDropsApsNumbersThatDoNotParse keeps the numeric keys
+// consistent with badge, which has always dropped a value it could not convert.
+//
+// Sending the key through as a string would be worse than dropping it: iOS
+// ignores "1" where it wants 1, so the caller would see a notification that
+// looks right and behaves as though the key were absent, which is the failure
+// this whole change is about.
+func TestToAPNSPayloadDropsApsNumbersThatDoNotParse(t *testing.T) {
+	expectedJSON := `{"aps":{"alert":{"body":"hello world"}}}`
+	notification := &push.Notification{
+		Data: map[string]string{
+			"msg":             "hello world",
+			"mutable-content": "yes",
+			"relevance-score": "very",
+			"badge":           "lots",
+		},
+	}
+	payload, err := toAPNSPayload(notification)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	testutil.ExpectJSONIsEquivalent(t, []byte(expectedJSON), payload)
+}
+
 func TestPreview(t *testing.T) {
 	expectedJSON := `{"aps":{"alert":{"action-loc-key":"foo","body":"hello world","launch-image":"Default2.png","loc-args":["one","two"],"loc-key":"bar"},"badge":777,"content-available":1,"sound":"hi.wav"},"myKey":"myValue"}`
 	notification := &push.Notification{
