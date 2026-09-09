@@ -35,9 +35,18 @@ func (*implementsPushError) isPushError() {}
 // destinationCarrier is implemented by the errors that know which device they
 // are about.
 //
-// Unexported, and read through DestinationOf, so that a push service type
-// cannot accidentally satisfy it: an error carrying the wrong delivery point
-// would name an innocent device in a log line an operator is about to act on.
+// The method name is unexported, which seals the interface rather than merely
+// discouraging implementations of it. A lower-case identifier is qualified by
+// the package that declares it, so a method named pushDestination in any other
+// package is a different method and does not satisfy this -- see
+// TestAForeignErrorCannotClaimADestination, which is in package push_test for
+// exactly that reason. What can satisfy it is a type embedding one of these
+// errors, and that is the intended behaviour: it answers with the embedded
+// error's own destination.
+//
+// Worth sealing because the answer is used to name a subscriber in a log line
+// an operator is about to act on, and an error that claimed the wrong device
+// would send them after an innocent one.
 type destinationCarrier interface {
 	pushDestination() *DeliveryPoint
 }
