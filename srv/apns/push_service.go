@@ -323,6 +323,16 @@ func (ps *pushService) buildProviderFromMap(kv map[string]string, psp *push.Push
 	} else if addr, ok := kv[common.AddrKey]; ok {
 		psp.VolatileData[common.EnvironmentKey] = common.EnvironmentFromAddr(addr)
 	}
+	// And the addr itself goes, rather than merely not being written.
+	//
+	// /addpsp hands this a fresh provider, so there is nothing to delete on that
+	// path -- but this is an exported interface method, nothing in its signature
+	// promises an empty provider, and a provider carrying both keys would have
+	// two answers to one question with only ResolveEndpoint's precedence to say
+	// which is meant. skipverify, endpoint and cacert are each cleared for the
+	// same reason a few lines above and below; leaving addr as the one field
+	// read but never cleared is how the second source of truth gets in.
+	delete(psp.VolatileData, common.AddrKey)
 
 	return buildHTTP2Destination(kv, psp, skipVerify)
 }

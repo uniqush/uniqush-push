@@ -112,6 +112,48 @@ func TestAddPSPNoLongerStoresAddr(t *testing.T) {
 	}
 }
 
+// TestBuildingOverAStaleProviderClearsTheAddr covers the contract rather than
+// the caller.
+//
+// /addpsp always hands the builder a fresh provider, so nothing on that path
+// carries an addr in. But BuildPushServiceProviderFromMap is an exported
+// interface method and its signature promises nothing about the provider it is
+// given, and a provider holding both keys would have two answers to one
+// question with only ResolveEndpoint's precedence to say which was meant. So
+// the builder clears it, the way it already clears skipverify, endpoint and
+// cacert.
+func TestBuildingOverAStaleProviderClearsTheAddr(t *testing.T) {
+	ensureAPNSRegistered()
+	service := NewPushService()
+	t.Cleanup(service.Finalize)
+
+	// A provider as it would come back from a database written before uniqush
+	// recorded an environment.
+	psp := push.NewEmptyPushServiceProvider()
+	psp.VolatileData[common.AddrKey] = "gateway.sandbox.push.apple.com:2195"
+
+	err := service.BuildPushServiceProviderFromMap(map[string]string{
+		"service":         "environments",
+		"pushservicetype": "apns",
+		"cert":            "apns-test/localhost.cert",
+		"key":             "apns-test/localhost.key",
+		"bundleid":        "com.example.environments",
+	}, psp)
+	if err != nil {
+		t.Fatalf("Could not rebuild the provider: %v", err)
+	}
+
+	if stored, ok := psp.VolatileData[common.AddrKey]; ok {
+		t.Errorf("Rebuilding left addr=%q behind, alongside environment=%q",
+			stored, psp.VolatileData[common.EnvironmentKey])
+	}
+	// And the registration decides the environment, rather than the addr that
+	// was there before it: this call did not ask for the sandbox.
+	if got := psp.VolatileData[common.EnvironmentKey]; got != common.EnvironmentProduction {
+		t.Errorf("Expected the registration to decide the environment, got %q", got)
+	}
+}
+
 // TestTheEnvironmentIsWrittenOnEveryRegistration checks that dropping
 // sandbox=true from a registration moves the service back to production.
 //
