@@ -88,7 +88,7 @@ and:
 |---|---|
 | `bundleid` | The app's bundle identifier, sent as the `apns-topic`. Effectively required for HTTP/2; cleared when omitted. |
 | `sandbox` | `true` to use Apple's development environment. Otherwise production. |
-| `addr` | Binary-protocol gateway address; only relevant to the deprecated binary path, but its host is still what `sandbox`/production is inferred from when `endpoint` is unset. |
+| `addr` | The retired binary protocol's gateway address. Nothing connects to it any more, but its host is still what `sandbox`/production is inferred from when `endpoint` is unset, so an existing provider keeps working. |
 | `endpoint` | Base URL HTTP/2 pushes go to (e.g. `https://api.sandbox.push.apple.com`), with no path, query or fragment. Omitted, the environment comes from `sandbox`/`addr`. A host outside `push.apple.com` is refused unless `allow_non_apple_endpoints=true` is set in the `[apns]` section of the config. |
 | `cacert` | PEM bundle to verify `endpoint` against instead of the system roots. Read and validated at `/addpsp`. |
 | `skipverify` | `true` disables certificate verification for a non-Apple `endpoint`. Refused for Apple's hosts. |
@@ -253,7 +253,7 @@ payload. These have meaning to uniqush or a backend:
 | `msggroup` | fcm, adm | The collapse key: a newer notification with the same group replaces an undelivered older one. |
 | `uniqush.apns_push_type` | apns | The `apns-push-type`: `alert` (default), `background`, `complication`, `controls`, `fileprovider`, `liveactivity`, `location`, `mdm`, `pushtotalk`, `voip` or `widgets`. Also sets the priority Apple requires for that type. |
 | `uniqush.apns_voip` | apns | `1` is shorthand for `uniqush.apns_push_type=voip`, and allows the 5120-byte VoIP payload limit instead of 4096. |
-| `uniqush.http2` | apns | `0` selects Apple's binary protocol, which Apple shut down in 2021. Deprecated; logs a warning and will be removed. |
+| `uniqush.http2` | apns | Obsolete, and ignored. `0` used to select Apple's binary protocol, which Apple shut down in 2021 and uniqush no longer implements; the push goes over HTTP/2 and the response reports that the parameter does nothing. |
 | `uniqush.payload.apns` | apns | A complete APNs payload as JSON, sent verbatim instead of building one from the parameters above (`ttl` still applies). |
 | `uniqush.payload.fcm`, `uniqush.payload.gcm` | fcm, gcm | A JSON object used as the FCM `data` payload instead of the other parameters. Every value must be a string; nested objects, numbers and booleans are rejected with a message naming the field. |
 | `uniqush.notification.fcm`, `uniqush.notification.gcm` | fcm, gcm | A JSON object sent as the FCM `notification` block, which the device displays itself, alongside (or instead of) the `data` payload. |

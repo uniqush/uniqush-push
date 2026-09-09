@@ -40,7 +40,7 @@ type PushRequestProcessor interface {
 	SetPushServiceConfig(c *push.PushServiceConfig)
 }
 
-// PushRequest contains the data needed for an push attempt to APNs for the given list of delivery points (for both HTTP/2 and binary APIs).
+// PushRequest contains the data needed for a push attempt to APNs for the given list of delivery points.
 type PushRequest struct {
 	PSP       *push.PushServiceProvider
 	Devtokens [][]byte
@@ -49,8 +49,7 @@ type PushRequest struct {
 	Expiry    uint32
 
 	// PushType is the value for the apns-push-type header, e.g. "alert" or
-	// "background". Only the HTTP/2 API sends it; the binary protocol has no
-	// equivalent. An empty value is treated as DefaultPushType.
+	// "background". An empty value is treated as DefaultPushType.
 	PushType string
 
 	// DPList is a list of delivery points of the same length as Devtokens. DPList[i].FixedData["dev_token"] == string(Devtokens[i])
@@ -66,7 +65,11 @@ type PushRequest struct {
 	ResChan chan<- *APNSResult
 }
 
-// GetID determines the message id associated with a given dev token's index. This is used by the binary protocol.
+// GetID determines the message id associated with a given dev token's index.
+//
+// The ids come from one contiguous block reserved per push, so a result can be
+// matched back to the delivery point it belongs to by its offset within the
+// block. See waitResults in srv/apns.
 func (request *PushRequest) GetID(idx int) uint32 {
 	if idx < 0 || idx >= len(request.Devtokens) {
 		return 0
@@ -75,12 +78,13 @@ func (request *PushRequest) GetID(idx int) uint32 {
 	return startID + uint32(idx)
 }
 
-// APNSResult represents the response from the push request to APNs (either from the binary API or HTTP/2)
+// APNSResult represents the response from the push request to APNs.
 type APNSResult struct {
 	// MsgID is a unique identifier for the given push attempt to APNs (it is unique within a reasonable time window).
-	// This is used by the binary API to associate asynchronous errors with the push request.
+	// It identifies which delivery point of the request this result is for.
 	MsgID uint32
-	// Status is a status code for the binary API. The HTTP/2 errors are also translated to those status codes.
+	// Status is one of the Status* codes in constants.go, which the HTTP/2
+	// processor derives from Apple's status code and reason.
 	Status uint8
 	// Err will be handled by the error handler for APNs differently based on the type implementing this interface.
 	Err push.Error

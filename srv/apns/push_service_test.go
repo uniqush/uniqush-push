@@ -78,7 +78,6 @@ func (mockPRP *MockPushRequestProcessor) SetPushServiceConfig(c *push.PushServic
 func TestCreatePushService(t *testing.T) {
 	mockRequestProcessor := newMockRequestProcessor(APNSSuccess)
 	service := NewPushService().(*pushService)
-	service.binaryRequestProcessor = mockRequestProcessor
 	service.httpRequestProcessor = mockRequestProcessor
 	service.Finalize()
 }
@@ -86,7 +85,6 @@ func TestCreatePushService(t *testing.T) {
 func newPushServiceWithErrorChannel(status uint8) (*pushService, *MockPushRequestProcessor, chan push.Error) {
 	mockRequestProcessor := newMockRequestProcessor(status)
 	service := NewPushService().(*pushService)
-	service.binaryRequestProcessor = mockRequestProcessor
 	service.httpRequestProcessor = mockRequestProcessor
 	errChan := make(chan push.Error, 100)
 	service.SetErrorReportChan(errChan)

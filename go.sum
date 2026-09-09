@@ -24,8 +24,6 @@ github.com/redis/go-redis/v9 v9.22.0 h1:laDvpYXTJtZLloinw1fA5Kqd6HAEH2XKxOkG/PDq
 github.com/redis/go-redis/v9 v9.22.0/go.mod h1:y2g0Wj8rQvuK0ELM+oxSudcLtC09JScs98I/X9gRWY4=
 github.com/stretchr/testify v1.3.0 h1:TivCn/peBQ7UY8ooIcPgZFpTNSz0Q2U6UrFlUfqbe0Q=
 github.com/stretchr/testify v1.3.0/go.mod h1:M5WIy9Dh21IEIfnGCwXGc5bZfKNJtfHm1UVUgZn+9EI=
-github.com/uniqush/cache2 v0.0.1 h1:WsWKa5X7+18ExbelU2DiQZspBAiP/e8ecH829S6q2mM=
-github.com/uniqush/cache2 v0.0.1/go.mod h1:zm+ODSeRnkDSvbeFbr4QvvDnphbSXJJf8pFTGNnP1No=
 github.com/uniqush/goconf v0.0.1 h1:/SFjs9k50534iEQZzFW9kvMYdd6E076N7wIgcKqmZb8=
 github.com/uniqush/goconf v0.0.1/go.mod h1:LABxngJNkcotcA3ApvI15DipVCfBVSWWtH5oQC8Q/Dw=
 github.com/uniqush/log v0.0.1 h1:QtBbyczbh1NxRMZgs5ZGC4IYqWqOk34n3tbzwOp78QU=
