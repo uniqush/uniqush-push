@@ -285,6 +285,14 @@ func TestValidateRawAPNSPayload(t *testing.T) {
 	testutil.ExpectJSONIsEquivalent(t, []byte(json), payload)
 }
 
+// TestValidateSilentPayload pins the quoted content-available, which is the
+// form callers were forced into while the numeric one was rejected.
+//
+// iOS ignores it, so a payload like this wakes nothing -- but it is what a
+// caller who worked around #310 is sending today, and refusing it now would
+// turn their workaround into an outage on upgrade. It is forwarded exactly as
+// it arrived, not rewritten into a number: uniqush.payload.apns goes to APNs
+// verbatim.
 func TestValidateSilentPayload(t *testing.T) {
 	json := `{"aps":{"content-available":"1"},"type":"foo","foo": {}}`
 	payload, err := validateRawAPNSPayload(json)
@@ -294,12 +302,41 @@ func TestValidateSilentPayload(t *testing.T) {
 	testutil.ExpectJSONIsEquivalent(t, []byte(json), payload)
 }
 
+// TestValidateSilentPayloadWithANumericContentAvailable is the regression test
+// for #310.
+//
+// This is the background notification exactly as Apple documents it, and it was
+// the one form uniqush refused: the check compared a decoded JSON value against
+// the string "1", and encoding/json decodes a JSON number into a float64, so
+// the comparison could not be true for a correct payload. The test above was
+// the only silent push covered, which is how a check that was inverted in
+// practice stayed that way.
+func TestValidateSilentPayloadWithANumericContentAvailable(t *testing.T) {
+	for _, json := range []string{
+		`{"aps":{"content-available":1}}`,
+		`{"aps":{"content-available":1},"type":"foo","foo": {}}`,
+	} {
+		payload, err := validateRawAPNSPayload(json)
+		if err != nil {
+			t.Errorf("Rejected the documented form of a background push %s: %v", json, err)
+			continue
+		}
+		testutil.ExpectJSONIsEquivalent(t, []byte(json), payload)
+	}
+}
+
 func TestRejectInvalidAPNSPayload(t *testing.T) {
 	invalidPayloads := []string{
 		`{"aps":42, "type": "foo", "foo": {}}`,
 		`{"aps":null, "type": "foo", "foo": {}}`,
 		`{"aps":{}, "type": "foo", "foo": {}}`, // no alert
 		`not JSON`,
+		// No alert, and content-available is not the 1 that would make this a
+		// background push. Accepting the number must not turn into accepting
+		// anything that happens to be there.
+		`{"aps":{"content-available":0}}`,
+		`{"aps":{"content-available":true}}`,
+		`{"aps":{"content-available":"yes"}}`,
 	}
 	for _, json := range invalidPayloads {
 		_, err := validateRawAPNSPayload(json)
