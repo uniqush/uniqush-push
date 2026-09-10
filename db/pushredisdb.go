@@ -23,6 +23,7 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"github.com/redis/go-redis/v9"
@@ -46,6 +47,15 @@ type PushRedisDB struct {
 	// ContextTimeoutEnabled defaults to false, so commands are bounded by
 	// ReadTimeout/WriteTimeout regardless.
 	ctx context.Context
+
+	// indexBuilt caches a positive answer to "is the subscriber index built",
+	// which is otherwise one EXISTS per wildcard push.
+	//
+	// Only ever set, never cleared: nothing deletes the marker, so a true answer
+	// stays true for the life of the process. A false answer is deliberately not
+	// cached, so that /rebuildsubscriberindex takes effect without a restart --
+	// including a rebuild run against a different uniqush instance.
+	indexBuilt atomic.Bool
 }
 
 // redisClient is the subset of go-redis this package uses. Method signatures
@@ -60,11 +70,17 @@ type PushRedisDB struct {
 type redisClient interface {
 	redis.Scripter
 
+	// DBSize is asked once, at startup, to tell a database with nothing in it
+	// from one that has never been indexed.
+	DBSize(ctx context.Context) *redis.IntCmd
 	Del(ctx context.Context, keys ...string) *redis.IntCmd
 	Exists(ctx context.Context, keys ...string) *redis.IntCmd
 	FlushDB(ctx context.Context) *redis.StatusCmd // for tests only
 	Get(ctx context.Context, key string) *redis.StringCmd
 	MGet(ctx context.Context, keys ...string) *redis.SliceCmd
+	// Rename is how a rebuilt index replaces the live one: a reader sees the old
+	// index or the new one, never a half-built one.
+	Rename(ctx context.Context, key, newkey string) *redis.StatusCmd
 	// Ping is the cheapest question redis answers, and the only one uniqush
 	// asks purely to find out whether it is being answered at all.
 	Ping(ctx context.Context) *redis.StatusCmd
@@ -75,10 +91,22 @@ type redisClient interface {
 	// walking means stalling every push for the duration. See scanKeys.
 	Scan(ctx context.Context, cursor uint64, match string, count int64) *redis.ScanCmd
 	SAdd(ctx context.Context, key string, members ...interface{}) *redis.IntCmd
+	SCard(ctx context.Context, key string) *redis.IntCmd
 	SIsMember(ctx context.Context, key string, member interface{}) *redis.BoolCmd
 	SRem(ctx context.Context, key string, members ...interface{}) *redis.IntCmd
 	Set(ctx context.Context, key string, value interface{}, expiration time.Duration) *redis.StatusCmd
 	SMembers(ctx context.Context, key string) *redis.StringSliceCmd
+	// SScan walks one set, for the sets with a member per device.
+	SScan(ctx context.Context, key string, cursor uint64, match string, count int64) *redis.ScanCmd
+	ZAdd(ctx context.Context, key string, members ...redis.Z) *redis.IntCmd
+	ZCard(ctx context.Context, key string) *redis.IntCmd
+	ZCount(ctx context.Context, key, minScore, maxScore string) *redis.IntCmd
+	// ZScore answers whether one subscriber is indexed, and when they were last
+	// seen. A missing member comes back as redis.Nil.
+	ZScore(ctx context.Context, key, member string) *redis.FloatCmd
+	// ZScan walks one service's subscriber index, which is how a wildcard push
+	// finds its subscribers without walking the keyspace at all.
+	ZScan(ctx context.Context, key string, cursor uint64, match string, count int64) *redis.ScanCmd
 	// Watch runs fn with the given keys watched. A transaction that fn opens
 	// then fails to commit if another client has written one of those keys in
 	// the meantime, rather than overwriting the change. Reads inside fn go
@@ -121,6 +149,10 @@ func (mc *redisMultiClient) ScriptExists(ctx context.Context, hashes ...string) 
 
 func (mc *redisMultiClient) ScriptLoad(ctx context.Context, script string) *redis.StringCmd {
 	return mc.masterClient.ScriptLoad(ctx, script)
+}
+
+func (mc *redisMultiClient) DBSize(ctx context.Context) *redis.IntCmd {
+	return mc.masterClient.DBSize(ctx)
 }
 
 func (mc *redisMultiClient) Del(ctx context.Context, keys ...string) *redis.IntCmd {
@@ -172,8 +204,16 @@ func (mc *redisMultiClient) Save(ctx context.Context) *redis.StatusCmd {
 	return mc.masterClient.Save(ctx)
 }
 
+func (mc *redisMultiClient) Rename(ctx context.Context, key, newkey string) *redis.StatusCmd {
+	return mc.masterClient.Rename(ctx, key, newkey)
+}
+
 func (mc *redisMultiClient) SAdd(ctx context.Context, key string, members ...interface{}) *redis.IntCmd {
 	return mc.masterClient.SAdd(ctx, key, members...)
+}
+
+func (mc *redisMultiClient) SCard(ctx context.Context, key string) *redis.IntCmd {
+	return mc.slaveClient.SCard(ctx, key)
 }
 
 func (mc *redisMultiClient) SRem(ctx context.Context, key string, members ...interface{}) *redis.IntCmd {
@@ -192,6 +232,30 @@ func (mc *redisMultiClient) SMembers(ctx context.Context, key string) *redis.Str
 	return mc.slaveClient.SMembers(ctx, key)
 }
 
+func (mc *redisMultiClient) SScan(ctx context.Context, key string, cursor uint64, match string, count int64) *redis.ScanCmd {
+	return mc.slaveClient.SScan(ctx, key, cursor, match, count)
+}
+
+func (mc *redisMultiClient) ZAdd(ctx context.Context, key string, members ...redis.Z) *redis.IntCmd {
+	return mc.masterClient.ZAdd(ctx, key, members...)
+}
+
+func (mc *redisMultiClient) ZCard(ctx context.Context, key string) *redis.IntCmd {
+	return mc.slaveClient.ZCard(ctx, key)
+}
+
+func (mc *redisMultiClient) ZCount(ctx context.Context, key, minScore, maxScore string) *redis.IntCmd {
+	return mc.slaveClient.ZCount(ctx, key, minScore, maxScore)
+}
+
+func (mc *redisMultiClient) ZScan(ctx context.Context, key string, cursor uint64, match string, count int64) *redis.ScanCmd {
+	return mc.slaveClient.ZScan(ctx, key, cursor, match, count)
+}
+
+func (mc *redisMultiClient) ZScore(ctx context.Context, key, member string) *redis.FloatCmd {
+	return mc.slaveClient.ZScore(ctx, key, member)
+}
+
 var _ redisClient = &redis.Client{}
 var _ pushRawDatabase = &PushRedisDB{}
 
@@ -206,6 +270,39 @@ const (
 	ServiceDeliveryPointToPushServiceProviderPrefix string = "srv.dp-2-psp:"
 	// ServiceToPushServiceProvidersPrefix is the prefix of keys for a redis SET - Maps a service name to a set of PSP names
 	ServiceToPushServiceProvidersPrefix string = "srv-2-psp:"
+	// ServiceToSubscribersPrefix is the prefix of keys for a redis ZSET - Maps a
+	// service name to its subscribers, scored by the unix time of each
+	// subscriber's most recent /subscribe.
+	//
+	// A sorted set rather than a plain one because the score turns "how many
+	// subscribers have been seen since T" into one ZCOUNT, and /subscribe is
+	// what an application calls when it launches, so the score is a usable
+	// last-seen. It costs roughly twice a SET's memory per member; the device
+	// set below has no such use and stays a SET.
+	ServiceToSubscribersPrefix string = "srv-2-sub:"
+	// ServiceTypeToDeliveryPointsPrefix is the prefix of keys for a redis SET -
+	// Maps a service name + push service type to the names of that service's
+	// delivery points of that type, so that counting them is one SCARD.
+	ServiceTypeToDeliveryPointsPrefix string = "srv.type-2-dp:"
+	// SubscriberIndexBuiltKey is the key for a redis STRING - it holds the unix
+	// time at which the subscriber index above was last rebuilt in full.
+	//
+	// The presence of srv-2-sub:<service> cannot answer the same question. Redis
+	// deletes an empty sorted set, so the key is absent on a database that has
+	// never been indexed and is recreated, holding one member, by the first
+	// /subscribe after an upgrade. A read path keyed on that would switch itself
+	// on against an index covering only the subscribers who happened to
+	// re-subscribe, and a wildcard push would silently miss everyone else.
+	SubscriberIndexBuiltKey string = "subscriber.index:built"
+	// SubscriberIndexStagingPrefix is prefixed to an index key while
+	// /rebuildsubscriberindex is filling it, so that the rebuilt copy is renamed
+	// over the live one in a single step and a concurrent reader sees one or the
+	// other rather than a half-built index.
+	//
+	// A prefix rather than a suffix on purpose: nothing that walks the keyspace
+	// for "srv-2-sub:*" or "srv.type-2-dp:*" can then mistake a key being built
+	// for a service of its own.
+	SubscriberIndexStagingPrefix string = "rebuilding:"
 	// DeliveryPointCounterPrefix is the prefix of keys for a redis STRING - it
 	// mapped a delivery point name to the number of subscribers using it.
 	//
@@ -232,19 +329,87 @@ const (
 // name of its own. That is the redis convention, and it keeps the key layout in
 // one place: the constants above. It also means a caller can say in advance
 // which keys a call will touch, which is what a cluster client would need.
+// The three keys are, in order: the subscriber's device set, the service's
+// subscriber index, and the service's device set for this device's push service
+// type. Both scripts take the same three, so the two paths cannot drift.
+//
+// The conditional ZREM on the unsubscribe path is why these are scripts rather
+// than a MULTI: whether the subscriber leaves the index depends on how many
+// devices are left, which is a read the transaction would have to make first.
 var (
-	// subscribeScript adds a delivery point to a subscriber's device set.
-	// KEYS[1] is that set and ARGV[1] the delivery point name; the result is the
-	// number of members added, so 0 when the device was already subscribed.
-	subscribeScript = redis.NewScript(`return redis.call('SADD', KEYS[1], ARGV[1])`)
+	// subscribeScript adds a delivery point to a subscriber's device set and
+	// records the subscriber and the device in the service's indexes.
+	//
+	// ARGV[1] is the delivery point name, ARGV[2] the subscriber and ARGV[3] the
+	// time to score the subscriber with. The result is the number of members
+	// added to the device set, so 0 when the device was already subscribed --
+	// the score is still refreshed, which is what makes it a last-seen.
+	subscribeScript = redis.NewScript(`
+local added = redis.call('SADD', KEYS[1], ARGV[1])
+redis.call('ZADD', KEYS[2], ARGV[3], ARGV[2])
+redis.call('SADD', KEYS[3], ARGV[1])
+return added`)
 
 	// unsubscribeScript takes it out again, returning the number removed.
-	unsubscribeScript = redis.NewScript(`return redis.call('SREM', KEYS[1], ARGV[1])`)
+	//
+	// ARGV[1] is the delivery point name and ARGV[2] the subscriber. The
+	// subscriber leaves the service's index only when the device removed was
+	// their last one.
+	//
+	// The type set loses the device only if this subscriber's set actually held
+	// it. Every index change here then follows from a fact about this
+	// subscriber's own devices, so a call naming a device that is not theirs
+	// cannot take it out of the count while its real owner still has it. The
+	// ZREM needs no such guard: a subscriber with no devices belongs in no
+	// index, whatever this call removed.
+	unsubscribeScript = redis.NewScript(`
+local removed = redis.call('SREM', KEYS[1], ARGV[1])
+if removed == 1 then
+  redis.call('SREM', KEYS[3], ARGV[1])
+end
+if redis.call('SCARD', KEYS[1]) == 0 then
+  redis.call('ZREM', KEYS[2], ARGV[2])
+end
+return removed`)
 )
+
+// subscriptionIndexKeys are the keys both scripts take, for one subscription.
+//
+// The scripts name no key of their own, so this function is the only place the
+// index layout is written down for the write path -- and a caller can therefore
+// say in advance which keys a call will touch, which is what a cluster client
+// would need.
+func subscriptionIndexKeys(srv, sub, dp string) []string {
+	return []string{
+		deviceSetKey(srv, sub),
+		subscriberIndexKey(srv),
+		typeDeviceSetKey(srv, deliveryPointTypeFromName(dp)),
+	}
+}
 
 // deviceSetKey names the SET of delivery points a subscriber has in a service.
 func deviceSetKey(srv, sub string) string {
 	return ServiceSubscriberToDeliveryPointsPrefix + srv + ":" + sub
+}
+
+// subscriberIndexKey names the ZSET of a service's subscribers.
+func subscriberIndexKey(srv string) string {
+	return ServiceToSubscribersPrefix + srv
+}
+
+// typeDeviceSetKey names the SET of a service's delivery points of one push
+// service type.
+func typeDeviceSetKey(srv, pushServiceType string) string {
+	return ServiceTypeToDeliveryPointsPrefix + srv + ":" + pushServiceType
+}
+
+// deliveryPointTypeFromName reads the push service type out of a delivery point
+// name, which is "<pushservicetype>:<sha1 of its fixed data>".
+func deliveryPointTypeFromName(name string) string {
+	if index := strings.Index(name, ":"); index > 0 {
+		return name[:index]
+	}
+	return ""
 }
 
 // scanKeysCount is the COUNT hint on each SCAN: fewer round trips against less
@@ -568,47 +733,119 @@ func (r *PushRedisDB) RemovePushServiceProvider(psp string) error {
 
 // GetDeliveryPointsNameByServiceSubscriber will get the delivery point for a service and it's subscriber
 //
-// A "*" in either name makes this a pattern covering many subscribers, which
+// A "*" in the subscriber makes this a pattern covering many of them, which
 // /push accepts and does not validate. That is the one keyspace walk uniqush
-// does on a request path, and it ran KEYS: a single wildcard push held redis
-// for the length of a full walk, so every other push -- and everything else
-// sharing the server -- waited on it. It scans now.
+// does on a request path, and it used to run KEYS: a single wildcard push held
+// redis for the length of a full walk, so every other push -- and everything
+// else sharing the server -- waited on it.
 //
-// The keys come back deduplicated, which matters more here than the stall did.
-// A SCAN can hand the same key back twice, and each repeat would be a second
-// copy of every delivery point behind it: a duplicate notification on the
-// subscriber's phone. The set that prevents that holds an entry per matched
-// subscriber, which is what the returned map holds anyway.
-func (r *PushRedisDB) GetDeliveryPointsNameByServiceSubscriber(srv, sub string) (map[string][]string, error) {
-	pattern := deviceSetKey(srv, sub)
-	keys := []string{pattern}
-	if strings.Contains(sub, "*") || strings.Contains(srv, "*") {
-		var err error
-		keys, err = r.scanUniqueKeys(pattern)
-		if err != nil {
-			return nil, fmt.Errorf("GetDPsNameByServiceSubscriber dp lookup '%s:%s' failed: %w", srv, sub, err)
-		}
+// It does not walk the keyspace at all now. The service's subscriber index is a
+// sorted set of exactly the names a wildcard could match, and ZSCAN takes the
+// same glob patterns KEYS did, so the same subscribers match as always -- over
+// a structure the size of one service rather than the size of the database. The
+// fallback, for a database whose index has not been rebuilt, is the SCAN this
+// replaces.
+//
+// A "*" in the service is refused. Every endpoint that reaches this validates
+// the service name against a pattern that excludes "*", so nothing asks for it
+// deliberately, and there is no per-service index to answer it from.
+func (r *PushRedisDB) GetDeliveryPointsNameByServiceSubscriber(srv, sub, requestID string, logger log.Logger) (map[string][]string, error) {
+	logger = orDiscard(logger)
+
+	if strings.Contains(srv, "*") {
+		return nil, fmt.Errorf("GetDPsNameByServiceSubscriber: a wildcard in the service name is not supported, got %q", srv)
 	}
 
-	ret := make(map[string][]string, len(keys))
-	for _, k := range keys {
-		m, err := r.client.SMembers(r.ctx, k).Result()
+	subscribers := []string{sub}
+	if strings.Contains(sub, "*") {
+		var err error
+		subscribers, err = r.matchSubscribers(srv, sub, requestID, logger)
 		if err != nil {
-			return nil, fmt.Errorf("GetDPsNameByServiceSubscriber smembers %q failed: %w", k, err)
+			return nil, err
 		}
-		if m == nil {
+	}
+	return r.deliveryPointsOfSubscribers(srv, subscribers)
+}
+
+// matchSubscribers lists the subscribers of one service matching a glob.
+//
+// The names come back deduplicated. Both ways of finding them can hand the same
+// one over twice -- ZSCAN and SCAN alike give up the snapshot KEYS had -- and
+// each repeat would be a second copy of every delivery point behind that
+// subscriber, which is a duplicate notification on somebody's phone. The set
+// that prevents it holds an entry per matched subscriber, which is what the
+// caller's own result holds anyway.
+func (r *PushRedisDB) matchSubscribers(srv, pattern, requestID string, logger log.Logger) ([]string, error) {
+	built, err := r.subscriberIndexBuilt()
+	if err != nil {
+		return nil, err
+	}
+	if !built {
+		// Deliberately not throttled to once per process. This is a slow path
+		// that an operator can end for good with one call, and the noise is what
+		// makes them do it; it stops the moment the rebuild runs.
+		logger.Errorf("RequestID=%v Service=%v Subscriber=%v the subscriber index has not been built, so this "+
+			"wildcard is being matched by scanning the whole keyspace, which is slow on a large database. "+
+			"Run /rebuildsubscriberindex once against this database to fix it.", requestID, srv, pattern)
+		return r.scanMatchingSubscribers(srv, pattern)
+	}
+
+	seen := make(map[string]bool)
+	subscribers := make([]string, 0)
+	err = r.scanSubscriberIndex(srv, pattern, func(subscriber string) error {
+		if seen[subscriber] {
+			return nil
+		}
+		seen[subscriber] = true
+		subscribers = append(subscribers, subscriber)
+		return nil
+	})
+	if err != nil {
+		return nil, fmt.Errorf("GetDPsNameByServiceSubscriber dp lookup '%s:%s' failed: %w", srv, pattern, err)
+	}
+	return subscribers, nil
+}
+
+// scanMatchingSubscribers is the fallback for a database whose subscriber index
+// has not been rebuilt.
+//
+// A SCAN, not KEYS: it walks the whole keyspace in pages, which is slow on a
+// large database but never holds the server. Every subscriber is here whether
+// or not the index knows about them, which is the whole point -- an index that
+// covers only post-upgrade subscribers would answer confidently and wrongly.
+func (r *PushRedisDB) scanMatchingSubscribers(srv, pattern string) ([]string, error) {
+	keys, err := r.scanUniqueKeys(deviceSetKey(srv, pattern))
+	if err != nil {
+		return nil, fmt.Errorf("GetDPsNameByServiceSubscriber dp lookup '%s:%s' failed: %w", srv, pattern, err)
+	}
+	prefix := deviceSetKey(srv, "")
+	subscribers := make([]string, 0, len(keys))
+	for _, key := range keys {
+		subscribers = append(subscribers, strings.TrimPrefix(key, prefix))
+	}
+	return subscribers, nil
+}
+
+// deliveryPointsOfSubscribers reads the device set of each named subscriber.
+//
+// The result is keyed by service, as it has always been, even though every
+// subscriber here belongs to the one service: the shape is what
+// GetPushServiceProviderDeliveryPointPairs iterates.
+func (r *PushRedisDB) deliveryPointsOfSubscribers(srv string, subscribers []string) (map[string][]string, error) {
+	ret := make(map[string][]string, 1)
+	for _, subscriber := range subscribers {
+		key := deviceSetKey(srv, subscriber)
+		names, err := r.client.SMembers(r.ctx, key).Result()
+		if err != nil {
+			return nil, fmt.Errorf("GetDPsNameByServiceSubscriber smembers %q failed: %w", key, err)
+		}
+		if names == nil {
 			continue
 		}
-		elem := strings.Split(k, ":")
-		s := elem[1]
-		if l, ok := ret[s]; !ok || l == nil {
-			ret[s] = make([]string, 0, len(keys))
+		if existing, ok := ret[srv]; !ok || existing == nil {
+			ret[srv] = make([]string, 0, len(subscribers))
 		}
-		for _, bm := range m {
-			dpl := ret[s]
-			dpl = append(dpl, bm)
-			ret[s] = dpl
-		}
+		ret[srv] = append(ret[srv], names...)
 	}
 	return ret, nil
 }
@@ -624,7 +861,8 @@ func (r *PushRedisDB) GetPushServiceProviderNameByServiceDeliveryPoint(srv, dp s
 
 // AddDeliveryPointToServiceSubscriber will associate the name of the given delivery point with the given service name and subscriber name.
 func (r *PushRedisDB) AddDeliveryPointToServiceSubscriber(srv, sub, dp string) error {
-	err := subscribeScript.Run(r.ctx, r.client, []string{deviceSetKey(srv, sub)}, dp).Err()
+	err := subscribeScript.Run(r.ctx, r.client, subscriptionIndexKeys(srv, sub, dp),
+		dp, sub, time.Now().Unix()).Err()
 	if err != nil {
 		return fmt.Errorf("AddDPToServiceSubscriber failed: %w", err)
 	}
@@ -638,7 +876,7 @@ func (r *PushRedisDB) AddDeliveryPointToServiceSubscriber(srv, sub, dp string) e
 // to exactly one subscription, because the name it is stored under hashes the
 // service and the subscriber along with the device token.
 func (r *PushRedisDB) RemoveDeliveryPointFromServiceSubscriber(srv, sub, dp string) error {
-	err := unsubscribeScript.Run(r.ctx, r.client, []string{deviceSetKey(srv, sub)}, dp).Err()
+	err := unsubscribeScript.Run(r.ctx, r.client, subscriptionIndexKeys(srv, sub, dp), dp, sub).Err()
 	if err != nil {
 		return fmt.Errorf("removing the delivery point pointer %q from \"%s:%s\" failed: %w", dp, srv, sub, err)
 	}
@@ -659,7 +897,7 @@ func (r *PushRedisDB) RemoveMissingDeliveryPointFromServiceSubscriber(service, s
 	logger = orDiscard(logger)
 
 	// Precondition: DeliveryPointPrefix + dp was already missing. No need to remove it.
-	err := unsubscribeScript.Run(r.ctx, r.client, []string{deviceSetKey(service, subscriber)}, dpName).Err()
+	err := unsubscribeScript.Run(r.ctx, r.client, subscriptionIndexKeys(service, subscriber, dpName), dpName, subscriber).Err()
 	if err != nil {
 		logger.Errorf("Error cleaning up delivery point with missing data for dp %q service %q FROM user %q's delivery points: %v", dpName, service, subscriber, err)
 	}

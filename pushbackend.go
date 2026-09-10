@@ -462,7 +462,7 @@ func (backend *PushBackEnd) collectResult(
 
 // NumberOfDeliveryPoints returns the number of delivery points for a given service+subscriber.
 func (backend *PushBackEnd) NumberOfDeliveryPoints(service, sub string, logger log.Logger) int {
-	pspDpList, err := backend.db.GetPushServiceProviderDeliveryPointPairs(service, sub, nil, logger)
+	pspDpList, err := backend.db.GetPushServiceProviderDeliveryPointPairs(service, sub, nil, "", logger)
 	if err != nil {
 		logger.Errorf("Query=NumberOfDeliveryPoints Service=%v Subscriber=%v Failed: Database Error %v", service, sub, err)
 		return 0
@@ -516,6 +516,18 @@ func (backend *PushBackEnd) PingDatabase() error {
 	return backend.db.Ping()
 }
 
+// RebuildSubscriberIndex rebuilds the per-service subscriber and delivery point
+// indexes, for a database upgraded from before they existed.
+func (backend *PushBackEnd) RebuildSubscriberIndex() error {
+	return backend.db.RebuildSubscriberIndex()
+}
+
+// SubscriberStats counts the subscribers and devices of the named services, or
+// of every service when none are named.
+func (backend *PushBackEnd) SubscriberStats(services []string, since *int64) (map[string]*db.ServiceStats, error) {
+	return backend.db.SubscriberStats(services, since)
+}
+
 // CheckDatabase scans the database and reports inconsistencies, changing nothing.
 func (backend *PushBackEnd) CheckDatabase() (*db.ConsistencyReport, error) {
 	return backend.db.CheckConsistency()
@@ -562,7 +574,7 @@ func (backend *PushBackEnd) pushImpl(
 			pspDpList[0].DeliveryPoint = dest
 		} else {
 			var err error
-			pspDpList, err = backend.db.GetPushServiceProviderDeliveryPointPairs(service, sub, dpNamesRequested, logger)
+			pspDpList, err = backend.db.GetPushServiceProviderDeliveryPointPairs(service, sub, dpNamesRequested, reqID, logger)
 			if err != nil {
 				logger.Errorf("RequestID=%v Service=%v Subscriber=%v Failed: Database Error: %v", reqID, service, sub, err)
 				handler.AddDetailsToHandler(APIResponseDetails{RequestID: &reqID, From: &remoteAddr, Service: &service, Subscriber: &sub, Code: UNIQUSH_ERROR_DATABASE, ErrorMsg: strPtrOfErr(err)})

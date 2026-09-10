@@ -55,6 +55,9 @@ func (r *PushRedisDB) CheckConsistency() (*ConsistencyReport, error) {
 	if err := r.checkDeliveryPointRecords(report); err != nil {
 		return nil, err
 	}
+	if err := r.checkSubscriberIndex(report); err != nil {
+		return nil, err
+	}
 	if err := r.checkCounters(report); err != nil {
 		return nil, err
 	}
@@ -253,15 +256,6 @@ func (r *PushRedisDB) checkDeliveryPointBindings(report *ConsistencyReport, prov
 	return nil
 }
 
-// deliveryPointTypeFromName reads the push service type out of a delivery point
-// name, which is "<pushservicetype>:<sha1 of its fixed data>".
-func deliveryPointTypeFromName(name string) string {
-	if index := strings.Index(name, ":"); index > 0 {
-		return name[:index]
-	}
-	return ""
-}
-
 // checkSubscriberSets finds delivery point names with no record behind them.
 func (r *PushRedisDB) checkSubscriberSets(report *ConsistencyReport) error {
 	err := r.scanKeys(ServiceSubscriberToDeliveryPointsPrefix+"*", func(page []string) error {
@@ -277,6 +271,11 @@ func (r *PushRedisDB) checkSubscriberSets(report *ConsistencyReport) error {
 			names, e := r.client.SMembers(r.ctx, key).Result()
 			if e != nil {
 				return fmt.Errorf("could not read the delivery points of %q: %w", key, e)
+			}
+			if len(names) > 0 {
+				if e := r.checkSubscriberIsIndexed(report, service, subscriber); e != nil {
+					return e
+				}
 			}
 			for _, dpName := range names {
 				// Counted per membership, with no set of names seen so far. A
@@ -294,6 +293,18 @@ func (r *PushRedisDB) checkSubscriberSets(report *ConsistencyReport) error {
 					r.report(report, ProblemOrphanedDeliveryPoint, service, dpName,
 						"subscriber %q lists this delivery point, but it has no record. "+
 							"It is removed automatically the next time that subscriber is read.", subscriber)
+				}
+
+				pushServiceType := deliveryPointTypeFromName(dpName)
+				listed, e := r.client.SIsMember(r.ctx, typeDeviceSetKey(service, pushServiceType), dpName).Result()
+				if e != nil {
+					return fmt.Errorf("could not check the %s delivery points of service %q: %w", pushServiceType, service, e)
+				}
+				if !listed {
+					r.report(report, ProblemMissingIndexEntry, service, dpName,
+						"subscriber %q lists this delivery point, but it is not in the service's set of %s "+
+							"delivery points, so /stats undercounts it. Run /rebuildsubscriberindex.",
+						subscriber, pushServiceType)
 				}
 			}
 		}
@@ -367,6 +378,158 @@ func (r *PushRedisDB) checkDeliveryPointRecords(report *ConsistencyReport) error
 		return fmt.Errorf("could not check delivery point records: %w", err)
 	}
 	return nil
+}
+
+// checkSubscriberIsIndexed checks one subscriber against their service's index.
+//
+// Split out because it is asked once per subscriber set, from the middle of a
+// walk that is already three levels deep.
+func (r *PushRedisDB) checkSubscriberIsIndexed(report *ConsistencyReport, service, subscriber string) error {
+	_, err := r.client.ZScore(r.ctx, subscriberIndexKey(service), subscriber).Result()
+	if err == nil {
+		return nil
+	}
+	if !isErrCausedByMissingKey(err) {
+		return fmt.Errorf("could not check whether service %q indexes subscriber %q: %w", service, subscriber, err)
+	}
+	r.report(report, ProblemMissingIndexEntry, service, subscriber,
+		"this subscriber has delivery points but is not in the service's subscriber index, so a wildcard "+
+			"push would miss them and /stats undercounts. Run /rebuildsubscriberindex.")
+	return nil
+}
+
+// checkSubscriberIndex reads the index the other way round: entries with
+// nothing behind them.
+//
+// A stale entry is not a delivery failure -- a wildcard push resolves each
+// subscriber's devices before sending -- but it inflates every count /stats
+// reports, which is the one thing the index is there to make cheap.
+//
+// This is also where the marker is checked, because "the index has not been
+// built" is the finding that explains all the others: on such a database every
+// subscriber written before the upgrade is missing from it, and reporting a
+// million missing entries instead of one cause would be useless.
+func (r *PushRedisDB) checkSubscriberIndex(report *ConsistencyReport) error {
+	built, err := r.subscriberIndexBuilt()
+	if err != nil {
+		return err
+	}
+	if !built {
+		r.report(report, ProblemIndexNotBuilt, "", "",
+			"the subscriber index has never been rebuilt over this database, so it covers only what has been "+
+				"written since. Wildcard pushes fall back to a full keyspace scan, which is slow, and /stats "+
+				"refuses to answer. Run /rebuildsubscriberindex once.")
+	}
+
+	if err := r.checkIndexedSubscribers(report); err != nil {
+		return err
+	}
+	return r.checkIndexedDeliveryPoints(report)
+}
+
+// checkIndexedSubscribers finds indexed subscribers with no devices left.
+func (r *PushRedisDB) checkIndexedSubscribers(report *ConsistencyReport) error {
+	err := r.scanKeys(ServiceToSubscribersPrefix+"*", func(page []string) error {
+		for _, key := range page {
+			service := strings.TrimPrefix(key, ServiceToSubscribersPrefix)
+			// Streamed rather than read whole: this index has a member per
+			// subscriber, which on the database where the check is worth running
+			// is the largest thing in it.
+			e := r.scanSubscriberIndex(service, "*", func(subscriber string) error {
+				report.Subscribers++
+				devices, e := r.client.SCard(r.ctx, deviceSetKey(service, subscriber)).Result()
+				if e != nil {
+					return fmt.Errorf("could not count the delivery points of %q in service %q: %w", subscriber, service, e)
+				}
+				if devices == 0 {
+					r.report(report, ProblemStaleIndexEntry, service, subscriber,
+						"the subscriber index lists this subscriber, who has no delivery points, so /stats "+
+							"overcounts. Run /rebuildsubscriberindex.")
+				}
+				return nil
+			})
+			if e != nil {
+				return e
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		return fmt.Errorf("could not check the subscriber indexes: %w", err)
+	}
+	return nil
+}
+
+// checkIndexedDeliveryPoints finds per-type device sets naming devices that are
+// no longer there.
+//
+// Only the record's existence is checked. A record that exists but whose
+// subscriber does not list it is already reported, from the other side, as an
+// unreferenced delivery point.
+func (r *PushRedisDB) checkIndexedDeliveryPoints(report *ConsistencyReport) error {
+	err := r.scanKeys(ServiceTypeToDeliveryPointsPrefix+"*", func(page []string) error {
+		for _, key := range page {
+			rest := strings.TrimPrefix(key, ServiceTypeToDeliveryPointsPrefix)
+			// Neither a service name nor a push service type may contain a colon.
+			parts := strings.SplitN(rest, ":", 2)
+			if len(parts) != 2 {
+				continue
+			}
+			service, pushServiceType := parts[0], parts[1]
+
+			e := r.scanSetMembers(key, func(dpName string) error {
+				exists, e := r.client.Exists(r.ctx, DeliveryPointPrefix+dpName).Result()
+				if e != nil {
+					return fmt.Errorf("could not check delivery point %q: %w", dpName, e)
+				}
+				if exists == 0 {
+					r.report(report, ProblemStaleIndexEntry, service, dpName,
+						"the service's set of %s delivery points names this one, which has no record, so /stats "+
+							"overcounts. Run /rebuildsubscriberindex.", pushServiceType)
+				}
+				return nil
+			})
+			if e != nil {
+				return e
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		return fmt.Errorf("could not check the per-type delivery point sets: %w", err)
+	}
+	return nil
+}
+
+// scanSetMembers walks one set a page at a time, handing each member to visit.
+//
+// SMEMBERS would be one round trip instead of several, and would hold every
+// member of the set in memory at once. The sets walked here have a member per
+// subscriber or per device, which is exactly the size the streaming in scanKeys
+// exists to avoid.
+//
+// SSCAN can return a member twice, for the same reason SCAN can return a key
+// twice. Every visitor here re-checks what it is told against redis before
+// reporting anything, so a repeat costs a second check rather than a second
+// finding -- with the same caveat as CheckConsistency's walks: a count can be
+// nudged up by one.
+func (r *PushRedisDB) scanSetMembers(key string, visit func(member string) error) error {
+	var cursor uint64
+	for {
+		page, next, err := r.client.SScan(r.ctx, key, cursor, "*", scanKeysCount).Result()
+		if err != nil {
+			return fmt.Errorf("could not scan the set %q: %w", key, err)
+		}
+		for _, member := range page {
+			if err := visit(member); err != nil {
+				return err
+			}
+		}
+		if next == 0 {
+			return nil
+		}
+		cursor = next
+	}
 }
 
 // checkCounters finds the refcounts an older uniqush wrote.

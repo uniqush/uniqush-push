@@ -106,7 +106,11 @@ type PushDatabase interface {
 	// device that silently stops receiving pushes is the hardest kind of
 	// failure to diagnose from the outside. GetSubscriptions takes one for the
 	// same reason.
-	GetPushServiceProviderDeliveryPointPairs(service string, subscriber string, dpNamesRequested []string, logger log.Logger) ([]PushServiceProviderDeliveryPointPair, error)
+	//
+	// requestID goes with it so that what is logged can be tied to the request
+	// that caused it. It may be empty where there is no request to name.
+	GetPushServiceProviderDeliveryPointPairs(service string, subscriber string, dpNamesRequested []string,
+		requestID string, logger log.Logger) ([]PushServiceProviderDeliveryPointPair, error)
 
 	GetSubscriptions(services []string, user string, logger log.Logger) ([]map[string]string, error)
 
@@ -118,6 +122,25 @@ type PushDatabase interface {
 	// CheckConsistency scans the database and reports what does not add up. It
 	// is read-only and changes nothing, including the problems it finds.
 	CheckConsistency() (*ConsistencyReport, error)
+
+	// PrepareSubscriberIndex settles the per-service subscriber index once, at
+	// startup. Call it before serving: a database that has one takes the fast
+	// path for wildcard pushes, and one that does not is told so in the log
+	// rather than by a wildcard push nobody sends until Friday.
+	PrepareSubscriberIndex(logger log.Logger) error
+
+	// RebuildSubscriberIndex rebuilds the per-service subscriber and delivery
+	// point indexes from the subscriber sets. Run once after upgrading a
+	// database that predates them; idempotent, and safe against a live server.
+	RebuildSubscriberIndex() error
+
+	// SubscriberStats counts the subscribers and devices of each named service,
+	// or of every known service when none are named. since, when not nil, adds
+	// a count of the subscribers seen at or after that unix time.
+	//
+	// It returns ErrSubscriberIndexNotBuilt rather than answering from an index
+	// that covers only part of the database.
+	SubscriberStats(services []string, since *int64) (map[string]*ServiceStats, error)
 
 	FlushCache() error
 }
@@ -361,7 +384,7 @@ func (f *pushDatabaseOpts) RemoveAllDeliveryPointsFromService(service, subscribe
 	f.dblock.Lock()
 	defer f.dblock.Unlock()
 
-	names, err := f.db.GetDeliveryPointsNameByServiceSubscriber(service, subscriber)
+	names, err := f.db.GetDeliveryPointsNameByServiceSubscriber(service, subscriber, "", nil)
 	if err != nil {
 		return 0, fmt.Errorf("could not list the delivery points of service %s, subscriber %s: %v",
 			service, subscriber, err)
@@ -411,9 +434,9 @@ type orphanedDeliveryPoint struct {
 // there, and leaving it means /subscriptions never stops reporting a device
 // that does not exist.
 func (f *pushDatabaseOpts) GetPushServiceProviderDeliveryPointPairs(service string,
-	subscriber string, dpNamesRequested []string, logger log.Logger) ([]PushServiceProviderDeliveryPointPair, error) {
+	subscriber string, dpNamesRequested []string, requestID string, logger log.Logger) ([]PushServiceProviderDeliveryPointPair, error) {
 	logger = orDiscard(logger)
-	pairs, orphans, err := f.collectDeliveryPointPairs(service, subscriber, dpNamesRequested, logger)
+	pairs, orphans, err := f.collectDeliveryPointPairs(service, subscriber, dpNamesRequested, requestID, logger)
 	if err != nil {
 		return nil, err
 	}
@@ -431,11 +454,11 @@ func (f *pushDatabaseOpts) GetPushServiceProviderDeliveryPointPairs(service stri
 // collectDeliveryPointPairs does the read pass, returning the pairs it resolved
 // and the delivery points whose records have vanished.
 func (f *pushDatabaseOpts) collectDeliveryPointPairs(service string, subscriber string,
-	dpNamesRequested []string, logger log.Logger) ([]PushServiceProviderDeliveryPointPair, []orphanedDeliveryPoint, error) {
+	dpNamesRequested []string, requestID string, logger log.Logger) ([]PushServiceProviderDeliveryPointPair, []orphanedDeliveryPoint, error) {
 	f.dblock.RLock()
 	defer f.dblock.RUnlock()
 
-	dpnames, err := f.db.GetDeliveryPointsNameByServiceSubscriber(service, subscriber)
+	dpnames, err := f.db.GetDeliveryPointsNameByServiceSubscriber(service, subscriber, requestID, logger)
 	if err != nil {
 		return nil, nil, fmt.Errorf("could not list delivery points for service %s, subscriber %s: %v", service, subscriber, err)
 	}
@@ -806,6 +829,32 @@ func (f *pushDatabaseOpts) GetSubscriptions(services []string, user string, logg
 		return nil, fmt.Errorf("GetSubscriptions: %v", err)
 	}
 	return subs, nil
+}
+
+func (f *pushDatabaseOpts) PrepareSubscriberIndex(logger log.Logger) error {
+	f.dblock.Lock()
+	defer f.dblock.Unlock()
+	return f.db.PrepareSubscriberIndex(logger)
+}
+
+// RebuildSubscriberIndex takes no lock, like CheckConsistency and for the same
+// reason: dblock serialises every subscribe and unsubscribe in this process,
+// and holding it across a walk of the whole keyspace would stop all of them for
+// as long as the walk takes. The rebuild does not need it. It stages each
+// service's index under a name of its own and renames it over the live key, so
+// the only writes a concurrent subscribe races are its own, and the entry it
+// could cost is one /checkdb afterwards names.
+func (f *pushDatabaseOpts) RebuildSubscriberIndex() error {
+	return f.db.RebuildSubscriberIndex()
+}
+
+// SubscriberStats takes the read lock, like every other read here. It is a
+// handful of counting commands, so it holds it for no longer than a
+// /subscriptions does.
+func (f *pushDatabaseOpts) SubscriberStats(services []string, since *int64) (map[string]*ServiceStats, error) {
+	f.dblock.RLock()
+	defer f.dblock.RUnlock()
+	return f.db.SubscriberStats(services, since)
 }
 
 func (f *pushDatabaseOpts) RebuildServiceSet() error {

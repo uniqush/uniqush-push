@@ -321,6 +321,45 @@ Re-subscribing that device adopts the record; otherwise it is safe to delete.
 counters missing, read that as one subscriber, and treat every unsubscribe as
 the last reference -- which is the correct outcome, since it always was.
 
+### Run `/rebuildsubscriberindex` once
+
+Every subscribe now also records the subscriber in `srv-2-sub:<service>`, a
+sorted set scored by the time of that subscribe, and the device in
+`srv.type-2-dp:<service>:<pushservicetype>`. Between them these make a wildcard
+`/push` cost the size of the service rather than the size of the database, and
+make [`/stats`](api.md#stats) a handful of counting commands.
+
+They start filling up the moment you install this release, but only with what
+is written from then on, so an existing database needs one call:
+
+    curl http://localhost:9898/rebuildsubscriberindex
+
+It walks the subscriber sets, which are the source of truth, and builds both
+indexes from them. Idempotent, and safe against a live server: each service's
+index is built under a name of its own and renamed over the live one, so a
+concurrent push sees the old index or the new one. Run `/checkdb` afterwards --
+a subscription made during the walk can, rarely, be missed, and `/checkdb`
+names it. A database created by this release is marked as indexed the first
+time uniqush opens it, and needs nothing.
+
+**Nothing breaks if you skip it.** Until it runs:
+
+- A wildcard `/push` reaches exactly the same subscribers, over the keyspace
+  scan it used before. That is slow on a large database, and it logs an error
+  naming the service, the request and this endpoint on every use. The noise is
+  deliberate: the fallback works, so nothing else would tell you.
+- `/stats` answers `UNIQUSH_ERROR_INDEX_NOT_BUILT` rather than counting. The
+  index holds only the subscribers who have re-subscribed since the upgrade,
+  and a count from it would be too low with nothing in the answer to say so.
+- `/checkdb` reports `index_not_built`, plus `missing_index_entry` and
+  `stale_index_entry` for anything the two disagree about.
+
+One thing did stop working: a `*` in a **service** name is refused rather than
+matched. Every endpoint that could reach it already rejected `*` in a service,
+except `/nrdp`, which did not validate its parameters; there was never a
+per-service index that could answer such a request, and it meant a full
+keyspace walk. Wildcards in **subscriber** names are unaffected.
+
 ## For embedders
 
 `http_api.HTTPPushRequestProcessor.GetClient` now returns

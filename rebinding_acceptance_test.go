@@ -76,6 +76,10 @@ func connectAcceptanceDatabase(t *testing.T, psm *push.PushServiceManager) db.Pu
 	if err != nil {
 		t.Fatalf("Could not open the test database: %v", err)
 	}
+	// What Run does before serving, and what this test is standing in for.
+	if err := database.PrepareSubscriberIndex(nil); err != nil {
+		t.Fatalf("Could not prepare the subscriber index: %v", err)
+	}
 	return database
 }
 

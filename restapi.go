@@ -76,8 +76,16 @@ const (
 	VersionInfoURL                          = "/version"
 	QueryNumberOfDeliveryPointsURL          = "/nrdp"
 	QuerySubscriptionsURL                   = "/subscriptions"
-	QueryPushServiceProviders               = "/psps"
-	RebuildServiceSetURL                    = "/rebuildserviceset"
+	// QueryStatsURL counts what a service holds. It reads the per-service
+	// subscriber index rather than the keyspace, so it is a handful of redis
+	// commands whatever the size of the database.
+	QueryStatsURL             = "/stats"
+	QueryPushServiceProviders = "/psps"
+	RebuildServiceSetURL      = "/rebuildserviceset"
+	// RebuildSubscriberIndexURL rebuilds the per-service subscriber and delivery
+	// point indexes from the subscriber sets. Needed once on a database that
+	// predates them; idempotent, and safe to run against a live server.
+	RebuildSubscriberIndexURL = "/rebuildsubscriberindex"
 	// HealthURL reports whether uniqush can reach what it needs to serve. It is
 	// the one endpoint whose HTTP status code carries the answer, because that
 	// is what a load balancer reads.
@@ -710,6 +718,68 @@ func (api *RestAPI) health(logger log.Logger) ([]byte, int) {
 	return encoded, status
 }
 
+// queryStats counts the subscribers and devices of one service, or of every
+// service.
+//
+// It refuses rather than reporting zeros while the subscriber index is
+// incomplete. A dashboard has no way to tell an undercount apart from a service
+// that really is that small, so a wrong number here would be worse than no
+// number -- and the fix is one call to /rebuildsubscriberindex.
+func (api *RestAPI) queryStats(kv map[string][]string, logger log.Logger) []byte {
+	type responseType struct {
+		Services     map[string]*db.ServiceStats `json:"services"`
+		ErrorMessage *string                     `json:"errorMsg,omitempty"`
+		Code         string                      `json:"code"`
+	}
+
+	// Trimmed, and empty entries dropped: " b" is not a service anyone meant,
+	// and counting it would answer with zeros that look like a real result.
+	var services []string
+	if v, ok := kv["service"]; ok && len(v) > 0 {
+		for _, service := range strings.Split(v[0], ",") {
+			if service = strings.TrimSpace(service); service != "" {
+				services = append(services, service)
+			}
+		}
+	}
+
+	var since *int64
+	if v, ok := kv["since"]; ok && len(v) > 0 && v[0] != "" {
+		parsed, err := strconv.ParseInt(v[0], 10, 64)
+		if err != nil {
+			logger.Errorf("Query=Stats invalid since=%q: %v", v[0], err)
+			errorMsg := fmt.Sprintf("invalid since %q, expected a unix timestamp", v[0])
+			return marshalOrError(responseType{Code: UNIQUSH_ERROR_GENERIC, ErrorMessage: &errorMsg})
+		}
+		since = &parsed
+	}
+
+	stats, err := api.backend.SubscriberStats(services, since)
+	if err != nil {
+		errorMsg := err.Error()
+		code := UNIQUSH_ERROR_DATABASE
+		if errors.Is(err, db.ErrSubscriberIndexNotBuilt) {
+			code = UNIQUSH_ERROR_INDEX_NOT_BUILT
+		}
+		logger.Errorf("Error querying stats in %s: %v", QueryStatsURL, err)
+		return marshalOrError(responseType{Code: code, ErrorMessage: &errorMsg})
+	}
+	return marshalOrError(responseType{Services: stats, Code: UNIQUSH_SUCCESS})
+}
+
+// marshalOrError encodes a response, falling back to a fixed message.
+//
+// The fallback is unreachable for the types here -- they are maps of counts and
+// strings -- but returning an empty body on an impossible branch is how an
+// endpoint comes to fail silently.
+func marshalOrError(response interface{}) []byte {
+	encoded, err := json.Marshal(response)
+	if err != nil {
+		return []byte("Failed to serialize response")
+	}
+	return encoded
+}
+
 // checkDatabase reports what does not add up in the database.
 //
 // The report is returned rather than acted on. A repair running unattended
@@ -785,6 +855,32 @@ func (api *RestAPI) rebuildServiceSet(logger log.Logger) []byte {
 	return json
 }
 
+// rebuildSubscriberIndex rebuilds the indexes a wildcard push and /stats read.
+//
+// Separate from /checkdb, which is report-only, and shaped like
+// /rebuildserviceset for the same reason: a one-off repair an operator runs
+// deliberately, rather than something that happens to a database on its own.
+func (api *RestAPI) rebuildSubscriberIndex(logger log.Logger) []byte {
+	err := api.backend.RebuildSubscriberIndex()
+	var details APIResponseDetails
+	if err != nil {
+		logger.Errorf("Error in %s: %v", RebuildSubscriberIndexURL, err)
+		errorMsg := err.Error()
+		details = APIResponseDetails{
+			Code:     UNIQUSH_ERROR_GENERIC,
+			ErrorMsg: &errorMsg,
+		}
+	} else {
+		logger.Infof("%s: the subscriber index has been rebuilt", RebuildSubscriberIndexURL)
+		details = APIResponseDetails{Code: UNIQUSH_SUCCESS}
+	}
+	json, err := json.Marshal(details)
+	if err != nil {
+		return []byte("Failed to encode response")
+	}
+	return json
+}
+
 func parseKV(form url.Values) (kv map[string]string, perdp map[string][]string) {
 	kv = make(map[string]string, len(form))
 	perdp = make(map[string][]string, 3)
@@ -818,6 +914,11 @@ func (api *RestAPI) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		n := api.queryPSPs(api.loggers[LoggerPSPs])
 		fmt.Fprintf(w, "%s\r\n", n)
 		return
+	case QueryStatsURL:
+		r.ParseForm()
+		n := api.queryStats(r.Form, api.loggers[LoggerServices])
+		fmt.Fprintf(w, "%s\r\n", n)
+		return
 	case RebuildServiceSetURL:
 		n := api.rebuildServiceSet(api.loggers[LoggerServices])
 		fmt.Fprintf(w, "%s\r\n", n)
@@ -830,6 +931,10 @@ func (api *RestAPI) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(status)
 		fmt.Fprintf(w, "%s\r\n", body)
+		return
+	case RebuildSubscriberIndexURL:
+		n := api.rebuildSubscriberIndex(api.loggers[LoggerServices])
+		fmt.Fprintf(w, "%s\r\n", n)
 		return
 	case CheckDatabaseURL:
 		n := api.checkDatabase(api.loggers[LoggerServices])
@@ -914,7 +1019,9 @@ func (api *RestAPI) Run(addr string, stopChan chan<- bool) {
 	http.Handle(QueryNumberOfDeliveryPointsURL, api)
 	http.Handle(QuerySubscriptionsURL, api)
 	http.Handle(QueryPushServiceProviders, api)
+	http.Handle(QueryStatsURL, api)
 	http.Handle(RebuildServiceSetURL, api)
+	http.Handle(RebuildSubscriberIndexURL, api)
 	http.Handle(HealthURL, api)
 	http.Handle(CheckDatabaseURL, api)
 

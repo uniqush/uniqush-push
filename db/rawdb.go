@@ -96,6 +96,16 @@ type pushRawDatabaseWriter interface { //nolint:staticcheck
 		decide func([]ServiceProvider) ([]string, error)) error
 	RemovePushServiceProviderFromService(srv, psp string) error
 
+	// PrepareSubscriberIndex settles the per-service subscriber index once, at
+	// startup: it marks an empty database as indexed, since there is nothing to
+	// rebuild, and says loudly that an existing one needs
+	// /rebuildsubscriberindex.
+	PrepareSubscriberIndex(logger log.Logger) error
+	// RebuildSubscriberIndex rebuilds the per-service subscriber and delivery
+	// point indexes from the subscriber sets, which are the source of truth, and
+	// then records that they are complete.
+	RebuildSubscriberIndex() error
+
 	FlushCache() error
 }
 
@@ -111,10 +121,25 @@ type pushRawDatabaseReader interface { //nolint:staticcheck
 	GetPushServiceProviderConfigs([]string) ([]*push.PushServiceProvider, []error)
 	GetSubscriptions(queryServices []string, subscriber string, logger log.Logger) ([]map[string]string, error)
 
-	GetDeliveryPointsNameByServiceSubscriber(srv, sub string) (map[string][]string, error)
+	// GetDeliveryPointsNameByServiceSubscriber lists the delivery points of a
+	// subscriber, or of every subscriber matching a "*" pattern.
+	//
+	// requestID and logger are for the one thing this reports about itself: a
+	// wildcard on a database whose subscriber index has not been rebuilt falls
+	// back to a keyspace scan, and says so on every call, because that is a
+	// condition one call to /rebuildsubscriberindex ends for good.
+	GetDeliveryPointsNameByServiceSubscriber(srv, sub, requestID string, logger log.Logger) (map[string][]string, error)
 	GetPushServiceProviderNameByServiceDeliveryPoint(srv, dp string) (string, error)
 
 	GetPushServiceProvidersByService(srv string) ([]string, error)
+
+	// SubscriberStats counts the subscribers and devices of each named service,
+	// or of every known service when none are named. since, when not nil, adds
+	// a count of the subscribers seen at or after that unix time.
+	//
+	// It returns ErrSubscriberIndexNotBuilt rather than answering from an index
+	// that covers only part of the database.
+	SubscriberStats(services []string, since *int64) (map[string]*ServiceStats, error)
 
 	// CheckConsistency scans the whole database and reports what does not add
 	// up. Read-only, and implemented alongside the key layout rather than in

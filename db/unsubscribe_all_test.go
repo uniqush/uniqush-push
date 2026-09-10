@@ -91,7 +91,7 @@ func TestRemoveAllDeliveryPointsLeavesOtherSubscribersAlone(t *testing.T) {
 		t.Fatalf("Could not remove the subscriber's delivery points: %v", removeErr)
 	}
 
-	names, err := fixture.raw.GetDeliveryPointsNameByServiceSubscriber(ServiceName, "other-subscriber")
+	names, err := fixture.raw.GetDeliveryPointsNameByServiceSubscriber(ServiceName, "other-subscriber", "", nil)
 	if err != nil {
 		t.Fatalf("Could not list the other subscriber's delivery points: %v", err)
 	}

@@ -81,6 +81,12 @@ type recordingDatabase struct {
 	provider *push.PushServiceProvider
 	replace  bool
 	err      error
+
+	// What /stats asked for, and what it should be told.
+	statsServices []string
+	statsSince    *int64
+	stats         map[string]*db.ServiceStats
+	statsErr      error
 }
 
 func (d *recordingDatabase) AddPushServiceProviderToService(service string, psp *push.PushServiceProvider, replace bool) error {
@@ -118,7 +124,7 @@ func (d *recordingDatabase) ModifyDeliveryPoint(*push.DeliveryPoint) error { ret
 func (d *recordingDatabase) RemoveAllDeliveryPointsFromService(string, string) (int, error) {
 	return 0, nil
 }
-func (d *recordingDatabase) GetPushServiceProviderDeliveryPointPairs(string, string, []string, log.Logger) ([]db.PushServiceProviderDeliveryPointPair, error) {
+func (d *recordingDatabase) GetPushServiceProviderDeliveryPointPairs(string, string, []string, string, log.Logger) ([]db.PushServiceProviderDeliveryPointPair, error) {
 	return nil, nil
 }
 func (d *recordingDatabase) GetSubscriptions([]string, string, log.Logger) ([]map[string]string, error) {
@@ -126,6 +132,16 @@ func (d *recordingDatabase) GetSubscriptions([]string, string, log.Logger) ([]ma
 }
 func (d *recordingDatabase) CheckConsistency() (*db.ConsistencyReport, error) {
 	return new(db.ConsistencyReport), nil
+}
+func (d *recordingDatabase) PrepareSubscriberIndex(log.Logger) error { return nil }
+func (d *recordingDatabase) RebuildSubscriberIndex() error           { return nil }
+func (d *recordingDatabase) SubscriberStats(services []string, since *int64) (map[string]*db.ServiceStats, error) {
+	d.mutex.Lock()
+	defer d.mutex.Unlock()
+	d.calls++
+	d.statsServices = services
+	d.statsSince = since
+	return d.stats, d.statsErr
 }
 func (d *recordingDatabase) FlushCache() error { return nil }
 

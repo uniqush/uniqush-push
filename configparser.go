@@ -239,6 +239,12 @@ func Run(conf, version string) error {
 	if err != nil {
 		return err
 	}
+	// Settle the subscriber index before serving. An empty database has nothing
+	// to index, and one that needs /rebuildsubscriberindex says so here rather
+	// than waiting for the first wildcard push to find out.
+	if err := db.PrepareSubscriberIndex(loggers[LoggerServices]); err != nil {
+		return err
+	}
 
 	backend := NewPushBackEnd(psm, db, loggers)
 	rest := NewRestAPI(psm, loggers, version, backend)

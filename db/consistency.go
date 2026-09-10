@@ -76,6 +76,27 @@ const (
 	// is then no subscriber to check it against.
 	ProblemUnreferencedDeliveryPoint = "unreferenced_delivery_point"
 
+	// ProblemIndexNotBuilt means the subscriber index has never been rebuilt
+	// over this database, so it covers only what has been written since the
+	// index was introduced. Wildcard pushes fall back to a keyspace scan and
+	// /stats refuses to answer while this is reported.
+	//
+	// Reported once, not per service: the marker is one key for the database.
+	ProblemIndexNotBuilt = "index_not_built"
+
+	// ProblemMissingIndexEntry is a subscription the index does not know about:
+	// a subscriber with devices who is not in their service's subscriber index,
+	// or a device missing from its service's set for its push service type.
+	//
+	// The scripts write all three together, so this means the index predates
+	// them -- or a rebuild that has not been run since.
+	ProblemMissingIndexEntry = "missing_index_entry"
+
+	// ProblemStaleIndexEntry is the reverse: an index entry with nothing behind
+	// it. A subscriber whose devices have all gone, or a device name in a type
+	// set whose record no longer exists. It inflates what /stats reports.
+	ProblemStaleIndexEntry = "stale_index_entry"
+
 	// ProblemLeakedCounter is a delivery.point.counter key. Nothing has written
 	// one since subscribe and unsubscribe became redis scripts, and the count it
 	// held was only ever 0 or 1, so every one of these is debris from an older
@@ -114,6 +135,10 @@ type ConsistencyReport struct {
 	Providers      int `json:"push_service_providers"`
 	DeliveryPoints int `json:"delivery_points"`
 	Bindings       int `json:"delivery_point_bindings"`
+	// Subscribers is how many entries the per-service subscriber indexes hold
+	// between them, which is what /stats counts. It is 0 on a database whose
+	// index has not been built.
+	Subscribers int `json:"subscribers"`
 	// Counts is every finding, by kind, whether or not Problems kept an example
 	// of it. This is the number to act on.
 	Counts map[string]int `json:"counts,omitempty"`
