@@ -661,7 +661,7 @@ func (r *PushRedisDB) RemoveMissingDeliveryPointFromServiceSubscriber(service, s
 	// Precondition: DeliveryPointPrefix + dp was already missing. No need to remove it.
 	err := unsubscribeScript.Run(r.ctx, r.client, []string{deviceSetKey(service, subscriber)}, dpName).Err()
 	if err != nil {
-		logger.Errorf("Error cleaning up delivery point with missing data for dp %q service %q FROM user %q's delivery points: %v", dpName, subscriber, service, err)
+		logger.Errorf("Error cleaning up delivery point with missing data for dp %q service %q FROM user %q's delivery points: %v", dpName, service, subscriber, err)
 	}
 }
 
