@@ -49,10 +49,14 @@ Six redis keys matter (`db/pushredisdb.go`):
 | `srv-2-psp:<service>` | set | provider names for a service |
 | `srv.sub-2-dp:<service>:<subscriber>` | set | delivery point names |
 | `srv.dp-2-psp:<service>:<dpName>` | string | **the binding** |
-| `delivery.point.counter:<dpName>` | string | subscriber refcount |
+| `delivery.point.counter:<dpName>` | string | subscriber refcount (no longer written; see below) |
 
 `srv.dp-2-psp` is the whole problem, and it has exactly three call sites in
 `db/pushredisdb.go` — a get at line 429, a set at 494, a delete at 503.
+
+The counter has since been retired: subscribing and unsubscribing are each one
+redis script, and the count they maintained was only ever 0 or 1. Everything
+below describes the layout as it was when this was written, refcount included.
 
 ### The key finding: the binding is already redundant
 

@@ -54,6 +54,11 @@ UnifiedPush / Web Push:
 
 Redis:
 
+- Change: Subscribing and unsubscribing can no longer be left half done by a crash or a dropped connection.
+  uniqush also stops writing the `delivery.point.counter:` keys, which nothing needs; any left over are harmless
+  and `/checkdb` lists them so they can be deleted.
+- New feature: `/checkdb` reports `unreferenced_delivery_point`, a device record left behind by an interrupted
+  `/subscribe`. Re-subscribing the device fixes it; otherwise it is safe to delete.
 - Bugfix: A `/push` whose `service` or `subscriber` contains a `*` no longer runs `KEYS`, which redis runs to
   completion on the thread it serves every client from: one wildcard push stalled every other push, and every
   other application on a shared redis, for the length of a keyspace walk. That walk and `/rebuildserviceset`

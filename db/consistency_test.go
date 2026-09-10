@@ -206,9 +206,9 @@ func TestConsistencyCheckFindsStaleBindings(t *testing.T) {
 	}
 }
 
-// TestConsistencyCheckFindsOrphansAndLeakedCounters covers the debris left by
-// the read path before it was fixed.
-func TestConsistencyCheckFindsOrphansAndLeakedCounters(t *testing.T) {
+// TestConsistencyCheckFindsOrphanedDeliveryPoints covers the debris left by the
+// read path before it was fixed: a name in a subscriber's set with no record.
+func TestConsistencyCheckFindsOrphanedDeliveryPoints(t *testing.T) {
 	fixture := newRebindingFixture(t)
 	fixture.addProvider(t, "first.cert")
 	dp := fixture.subscribe(t, "devtoken-1")
@@ -223,8 +223,99 @@ func TestConsistencyCheckFindsOrphansAndLeakedCounters(t *testing.T) {
 	if orphans := findProblems(report, ProblemOrphanedDeliveryPoint); len(orphans) != 1 {
 		t.Errorf("Expected one orphaned delivery point, got %d: %v", len(orphans), report.Problems)
 	}
-	if leaked := findProblems(report, ProblemLeakedCounter); len(leaked) != 1 {
-		t.Errorf("Expected one leaked counter, got %d: %v", len(leaked), report.Problems)
+}
+
+// TestConsistencyCheckFindsTheSubscribeCrashWindow covers the other direction:
+// a delivery point record that its subscriber's set does not name.
+//
+// AddDeliveryPointToService writes the record first and the set entry second,
+// so this is the state an interruption between the two leaves. Nothing collects
+// it -- every read starts from the subscriber's set, so nothing ever meets the
+// record again -- which is why the check has to look for it from this side.
+func TestConsistencyCheckFindsTheSubscribeCrashWindow(t *testing.T) {
+	fixture := newRebindingFixture(t)
+	fixture.addProvider(t, "first.cert")
+	dp := fixture.subscribe(t, "devtoken-1")
+	survivor := fixture.subscribe(t, "devtoken-2")
+
+	// Take the name back out of the subscriber's set, leaving the record: what
+	// a crash after SetDeliveryPoint and before the script leaves behind.
+	if err := fixture.raw.client.SRem(context.Background(),
+		deviceSetKey(ServiceName, rebindingSubscriber), dp.Name()).Err(); err != nil {
+		t.Fatalf("Could not seed redis: %v", err)
+	}
+
+	report := checkConsistency(t, fixture)
+	unreferenced := findProblems(report, ProblemUnreferencedDeliveryPoint)
+	if len(unreferenced) != 1 {
+		t.Fatalf("Expected one unreferenced delivery point, got %d: %v", len(unreferenced), report.Problems)
+	}
+	if unreferenced[0].Subject != dp.Name() {
+		t.Errorf("Expected the problem to name %q, got %q", dp.Name(), unreferenced[0].Subject)
+	}
+	if unreferenced[0].Service != ServiceName {
+		t.Errorf("Expected the problem to name service %q, got %q", ServiceName, unreferenced[0].Service)
+	}
+	// The subscribed device must not be caught up in it, or the check reports a
+	// problem on every healthy database and is worth nothing.
+	if unreferenced[0].Subject == survivor.Name() {
+		t.Error("The check reported a delivery point its subscriber does list")
+	}
+}
+
+// TestConsistencyCheckReportsEveryCounter pins what the counter check became.
+//
+// Nothing writes delivery.point.counter any more, so a counter is debris
+// whether or not the delivery point behind it still exists. The check used to
+// report only the ones whose delivery point had gone, which after this change
+// would quietly ignore most of what an upgraded database carries.
+func TestConsistencyCheckReportsEveryCounter(t *testing.T) {
+	fixture := newRebindingFixture(t)
+	fixture.addProvider(t, "first.cert")
+	live := fixture.subscribe(t, "devtoken-1")
+	dead := fixture.subscribe(t, "devtoken-2")
+
+	// Counters as an older uniqush wrote them: one for a device that is still
+	// subscribed, one for a device whose record has gone.
+	for _, name := range []string{live.Name(), dead.Name()} {
+		if err := fixture.raw.client.Set(context.Background(),
+			DeliveryPointCounterPrefix+name, "1", 0).Err(); err != nil {
+			t.Fatalf("Could not seed redis: %v", err)
+		}
+	}
+	if err := fixture.raw.RemoveDeliveryPoint(dead.Name()); err != nil {
+		t.Fatalf("Could not remove the delivery point record: %v", err)
+	}
+
+	report := checkConsistency(t, fixture)
+	if leaked := findProblems(report, ProblemLeakedCounter); len(leaked) != 2 {
+		t.Errorf("Expected both counters to be reported, got %d: %v", len(leaked), report.Problems)
+	}
+}
+
+// TestSubscribingWritesNoCounter is the other half: a database written by this
+// release has nothing for the check above to find.
+func TestSubscribingWritesNoCounter(t *testing.T) {
+	fixture := newRebindingFixture(t)
+	fixture.addProvider(t, "first.cert")
+	dp := fixture.subscribe(t, "devtoken-1")
+
+	if fixture.keyExists(t, DeliveryPointCounterPrefix+dp.Name()) {
+		t.Error("A subscribe wrote a delivery point counter")
+	}
+	if leaked := findProblems(checkConsistency(t, fixture), ProblemLeakedCounter); len(leaked) != 0 {
+		t.Errorf("Expected no counters on a database this release wrote, got %v", leaked)
+	}
+
+	// And unsubscribing writes none either, on the way to deleting the record.
+	if err := fixture.client.RemoveDeliveryPointFromService(ServiceName, rebindingSubscriber, dp); err != nil {
+		t.Fatalf("Could not unsubscribe: %v", err)
+	}
+	if fixture.keyExists(t, DeliveryPointCounterPrefix+dp.Name()) {
+		t.Error("An unsubscribe wrote a delivery point counter")
+	}
+	if fixture.keyExists(t, DeliveryPointPrefix+dp.Name()) {
+		t.Error("An unsubscribe left the delivery point record behind")
 	}
 }
 

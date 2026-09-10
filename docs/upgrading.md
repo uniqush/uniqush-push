@@ -293,6 +293,34 @@ so this release can be rolled back without repairing anything.
 [delivery-point-rebinding.md](delivery-point-rebinding.md) explains what
 `/checkdb` reports and why each change is shaped the way it is.
 
+### Subscribing and unsubscribing are atomic
+
+Both used to be several redis commands with uniqush deciding in between:
+`SADD` and then `INCR` if the device was new; `SREM`, `DECR`, and two `DEL`s
+if the count reached zero. Each is one redis script now, which runs to
+completion on the server or not at all.
+
+The per-device reference count is no longer written. It could only ever be 0
+or 1 -- a delivery point's name hashes its service and subscriber along with
+the device token, so the record belongs to exactly one subscription -- and the
+count is what the second and third commands of each path existed to maintain.
+
+Nothing to do before or after upgrading. Existing `delivery.point.counter:`
+keys are read by nothing and are harmless; `/checkdb` now lists every one of
+them as `leaked_counter`, so they can be found and deleted in one pass if you
+want the space back. A database that has only ever been written by this
+release has none.
+
+`/checkdb` also learns `unreferenced_delivery_point`: a device record that its
+own subscriber's set does not name. A `/subscribe` writes the record first, so
+an interruption between the two writes leaves one behind, and nothing else
+would ever meet it again -- every read starts from the subscriber's set.
+Re-subscribing that device adopts the record; otherwise it is safe to delete.
+
+**Downgrading** to 2.8.0 works without repairing anything. It will find the
+counters missing, read that as one subscriber, and treat every unsubscribe as
+the last reference -- which is the correct outcome, since it always was.
+
 ## For embedders
 
 `http_api.HTTPPushRequestProcessor.GetClient` now returns
