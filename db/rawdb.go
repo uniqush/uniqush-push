@@ -66,12 +66,11 @@ type pushRawDatabaseWriter interface { //nolint:staticcheck
 	RemoveDeliveryPointFromServiceSubscriber(srv, sub, dp string) error
 	// RemoveMissingDeliveryPointFromServiceSubscriber cleans up after a delivery
 	// point whose record has already gone: it drops the dangling name from the
-	// subscriber's set and deletes the counter that was tracking it.
+	// subscriber's set.
 	//
 	// This is the complete teardown for that case. Deleting only
 	// delivery.point:<dp>, which is what the read path used to do, leaves the
-	// name in srv.sub-2-dp and leaks delivery.point.counter -- a garbage
-	// collector that creates garbage.
+	// name in srv.sub-2-dp -- a garbage collector that creates garbage.
 	//
 	// The logger may be nil; implementations normalise it. It is only written to
 	// when redis fails, so requiring it would put a panic on the error path.

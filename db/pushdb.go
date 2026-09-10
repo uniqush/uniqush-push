@@ -340,11 +340,10 @@ func (f *pushDatabaseOpts) RemoveDeliveryPointFromService(service string,
 // One lock for the whole removal, so a subscriber cannot be half cleared while
 // a push is reading their delivery points.
 //
-// On failure it reports how many it had already removed. There is no
-// transaction here -- the counter and the record for each device are separate
-// keys, as they are for a single unsubscribe -- so a caller that retries needs
-// to know the work was partly done, and retrying is safe: removing a device
-// that is already gone is a no-op.
+// On failure it reports how many it had already removed. Each device is its own
+// unsubscribe, and there is no transaction spanning them, so a caller that
+// retries needs to know the work was partly done -- and retrying is safe:
+// removing a device that is already gone is a no-op.
 //
 // A "*" in either name is refused. The lookup below reads one as a pattern and
 // answers with the delivery points of every subscriber it matches, while the
@@ -376,9 +375,8 @@ func (f *pushDatabaseOpts) RemoveAllDeliveryPointsFromService(service, subscribe
 	for foundService, deliveryPoints := range names {
 		for _, name := range deliveryPoints {
 			// The same two steps a single unsubscribe takes, so the bookkeeping
-			// is identical: the subscriber's set loses its pointer, and the
-			// counter it decrements deletes the device's record once nothing
-			// else refers to it.
+			// is identical: the subscriber's set loses its pointer and the
+			// device's record goes with it, then the provider binding.
 			if err := f.db.RemoveDeliveryPointFromServiceSubscriber(foundService, subscriber, name); err != nil {
 				return removed, fmt.Errorf("failed to remove delivery point %s: %v", name, err)
 			}
@@ -422,9 +420,8 @@ func (f *pushDatabaseOpts) GetPushServiceProviderDeliveryPointPairs(service stri
 
 	// Deliberately outside the read lock. Cleaning up under RLock is what the
 	// previous code did, and RLock admits concurrent readers, so two of them
-	// finding the same orphan would both decrement its counter. Taking the
-	// write lock afterwards costs an uncontended lock on a path that almost
-	// never has orphans to clean.
+	// would race over the same orphan. Taking the write lock afterwards costs an
+	// uncontended lock on a path that almost never has orphans to clean.
 	if len(orphans) > 0 {
 		f.forgetOrphanedDeliveryPoints(subscriber, orphans, logger)
 	}
@@ -701,8 +698,8 @@ func (f *pushDatabaseOpts) forgetOrphanedDeliveryPoints(subscriber string, orpha
 
 	for _, orphan := range orphans {
 		// Re-check under the write lock. Another goroutine may have cleaned this
-		// up between the read pass and here, and the counter must not be
-		// decremented twice for one delivery point.
+		// up between the read pass and here, and a delivery point that has since
+		// been re-subscribed must not be torn down again.
 		if _, err := f.db.GetDeliveryPoint(orphan.name); err == nil {
 			continue
 		} else if !isErrCausedByMissingKey(err) {

@@ -646,18 +646,13 @@ func TestReplaceIsAtomic(t *testing.T) {
 //
 // A name in a subscriber's set whose delivery.point record has gone is real
 // debris and is still cleaned up -- there is no data left to lose. The old code
-// deleted delivery.point:<dp>, which was already absent, and left both the set
-// membership and the counter behind: a garbage collector that created garbage.
+// deleted delivery.point:<dp>, which was already absent, and left the set
+// membership behind: a garbage collector that created garbage.
 func TestOrphanedDeliveryPointIsFullyTornDown(t *testing.T) {
 	fixture := newRebindingFixture(t)
 	fixture.addProvider(t, "first.cert")
 	dp := fixture.subscribe(t, "devtoken-1")
 	survivor := fixture.subscribe(t, "devtoken-2")
-
-	counterKey := DeliveryPointCounterPrefix + dp.Name()
-	if !fixture.keyExists(t, counterKey) {
-		t.Fatal("Expected a subscriber counter for the delivery point")
-	}
 
 	// Delete the record out from under the subscriber set, which is the state
 	// this cleanup exists for.
@@ -673,9 +668,6 @@ func TestOrphanedDeliveryPointIsFullyTornDown(t *testing.T) {
 		t.Errorf("Expected the surviving delivery point %q, got %q", survivor.Name(), pairs[0].DeliveryPoint.Name())
 	}
 
-	if fixture.keyExists(t, counterKey) {
-		t.Error("The subscriber counter for the orphaned delivery point was leaked")
-	}
 	if fixture.keyExists(t, ServiceDeliveryPointToPushServiceProviderPrefix+ServiceName+":"+dp.Name()) {
 		t.Error("The provider binding for the orphaned delivery point was left behind")
 	}
@@ -683,9 +675,6 @@ func TestOrphanedDeliveryPointIsFullyTornDown(t *testing.T) {
 	// The surviving device must not have been caught up in the cleanup.
 	if !fixture.keyExists(t, DeliveryPointPrefix+survivor.Name()) {
 		t.Error("The surviving delivery point was removed")
-	}
-	if !fixture.keyExists(t, DeliveryPointCounterPrefix+survivor.Name()) {
-		t.Error("The surviving delivery point's counter was removed")
 	}
 
 	// And the orphan is gone from the set, so it is not reported again.

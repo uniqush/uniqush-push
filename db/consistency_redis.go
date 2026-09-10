@@ -52,6 +52,9 @@ func (r *PushRedisDB) CheckConsistency() (*ConsistencyReport, error) {
 	if err := r.checkSubscriberSets(report); err != nil {
 		return nil, err
 	}
+	if err := r.checkDeliveryPointRecords(report); err != nil {
+		return nil, err
+	}
 	if err := r.checkCounters(report); err != nil {
 		return nil, err
 	}
@@ -302,20 +305,83 @@ func (r *PushRedisDB) checkSubscriberSets(report *ConsistencyReport) error {
 	return nil
 }
 
-// checkCounters finds refcounts left behind by the old read path.
+// checkDeliveryPointRecords finds records that no subscriber's set names.
+//
+// The other direction from checkSubscriberSets, and the one that covers the
+// window in a subscribe: AddDeliveryPointToService writes the record, then the
+// set entry, then the provider binding, so an interruption after the first
+// write leaves a record nothing refers to. Nothing collects those -- a read
+// starts from the subscriber's set, so it never meets them -- and they are
+// invisible to /subscriptions and to /unsubscribe alike.
+//
+// The check costs no memory beyond one record at a time, because a delivery
+// point already carries the service and subscriber it belongs to in its fixed
+// data. The alternative -- collecting every name every subscriber set holds and
+// subtracting -- would be a set with an entry per device on the one database
+// where this is worth running.
+func (r *PushRedisDB) checkDeliveryPointRecords(report *ConsistencyReport) error {
+	err := r.scanKeys(DeliveryPointPrefix+"*", func(page []string) error {
+		for _, key := range page {
+			dpName := strings.TrimPrefix(key, DeliveryPointPrefix)
+			dp, e := r.GetDeliveryPoint(dpName)
+			if e != nil {
+				if isErrCausedByMissingKey(e) {
+					// Unsubscribed between the scan and this read. Expected on a
+					// live database, and there is nothing left to check.
+					continue
+				}
+				// A record that exists but will not unserialize. It cannot be
+				// pushed to and it names no subscriber to check it against, so it
+				// is dead either way; reported rather than fatal, so that one
+				// corrupt record does not hide the rest of the walk.
+				r.report(report, ProblemUnreferencedDeliveryPoint, "", dpName,
+					"this delivery point record could not be read, so nothing can push to it: %v", e)
+				continue
+			}
+			if dp == nil {
+				continue
+			}
+
+			service, subscriber := dp.FixedData["service"], dp.FixedData["subscriber"]
+			if service == "" || subscriber == "" {
+				r.report(report, ProblemUnreferencedDeliveryPoint, service, dpName,
+					"this delivery point record names no service or subscriber, so nothing can push to it")
+				continue
+			}
+
+			listed, e := r.client.SIsMember(r.ctx, deviceSetKey(service, subscriber), dpName).Result()
+			if e != nil {
+				return fmt.Errorf("could not check whether %q lists delivery point %q: %w",
+					deviceSetKey(service, subscriber), dpName, e)
+			}
+			if !listed {
+				r.report(report, ProblemUnreferencedDeliveryPoint, service, dpName,
+					"subscriber %q does not list this delivery point, so nothing will push to it or remove it. "+
+						"An interrupted /subscribe leaves this. Re-subscribing the device adopts the record; "+
+						"otherwise it is safe to delete.", subscriber)
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		return fmt.Errorf("could not check delivery point records: %w", err)
+	}
+	return nil
+}
+
+// checkCounters finds the refcounts an older uniqush wrote.
+//
+// Every one of them is debris now. Subscribe and unsubscribe are redis scripts
+// that never touch these keys, and the count was only ever 0 or 1 in the first
+// place: a delivery point's name hashes its service and subscriber, so it
+// belongs to exactly one subscription.
 func (r *PushRedisDB) checkCounters(report *ConsistencyReport) error {
 	err := r.scanKeys(DeliveryPointCounterPrefix+"*", func(page []string) error {
 		for _, key := range page {
 			dpName := strings.TrimPrefix(key, DeliveryPointCounterPrefix)
-			exists, e := r.client.Exists(r.ctx, DeliveryPointPrefix+dpName).Result()
-			if e != nil {
-				return fmt.Errorf("could not check delivery point %q: %w", dpName, e)
-			}
-			if exists == 0 {
-				r.report(report, ProblemLeakedCounter, "", dpName,
-					"a subscriber counter with no delivery point behind it, left by a read that deleted the "+
-						"record and not the counter. Safe to delete.")
-			}
+			r.report(report, ProblemLeakedCounter, "", dpName,
+				"a subscriber counter, which nothing has written since subscribe and unsubscribe became "+
+					"redis scripts. It is read by nothing and safe to delete.")
 		}
 		return nil
 	})

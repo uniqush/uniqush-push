@@ -383,9 +383,11 @@ one case where the provider for a device is ambiguous), `dangling_provider`
 (a provider record no service refers to), `stale_binding` (a stored binding
 pointing at a missing provider), `binding_disagrees` (a binding that differs
 from the derived provider), `orphaned_delivery_point` (a subscriber's set names
-a device with no record; heals on the next read) and `leaked_counter` (a
-reference counter with no device). A summary line is logged at warning level
-whenever anything is found.
+a device with no record; heals on the next read), `unreferenced_delivery_point`
+(a device record its own subscriber's set does not name, which an interrupted
+`/subscribe` leaves behind) and `leaked_counter` (a `delivery.point.counter:`
+key, which nothing has written since subscribing became a redis script). A
+summary line is logged at warning level whenever anything is found.
 
 ### `/rebuildserviceset`
 

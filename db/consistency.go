@@ -66,9 +66,20 @@ const (
 	// delivery.point record. Self-heals on the next read of that subscriber.
 	ProblemOrphanedDeliveryPoint = "orphaned_delivery_point"
 
-	// ProblemLeakedCounter is a delivery.point.counter with no delivery point.
-	// Debris from the old read path, which deleted the record and left the
-	// counter behind.
+	// ProblemUnreferencedDeliveryPoint is the mirror image: a delivery.point
+	// record that its own subscriber's set does not name, so nothing will ever
+	// push to it or delete it.
+	//
+	// A subscribe writes the record first and the set entry second, so this is
+	// what an interruption between the two leaves behind. It is also what a
+	// record whose fixed data cannot be read looks like from here, since there
+	// is then no subscriber to check it against.
+	ProblemUnreferencedDeliveryPoint = "unreferenced_delivery_point"
+
+	// ProblemLeakedCounter is a delivery.point.counter key. Nothing has written
+	// one since subscribe and unsubscribe became redis scripts, and the count it
+	// held was only ever 0 or 1, so every one of these is debris from an older
+	// uniqush.
 	ProblemLeakedCounter = "leaked_counter"
 )
 

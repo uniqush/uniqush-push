@@ -51,13 +51,19 @@ type PushRedisDB struct {
 // redisClient is the subset of go-redis this package uses. Method signatures
 // mirror go-redis v9, which takes a context.Context as the first argument of
 // every command.
+//
+// It embeds redis.Scripter, which is the set of commands *redis.Script needs to
+// run a Lua script: EVALSHA first, falling back to EVAL and caching the script
+// when the server has not seen it. Embedding the upstream interface rather than
+// restating its methods means a change to it is a compile error here instead of
+// a runtime one.
 type redisClient interface {
-	Decr(ctx context.Context, key string) *redis.IntCmd
+	redis.Scripter
+
 	Del(ctx context.Context, keys ...string) *redis.IntCmd
 	Exists(ctx context.Context, keys ...string) *redis.IntCmd
 	FlushDB(ctx context.Context) *redis.StatusCmd // for tests only
 	Get(ctx context.Context, key string) *redis.StringCmd
-	Incr(ctx context.Context, key string) *redis.IntCmd
 	MGet(ctx context.Context, keys ...string) *redis.SliceCmd
 	// Ping is the cheapest question redis answers, and the only one uniqush
 	// asks purely to find out whether it is being answered at all.
@@ -69,6 +75,7 @@ type redisClient interface {
 	// walking means stalling every push for the duration. See scanKeys.
 	Scan(ctx context.Context, cursor uint64, match string, count int64) *redis.ScanCmd
 	SAdd(ctx context.Context, key string, members ...interface{}) *redis.IntCmd
+	SIsMember(ctx context.Context, key string, member interface{}) *redis.BoolCmd
 	SRem(ctx context.Context, key string, members ...interface{}) *redis.IntCmd
 	Set(ctx context.Context, key string, value interface{}, expiration time.Duration) *redis.StatusCmd
 	SMembers(ctx context.Context, key string) *redis.StringSliceCmd
@@ -85,8 +92,35 @@ type redisMultiClient struct {
 	slaveClient  *redis.Client
 }
 
-func (mc *redisMultiClient) Decr(ctx context.Context, key string) *redis.IntCmd {
-	return mc.masterClient.Decr(ctx, key)
+// The four scripting commands go to the master: every script uniqush runs
+// writes. EVAL_RO and EVALSHA_RO are the read-only forms, which redis refuses to
+// run a writing script under, so those are safe on the replica -- and nothing
+// here uses them yet.
+func (mc *redisMultiClient) Eval(ctx context.Context, script string, keys []string, args ...interface{}) *redis.Cmd {
+	return mc.masterClient.Eval(ctx, script, keys, args...)
+}
+
+func (mc *redisMultiClient) EvalSha(ctx context.Context, sha1 string, keys []string, args ...interface{}) *redis.Cmd {
+	return mc.masterClient.EvalSha(ctx, sha1, keys, args...)
+}
+
+func (mc *redisMultiClient) EvalRO(ctx context.Context, script string, keys []string, args ...interface{}) *redis.Cmd {
+	return mc.slaveClient.EvalRO(ctx, script, keys, args...)
+}
+
+func (mc *redisMultiClient) EvalShaRO(ctx context.Context, sha1 string, keys []string, args ...interface{}) *redis.Cmd {
+	return mc.slaveClient.EvalShaRO(ctx, sha1, keys, args...)
+}
+
+// ScriptExists and ScriptLoad ask about the master's script cache, because that
+// is where the scripts run. Asking the replica would report a cache uniqush
+// never uses.
+func (mc *redisMultiClient) ScriptExists(ctx context.Context, hashes ...string) *redis.BoolSliceCmd {
+	return mc.masterClient.ScriptExists(ctx, hashes...)
+}
+
+func (mc *redisMultiClient) ScriptLoad(ctx context.Context, script string) *redis.StringCmd {
+	return mc.masterClient.ScriptLoad(ctx, script)
 }
 
 func (mc *redisMultiClient) Del(ctx context.Context, keys ...string) *redis.IntCmd {
@@ -103,10 +137,6 @@ func (mc *redisMultiClient) FlushDB(ctx context.Context) *redis.StatusCmd {
 
 func (mc *redisMultiClient) Get(ctx context.Context, key string) *redis.StringCmd {
 	return mc.slaveClient.Get(ctx, key)
-}
-
-func (mc *redisMultiClient) Incr(ctx context.Context, key string) *redis.IntCmd {
-	return mc.masterClient.Incr(ctx, key)
 }
 
 // Ping checks both halves of a master/replica pair.
@@ -154,6 +184,10 @@ func (mc *redisMultiClient) Set(ctx context.Context, key string, value interface
 	return mc.masterClient.Set(ctx, key, value, expiration)
 }
 
+func (mc *redisMultiClient) SIsMember(ctx context.Context, key string, member interface{}) *redis.BoolCmd {
+	return mc.slaveClient.SIsMember(ctx, key, member)
+}
+
 func (mc *redisMultiClient) SMembers(ctx context.Context, key string) *redis.StringSliceCmd {
 	return mc.slaveClient.SMembers(ctx, key)
 }
@@ -172,11 +206,46 @@ const (
 	ServiceDeliveryPointToPushServiceProviderPrefix string = "srv.dp-2-psp:"
 	// ServiceToPushServiceProvidersPrefix is the prefix of keys for a redis SET - Maps a service name to a set of PSP names
 	ServiceToPushServiceProvidersPrefix string = "srv-2-psp:"
-	// DeliveryPointCounterPrefix is the prefix of keys for a redis STRING - Maps a delivery point name to the number of subcribers(summed across each service).
+	// DeliveryPointCounterPrefix is the prefix of keys for a redis STRING - it
+	// mapped a delivery point name to the number of subscribers using it.
+	//
+	// Deprecated: nothing writes these any more. A delivery point's name is the
+	// SHA1 of its fixed data, and that data carries the service and the
+	// subscriber, so a delivery point belongs to exactly one subscription and
+	// the count was only ever 0 or 1. The prefix stays declared so that
+	// CheckConsistency can still find the keys an older uniqush left behind.
 	DeliveryPointCounterPrefix string = "delivery.point.counter:"
 	// ServicesSet is the key for a redis SET - This is a set of service names.
 	ServicesSet string = "services{0}"
 )
+
+// Subscribing and unsubscribing are each a single redis script.
+//
+// They used to be several commands with Go deciding in between: SADD and then
+// INCR only if the SADD was new, SREM and then DECR and then two DELs if the
+// count reached zero. A crash in either window left debris -- a counter with
+// nothing behind it, or a delivery point record nothing referenced -- and
+// /checkdb grew a problem class for each. A script runs to completion on the
+// server or not at all, which removes the window instead of repairing it.
+//
+// Every key a script touches arrives in KEYS, and neither script builds a key
+// name of its own. That is the redis convention, and it keeps the key layout in
+// one place: the constants above. It also means a caller can say in advance
+// which keys a call will touch, which is what a cluster client would need.
+var (
+	// subscribeScript adds a delivery point to a subscriber's device set.
+	// KEYS[1] is that set and ARGV[1] the delivery point name; the result is the
+	// number of members added, so 0 when the device was already subscribed.
+	subscribeScript = redis.NewScript(`return redis.call('SADD', KEYS[1], ARGV[1])`)
+
+	// unsubscribeScript takes it out again, returning the number removed.
+	unsubscribeScript = redis.NewScript(`return redis.call('SREM', KEYS[1], ARGV[1])`)
+)
+
+// deviceSetKey names the SET of delivery points a subscriber has in a service.
+func deviceSetKey(srv, sub string) string {
+	return ServiceSubscriberToDeliveryPointsPrefix + srv + ":" + sub
+}
 
 // scanKeysCount is the COUNT hint on each SCAN: fewer round trips against less
 // work per call for redis. Nobody should need to tune it.
@@ -511,7 +580,7 @@ func (r *PushRedisDB) RemovePushServiceProvider(psp string) error {
 // subscriber's phone. The set that prevents that holds an entry per matched
 // subscriber, which is what the returned map holds anyway.
 func (r *PushRedisDB) GetDeliveryPointsNameByServiceSubscriber(srv, sub string) (map[string][]string, error) {
-	pattern := ServiceSubscriberToDeliveryPointsPrefix + srv + ":" + sub
+	pattern := deviceSetKey(srv, sub)
 	keys := []string{pattern}
 	if strings.Contains(sub, "*") || strings.Contains(srv, "*") {
 		var err error
@@ -555,66 +624,44 @@ func (r *PushRedisDB) GetPushServiceProviderNameByServiceDeliveryPoint(srv, dp s
 
 // AddDeliveryPointToServiceSubscriber will associate the name of the given delivery point with the given service name and subscriber name.
 func (r *PushRedisDB) AddDeliveryPointToServiceSubscriber(srv, sub, dp string) error {
-	i, err := r.client.SAdd(r.ctx, ServiceSubscriberToDeliveryPointsPrefix+srv+":"+sub, dp).Result()
+	err := subscribeScript.Run(r.ctx, r.client, []string{deviceSetKey(srv, sub)}, dp).Err()
 	if err != nil {
 		return fmt.Errorf("AddDPToServiceSubscriber failed: %w", err)
-	}
-	if i == 0 { // Already exists
-		return nil
-	}
-	err = r.client.Incr(r.ctx, DeliveryPointCounterPrefix+dp).Err()
-	if err != nil {
-		return fmt.Errorf("AddDPToServiceSubscriber count tracking failed: %w", err)
 	}
 	return nil
 }
 
 // RemoveDeliveryPointFromServiceSubscriber will remove the given delivery point's name from the subscriber of the provided service.
+//
+// The delivery point record goes with it, unconditionally. This used to be
+// guarded by a refcount, and that guard was always satisfied: the record belongs
+// to exactly one subscription, because the name it is stored under hashes the
+// service and the subscriber along with the device token.
 func (r *PushRedisDB) RemoveDeliveryPointFromServiceSubscriber(srv, sub, dp string) error {
-	j, err := r.client.SRem(r.ctx, ServiceSubscriberToDeliveryPointsPrefix+srv+":"+sub, dp).Result()
+	err := unsubscribeScript.Run(r.ctx, r.client, []string{deviceSetKey(srv, sub)}, dp).Err()
 	if err != nil {
 		return fmt.Errorf("removing the delivery point pointer %q from \"%s:%s\" failed: %w", dp, srv, sub, err)
 	}
-	if j == 0 {
-		return nil
-	}
-	i, e := r.client.Decr(r.ctx, DeliveryPointCounterPrefix+dp).Result()
-	if e != nil {
-		return fmt.Errorf("failed to decrement number of subscribers using dp %q: %w", dp, e)
-	}
-	if i <= 0 {
-		e0 := r.client.Del(r.ctx, DeliveryPointCounterPrefix+dp).Err()
-		if e0 != nil {
-			return fmt.Errorf("failed to remove counter for %q: %w", dp, e0)
-		}
-		e1 := r.client.Del(r.ctx, DeliveryPointPrefix+dp).Err()
-		if e1 != nil {
-			return fmt.Errorf("failed to remove delivery point info for %q: %w", dp, e1)
-		}
+	if err := r.client.Del(r.ctx, DeliveryPointPrefix+dp).Err(); err != nil {
+		return fmt.Errorf("failed to remove delivery point info for %q: %w", dp, err)
 	}
 	return nil
 }
 
 // RemoveMissingDeliveryPointFromServiceSubscriber removes any associations from a subscription list to a dp with missing subscriptions.
 //
-// The precondition -- that delivery.point:<dp> is already gone -- is what makes
-// deleting the counter outright correct rather than blunt. The counter is a
-// refcount across services, but the record it counts references to no longer
-// exists anywhere, so there is nothing left for another service to hold.
+// The precondition is that delivery.point:<dp> is already gone, so this is the
+// unsubscribe path with the record deletion left out.
 func (r *PushRedisDB) RemoveMissingDeliveryPointFromServiceSubscriber(service, subscriber, dpName string, logger log.Logger) {
-	// Both statements below log only when redis fails, so a nil logger here
-	// would panic exactly where something has already gone wrong -- the failure
-	// mode that hides longest, because the happy path never touches it.
+	// The statement below logs only when redis fails, so a nil logger here would
+	// panic exactly where something has already gone wrong -- the failure mode
+	// that hides longest, because the happy path never touches it.
 	logger = orDiscard(logger)
 
 	// Precondition: DeliveryPointPrefix + dp was already missing. No need to remove it.
-	e0 := r.client.SRem(r.ctx, ServiceSubscriberToDeliveryPointsPrefix+service+":"+subscriber, dpName).Err()
-	if e0 != nil {
-		logger.Errorf("Error cleaning up delivery point with missing data for dp %q service %q FROM user %q's delivery points: %v", dpName, subscriber, service, e0)
-	}
-	e1 := r.client.Del(r.ctx, DeliveryPointCounterPrefix+dpName).Err() // TODO: Err instead
-	if e1 != nil {
-		logger.Errorf("Error cleaning up count for delivery point with missing data for delivery point %q (while processing subscriber %q, service %q): %v", dpName, subscriber, service, e1)
+	err := unsubscribeScript.Run(r.ctx, r.client, []string{deviceSetKey(service, subscriber)}, dpName).Err()
+	if err != nil {
+		logger.Errorf("Error cleaning up delivery point with missing data for dp %q service %q FROM user %q's delivery points: %v", dpName, subscriber, service, err)
 	}
 }
 
@@ -876,7 +923,7 @@ func (r *PushRedisDB) GetSubscriptions(queryServices []string, subscriber string
 			continue
 		}
 
-		deliveryPoints, err := r.client.SMembers(r.ctx, ServiceSubscriberToDeliveryPointsPrefix+service+":"+subscriber).Result()
+		deliveryPoints, err := r.client.SMembers(r.ctx, deviceSetKey(service, subscriber)).Result()
 
 		if err != nil {
 			return nil, fmt.Errorf("could not get delivery points for \"%s:%s\": %w", service, subscriber, err)

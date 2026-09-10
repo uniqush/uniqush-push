@@ -54,6 +54,17 @@ UnifiedPush / Web Push:
 
 Redis:
 
+- Change: Subscribing and unsubscribing are each a single redis script, and the per-device reference count is
+  no longer written. Both were several commands with uniqush deciding in between -- `SADD` then `INCR`,
+  `SREM` then `DECR` then two `DEL`s -- so an interruption partway through left a counter with nothing behind
+  it, or a device record nothing referenced. The count itself was only ever 0 or 1: a delivery point's name
+  hashes its service and subscriber along with the device token, so it belongs to exactly one subscription.
+  Existing `delivery.point.counter:` keys are harmless, are read by nothing, and `/checkdb` lists them all as
+  `leaked_counter` so they can be deleted in one pass.
+- New feature: `/checkdb` reports `unreferenced_delivery_point`: a device record that its own subscriber's
+  set does not name. A `/subscribe` writes the record before the set entry, so an interruption between the
+  two leaves one, and nothing else would ever meet it again -- every read starts from the subscriber's set.
+  Re-subscribing the device adopts the record; otherwise it is safe to delete.
 - Bugfix: A `/push` whose `service` or `subscriber` contains a `*` no longer runs `KEYS`, which redis runs to
   completion on the thread it serves every client from: one wildcard push stalled every other push, and every
   other application on a shared redis, for the length of a keyspace walk. That walk and `/rebuildserviceset`
