@@ -192,23 +192,24 @@ func (f *rebindingFixture) subscribe(t *testing.T, devtoken string) *push.Delive
 }
 
 // subscribeAs subscribes a device for a subscriber other than the default one.
-func (f *rebindingFixture) subscribeAs(t *testing.T, subscriber, devtoken string) *push.DeliveryPoint {
+func (f *rebindingFixture) subscribeAs(t *testing.T, subscriber, devtoken string) {
 	t.Helper()
 
 	dp := f.buildDeliveryPointFor(t, "apns", subscriber, devtoken)
 	if _, err := f.client.AddDeliveryPointToService(ServiceName, subscriber, dp); err != nil {
 		t.Fatalf("Could not subscribe %q: %v", subscriber, err)
 	}
-	return dp
 }
 
-// subscribeWithType subscribes a device of a push service type other than apns.
-func (f *rebindingFixture) subscribeWithType(t *testing.T, pushServiceType, devtoken string) *push.DeliveryPoint {
+// subscribeFCMDevice subscribes the default subscriber a device of the
+// fixture's second push service type, so that a test can tell the per-type
+// indexes apart.
+func (f *rebindingFixture) subscribeFCMDevice(t *testing.T) *push.DeliveryPoint {
 	t.Helper()
 
-	dp := f.buildDeliveryPointFor(t, pushServiceType, rebindingSubscriber, devtoken)
+	dp := f.buildDeliveryPointFor(t, "fcm", rebindingSubscriber, "regid-1")
 	if _, err := f.client.AddDeliveryPointToService(ServiceName, rebindingSubscriber, dp); err != nil {
-		t.Fatalf("Could not subscribe a %s device: %v", pushServiceType, err)
+		t.Fatalf("Could not subscribe an fcm device: %v", err)
 	}
 	return dp
 }

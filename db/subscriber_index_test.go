@@ -173,7 +173,7 @@ func TestTheIndexSeparatesPushServiceTypes(t *testing.T) {
 	fixture.addProviderOfType(t, "fcm", "first.cert")
 
 	apns := fixture.subscribe(t, "devtoken-1")
-	fcm := fixture.subscribeWithType(t, "fcm", "regid-1")
+	fcm := fixture.subscribeFCMDevice(t)
 
 	if names := typeMembers(t, fixture, "apns"); len(names) != 1 || names[0] != apns.Name() {
 		t.Errorf("Expected only the apns device in the apns set, got %v", names)
@@ -381,7 +381,7 @@ func TestCheckDBIsQuietAboutAHealthyIndex(t *testing.T) {
 	fixture.addProvider(t, "first.cert")
 	fixture.addProviderOfType(t, "fcm", "first.cert")
 	fixture.subscribe(t, "devtoken-1")
-	fixture.subscribeWithType(t, "fcm", "regid-1")
+	fixture.subscribeFCMDevice(t)
 	fixture.subscribeAs(t, "another-subscriber", "devtoken-2")
 
 	report := checkConsistency(t, fixture)
@@ -422,7 +422,7 @@ func TestRebuildingFromNoIndexLeavesNothingToReport(t *testing.T) {
 	fixture.addProvider(t, "first.cert")
 	fixture.addProviderOfType(t, "fcm", "first.cert")
 	fixture.subscribe(t, "devtoken-1")
-	fixture.subscribeWithType(t, "fcm", "regid-1")
+	fixture.subscribeFCMDevice(t)
 	fixture.subscribeAs(t, "another-subscriber", "devtoken-2")
 	dropTheIndex(t, fixture)
 
@@ -648,21 +648,40 @@ func TestWildcardMatchingAgreesAcrossBothPaths(t *testing.T) {
 		t.Fatalf("Could not add a delivery point: %v", err)
 	}
 
-	pattern := wildcardSubscriber + "_*"
-	indexed := matchedSubscribers(t, fixture, pattern, nil)
-	if len(indexed) != 200 {
-		t.Fatalf("Expected the index to match 200 devices, got %d", len(indexed))
-	}
+	// A pattern that matches everything the helper wrote, and a narrower one
+	// that matches ten of them, so this says the glob is honoured rather than
+	// only that both paths return the same count.
+	//
+	// Both contain a "*", because that is what makes a name a pattern at all --
+	// as it always has been. A name carrying only other glob characters is read
+	// as an exact subscriber, on either path.
+	for _, pattern := range []struct {
+		glob     string
+		expected int
+	}{
+		{wildcardSubscriber + "_*", 200},
+		{wildcardSubscriber + "_000*", 10},
+	} {
+		indexed := matchedSubscribers(t, fixture, pattern.glob, nil)
+		if len(indexed) != pattern.expected {
+			t.Fatalf("Expected the index to match %d devices for %q, got %d",
+				pattern.expected, pattern.glob, len(indexed))
+		}
 
-	clearIndexBuiltMarker(t, fixture)
-	scanned := matchedSubscribers(t, fixture, pattern, nil)
+		clearIndexBuiltMarker(t, fixture)
+		scanned := matchedSubscribers(t, fixture, pattern.glob, nil)
+		if err := fixture.raw.markSubscriberIndexBuilt(); err != nil {
+			t.Fatalf("Could not restore the built marker: %v", err)
+		}
 
-	if len(scanned) != len(indexed) {
-		t.Fatalf("The two paths disagree: the index matched %d devices, the scan %d", len(indexed), len(scanned))
-	}
-	for name := range indexed {
-		if !scanned[name] {
-			t.Errorf("The fallback scan missed %q", name)
+		if len(scanned) != len(indexed) {
+			t.Fatalf("The two paths disagree on %q: the index matched %d devices, the scan %d",
+				pattern.glob, len(indexed), len(scanned))
+		}
+		for name := range indexed {
+			if !scanned[name] {
+				t.Errorf("The fallback scan missed %q", name)
+			}
 		}
 	}
 }
@@ -788,7 +807,7 @@ func TestStatsCountsWhatAServiceHolds(t *testing.T) {
 	fixture.addProviderOfType(t, "fcm", "first.cert")
 	fixture.subscribe(t, "devtoken-1")
 	fixture.subscribe(t, "devtoken-2")
-	fixture.subscribeWithType(t, "fcm", "regid-1")
+	fixture.subscribeFCMDevice(t)
 	fixture.subscribeAs(t, "another-subscriber", "devtoken-3")
 
 	stats, err := fixture.client.SubscriberStats([]string{ServiceName}, nil)

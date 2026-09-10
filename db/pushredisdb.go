@@ -100,7 +100,7 @@ type redisClient interface {
 	SScan(ctx context.Context, key string, cursor uint64, match string, count int64) *redis.ScanCmd
 	ZAdd(ctx context.Context, key string, members ...redis.Z) *redis.IntCmd
 	ZCard(ctx context.Context, key string) *redis.IntCmd
-	ZCount(ctx context.Context, key, min, max string) *redis.IntCmd
+	ZCount(ctx context.Context, key, minScore, maxScore string) *redis.IntCmd
 	// ZScore answers whether one subscriber is indexed, and when they were last
 	// seen. A missing member comes back as redis.Nil.
 	ZScore(ctx context.Context, key, member string) *redis.FloatCmd
@@ -244,8 +244,8 @@ func (mc *redisMultiClient) ZCard(ctx context.Context, key string) *redis.IntCmd
 	return mc.slaveClient.ZCard(ctx, key)
 }
 
-func (mc *redisMultiClient) ZCount(ctx context.Context, key, min, max string) *redis.IntCmd {
-	return mc.slaveClient.ZCount(ctx, key, min, max)
+func (mc *redisMultiClient) ZCount(ctx context.Context, key, minScore, maxScore string) *redis.IntCmd {
+	return mc.slaveClient.ZCount(ctx, key, minScore, maxScore)
 }
 
 func (mc *redisMultiClient) ZScan(ctx context.Context, key string, cursor uint64, match string, count int64) *redis.ScanCmd {
