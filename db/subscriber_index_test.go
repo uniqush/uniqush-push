@@ -1,6 +1,7 @@
 package db
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"strconv"
@@ -9,6 +10,7 @@ import (
 	"time"
 
 	"github.com/redis/go-redis/v9"
+	"github.com/uniqush/uniqush-push/log"
 	"github.com/uniqush/uniqush-push/push"
 )
 
@@ -611,5 +613,169 @@ func TestRebuildingWalksPastOnePage(t *testing.T) {
 
 	if got := len(indexMembers(t, fixture, subscriberIndexKey(ServiceName))); got != subscribers {
 		t.Errorf("Expected all %d subscribers to be reindexed, got %d", subscribers, got)
+	}
+}
+
+// matchedSubscribers is the set of delivery point names a wildcard resolves to.
+func matchedSubscribers(t *testing.T, fixture *rebindingFixture, pattern string, logger log.Logger) map[string]bool {
+	t.Helper()
+
+	found, err := fixture.raw.GetDeliveryPointsNameByServiceSubscriber(ServiceName, pattern, "test-request", logger)
+	if err != nil {
+		t.Fatalf("Could not resolve the wildcard %q: %v", pattern, err)
+	}
+	names := make(map[string]bool, len(found[ServiceName]))
+	for _, name := range found[ServiceName] {
+		names[name] = true
+	}
+	return names
+}
+
+// TestWildcardMatchingAgreesAcrossBothPaths is the property the index has to
+// have before it is worth anything: the same subscribers, however they are
+// found.
+//
+// The index answers with ZSCAN over one service, the fallback with a SCAN over
+// the keyspace, and both take the same glob syntax KEYS did. If they ever
+// disagreed, upgrading would change who receives a wildcard push.
+func TestWildcardMatchingAgreesAcrossBothPaths(t *testing.T) {
+	fixture := newRebindingFixture(t)
+	subscribeMany(t, fixture, 200)
+	// One subscriber the pattern must not reach, so that "the same" is not
+	// trivially "everything".
+	if err := fixture.raw.AddDeliveryPointToServiceSubscriber(ServiceName, "somebody-else", "apns:devtoken-else"); err != nil {
+		t.Fatalf("Could not add a delivery point: %v", err)
+	}
+
+	pattern := wildcardSubscriber + "_*"
+	indexed := matchedSubscribers(t, fixture, pattern, nil)
+	if len(indexed) != 200 {
+		t.Fatalf("Expected the index to match 200 devices, got %d", len(indexed))
+	}
+
+	clearIndexBuiltMarker(t, fixture)
+	scanned := matchedSubscribers(t, fixture, pattern, nil)
+
+	if len(scanned) != len(indexed) {
+		t.Fatalf("The two paths disagree: the index matched %d devices, the scan %d", len(indexed), len(scanned))
+	}
+	for name := range indexed {
+		if !scanned[name] {
+			t.Errorf("The fallback scan missed %q", name)
+		}
+	}
+}
+
+// TestTheFallbackScanIsLoudAboutItself.
+//
+// The fallback works, so nothing fails and nobody would otherwise find out --
+// while every wildcard push pays for a keyspace walk that one call to
+// /rebuildsubscriberindex would end. It is logged at error level, on every
+// call, with the request it came from and the thing to run.
+func TestTheFallbackScanIsLoudAboutItself(t *testing.T) {
+	fixture := newRebindingFixture(t)
+	subscribeMany(t, fixture, 2)
+	clearIndexBuiltMarker(t, fixture)
+
+	var logged bytes.Buffer
+	logger := log.NewLogger(&logged, "", log.LevelError)
+	matchedSubscribers(t, fixture, wildcardSubscriber+"_*", logger)
+
+	line := logged.String()
+	if line == "" {
+		t.Fatal("A wildcard push falling back to a keyspace scan said nothing")
+	}
+	for _, wanted := range []string{"test-request", ServiceName, "/rebuildsubscriberindex"} {
+		if !strings.Contains(line, wanted) {
+			t.Errorf("Expected the log line to carry %q, got %q", wanted, line)
+		}
+	}
+
+	// And it says so every time, deliberately: the noise is what ends it.
+	logged.Reset()
+	matchedSubscribers(t, fixture, wildcardSubscriber+"_*", logger)
+	if logged.Len() == 0 {
+		t.Error("The second wildcard push was silent; this is not throttled on purpose")
+	}
+}
+
+// TestAWildcardOnABuiltIndexIsQuiet is the other half: once the rebuild has
+// run, the warning has to stop, or it becomes something to filter out.
+func TestAWildcardOnABuiltIndexIsQuiet(t *testing.T) {
+	fixture := newRebindingFixture(t)
+	subscribeMany(t, fixture, 2)
+
+	var logged bytes.Buffer
+	logger := log.NewLogger(&logged, "", log.LevelError)
+	matchedSubscribers(t, fixture, wildcardSubscriber+"_*", logger)
+
+	if logged.Len() != 0 {
+		t.Errorf("A wildcard push against a built index logged: %q", logged.String())
+	}
+}
+
+// TestAPartialIndexIsOnlyTrustedWhenItIsMarkedBuilt is the case the marker
+// exists to prevent, shown from both sides.
+//
+// The index fills up on its own from the moment this release is installed, so
+// on an upgraded database it holds whoever has re-subscribed since and nobody
+// else. Trusting it then is not a slow answer or a stale one: it is a wildcard
+// push that reaches a fraction of its subscribers and reports success.
+func TestAPartialIndexIsOnlyTrustedWhenItIsMarkedBuilt(t *testing.T) {
+	fixture := newRebindingFixture(t)
+	clearIndexBuiltMarker(t, fixture)
+
+	// Two subscribers written before the upgrade: a device set and nothing else.
+	for _, subscriber := range []string{wildcardSubscriber + "_old1", wildcardSubscriber + "_old2"} {
+		if err := fixture.raw.client.SAdd(context.Background(),
+			deviceSetKey(ServiceName, subscriber), "apns:devtoken-"+subscriber).Err(); err != nil {
+			t.Fatalf("Could not seed redis: %v", err)
+		}
+	}
+	// And one who has subscribed since, so the index exists and is wrong.
+	if err := fixture.raw.AddDeliveryPointToServiceSubscriber(ServiceName,
+		wildcardSubscriber+"_new", "apns:devtoken-new"); err != nil {
+		t.Fatalf("Could not add a delivery point: %v", err)
+	}
+
+	pattern := wildcardSubscriber + "_*"
+	if got := len(matchedSubscribers(t, fixture, pattern, nil)); got != 3 {
+		t.Errorf("Expected the fallback scan to find all 3 subscribers, got %d", got)
+	}
+
+	// Now claim the index is complete, which is what keying the fast path on the
+	// index key's presence would amount to.
+	if err := fixture.raw.markSubscriberIndexBuilt(); err != nil {
+		t.Fatalf("Could not write the built marker: %v", err)
+	}
+	if got := len(matchedSubscribers(t, fixture, pattern, nil)); got != 1 {
+		t.Errorf("Expected a wrongly trusted index to match only the 1 re-subscribed device, got %d "+
+			"(if this is 3 the test has stopped demonstrating anything)", got)
+	}
+
+	// Which the rebuild is what fixes.
+	if err := fixture.client.RebuildSubscriberIndex(); err != nil {
+		t.Fatalf("RebuildSubscriberIndex failed: %v", err)
+	}
+	if got := len(matchedSubscribers(t, fixture, pattern, nil)); got != 3 {
+		t.Errorf("Expected all 3 subscribers after the rebuild, got %d", got)
+	}
+}
+
+// TestAWildcardServiceIsRefused pins the one thing this stopped supporting.
+//
+// Every endpoint that reaches it validates the service name against a pattern
+// that excludes "*", so nothing asks for this deliberately -- and there is no
+// per-service index that could answer it. Refusing beats scanning the keyspace
+// for a request nobody meant to make.
+func TestAWildcardServiceIsRefused(t *testing.T) {
+	fixture := newRebindingFixture(t)
+	fixture.addProvider(t, "first.cert")
+	fixture.subscribe(t, "devtoken-1")
+
+	for _, subscriber := range []string{rebindingSubscriber, "*"} {
+		if _, err := fixture.raw.GetDeliveryPointsNameByServiceSubscriber("*", subscriber, "", nil); err == nil {
+			t.Errorf("Expected a wildcard service to be refused, for subscriber %q", subscriber)
+		}
 	}
 }

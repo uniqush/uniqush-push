@@ -118,7 +118,7 @@ func (d *recordingDatabase) ModifyDeliveryPoint(*push.DeliveryPoint) error { ret
 func (d *recordingDatabase) RemoveAllDeliveryPointsFromService(string, string) (int, error) {
 	return 0, nil
 }
-func (d *recordingDatabase) GetPushServiceProviderDeliveryPointPairs(string, string, []string, log.Logger) ([]db.PushServiceProviderDeliveryPointPair, error) {
+func (d *recordingDatabase) GetPushServiceProviderDeliveryPointPairs(string, string, []string, string, log.Logger) ([]db.PushServiceProviderDeliveryPointPair, error) {
 	return nil, nil
 }
 func (d *recordingDatabase) GetSubscriptions([]string, string, log.Logger) ([]map[string]string, error) {

@@ -121,7 +121,14 @@ type pushRawDatabaseReader interface { //nolint:staticcheck
 	GetPushServiceProviderConfigs([]string) ([]*push.PushServiceProvider, []error)
 	GetSubscriptions(queryServices []string, subscriber string, logger log.Logger) ([]map[string]string, error)
 
-	GetDeliveryPointsNameByServiceSubscriber(srv, sub string) (map[string][]string, error)
+	// GetDeliveryPointsNameByServiceSubscriber lists the delivery points of a
+	// subscriber, or of every subscriber matching a "*" pattern.
+	//
+	// requestID and logger are for the one thing this reports about itself: a
+	// wildcard on a database whose subscriber index has not been rebuilt falls
+	// back to a keyspace scan, and says so on every call, because that is a
+	// condition one call to /rebuildsubscriberindex ends for good.
+	GetDeliveryPointsNameByServiceSubscriber(srv, sub, requestID string, logger log.Logger) (map[string][]string, error)
 	GetPushServiceProviderNameByServiceDeliveryPoint(srv, dp string) (string, error)
 
 	GetPushServiceProvidersByService(srv string) ([]string, error)

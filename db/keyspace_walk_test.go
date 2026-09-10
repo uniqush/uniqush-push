@@ -59,7 +59,7 @@ func TestWildcardLookupFindsEveryMatchingSubscriber(t *testing.T) {
 	fixture := newRebindingFixture(t)
 	expected := subscribeMany(t, fixture, subscribeManySize)
 
-	found, err := fixture.raw.GetDeliveryPointsNameByServiceSubscriber(ServiceName, wildcardSubscriber+"_*")
+	found, err := fixture.raw.GetDeliveryPointsNameByServiceSubscriber(ServiceName, wildcardSubscriber+"_*", "", nil)
 	if err != nil {
 		t.Fatalf("Could not list delivery points by wildcard: %v", err)
 	}
@@ -91,7 +91,7 @@ func TestWildcardLookupReturnsEachDeliveryPointOnce(t *testing.T) {
 	fixture := newRebindingFixture(t)
 	expected := subscribeMany(t, fixture, subscribeManySize)
 
-	found, err := fixture.raw.GetDeliveryPointsNameByServiceSubscriber(ServiceName, wildcardSubscriber+"_*")
+	found, err := fixture.raw.GetDeliveryPointsNameByServiceSubscriber(ServiceName, wildcardSubscriber+"_*", "", nil)
 	if err != nil {
 		t.Fatalf("Could not list delivery points by wildcard: %v", err)
 	}
@@ -122,7 +122,7 @@ func TestLookupWithoutAWildcardStaysAnExactKey(t *testing.T) {
 		t.Fatalf("Could not add a delivery point: %v", err)
 	}
 
-	found, err := fixture.raw.GetDeliveryPointsNameByServiceSubscriber(ServiceName, "user1")
+	found, err := fixture.raw.GetDeliveryPointsNameByServiceSubscriber(ServiceName, "user1", "", nil)
 	if err != nil {
 		t.Fatalf("Could not list delivery points: %v", err)
 	}

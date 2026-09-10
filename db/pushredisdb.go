@@ -724,47 +724,119 @@ func (r *PushRedisDB) RemovePushServiceProvider(psp string) error {
 
 // GetDeliveryPointsNameByServiceSubscriber will get the delivery point for a service and it's subscriber
 //
-// A "*" in either name makes this a pattern covering many subscribers, which
+// A "*" in the subscriber makes this a pattern covering many of them, which
 // /push accepts and does not validate. That is the one keyspace walk uniqush
-// does on a request path, and it ran KEYS: a single wildcard push held redis
-// for the length of a full walk, so every other push -- and everything else
-// sharing the server -- waited on it. It scans now.
+// does on a request path, and it used to run KEYS: a single wildcard push held
+// redis for the length of a full walk, so every other push -- and everything
+// else sharing the server -- waited on it.
 //
-// The keys come back deduplicated, which matters more here than the stall did.
-// A SCAN can hand the same key back twice, and each repeat would be a second
-// copy of every delivery point behind it: a duplicate notification on the
-// subscriber's phone. The set that prevents that holds an entry per matched
-// subscriber, which is what the returned map holds anyway.
-func (r *PushRedisDB) GetDeliveryPointsNameByServiceSubscriber(srv, sub string) (map[string][]string, error) {
-	pattern := deviceSetKey(srv, sub)
-	keys := []string{pattern}
-	if strings.Contains(sub, "*") || strings.Contains(srv, "*") {
-		var err error
-		keys, err = r.scanUniqueKeys(pattern)
-		if err != nil {
-			return nil, fmt.Errorf("GetDPsNameByServiceSubscriber dp lookup '%s:%s' failed: %w", srv, sub, err)
-		}
+// It does not walk the keyspace at all now. The service's subscriber index is a
+// sorted set of exactly the names a wildcard could match, and ZSCAN takes the
+// same glob patterns KEYS did, so the same subscribers match as always -- over
+// a structure the size of one service rather than the size of the database. The
+// fallback, for a database whose index has not been rebuilt, is the SCAN this
+// replaces.
+//
+// A "*" in the service is refused. Every endpoint that reaches this validates
+// the service name against a pattern that excludes "*", so nothing asks for it
+// deliberately, and there is no per-service index to answer it from.
+func (r *PushRedisDB) GetDeliveryPointsNameByServiceSubscriber(srv, sub, requestID string, logger log.Logger) (map[string][]string, error) {
+	logger = orDiscard(logger)
+
+	if strings.Contains(srv, "*") {
+		return nil, fmt.Errorf("GetDPsNameByServiceSubscriber: a wildcard in the service name is not supported, got %q", srv)
 	}
 
-	ret := make(map[string][]string, len(keys))
-	for _, k := range keys {
-		m, err := r.client.SMembers(r.ctx, k).Result()
+	subscribers := []string{sub}
+	if strings.Contains(sub, "*") {
+		var err error
+		subscribers, err = r.matchSubscribers(srv, sub, requestID, logger)
 		if err != nil {
-			return nil, fmt.Errorf("GetDPsNameByServiceSubscriber smembers %q failed: %w", k, err)
+			return nil, err
 		}
-		if m == nil {
+	}
+	return r.deliveryPointsOfSubscribers(srv, subscribers)
+}
+
+// matchSubscribers lists the subscribers of one service matching a glob.
+//
+// The names come back deduplicated. Both ways of finding them can hand the same
+// one over twice -- ZSCAN and SCAN alike give up the snapshot KEYS had -- and
+// each repeat would be a second copy of every delivery point behind that
+// subscriber, which is a duplicate notification on somebody's phone. The set
+// that prevents it holds an entry per matched subscriber, which is what the
+// caller's own result holds anyway.
+func (r *PushRedisDB) matchSubscribers(srv, pattern, requestID string, logger log.Logger) ([]string, error) {
+	built, err := r.subscriberIndexBuilt()
+	if err != nil {
+		return nil, err
+	}
+	if !built {
+		// Deliberately not throttled to once per process. This is a slow path
+		// that an operator can end for good with one call, and the noise is what
+		// makes them do it; it stops the moment the rebuild runs.
+		logger.Errorf("RequestID=%v Service=%v Subscriber=%v the subscriber index has not been built, so this "+
+			"wildcard is being matched by scanning the whole keyspace, which is slow on a large database. "+
+			"Run /rebuildsubscriberindex once against this database to fix it.", requestID, srv, pattern)
+		return r.scanMatchingSubscribers(srv, pattern)
+	}
+
+	seen := make(map[string]bool)
+	subscribers := make([]string, 0)
+	err = r.scanSubscriberIndex(srv, pattern, func(subscriber string) error {
+		if seen[subscriber] {
+			return nil
+		}
+		seen[subscriber] = true
+		subscribers = append(subscribers, subscriber)
+		return nil
+	})
+	if err != nil {
+		return nil, fmt.Errorf("GetDPsNameByServiceSubscriber dp lookup '%s:%s' failed: %w", srv, pattern, err)
+	}
+	return subscribers, nil
+}
+
+// scanMatchingSubscribers is the fallback for a database whose subscriber index
+// has not been rebuilt.
+//
+// A SCAN, not KEYS: it walks the whole keyspace in pages, which is slow on a
+// large database but never holds the server. Every subscriber is here whether
+// or not the index knows about them, which is the whole point -- an index that
+// covers only post-upgrade subscribers would answer confidently and wrongly.
+func (r *PushRedisDB) scanMatchingSubscribers(srv, pattern string) ([]string, error) {
+	keys, err := r.scanUniqueKeys(deviceSetKey(srv, pattern))
+	if err != nil {
+		return nil, fmt.Errorf("GetDPsNameByServiceSubscriber dp lookup '%s:%s' failed: %w", srv, pattern, err)
+	}
+	prefix := deviceSetKey(srv, "")
+	subscribers := make([]string, 0, len(keys))
+	for _, key := range keys {
+		subscribers = append(subscribers, strings.TrimPrefix(key, prefix))
+	}
+	return subscribers, nil
+}
+
+// deliveryPointsOfSubscribers reads the device set of each named subscriber.
+//
+// The result is keyed by service, as it has always been, even though every
+// subscriber here belongs to the one service: the shape is what
+// GetPushServiceProviderDeliveryPointPairs iterates.
+func (r *PushRedisDB) deliveryPointsOfSubscribers(srv string, subscribers []string) (map[string][]string, error) {
+	ret := make(map[string][]string, 1)
+	for _, subscriber := range subscribers {
+		key := deviceSetKey(srv, subscriber)
+		names, err := r.client.SMembers(r.ctx, key).Result()
+		if err != nil {
+			return nil, fmt.Errorf("GetDPsNameByServiceSubscriber smembers %q failed: %w", key, err)
+		}
+		if names == nil {
 			continue
 		}
-		elem := strings.Split(k, ":")
-		s := elem[1]
-		if l, ok := ret[s]; !ok || l == nil {
-			ret[s] = make([]string, 0, len(keys))
+		if existing, ok := ret[srv]; !ok || existing == nil {
+			ret[srv] = make([]string, 0, len(subscribers))
 		}
-		for _, bm := range m {
-			dpl := ret[s]
-			dpl = append(dpl, bm)
-			ret[s] = dpl
-		}
+		ret[srv] = append(ret[srv], names...)
 	}
 	return ret, nil
 }

@@ -106,7 +106,11 @@ type PushDatabase interface {
 	// device that silently stops receiving pushes is the hardest kind of
 	// failure to diagnose from the outside. GetSubscriptions takes one for the
 	// same reason.
-	GetPushServiceProviderDeliveryPointPairs(service string, subscriber string, dpNamesRequested []string, logger log.Logger) ([]PushServiceProviderDeliveryPointPair, error)
+	//
+	// requestID goes with it so that what is logged can be tied to the request
+	// that caused it. It may be empty where there is no request to name.
+	GetPushServiceProviderDeliveryPointPairs(service string, subscriber string, dpNamesRequested []string,
+		requestID string, logger log.Logger) ([]PushServiceProviderDeliveryPointPair, error)
 
 	GetSubscriptions(services []string, user string, logger log.Logger) ([]map[string]string, error)
 
@@ -372,7 +376,7 @@ func (f *pushDatabaseOpts) RemoveAllDeliveryPointsFromService(service, subscribe
 	f.dblock.Lock()
 	defer f.dblock.Unlock()
 
-	names, err := f.db.GetDeliveryPointsNameByServiceSubscriber(service, subscriber)
+	names, err := f.db.GetDeliveryPointsNameByServiceSubscriber(service, subscriber, "", nil)
 	if err != nil {
 		return 0, fmt.Errorf("could not list the delivery points of service %s, subscriber %s: %v",
 			service, subscriber, err)
@@ -422,9 +426,9 @@ type orphanedDeliveryPoint struct {
 // there, and leaving it means /subscriptions never stops reporting a device
 // that does not exist.
 func (f *pushDatabaseOpts) GetPushServiceProviderDeliveryPointPairs(service string,
-	subscriber string, dpNamesRequested []string, logger log.Logger) ([]PushServiceProviderDeliveryPointPair, error) {
+	subscriber string, dpNamesRequested []string, requestID string, logger log.Logger) ([]PushServiceProviderDeliveryPointPair, error) {
 	logger = orDiscard(logger)
-	pairs, orphans, err := f.collectDeliveryPointPairs(service, subscriber, dpNamesRequested, logger)
+	pairs, orphans, err := f.collectDeliveryPointPairs(service, subscriber, dpNamesRequested, requestID, logger)
 	if err != nil {
 		return nil, err
 	}
@@ -442,11 +446,11 @@ func (f *pushDatabaseOpts) GetPushServiceProviderDeliveryPointPairs(service stri
 // collectDeliveryPointPairs does the read pass, returning the pairs it resolved
 // and the delivery points whose records have vanished.
 func (f *pushDatabaseOpts) collectDeliveryPointPairs(service string, subscriber string,
-	dpNamesRequested []string, logger log.Logger) ([]PushServiceProviderDeliveryPointPair, []orphanedDeliveryPoint, error) {
+	dpNamesRequested []string, requestID string, logger log.Logger) ([]PushServiceProviderDeliveryPointPair, []orphanedDeliveryPoint, error) {
 	f.dblock.RLock()
 	defer f.dblock.RUnlock()
 
-	dpnames, err := f.db.GetDeliveryPointsNameByServiceSubscriber(service, subscriber)
+	dpnames, err := f.db.GetDeliveryPointsNameByServiceSubscriber(service, subscriber, requestID, logger)
 	if err != nil {
 		return nil, nil, fmt.Errorf("could not list delivery points for service %s, subscriber %s: %v", service, subscriber, err)
 	}

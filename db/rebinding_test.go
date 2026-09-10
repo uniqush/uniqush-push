@@ -215,7 +215,7 @@ func (f *rebindingFixture) subscribeWithType(t *testing.T, pushServiceType, devt
 
 func (f *rebindingFixture) pairs(t *testing.T) []PushServiceProviderDeliveryPointPair {
 	t.Helper()
-	pairs, err := f.client.GetPushServiceProviderDeliveryPointPairs(ServiceName, rebindingSubscriber, nil, nil)
+	pairs, err := f.client.GetPushServiceProviderDeliveryPointPairs(ServiceName, rebindingSubscriber, nil, "", nil)
 	if err != nil {
 		t.Fatalf("Could not read delivery point pairs: %v", err)
 	}
@@ -712,7 +712,7 @@ func TestOrphanedDeliveryPointIsFullyTornDown(t *testing.T) {
 	}
 
 	// And the orphan is gone from the set, so it is not reported again.
-	names, err := fixture.raw.GetDeliveryPointsNameByServiceSubscriber(ServiceName, rebindingSubscriber)
+	names, err := fixture.raw.GetDeliveryPointsNameByServiceSubscriber(ServiceName, rebindingSubscriber, "", nil)
 	if err != nil {
 		t.Fatalf("Could not list delivery points: %v", err)
 	}
