@@ -23,6 +23,7 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"github.com/redis/go-redis/v9"
@@ -46,6 +47,15 @@ type PushRedisDB struct {
 	// ContextTimeoutEnabled defaults to false, so commands are bounded by
 	// ReadTimeout/WriteTimeout regardless.
 	ctx context.Context
+
+	// indexBuilt caches a positive answer to "is the subscriber index built",
+	// which is otherwise one EXISTS per wildcard push.
+	//
+	// Only ever set, never cleared: nothing deletes the marker, so a true answer
+	// stays true for the life of the process. A false answer is deliberately not
+	// cached, so that /rebuildsubscriberindex takes effect without a restart --
+	// including a rebuild run against a different uniqush instance.
+	indexBuilt atomic.Bool
 }
 
 // redisClient is the subset of go-redis this package uses. Method signatures
@@ -86,9 +96,14 @@ type redisClient interface {
 	SRem(ctx context.Context, key string, members ...interface{}) *redis.IntCmd
 	Set(ctx context.Context, key string, value interface{}, expiration time.Duration) *redis.StatusCmd
 	SMembers(ctx context.Context, key string) *redis.StringSliceCmd
+	// SScan walks one set, for the sets with a member per device.
+	SScan(ctx context.Context, key string, cursor uint64, match string, count int64) *redis.ScanCmd
 	ZAdd(ctx context.Context, key string, members ...redis.Z) *redis.IntCmd
 	ZCard(ctx context.Context, key string) *redis.IntCmd
 	ZCount(ctx context.Context, key, min, max string) *redis.IntCmd
+	// ZScore answers whether one subscriber is indexed, and when they were last
+	// seen. A missing member comes back as redis.Nil.
+	ZScore(ctx context.Context, key, member string) *redis.FloatCmd
 	// ZScan walks one service's subscriber index, which is how a wildcard push
 	// finds its subscribers without walking the keyspace at all.
 	ZScan(ctx context.Context, key string, cursor uint64, match string, count int64) *redis.ScanCmd
@@ -217,6 +232,10 @@ func (mc *redisMultiClient) SMembers(ctx context.Context, key string) *redis.Str
 	return mc.slaveClient.SMembers(ctx, key)
 }
 
+func (mc *redisMultiClient) SScan(ctx context.Context, key string, cursor uint64, match string, count int64) *redis.ScanCmd {
+	return mc.slaveClient.SScan(ctx, key, cursor, match, count)
+}
+
 func (mc *redisMultiClient) ZAdd(ctx context.Context, key string, members ...redis.Z) *redis.IntCmd {
 	return mc.masterClient.ZAdd(ctx, key, members...)
 }
@@ -231,6 +250,10 @@ func (mc *redisMultiClient) ZCount(ctx context.Context, key, min, max string) *r
 
 func (mc *redisMultiClient) ZScan(ctx context.Context, key string, cursor uint64, match string, count int64) *redis.ScanCmd {
 	return mc.slaveClient.ZScan(ctx, key, cursor, match, count)
+}
+
+func (mc *redisMultiClient) ZScore(ctx context.Context, key, member string) *redis.FloatCmd {
+	return mc.slaveClient.ZScore(ctx, key, member)
 }
 
 var _ redisClient = &redis.Client{}

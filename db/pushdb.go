@@ -119,6 +119,12 @@ type PushDatabase interface {
 	// is read-only and changes nothing, including the problems it finds.
 	CheckConsistency() (*ConsistencyReport, error)
 
+	// PrepareSubscriberIndex settles the per-service subscriber index once, at
+	// startup. Call it before serving: a database that has one takes the fast
+	// path for wildcard pushes, and one that does not is told so in the log
+	// rather than by a wildcard push nobody sends until Friday.
+	PrepareSubscriberIndex(logger log.Logger) error
+
 	FlushCache() error
 }
 
@@ -806,6 +812,12 @@ func (f *pushDatabaseOpts) GetSubscriptions(services []string, user string, logg
 		return nil, fmt.Errorf("GetSubscriptions: %v", err)
 	}
 	return subs, nil
+}
+
+func (f *pushDatabaseOpts) PrepareSubscriberIndex(logger log.Logger) error {
+	f.dblock.Lock()
+	defer f.dblock.Unlock()
+	return f.db.PrepareSubscriberIndex(logger)
 }
 
 func (f *pushDatabaseOpts) RebuildServiceSet() error {

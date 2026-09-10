@@ -64,6 +64,12 @@ func connectDatabaseAndClearRedisData(t *testing.T) PushDatabase {
 	if err = result.Err(); err != nil {
 		t.Skip("Could not connect to db\n")
 	}
+	// What uniqush does at startup, and what makes the database these tests run
+	// against the same shape as a fresh installation: an empty database has
+	// nothing to index, so its subscriber index counts as built.
+	if err := client.PrepareSubscriberIndex(nil); err != nil {
+		t.Fatalf("Could not prepare the subscriber index: %v", err)
+	}
 	return client
 }
 

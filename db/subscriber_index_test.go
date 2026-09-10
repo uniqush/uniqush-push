@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"strconv"
+	"strings"
 	"testing"
 	"time"
 
@@ -207,5 +208,183 @@ func TestManySubscribersAreAllIndexed(t *testing.T) {
 
 	if got := len(indexMembers(t, fixture, subscriberIndexKey(ServiceName))); got != subscribers {
 		t.Errorf("Expected all %d subscribers in the index, got %d", subscribers, got)
+	}
+}
+
+// clearIndexBuiltMarker puts the fixture's database back into the state an
+// upgraded one starts in: index entries for whatever has been written since,
+// and no claim that they cover everything.
+//
+// The in-process cache of a positive answer has to go too, since it is what a
+// long-running uniqush would be holding.
+func clearIndexBuiltMarker(t *testing.T, fixture *rebindingFixture) {
+	t.Helper()
+
+	if err := fixture.raw.client.Del(context.Background(), SubscriberIndexBuiltKey).Err(); err != nil {
+		t.Fatalf("Could not clear the built marker: %v", err)
+	}
+	fixture.raw.indexBuilt.Store(false)
+}
+
+// TestAFreshDatabaseIsIndexedAtStartup covers the one case that marks itself.
+//
+// A brand new installation has nothing to rebuild, and requiring
+// /rebuildsubscriberindex before wildcards worked would be a rite of passage
+// rather than a safeguard.
+func TestAFreshDatabaseIsIndexedAtStartup(t *testing.T) {
+	fixture := newRebindingFixture(t)
+
+	// newRebindingFixture flushes the database and then does what startup does.
+	if !fixture.keyExists(t, SubscriberIndexBuiltKey) {
+		t.Fatal("An empty database was not marked as indexed at startup")
+	}
+
+	built, err := fixture.raw.subscriberIndexBuilt()
+	if err != nil {
+		t.Fatalf("Could not read the built marker: %v", err)
+	}
+	if !built {
+		t.Error("The marker is present but the database does not read as indexed")
+	}
+}
+
+// TestAnExistingDatabaseIsNotIndexedAtStartup is the case that matters: an
+// upgrade must not claim an index it has not built.
+func TestAnExistingDatabaseIsNotIndexedAtStartup(t *testing.T) {
+	fixture := newRebindingFixture(t)
+	fixture.addProvider(t, "first.cert")
+	fixture.subscribe(t, "devtoken-1")
+	clearIndexBuiltMarker(t, fixture)
+
+	if err := fixture.client.PrepareSubscriberIndex(nil); err != nil {
+		t.Fatalf("PrepareSubscriberIndex failed: %v", err)
+	}
+
+	if fixture.keyExists(t, SubscriberIndexBuiltKey) {
+		t.Error("Startup marked a database it had not indexed")
+	}
+}
+
+// TestTheBuiltMarkerIsNotInferredFromTheIndexKey is the mistake the marker
+// exists to prevent.
+//
+// Redis deletes an empty sorted set, so srv-2-sub:<service> is absent on a
+// database that has never been indexed -- and the first /subscribe after an
+// upgrade recreates it holding one subscriber. Anything keyed on the index
+// key's presence would switch itself on at that moment, and a wildcard push
+// would then miss every subscriber who had not happened to re-subscribe.
+func TestTheBuiltMarkerIsNotInferredFromTheIndexKey(t *testing.T) {
+	fixture := newRebindingFixture(t)
+	fixture.addProvider(t, "first.cert")
+	clearIndexBuiltMarker(t, fixture)
+
+	// A subscribe after the upgrade. The index key now exists.
+	fixture.subscribe(t, "devtoken-1")
+	if !fixture.keyExists(t, subscriberIndexKey(ServiceName)) {
+		t.Fatal("Expected the subscribe to create the service's index")
+	}
+
+	built, err := fixture.raw.subscriberIndexBuilt()
+	if err != nil {
+		t.Fatalf("Could not read the built marker: %v", err)
+	}
+	if built {
+		t.Error("An index holding one post-upgrade subscriber was read as covering the database")
+	}
+}
+
+// TestCheckDBReportsAnUnbuiltIndex makes the cause visible.
+//
+// On such a database every subscriber written before the upgrade is missing
+// from the index. Reporting each of them, rather than the one reason, would
+// bury the answer under its own consequences.
+func TestCheckDBReportsAnUnbuiltIndex(t *testing.T) {
+	fixture := newRebindingFixture(t)
+	fixture.addProvider(t, "first.cert")
+	fixture.subscribe(t, "devtoken-1")
+	clearIndexBuiltMarker(t, fixture)
+
+	report := checkConsistency(t, fixture)
+	notBuilt := findProblems(report, ProblemIndexNotBuilt)
+	if len(notBuilt) != 1 {
+		t.Fatalf("Expected one index_not_built problem, got %d: %v", len(notBuilt), report.Problems)
+	}
+	if !strings.Contains(notBuilt[0].Detail, "/rebuildsubscriberindex") {
+		t.Errorf("Expected the detail to say how to fix it, got %q", notBuilt[0].Detail)
+	}
+}
+
+// TestCheckDBFindsMissingIndexEntries covers both halves of the forward check:
+// a subscriber the index does not know, and a device its type set does not.
+func TestCheckDBFindsMissingIndexEntries(t *testing.T) {
+	fixture := newRebindingFixture(t)
+	fixture.addProvider(t, "first.cert")
+	dp := fixture.subscribe(t, "devtoken-1")
+
+	// Take both index entries away, leaving the subscription: a subscriber
+	// written before the index existed looks exactly like this.
+	if err := fixture.raw.client.Del(context.Background(),
+		subscriberIndexKey(ServiceName), typeDeviceSetKey(ServiceName, "apns")).Err(); err != nil {
+		t.Fatalf("Could not seed redis: %v", err)
+	}
+
+	report := checkConsistency(t, fixture)
+	missing := findProblems(report, ProblemMissingIndexEntry)
+	if len(missing) != 2 {
+		t.Fatalf("Expected the subscriber and the device to be reported, got %d: %v", len(missing), report.Problems)
+	}
+	subjects := map[string]bool{missing[0].Subject: true, missing[1].Subject: true}
+	if !subjects[rebindingSubscriber] {
+		t.Errorf("Expected the missing subscriber to be reported, got %v", subjects)
+	}
+	if !subjects[dp.Name()] {
+		t.Errorf("Expected the missing delivery point to be reported, got %v", subjects)
+	}
+}
+
+// TestCheckDBFindsStaleIndexEntries covers the reverse: entries with nothing
+// behind them, which are what make /stats overcount.
+func TestCheckDBFindsStaleIndexEntries(t *testing.T) {
+	fixture := newRebindingFixture(t)
+	fixture.addProvider(t, "first.cert")
+	fixture.subscribe(t, "devtoken-1")
+
+	// A subscriber with no devices, and a device with no record: what a rebuild
+	// interrupted or run against a moving database can leave.
+	if err := fixture.raw.client.ZAdd(context.Background(), subscriberIndexKey(ServiceName),
+		redis.Z{Score: 1, Member: "departed-subscriber"}).Err(); err != nil {
+		t.Fatalf("Could not seed redis: %v", err)
+	}
+	if err := fixture.raw.client.SAdd(context.Background(),
+		typeDeviceSetKey(ServiceName, "apns"), "apns:no-such-device").Err(); err != nil {
+		t.Fatalf("Could not seed redis: %v", err)
+	}
+
+	report := checkConsistency(t, fixture)
+	stale := findProblems(report, ProblemStaleIndexEntry)
+	if len(stale) != 2 {
+		t.Fatalf("Expected both stale entries to be reported, got %d: %v", len(stale), report.Problems)
+	}
+	if report.Subscribers != 2 {
+		t.Errorf("Expected the report to count both indexed subscribers, got %d", report.Subscribers)
+	}
+}
+
+// TestCheckDBIsQuietAboutAHealthyIndex is what gives the four tests above
+// meaning: the checks must say nothing about a database this release wrote.
+func TestCheckDBIsQuietAboutAHealthyIndex(t *testing.T) {
+	fixture := newRebindingFixture(t)
+	fixture.addProvider(t, "first.cert")
+	fixture.addProviderOfType(t, "fcm", "first.cert")
+	fixture.subscribe(t, "devtoken-1")
+	fixture.subscribeWithType(t, "fcm", "regid-1")
+	fixture.subscribeAs(t, "another-subscriber", "devtoken-2")
+
+	report := checkConsistency(t, fixture)
+	if !report.Healthy() {
+		t.Errorf("Expected no problems on a database this release wrote, got: %v", report.Problems)
+	}
+	if report.Subscribers != 2 {
+		t.Errorf("Expected 2 indexed subscribers, got %d", report.Subscribers)
 	}
 }

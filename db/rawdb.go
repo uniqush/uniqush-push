@@ -96,6 +96,12 @@ type pushRawDatabaseWriter interface { //nolint:staticcheck
 		decide func([]ServiceProvider) ([]string, error)) error
 	RemovePushServiceProviderFromService(srv, psp string) error
 
+	// PrepareSubscriberIndex settles the per-service subscriber index once, at
+	// startup: it marks an empty database as indexed, since there is nothing to
+	// rebuild, and says loudly that an existing one needs
+	// /rebuildsubscriberindex.
+	PrepareSubscriberIndex(logger log.Logger) error
+
 	FlushCache() error
 }
 
