@@ -57,8 +57,17 @@ Redis:
 - Change: Subscribing and unsubscribing can no longer be left half done by a crash or a dropped connection.
   uniqush also stops writing the `delivery.point.counter:` keys, which nothing needs; any left over are harmless
   and `/checkdb` lists them so they can be deleted.
+- Change: Wildcard pushes (`subscriber=alice.*`) are fast on large databases: they look at one service's
+  subscribers instead of the whole database, and reach the same subscribers as before. **Run
+  `/rebuildsubscriberindex` once after upgrading.** Until you do, wildcard pushes still work but stay slow and
+  log an error each time, and `/stats` refuses to answer. New installations need nothing. See
+  [docs/upgrading.md](docs/upgrading.md).
+- Change: A `*` in a service name is refused. It was never supported by `/push` or `/subscribe`; only `/nrdp`
+  let one through. Wildcards in subscriber names are unaffected.
 - New feature: `/checkdb` reports `unreferenced_delivery_point`, a device record left behind by an interrupted
   `/subscribe`. Re-subscribing the device fixes it; otherwise it is safe to delete.
+- New feature: `/checkdb` reports `index_not_built` until `/rebuildsubscriberindex` has run, and
+  `missing_index_entry` or `stale_index_entry` if the index has drifted. Rerunning the rebuild fixes both.
 - Bugfix: A `/push` whose `service` or `subscriber` contains a `*` no longer runs `KEYS`, which redis runs to
   completion on the thread it serves every client from: one wildcard push stalled every other push, and every
   other application on a shared redis, for the length of a keyspace walk. That walk and `/rebuildserviceset`
@@ -83,6 +92,12 @@ Logging:
 
 REST API:
 
+- New feature: `/stats` reports how many subscribers and devices each service has, per push service type.
+  Add `since=<unix time>` to also count subscribers who have re-subscribed since then (apps usually do on
+  launch), and `service=` to ask about one service. It answers `UNIQUSH_ERROR_INDEX_NOT_BUILT` until `/rebuildsubscriberindex` has run,
+  rather than giving numbers that would be too low.
+- New feature: `/rebuildsubscriberindex`, the one-off step after upgrading described above. Safe to run on a
+  live server and to run more than once.
 - New feature: `/health` reports whether this instance can serve, as an HTTP status code -- `200` when redis
   answers and `503` when it does not -- with the reason in a JSON body. It is the first endpoint here whose
   status code carries the answer, because that is what a load balancer reads. Redis is the only thing
@@ -157,6 +172,9 @@ Changes to APIs (embedders only):
 
 - `db.PushDatabase` gains `Ping() error`, which backs `/health`. An implementation of that interface has to
   provide it.
+- `db.PushDatabase` gains `PrepareSubscriberIndex`, `RebuildSubscriberIndex` and `SubscriberStats`; call
+  `PrepareSubscriberIndex` once before serving, as `Run` does. `GetPushServiceProviderDeliveryPointPairs` takes a
+  `requestID string` before its logger; pass `""` if there is none.
 - `db.PushDatabase` gains `RemoveAllDeliveryPointsFromService(service, subscriber string) (int, error)`,
   which backs `/unsubscribe?alldevices=1`. An implementation of that interface has to provide it.
 - `push.DestinationOf(err)` returns the delivery point an error is about, or nil. `push.ErrorReport`,

@@ -289,6 +289,36 @@ queue drain when it comes back.
 
 `service` and `subscriber`. Returns the number of devices as a bare integer.
 
+### `/stats`
+
+| Parameter | |
+|---|---|
+| `service` | Optional. Comma-separated list of services; default is every service. |
+| `since` | Optional. A unix timestamp. Adds `subscribers_since`, a count of the subscribers whose most recent `/subscribe` was at or after it. |
+
+Counts what each service holds, from the per-service index rather than by
+walking the database, so it is a handful of redis commands however large the
+database is.
+
+    curl 'http://localhost:9898/stats?service=myservice&since=1756900000'
+    {"services":{"myservice":{"subscribers":12034,"subscribers_since":8811,
+                              "delivery_points":{"apns":9000,"fcm":4100}}},
+     "code":"UNIQUSH_SUCCESS"}
+
+`subscribers` counts subscribers with at least one device. `delivery_points`
+has an entry per push service type the service has a provider for, so a
+configured type with no devices reads `0` rather than being absent.
+`subscribers_since` is omitted when `since` is not given.
+
+A subscriber's timestamp is the time of their last `/subscribe`, which is what
+an application calls when it launches, so it is a usable last-seen rather than
+a record of when they first appeared.
+
+Until [`/rebuildsubscriberindex`](#rebuildsubscriberindex) has been run on a
+database that predates the index, this answers `UNIQUSH_ERROR_INDEX_NOT_BUILT`
+rather than counts. It refuses instead of reporting what the partial index
+holds, because an undercount is not distinguishable from a small service.
+
 ### `/push`
 
 Sends one notification to every device of the named subscribers in a service.
@@ -300,7 +330,7 @@ Addressing:
 | Parameter | |
 |---|---|
 | `service` | Required. |
-| `subscriber` (or `subscribers`) | Required. One or more subscribers, comma-separated. `*` is a wildcard: `alice.*` matches every subscriber with that prefix, and `*` alone every subscriber in the service. Wildcards scan the database and are slow on large services. |
+| `subscriber` (or `subscribers`) | Required. One or more subscribers, comma-separated. `*` is a wildcard: `alice.*` matches every subscriber with that prefix, and `*` alone every subscriber in the service. A wildcard is matched against the service's subscriber index, so it costs the size of the service rather than the size of the database — unless [`/rebuildsubscriberindex`](#rebuildsubscriberindex) has yet to be run, in which case it falls back to a keyspace scan and logs an error saying so. |
 | `delivery_point_id` | Optional. Comma-separated `delivery_point_id`s from `/subscriptions`, to push to some of a subscriber's devices and not others. |
 
 Content — every parameter other than the addressing ones becomes part of the
@@ -373,7 +403,7 @@ can be run against a live server. Run it before upgrading a database created
 before uniqush 2.6.0; see [delivery-point-rebinding.md](delivery-point-rebinding.md).
 
     {"services":3,"push_service_providers":4,"delivery_points":1200,"delivery_point_bindings":1200,
-     "counts":{"leaked_counter":2},
+     "subscribers":800,"counts":{"leaked_counter":2},
      "problems":[{"kind":"leaked_counter","subject":"apns:5f2c...","detail":"..."}]}
 
 `counts` is complete; `problems` holds at most 50 examples of each kind. The
@@ -385,15 +415,38 @@ pointing at a missing provider), `binding_disagrees` (a binding that differs
 from the derived provider), `orphaned_delivery_point` (a subscriber's set names
 a device with no record; heals on the next read), `unreferenced_delivery_point`
 (a device record its own subscriber's set does not name, which an interrupted
-`/subscribe` leaves behind) and `leaked_counter` (a `delivery.point.counter:`
-key, which nothing has written since subscribing became a redis script). A
-summary line is logged at warning level whenever anything is found.
+`/subscribe` leaves behind), `leaked_counter` (a `delivery.point.counter:` key,
+which nothing has written since subscribing became a redis script),
+`index_not_built` (the subscriber index has never been rebuilt over this
+database — run [`/rebuildsubscriberindex`](#rebuildsubscriberindex)),
+`missing_index_entry` (a subscriber or device the index does not know about)
+and `stale_index_entry` (an index entry with nothing behind it, which makes
+[`/stats`](#stats) overcount). A summary line is logged at warning level
+whenever anything is found.
 
 ### `/rebuildserviceset`
 
 No parameters. Builds the index of service names that `/subscriptions` (with no
 `services`) and `/psps` need. Only required once, on a database created before
 uniqush 2.2.0. Returns `{"code":"UNIQUSH_SUCCESS"}` or an error.
+
+### `/rebuildsubscriberindex`
+
+No parameters. Builds the per-service subscriber index that wildcard `/push`
+and [`/stats`](#stats) read, from the subscriber sets, which are the source of
+truth. Only required once, on a database that predates the index; a database
+created by this release or later is marked as indexed when it is first opened.
+
+Idempotent, and safe to run against a live server: each service's index is
+built under a name of its own and renamed over the live one, so a concurrent
+push sees the old index or the new one and never a partial one. It takes no
+lock. Run [`/checkdb`](#checkdb) afterwards to confirm; a subscription made
+during the run can, rarely, be missed, and `/checkdb` names it.
+
+Returns `{"code":"UNIQUSH_SUCCESS"}` or an error. Until it has been run,
+wildcard pushes still reach the same subscribers, over a keyspace scan that is
+slow on a large database and logs an error on every use, and `/stats` refuses
+to answer.
 
 ### `/version`
 
@@ -425,6 +478,7 @@ Every response `code` is one of:
 | `UNIQUSH_ERROR_CANNOT_GET_SERVICE`, `UNIQUSH_ERROR_CANNOT_GET_SUBSCRIBER`, `UNIQUSH_ERROR_CANNOT_GET_DELIVERY_POINT_ID` | A required addressing parameter was missing or malformed. |
 | `UNIQUSH_ERROR_NO_SUBSCRIBER`, `UNIQUSH_ERROR_NO_DEVICE`, `UNIQUSH_ERROR_NO_DELIVERY_POINT`, `UNIQUSH_ERROR_NO_PUSH_SERVICE_PROVIDER` | Nothing to push to: the subscriber, device or provider does not exist. |
 | `UNIQUSH_ERROR_NO_PUSH_SERVICE_TYPE` | `/previewpush` without a `pushservicetype`. |
+| `UNIQUSH_ERROR_INDEX_NOT_BUILT` | `/stats` on a database whose subscriber index has not been built. Run [`/rebuildsubscriberindex`](#rebuildsubscriberindex). |
 
 Simple responses (`/addpsp`, `/rmpsp`, `/subscribe`, `/unsubscribe`) wrap the
 details with a numeric `status`, `0` for success and `1` for failure:
