@@ -134,6 +134,14 @@ type PushDatabase interface {
 	// database that predates them; idempotent, and safe against a live server.
 	RebuildSubscriberIndex() error
 
+	// SubscriberStats counts the subscribers and devices of each named service,
+	// or of every known service when none are named. since, when not nil, adds
+	// a count of the subscribers seen at or after that unix time.
+	//
+	// It returns ErrSubscriberIndexNotBuilt rather than answering from an index
+	// that covers only part of the database.
+	SubscriberStats(services []string, since *int64) (map[string]*ServiceStats, error)
+
 	FlushCache() error
 }
 
@@ -838,6 +846,15 @@ func (f *pushDatabaseOpts) PrepareSubscriberIndex(logger log.Logger) error {
 // could cost is one /checkdb afterwards names.
 func (f *pushDatabaseOpts) RebuildSubscriberIndex() error {
 	return f.db.RebuildSubscriberIndex()
+}
+
+// SubscriberStats takes the read lock, like every other read here. It is a
+// handful of counting commands, so it holds it for no longer than a
+// /subscriptions does.
+func (f *pushDatabaseOpts) SubscriberStats(services []string, since *int64) (map[string]*ServiceStats, error) {
+	f.dblock.RLock()
+	defer f.dblock.RUnlock()
+	return f.db.SubscriberStats(services, since)
 }
 
 func (f *pushDatabaseOpts) RebuildServiceSet() error {

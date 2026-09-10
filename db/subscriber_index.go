@@ -318,3 +318,124 @@ func (r *PushRedisDB) publishSubscriberIndexStaging(staged map[string]bool) erro
 	}
 	return nil
 }
+
+// ServiceStats is what one service holds, counted rather than enumerated.
+//
+// Every field is one redis command against the subscriber index, which is what
+// the index is for: the same numbers used to mean walking the keyspace and
+// reading a record per device, so nobody could ask for them on a live server.
+type ServiceStats struct {
+	// Subscribers is how many subscribers the service has, at least one device
+	// each. A subscriber with no devices is not in the index.
+	Subscribers int64 `json:"subscribers"`
+	// SubscribersSince is how many of them last subscribed at or after the
+	// requested time. Omitted when no time was asked for, rather than reported
+	// as zero, which would read as "nobody".
+	SubscribersSince *int64 `json:"subscribers_since,omitempty"`
+	// DeliveryPoints is the device count per push service type, for the types
+	// the service has a provider for. A type with a provider and no devices is
+	// reported as 0, which is a different statement from not being listed.
+	DeliveryPoints map[string]int64 `json:"delivery_points"`
+}
+
+// SubscriberStats counts the subscribers and devices of each named service, or
+// of every known service when none are named.
+//
+// It refuses, with ErrSubscriberIndexNotBuilt, until the index is known to
+// cover the whole database. Answering from a partial index would report a
+// service with a million devices as having eleven, and nothing in the answer
+// would say so -- a dashboard cannot tell that apart from a service that really
+// has eleven, which makes a wrong number worse than no number.
+func (r *PushRedisDB) SubscriberStats(services []string, since *int64) (map[string]*ServiceStats, error) {
+	built, err := r.subscriberIndexBuilt()
+	if err != nil {
+		return nil, err
+	}
+	if !built {
+		return nil, ErrSubscriberIndexNotBuilt
+	}
+
+	if len(services) == 0 {
+		services, err = r.GetServiceNames()
+		if err != nil {
+			return nil, fmt.Errorf("SubscriberStats: %w", err)
+		}
+	}
+
+	stats := make(map[string]*ServiceStats, len(services))
+	for _, service := range services {
+		if service == "" {
+			continue
+		}
+		entry, e := r.statsOfService(service, since)
+		if e != nil {
+			return nil, e
+		}
+		stats[service] = entry
+	}
+	return stats, nil
+}
+
+func (r *PushRedisDB) statsOfService(service string, since *int64) (*ServiceStats, error) {
+	stats := &ServiceStats{DeliveryPoints: make(map[string]int64, 2)}
+
+	count, err := r.client.ZCard(r.ctx, subscriberIndexKey(service)).Result()
+	if err != nil {
+		return nil, fmt.Errorf("could not count the subscribers of service %q: %w", service, err)
+	}
+	stats.Subscribers = count
+
+	if since != nil {
+		recent, e := r.client.ZCount(r.ctx, subscriberIndexKey(service), strconv.FormatInt(*since, 10), "+inf").Result()
+		if e != nil {
+			return nil, fmt.Errorf("could not count the recent subscribers of service %q: %w", service, e)
+		}
+		stats.SubscribersSince = &recent
+	}
+
+	// The types to count are the ones the service has a provider for. Counting
+	// whatever type sets happen to exist would report a type whose provider has
+	// been removed, and miss a type whose provider is there and unused.
+	types, err := r.pushServiceTypesOfService(service)
+	if err != nil {
+		return nil, err
+	}
+	for _, pushServiceType := range types {
+		devices, e := r.client.SCard(r.ctx, typeDeviceSetKey(service, pushServiceType)).Result()
+		if e != nil {
+			return nil, fmt.Errorf("could not count the %s delivery points of service %q: %w", pushServiceType, service, e)
+		}
+		stats.DeliveryPoints[pushServiceType] = devices
+	}
+	return stats, nil
+}
+
+// pushServiceTypesOfService lists the push service types a service can push
+// through, from its provider set.
+func (r *PushRedisDB) pushServiceTypesOfService(service string) ([]string, error) {
+	names, err := r.GetPushServiceProvidersByService(service)
+	if err != nil {
+		return nil, fmt.Errorf("could not list the providers of service %q: %w", service, err)
+	}
+
+	seen := make(map[string]bool, len(names))
+	types := make([]string, 0, len(names))
+	for _, name := range names {
+		psp, e := r.GetPushServiceProvider(name)
+		if e != nil {
+			if isErrCausedByMissingKey(e) {
+				// A name in srv-2-psp with no record behind it, which /checkdb
+				// reports as a dangling provider. Nothing can push through it, so
+				// it contributes no type to count.
+				continue
+			}
+			return nil, fmt.Errorf("could not read provider %q of service %q: %w", name, service, e)
+		}
+		if psp == nil || seen[psp.PushServiceName()] {
+			continue
+		}
+		seen[psp.PushServiceName()] = true
+		types = append(types, psp.PushServiceName())
+	}
+	return types, nil
+}

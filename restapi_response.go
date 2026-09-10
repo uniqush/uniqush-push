@@ -33,6 +33,12 @@ const (
 	UNIQUSH_ERROR_NO_PUSH_SERVICE_PROVIDER = "UNIQUSH_ERROR_NO_PUSH_SERVICE_PROVIDER"
 	UNIQUSH_ERROR_NO_SUBSCRIBER            = "UNIQUSH_ERROR_NO_SUBSCRIBER"
 	UNIQUSH_ERROR_NO_PUSH_SERVICE_TYPE     = "UNIQUSH_ERROR_NO_PUSH_SERVICE_TYPE"
+
+	// UNIQUSH_ERROR_INDEX_NOT_BUILT is /stats refusing to answer from a
+	// subscriber index that does not yet cover the whole database. Run
+	// /rebuildsubscriberindex once; the counts would otherwise be too low, with
+	// nothing in the answer to say so.
+	UNIQUSH_ERROR_INDEX_NOT_BUILT = "UNIQUSH_ERROR_INDEX_NOT_BUILT"
 )
 
 // APIResponseDetails is used to represent responses of various APIs. Different APIs use different subsets of fields.

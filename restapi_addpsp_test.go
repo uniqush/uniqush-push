@@ -81,6 +81,12 @@ type recordingDatabase struct {
 	provider *push.PushServiceProvider
 	replace  bool
 	err      error
+
+	// What /stats asked for, and what it should be told.
+	statsServices []string
+	statsSince    *int64
+	stats         map[string]*db.ServiceStats
+	statsErr      error
 }
 
 func (d *recordingDatabase) AddPushServiceProviderToService(service string, psp *push.PushServiceProvider, replace bool) error {
@@ -129,7 +135,15 @@ func (d *recordingDatabase) CheckConsistency() (*db.ConsistencyReport, error) {
 }
 func (d *recordingDatabase) PrepareSubscriberIndex(log.Logger) error { return nil }
 func (d *recordingDatabase) RebuildSubscriberIndex() error           { return nil }
-func (d *recordingDatabase) FlushCache() error                       { return nil }
+func (d *recordingDatabase) SubscriberStats(services []string, since *int64) (map[string]*db.ServiceStats, error) {
+	d.mutex.Lock()
+	defer d.mutex.Unlock()
+	d.calls++
+	d.statsServices = services
+	d.statsSince = since
+	return d.stats, d.statsErr
+}
+func (d *recordingDatabase) FlushCache() error { return nil }
 
 var _ db.PushDatabase = &recordingDatabase{}
 

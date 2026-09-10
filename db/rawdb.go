@@ -133,6 +133,14 @@ type pushRawDatabaseReader interface { //nolint:staticcheck
 
 	GetPushServiceProvidersByService(srv string) ([]string, error)
 
+	// SubscriberStats counts the subscribers and devices of each named service,
+	// or of every known service when none are named. since, when not nil, adds
+	// a count of the subscribers seen at or after that unix time.
+	//
+	// It returns ErrSubscriberIndexNotBuilt rather than answering from an index
+	// that covers only part of the database.
+	SubscriberStats(services []string, since *int64) (map[string]*ServiceStats, error)
+
 	// CheckConsistency scans the whole database and reports what does not add
 	// up. Read-only, and implemented alongside the key layout rather than in
 	// pushdb.go because every check is a statement about how the keys relate.

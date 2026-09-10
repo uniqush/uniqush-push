@@ -522,6 +522,12 @@ func (backend *PushBackEnd) RebuildSubscriberIndex() error {
 	return backend.db.RebuildSubscriberIndex()
 }
 
+// SubscriberStats counts the subscribers and devices of the named services, or
+// of every service when none are named.
+func (backend *PushBackEnd) SubscriberStats(services []string, since *int64) (map[string]*db.ServiceStats, error) {
+	return backend.db.SubscriberStats(services, since)
+}
+
 // CheckDatabase scans the database and reports inconsistencies, changing nothing.
 func (backend *PushBackEnd) CheckDatabase() (*db.ConsistencyReport, error) {
 	return backend.db.CheckConsistency()

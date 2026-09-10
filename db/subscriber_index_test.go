@@ -3,6 +3,7 @@ package db
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"strconv"
 	"strings"
@@ -777,5 +778,137 @@ func TestAWildcardServiceIsRefused(t *testing.T) {
 		if _, err := fixture.raw.GetDeliveryPointsNameByServiceSubscriber("*", subscriber, "", nil); err == nil {
 			t.Errorf("Expected a wildcard service to be refused, for subscriber %q", subscriber)
 		}
+	}
+}
+
+// TestStatsCountsWhatAServiceHolds is the endpoint's whole job.
+func TestStatsCountsWhatAServiceHolds(t *testing.T) {
+	fixture := newRebindingFixture(t)
+	fixture.addProvider(t, "first.cert")
+	fixture.addProviderOfType(t, "fcm", "first.cert")
+	fixture.subscribe(t, "devtoken-1")
+	fixture.subscribe(t, "devtoken-2")
+	fixture.subscribeWithType(t, "fcm", "regid-1")
+	fixture.subscribeAs(t, "another-subscriber", "devtoken-3")
+
+	stats, err := fixture.client.SubscriberStats([]string{ServiceName}, nil)
+	if err != nil {
+		t.Fatalf("SubscriberStats failed: %v", err)
+	}
+	entry, ok := stats[ServiceName]
+	if !ok {
+		t.Fatalf("Expected stats for %q, got %v", ServiceName, stats)
+	}
+	if entry.Subscribers != 2 {
+		t.Errorf("Expected 2 subscribers, got %d", entry.Subscribers)
+	}
+	if entry.SubscribersSince != nil {
+		t.Errorf("Expected subscribers_since to be omitted with no since, got %d", *entry.SubscribersSince)
+	}
+	if entry.DeliveryPoints["apns"] != 3 {
+		t.Errorf("Expected 3 apns devices, got %d", entry.DeliveryPoints["apns"])
+	}
+	if entry.DeliveryPoints["fcm"] != 1 {
+		t.Errorf("Expected 1 fcm device, got %d", entry.DeliveryPoints["fcm"])
+	}
+}
+
+// TestStatsCountsEveryServiceByDefault covers the no-service form.
+func TestStatsCountsEveryServiceByDefault(t *testing.T) {
+	fixture := newRebindingFixture(t)
+	fixture.addProvider(t, "first.cert")
+	fixture.subscribe(t, "devtoken-1")
+
+	stats, err := fixture.client.SubscriberStats(nil, nil)
+	if err != nil {
+		t.Fatalf("SubscriberStats failed: %v", err)
+	}
+	if len(stats) != 1 {
+		t.Fatalf("Expected the one known service, got %v", stats)
+	}
+	if stats[ServiceName].Subscribers != 1 {
+		t.Errorf("Expected 1 subscriber, got %d", stats[ServiceName].Subscribers)
+	}
+}
+
+// TestStatsCountsRecentSubscribersSeparately is what the score is for.
+func TestStatsCountsRecentSubscribersSeparately(t *testing.T) {
+	fixture := newRebindingFixture(t)
+	fixture.addProvider(t, "first.cert")
+	fixture.subscribe(t, "devtoken-1")
+	fixture.subscribeAs(t, "dormant-subscriber", "devtoken-2")
+
+	// Backdate one of them, standing in for an application nobody has opened
+	// for a year.
+	old := time.Now().Add(-365 * 24 * time.Hour).Unix()
+	if err := fixture.raw.client.ZAdd(context.Background(), subscriberIndexKey(ServiceName),
+		redis.Z{Score: float64(old), Member: "dormant-subscriber"}).Err(); err != nil {
+		t.Fatalf("Could not seed redis: %v", err)
+	}
+
+	since := time.Now().Add(-24 * time.Hour).Unix()
+	stats, err := fixture.client.SubscriberStats([]string{ServiceName}, &since)
+	if err != nil {
+		t.Fatalf("SubscriberStats failed: %v", err)
+	}
+	entry := stats[ServiceName]
+	if entry.Subscribers != 2 {
+		t.Errorf("Expected 2 subscribers in total, got %d", entry.Subscribers)
+	}
+	if entry.SubscribersSince == nil {
+		t.Fatal("Expected subscribers_since to be reported when a since is given")
+	}
+	if *entry.SubscribersSince != 1 {
+		t.Errorf("Expected 1 recent subscriber, got %d", *entry.SubscribersSince)
+	}
+}
+
+// TestStatsReportsAProviderWithNoDevicesAsZero keeps "nobody has subscribed"
+// distinguishable from "there is no such push service type here".
+func TestStatsReportsAProviderWithNoDevicesAsZero(t *testing.T) {
+	fixture := newRebindingFixture(t)
+	fixture.addProvider(t, "first.cert")
+	fixture.addProviderOfType(t, "fcm", "first.cert")
+	fixture.subscribe(t, "devtoken-1")
+
+	stats, err := fixture.client.SubscriberStats([]string{ServiceName}, nil)
+	if err != nil {
+		t.Fatalf("SubscriberStats failed: %v", err)
+	}
+	count, listed := stats[ServiceName].DeliveryPoints["fcm"]
+	if !listed {
+		t.Fatalf("Expected fcm to be listed, since the service has an fcm provider: %v", stats[ServiceName])
+	}
+	if count != 0 {
+		t.Errorf("Expected 0 fcm devices, got %d", count)
+	}
+}
+
+// TestStatsRefusesAnIndexThatIsNotBuilt is the case a dashboard cannot detect
+// for itself.
+//
+// The counts would be low rather than absent, and nothing in the numbers would
+// say so: an operator would read a service with a million devices as having
+// eleven and reasonably conclude something had gone very wrong somewhere else.
+func TestStatsRefusesAnIndexThatIsNotBuilt(t *testing.T) {
+	fixture := newRebindingFixture(t)
+	fixture.addProvider(t, "first.cert")
+	fixture.subscribe(t, "devtoken-1")
+	clearIndexBuiltMarker(t, fixture)
+
+	if _, err := fixture.client.SubscriberStats([]string{ServiceName}, nil); !errors.Is(err, ErrSubscriberIndexNotBuilt) {
+		t.Fatalf("Expected ErrSubscriberIndexNotBuilt, got %v", err)
+	}
+
+	// And it answers again once the rebuild has run, without a restart.
+	if err := fixture.client.RebuildSubscriberIndex(); err != nil {
+		t.Fatalf("RebuildSubscriberIndex failed: %v", err)
+	}
+	stats, err := fixture.client.SubscriberStats([]string{ServiceName}, nil)
+	if err != nil {
+		t.Fatalf("SubscriberStats failed after the rebuild: %v", err)
+	}
+	if stats[ServiceName].Subscribers != 1 {
+		t.Errorf("Expected 1 subscriber after the rebuild, got %d", stats[ServiceName].Subscribers)
 	}
 }
