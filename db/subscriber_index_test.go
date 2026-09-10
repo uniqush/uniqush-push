@@ -931,3 +931,25 @@ func TestStatsRefusesAnIndexThatIsNotBuilt(t *testing.T) {
 		t.Errorf("Expected 1 subscriber after the rebuild, got %d", stats[ServiceName].Subscribers)
 	}
 }
+
+// TestUnsubscribingADeviceThatIsNotTheirsLeavesTheIndexAlone guards the
+// condition on the type set.
+//
+// A device's name hashes its subscriber, so in practice a call can only name a
+// subscriber's own devices. If one ever named somebody else's, the script must
+// not take that device out of the service's count while its owner still has it.
+func TestUnsubscribingADeviceThatIsNotTheirsLeavesTheIndexAlone(t *testing.T) {
+	fixture := newRebindingFixture(t)
+	fixture.addProvider(t, "first.cert")
+	dp := fixture.subscribe(t, "devtoken-1")
+
+	// The cleanup path, because it runs the script and nothing else.
+	fixture.raw.RemoveMissingDeliveryPointFromServiceSubscriber(ServiceName, "somebody-else", dp.Name(), nil)
+
+	if names := typeMembers(t, fixture, "apns"); len(names) != 1 || names[0] != dp.Name() {
+		t.Errorf("Expected the owner's device to stay in the apns set, got %v", names)
+	}
+	if _, listed := indexMembers(t, fixture, subscriberIndexKey(ServiceName))[rebindingSubscriber]; !listed {
+		t.Error("The device's owner was removed from the subscriber index")
+	}
+}

@@ -732,9 +732,15 @@ func (api *RestAPI) queryStats(kv map[string][]string, logger log.Logger) []byte
 		Code         string                      `json:"code"`
 	}
 
+	// Trimmed, and empty entries dropped: " b" is not a service anyone meant,
+	// and counting it would answer with zeros that look like a real result.
 	var services []string
-	if v, ok := kv["service"]; ok && len(v) > 0 && v[0] != "" {
-		services = strings.Split(v[0], ",")
+	if v, ok := kv["service"]; ok && len(v) > 0 {
+		for _, service := range strings.Split(v[0], ",") {
+			if service = strings.TrimSpace(service); service != "" {
+				services = append(services, service)
+			}
+		}
 	}
 
 	var since *int64

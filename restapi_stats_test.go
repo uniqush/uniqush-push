@@ -122,3 +122,15 @@ func TestStatsRejectsAnUnreadableSince(t *testing.T) {
 		t.Errorf("Expected the request not to reach the database, got %d calls", database.calls)
 	}
 }
+
+// TestStatsTrimsServiceNames keeps "a, b" meaning a and b. A service named " b"
+// does not exist, and its zero counts would look like a real answer.
+func TestStatsTrimsServiceNames(t *testing.T) {
+	database := &recordingDatabase{stats: map[string]*db.ServiceStats{}}
+
+	getStats(t, database, "?service=first,%20second%20,,")
+
+	if len(database.statsServices) != 2 || database.statsServices[0] != "first" || database.statsServices[1] != "second" {
+		t.Errorf("Expected [first second], got %q", database.statsServices)
+	}
+}

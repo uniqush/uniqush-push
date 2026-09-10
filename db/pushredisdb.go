@@ -355,9 +355,18 @@ return added`)
 	// ARGV[1] is the delivery point name and ARGV[2] the subscriber. The
 	// subscriber leaves the service's index only when the device removed was
 	// their last one.
+	//
+	// The type set loses the device only if this subscriber's set actually held
+	// it. Every index change here then follows from a fact about this
+	// subscriber's own devices, so a call naming a device that is not theirs
+	// cannot take it out of the count while its real owner still has it. The
+	// ZREM needs no such guard: a subscriber with no devices belongs in no
+	// index, whatever this call removed.
 	unsubscribeScript = redis.NewScript(`
 local removed = redis.call('SREM', KEYS[1], ARGV[1])
-redis.call('SREM', KEYS[3], ARGV[1])
+if removed == 1 then
+  redis.call('SREM', KEYS[3], ARGV[1])
+end
 if redis.call('SCARD', KEYS[1]) == 0 then
   redis.call('ZREM', KEYS[2], ARGV[2])
 end
