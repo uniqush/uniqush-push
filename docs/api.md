@@ -42,11 +42,14 @@ it behind something that authenticates.
 | [`/subscribe`](#subscribe) | Register a device (delivery point) for a subscriber |
 | [`/unsubscribe`](#unsubscribe) | Remove a device |
 | [`/subscriptions`](#subscriptions) | List a subscriber's devices |
+| [`/health`](#health) | Report whether this instance can serve, as an HTTP status code |
 | [`/nrdp`](#nrdp) | Count a subscriber's devices |
+| [`/stats`](#stats) | Count each service's subscribers and devices |
 | [`/push`](#push) | Send a notification |
 | [`/previewpush`](#previewpush) | Show the payload `/push` would send, without sending it |
 | [`/checkdb`](#checkdb) | Report database inconsistencies (read-only) |
 | [`/rebuildserviceset`](#rebuildserviceset) | One-time migration for databases created before 2.2.0 |
+| [`/rebuildsubscriberindex`](#rebuildsubscriberindex) | Build the subscriber index; needed once after upgrading an existing database |
 | [`/version`](#version) | Version string |
 | [`/stop`](#stop) | Shut down cleanly |
 
