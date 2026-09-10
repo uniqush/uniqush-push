@@ -3,11 +3,16 @@ name: Notify uniqush-www
 # Tells uniqush-www to rebuild when docs/api.md, docs/upgrading.md or NEWS.md
 # change, so the site never carries a stale copy.
 #
-# Requires a repo secret WWW_DISPATCH_TOKEN: a fine-grained PAT scoped to the
-# uniqush/uniqush-www repository with "Contents: read" and "Actions: write"
-# (or a classic PAT with "repo" scope). Until that secret is set, this step
-# fails harmlessly -- uniqush-www still rebuilds weekly and can be triggered
-# by hand from its own Actions tab.
+# Requires a repo secret WWW_DISPATCH_TOKEN: a fine-grained PAT whose resource
+# owner is the uniqush organization, with access to uniqush/uniqush-www only
+# and the repository permission "Contents: Read and write" -- the permission
+# GitHub requires for POST /repos/{owner}/{repo}/dispatches. A classic PAT
+# with the "repo" scope also works.
+#
+# The job fails when the secret is missing or the token is rejected, and says
+# which. It used to report success either way, so the site could stop
+# rebuilding with nothing to show for it. uniqush-www still rebuilds weekly,
+# and can be deployed by hand from its own Actions tab.
 on:
   push:
     branches: [master]
@@ -21,9 +26,17 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Dispatch to uniqush-www
+        env:
+          TOKEN: ${{ secrets.WWW_DISPATCH_TOKEN }}
         run: |
-          curl -sS -X POST \
-            -H "Authorization: Bearer ${{ secrets.WWW_DISPATCH_TOKEN }}" \
+          if [ -z "$TOKEN" ]; then
+            echo "::error::WWW_DISPATCH_TOKEN is not set, so uniqush.org will not rebuild until its weekly run. See the comment at the top of .github/workflows/notify-www.yml."
+            exit 1
+          fi
+          # --fail-with-body: a rejected token (401, or 404 when it lacks
+          # Contents: write) fails the step and prints GitHub's reason.
+          curl -sS --fail-with-body -X POST \
+            -H "Authorization: Bearer $TOKEN" \
             -H "Accept: application/vnd.github+json" \
             https://api.github.com/repos/uniqush/uniqush-www/dispatches \
             -d '{"event_type":"docs-updated"}'
