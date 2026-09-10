@@ -253,15 +253,6 @@ func (r *PushRedisDB) checkDeliveryPointBindings(report *ConsistencyReport, prov
 	return nil
 }
 
-// deliveryPointTypeFromName reads the push service type out of a delivery point
-// name, which is "<pushservicetype>:<sha1 of its fixed data>".
-func deliveryPointTypeFromName(name string) string {
-	if index := strings.Index(name, ":"); index > 0 {
-		return name[:index]
-	}
-	return ""
-}
-
 // checkSubscriberSets finds delivery point names with no record behind them.
 func (r *PushRedisDB) checkSubscriberSets(report *ConsistencyReport) error {
 	err := r.scanKeys(ServiceSubscriberToDeliveryPointsPrefix+"*", func(page []string) error {

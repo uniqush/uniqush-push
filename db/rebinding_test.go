@@ -86,8 +86,13 @@ func newRebindingFixture(t *testing.T) *rebindingFixture {
 
 	client := connectDatabaseAndClearRedisData(t)
 	psm := initializePushServiceManagerForTest()
-	if err := psm.RegisterPushServiceType(&rebindingPushServiceType{name: "apns"}); err != nil {
-		t.Fatalf("Could not register the test push service type: %v", err)
+	// Two types, because a service having one provider per push service type --
+	// and a subscriber having devices of several -- is the arrangement the
+	// per-type indexes exist to count.
+	for _, name := range []string{"apns", "fcm"} {
+		if err := psm.RegisterPushServiceType(&rebindingPushServiceType{name: name}); err != nil {
+			t.Fatalf("Could not register the %s test push service type: %v", name, err)
+		}
 	}
 	return &rebindingFixture{
 		client: client,
@@ -96,13 +101,19 @@ func newRebindingFixture(t *testing.T) *rebindingFixture {
 	}
 }
 
-// addProvider registers a provider whose certificate path is cert, so tests can
-// produce a second provider with different fixed data.
+// addProvider registers an apns provider whose certificate path is cert, so
+// tests can produce a second provider with different fixed data.
 func (f *rebindingFixture) addProvider(t *testing.T, cert string) *push.PushServiceProvider {
+	t.Helper()
+	return f.addProviderOfType(t, "apns", cert)
+}
+
+// addProviderOfType is addProvider for a service's other push service type.
+func (f *rebindingFixture) addProviderOfType(t *testing.T, pushServiceType, cert string) *push.PushServiceProvider {
 	t.Helper()
 
 	psp, err := f.psm.BuildPushServiceProviderFromMap(map[string]string{
-		"pushservicetype": "apns",
+		"pushservicetype": pushServiceType,
 		"service":         ServiceName,
 		"cert":            cert,
 		"key":             cert + ".key",
@@ -145,11 +156,16 @@ func (f *rebindingFixture) addProviderBehindTheConflictCheck(t *testing.T, cert 
 
 func (f *rebindingFixture) buildDeliveryPoint(t *testing.T, devtoken string) *push.DeliveryPoint {
 	t.Helper()
+	return f.buildDeliveryPointFor(t, "apns", rebindingSubscriber, devtoken)
+}
+
+func (f *rebindingFixture) buildDeliveryPointFor(t *testing.T, pushServiceType, subscriber, devtoken string) *push.DeliveryPoint {
+	t.Helper()
 
 	dp, err := f.psm.BuildDeliveryPointFromMap(map[string]string{
-		"pushservicetype": "apns",
+		"pushservicetype": pushServiceType,
 		"service":         ServiceName,
-		"subscriber":      rebindingSubscriber,
+		"subscriber":      subscriber,
 		"devtoken":        devtoken,
 	})
 	if err != nil {
@@ -171,6 +187,28 @@ func (f *rebindingFixture) subscribe(t *testing.T, devtoken string) *push.Delive
 	dp := f.buildDeliveryPoint(t, devtoken)
 	if _, err := f.trySubscribe(t, dp); err != nil {
 		t.Fatalf("Could not subscribe the delivery point: %v", err)
+	}
+	return dp
+}
+
+// subscribeAs subscribes a device for a subscriber other than the default one.
+func (f *rebindingFixture) subscribeAs(t *testing.T, subscriber, devtoken string) *push.DeliveryPoint {
+	t.Helper()
+
+	dp := f.buildDeliveryPointFor(t, "apns", subscriber, devtoken)
+	if _, err := f.client.AddDeliveryPointToService(ServiceName, subscriber, dp); err != nil {
+		t.Fatalf("Could not subscribe %q: %v", subscriber, err)
+	}
+	return dp
+}
+
+// subscribeWithType subscribes a device of a push service type other than apns.
+func (f *rebindingFixture) subscribeWithType(t *testing.T, pushServiceType, devtoken string) *push.DeliveryPoint {
+	t.Helper()
+
+	dp := f.buildDeliveryPointFor(t, pushServiceType, rebindingSubscriber, devtoken)
+	if _, err := f.client.AddDeliveryPointToService(ServiceName, rebindingSubscriber, dp); err != nil {
+		t.Fatalf("Could not subscribe a %s device: %v", pushServiceType, err)
 	}
 	return dp
 }
@@ -289,10 +327,6 @@ func TestProviderIsDerivedFromServiceAndType(t *testing.T) {
 // through FCM would be a memorable bug.
 func TestDeliveryPointWithNoProviderOfItsTypeIsSkipped(t *testing.T) {
 	fixture := newRebindingFixture(t)
-	if err := fixture.psm.RegisterPushServiceType(&rebindingPushServiceType{name: "fcm"}); err != nil {
-		t.Fatalf("Could not register a second push service type: %v", err)
-	}
-
 	provider := fixture.addProvider(t, "first.cert")
 	fixture.subscribe(t, "devtoken-1")
 
