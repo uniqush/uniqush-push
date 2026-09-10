@@ -125,6 +125,11 @@ type PushDatabase interface {
 	// rather than by a wildcard push nobody sends until Friday.
 	PrepareSubscriberIndex(logger log.Logger) error
 
+	// RebuildSubscriberIndex rebuilds the per-service subscriber and delivery
+	// point indexes from the subscriber sets. Run once after upgrading a
+	// database that predates them; idempotent, and safe against a live server.
+	RebuildSubscriberIndex() error
+
 	FlushCache() error
 }
 
@@ -818,6 +823,17 @@ func (f *pushDatabaseOpts) PrepareSubscriberIndex(logger log.Logger) error {
 	f.dblock.Lock()
 	defer f.dblock.Unlock()
 	return f.db.PrepareSubscriberIndex(logger)
+}
+
+// RebuildSubscriberIndex takes no lock, like CheckConsistency and for the same
+// reason: dblock serialises every subscribe and unsubscribe in this process,
+// and holding it across a walk of the whole keyspace would stop all of them for
+// as long as the walk takes. The rebuild does not need it. It stages each
+// service's index under a name of its own and renames it over the live key, so
+// the only writes a concurrent subscribe races are its own, and the entry it
+// could cost is one /checkdb afterwards names.
+func (f *pushDatabaseOpts) RebuildSubscriberIndex() error {
+	return f.db.RebuildSubscriberIndex()
 }
 
 func (f *pushDatabaseOpts) RebuildServiceSet() error {

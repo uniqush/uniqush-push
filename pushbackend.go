@@ -516,6 +516,12 @@ func (backend *PushBackEnd) PingDatabase() error {
 	return backend.db.Ping()
 }
 
+// RebuildSubscriberIndex rebuilds the per-service subscriber and delivery point
+// indexes, for a database upgraded from before they existed.
+func (backend *PushBackEnd) RebuildSubscriberIndex() error {
+	return backend.db.RebuildSubscriberIndex()
+}
+
 // CheckDatabase scans the database and reports inconsistencies, changing nothing.
 func (backend *PushBackEnd) CheckDatabase() (*db.ConsistencyReport, error) {
 	return backend.db.CheckConsistency()

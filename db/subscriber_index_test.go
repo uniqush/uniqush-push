@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/redis/go-redis/v9"
+	"github.com/uniqush/uniqush-push/push"
 )
 
 // Tests for the per-service subscriber index: srv-2-sub:<service>, a sorted set
@@ -386,5 +387,229 @@ func TestCheckDBIsQuietAboutAHealthyIndex(t *testing.T) {
 	}
 	if report.Subscribers != 2 {
 		t.Errorf("Expected 2 indexed subscribers, got %d", report.Subscribers)
+	}
+}
+
+// dropTheIndex removes everything the index consists of, leaving the
+// subscriptions: a database written by a uniqush that predates it.
+func dropTheIndex(t *testing.T, fixture *rebindingFixture) {
+	t.Helper()
+
+	keys, err := fixture.raw.scanUniqueKeys(ServiceToSubscribersPrefix + "*")
+	if err != nil {
+		t.Fatalf("Could not list the subscriber indexes: %v", err)
+	}
+	typeKeys, err := fixture.raw.scanUniqueKeys(ServiceTypeToDeliveryPointsPrefix + "*")
+	if err != nil {
+		t.Fatalf("Could not list the per-type device sets: %v", err)
+	}
+	keys = append(keys, typeKeys...)
+	if len(keys) > 0 {
+		if err := fixture.raw.client.Del(context.Background(), keys...).Err(); err != nil {
+			t.Fatalf("Could not drop the index: %v", err)
+		}
+	}
+	clearIndexBuiltMarker(t, fixture)
+}
+
+// TestRebuildingFromNoIndexLeavesNothingToReport is the upgrade path: a
+// database with subscriptions and no index, one call, and /checkdb is quiet.
+func TestRebuildingFromNoIndexLeavesNothingToReport(t *testing.T) {
+	fixture := newRebindingFixture(t)
+	fixture.addProvider(t, "first.cert")
+	fixture.addProviderOfType(t, "fcm", "first.cert")
+	fixture.subscribe(t, "devtoken-1")
+	fixture.subscribeWithType(t, "fcm", "regid-1")
+	fixture.subscribeAs(t, "another-subscriber", "devtoken-2")
+	dropTheIndex(t, fixture)
+
+	// The state being repaired must actually be broken, or this proves nothing.
+	if before := checkConsistency(t, fixture); before.Healthy() {
+		t.Fatal("Expected a database with no index to report problems")
+	}
+
+	if err := fixture.client.RebuildSubscriberIndex(); err != nil {
+		t.Fatalf("RebuildSubscriberIndex failed: %v", err)
+	}
+
+	report := checkConsistency(t, fixture)
+	if !report.Healthy() {
+		t.Errorf("Expected nothing to report after a rebuild, got: %v", report.Problems)
+	}
+	if report.Subscribers != 2 {
+		t.Errorf("Expected 2 indexed subscribers, got %d", report.Subscribers)
+	}
+	if got := len(typeMembers(t, fixture, "apns")); got != 2 {
+		t.Errorf("Expected 2 apns devices in the rebuilt index, got %d", got)
+	}
+	if got := len(typeMembers(t, fixture, "fcm")); got != 1 {
+		t.Errorf("Expected 1 fcm device in the rebuilt index, got %d", got)
+	}
+}
+
+// TestRebuildingIsIdempotent is the property that makes it safe to just run it.
+func TestRebuildingIsIdempotent(t *testing.T) {
+	fixture := newRebindingFixture(t)
+	fixture.addProvider(t, "first.cert")
+	fixture.subscribe(t, "devtoken-1")
+	fixture.subscribeAs(t, "another-subscriber", "devtoken-2")
+	dropTheIndex(t, fixture)
+
+	for attempt := 0; attempt < 3; attempt++ {
+		if err := fixture.client.RebuildSubscriberIndex(); err != nil {
+			t.Fatalf("Rebuild %d failed: %v", attempt, err)
+		}
+		if report := checkConsistency(t, fixture); !report.Healthy() {
+			t.Fatalf("Rebuild %d left problems: %v", attempt, report.Problems)
+		}
+		if got := len(indexMembers(t, fixture, subscriberIndexKey(ServiceName))); got != 2 {
+			t.Fatalf("Rebuild %d indexed %d subscribers, expected 2", attempt, got)
+		}
+	}
+}
+
+// TestRebuildingForgetsWhatIsNoLongerThere covers the delete half of the swap.
+//
+// A rebuild that only added would leave a service whose subscribers have all
+// gone with an index saying otherwise, and /stats would go on counting it --
+// which is the failure mode that would be least likely to be noticed, since the
+// number would merely be too big.
+func TestRebuildingForgetsWhatIsNoLongerThere(t *testing.T) {
+	fixture := newRebindingFixture(t)
+	fixture.addProvider(t, "first.cert")
+	fixture.subscribe(t, "devtoken-1")
+
+	// Index entries with nothing behind them, in the service under test and in
+	// one that has nothing at all.
+	if err := fixture.raw.client.ZAdd(context.Background(), subscriberIndexKey(ServiceName),
+		redis.Z{Score: 1, Member: "departed-subscriber"}).Err(); err != nil {
+		t.Fatalf("Could not seed redis: %v", err)
+	}
+	if err := fixture.raw.client.ZAdd(context.Background(), subscriberIndexKey(OtherServiceName),
+		redis.Z{Score: 1, Member: rebindingSubscriber}).Err(); err != nil {
+		t.Fatalf("Could not seed redis: %v", err)
+	}
+	if err := fixture.raw.client.SAdd(context.Background(),
+		typeDeviceSetKey(ServiceName, "apns"), "apns:no-such-device").Err(); err != nil {
+		t.Fatalf("Could not seed redis: %v", err)
+	}
+
+	if err := fixture.client.RebuildSubscriberIndex(); err != nil {
+		t.Fatalf("RebuildSubscriberIndex failed: %v", err)
+	}
+
+	subscribers := indexMembers(t, fixture, subscriberIndexKey(ServiceName))
+	if _, listed := subscribers["departed-subscriber"]; listed {
+		t.Error("The rebuild kept a subscriber with no devices")
+	}
+	if len(subscribers) != 1 {
+		t.Errorf("Expected only the real subscriber, got %v", subscribers)
+	}
+	if got := len(indexMembers(t, fixture, subscriberIndexKey(OtherServiceName))); got != 0 {
+		t.Errorf("The rebuild kept an index for a service with no subscribers, holding %d entries", got)
+	}
+	if got := len(typeMembers(t, fixture, "apns")); got != 1 {
+		t.Errorf("Expected only the real device in the apns set, got %d", got)
+	}
+}
+
+// TestRebuildingMarksTheIndexBuilt is what the whole endpoint is for: after it,
+// the fast paths are allowed to trust the index.
+func TestRebuildingMarksTheIndexBuilt(t *testing.T) {
+	fixture := newRebindingFixture(t)
+	fixture.addProvider(t, "first.cert")
+	fixture.subscribe(t, "devtoken-1")
+	dropTheIndex(t, fixture)
+
+	if err := fixture.client.RebuildSubscriberIndex(); err != nil {
+		t.Fatalf("RebuildSubscriberIndex failed: %v", err)
+	}
+
+	built, err := fixture.raw.subscriberIndexBuilt()
+	if err != nil {
+		t.Fatalf("Could not read the built marker: %v", err)
+	}
+	if !built {
+		t.Error("A completed rebuild did not mark the index as built")
+	}
+}
+
+// TestRebuildingScoresFromTheSubscribeDate keeps the last-seen a rebuild would
+// otherwise reset to the moment the operator happened to run it.
+func TestRebuildingScoresFromTheSubscribeDate(t *testing.T) {
+	fixture := newRebindingFixture(t)
+	fixture.addProvider(t, "first.cert")
+
+	subscribed := time.Now().Add(-30 * 24 * time.Hour).Unix()
+	dp := fixture.buildDeliveryPoint(t, "devtoken-1")
+	dp.VolatileData[push.SubscribeDate] = strconv.FormatInt(subscribed, 10)
+	if _, err := fixture.client.AddDeliveryPointToService(ServiceName, rebindingSubscriber, dp); err != nil {
+		t.Fatalf("Could not subscribe: %v", err)
+	}
+	dropTheIndex(t, fixture)
+
+	if err := fixture.client.RebuildSubscriberIndex(); err != nil {
+		t.Fatalf("RebuildSubscriberIndex failed: %v", err)
+	}
+
+	if score := indexMembers(t, fixture, subscriberIndexKey(ServiceName))[rebindingSubscriber]; score != float64(subscribed) {
+		t.Errorf("Expected the rebuilt score to be the subscribe_date %d, got %v", subscribed, score)
+	}
+}
+
+// TestRebuildingRecoversFromAnInterruptedRebuild covers the staging area.
+//
+// A rebuild that died partway through leaves staged keys behind, and a second
+// run that added to them would keep whatever the first run staged before the
+// database changed -- so it would not be idempotent, which is the one property
+// this has to have.
+func TestRebuildingRecoversFromAnInterruptedRebuild(t *testing.T) {
+	fixture := newRebindingFixture(t)
+	fixture.addProvider(t, "first.cert")
+	fixture.subscribe(t, "devtoken-1")
+	dropTheIndex(t, fixture)
+
+	// What a rebuild interrupted just before the rename leaves behind: staged
+	// keys holding a subscriber who has since gone.
+	staging := SubscriberIndexStagingPrefix + subscriberIndexKey(ServiceName)
+	if err := fixture.raw.client.ZAdd(context.Background(), staging,
+		redis.Z{Score: 1, Member: "departed-subscriber"}).Err(); err != nil {
+		t.Fatalf("Could not seed redis: %v", err)
+	}
+
+	if err := fixture.client.RebuildSubscriberIndex(); err != nil {
+		t.Fatalf("RebuildSubscriberIndex failed: %v", err)
+	}
+
+	subscribers := indexMembers(t, fixture, subscriberIndexKey(ServiceName))
+	if _, listed := subscribers["departed-subscriber"]; listed {
+		t.Error("The rebuild adopted what an interrupted run had staged")
+	}
+	if fixture.keyExists(t, staging) {
+		t.Error("The rebuild left its staging key behind")
+	}
+	if report := checkConsistency(t, fixture); !report.Healthy() {
+		t.Errorf("Expected nothing to report after the rebuild, got: %v", report.Problems)
+	}
+}
+
+// TestRebuildingWalksPastOnePage guards the SCAN loop the rebuild depends on,
+// the same way the consistency check's test does.
+func TestRebuildingWalksPastOnePage(t *testing.T) {
+	fixture := newRebindingFixture(t)
+	fixture.addProvider(t, "first.cert")
+
+	const subscribers = scanKeysCount * 2
+	for i := 0; i < subscribers; i++ {
+		fixture.subscribeAs(t, fmt.Sprintf("subscriber-%d", i), "devtoken-1")
+	}
+	dropTheIndex(t, fixture)
+
+	if err := fixture.client.RebuildSubscriberIndex(); err != nil {
+		t.Fatalf("RebuildSubscriberIndex failed: %v", err)
+	}
+
+	if got := len(indexMembers(t, fixture, subscriberIndexKey(ServiceName))); got != subscribers {
+		t.Errorf("Expected all %d subscribers to be reindexed, got %d", subscribers, got)
 	}
 }

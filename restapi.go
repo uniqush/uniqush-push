@@ -78,6 +78,10 @@ const (
 	QuerySubscriptionsURL                   = "/subscriptions"
 	QueryPushServiceProviders               = "/psps"
 	RebuildServiceSetURL                    = "/rebuildserviceset"
+	// RebuildSubscriberIndexURL rebuilds the per-service subscriber and delivery
+	// point indexes from the subscriber sets. Needed once on a database that
+	// predates them; idempotent, and safe to run against a live server.
+	RebuildSubscriberIndexURL = "/rebuildsubscriberindex"
 	// HealthURL reports whether uniqush can reach what it needs to serve. It is
 	// the one endpoint whose HTTP status code carries the answer, because that
 	// is what a load balancer reads.
@@ -785,6 +789,32 @@ func (api *RestAPI) rebuildServiceSet(logger log.Logger) []byte {
 	return json
 }
 
+// rebuildSubscriberIndex rebuilds the indexes a wildcard push and /stats read.
+//
+// Separate from /checkdb, which is report-only, and shaped like
+// /rebuildserviceset for the same reason: a one-off repair an operator runs
+// deliberately, rather than something that happens to a database on its own.
+func (api *RestAPI) rebuildSubscriberIndex(logger log.Logger) []byte {
+	err := api.backend.RebuildSubscriberIndex()
+	var details APIResponseDetails
+	if err != nil {
+		logger.Errorf("Error in %s: %v", RebuildSubscriberIndexURL, err)
+		errorMsg := err.Error()
+		details = APIResponseDetails{
+			Code:     UNIQUSH_ERROR_GENERIC,
+			ErrorMsg: &errorMsg,
+		}
+	} else {
+		logger.Infof("%s: the subscriber index has been rebuilt", RebuildSubscriberIndexURL)
+		details = APIResponseDetails{Code: UNIQUSH_SUCCESS}
+	}
+	json, err := json.Marshal(details)
+	if err != nil {
+		return []byte("Failed to encode response")
+	}
+	return json
+}
+
 func parseKV(form url.Values) (kv map[string]string, perdp map[string][]string) {
 	kv = make(map[string]string, len(form))
 	perdp = make(map[string][]string, 3)
@@ -830,6 +860,10 @@ func (api *RestAPI) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(status)
 		fmt.Fprintf(w, "%s\r\n", body)
+		return
+	case RebuildSubscriberIndexURL:
+		n := api.rebuildSubscriberIndex(api.loggers[LoggerServices])
+		fmt.Fprintf(w, "%s\r\n", n)
 		return
 	case CheckDatabaseURL:
 		n := api.checkDatabase(api.loggers[LoggerServices])
@@ -915,6 +949,7 @@ func (api *RestAPI) Run(addr string, stopChan chan<- bool) {
 	http.Handle(QuerySubscriptionsURL, api)
 	http.Handle(QueryPushServiceProviders, api)
 	http.Handle(RebuildServiceSetURL, api)
+	http.Handle(RebuildSubscriberIndexURL, api)
 	http.Handle(HealthURL, api)
 	http.Handle(CheckDatabaseURL, api)
 

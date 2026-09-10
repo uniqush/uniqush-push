@@ -101,6 +101,10 @@ type pushRawDatabaseWriter interface { //nolint:staticcheck
 	// rebuild, and says loudly that an existing one needs
 	// /rebuildsubscriberindex.
 	PrepareSubscriberIndex(logger log.Logger) error
+	// RebuildSubscriberIndex rebuilds the per-service subscriber and delivery
+	// point indexes from the subscriber sets, which are the source of truth, and
+	// then records that they are complete.
+	RebuildSubscriberIndex() error
 
 	FlushCache() error
 }

@@ -294,6 +294,15 @@ const (
 	// on against an index covering only the subscribers who happened to
 	// re-subscribe, and a wildcard push would silently miss everyone else.
 	SubscriberIndexBuiltKey string = "subscriber.index:built"
+	// SubscriberIndexStagingPrefix is prefixed to an index key while
+	// /rebuildsubscriberindex is filling it, so that the rebuilt copy is renamed
+	// over the live one in a single step and a concurrent reader sees one or the
+	// other rather than a half-built index.
+	//
+	// A prefix rather than a suffix on purpose: nothing that walks the keyspace
+	// for "srv-2-sub:*" or "srv.type-2-dp:*" can then mistake a key being built
+	// for a service of its own.
+	SubscriberIndexStagingPrefix string = "rebuilding:"
 	// DeliveryPointCounterPrefix is the prefix of keys for a redis STRING - it
 	// mapped a delivery point name to the number of subscribers using it.
 	//

@@ -128,6 +128,7 @@ func (d *recordingDatabase) CheckConsistency() (*db.ConsistencyReport, error) {
 	return new(db.ConsistencyReport), nil
 }
 func (d *recordingDatabase) PrepareSubscriberIndex(log.Logger) error { return nil }
+func (d *recordingDatabase) RebuildSubscriberIndex() error           { return nil }
 func (d *recordingDatabase) FlushCache() error                       { return nil }
 
 var _ db.PushDatabase = &recordingDatabase{}
