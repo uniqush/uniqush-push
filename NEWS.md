@@ -1,7 +1,7 @@
 uniqush-push NEWS
 
-Unreleased
-----------
+23 Sep 2026, uniqush-push 2.9.0
+-------------------------------
 
 The longer version, for operators, is in [docs/upgrading.md](docs/upgrading.md#upgrading-from-280).
 No device needs to re-subscribe. **Action required:** run `/rebuildsubscriberindex` once (see Redis).
