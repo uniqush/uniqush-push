@@ -59,9 +59,10 @@ Redis:
   and `/checkdb` lists them so they can be deleted.
 - Change: Wildcard pushes (`subscriber=alice.*`) are fast on large databases: they look at one service's
   subscribers instead of the whole database, and reach the same subscribers as before. **Run
-  `/rebuildsubscriberindex` once after upgrading.** Until you do, wildcard pushes still work but stay slow and
-  log an error each time, and `/stats` refuses to answer. New installations need nothing. See
-  [docs/upgrading.md](docs/upgrading.md).
+  `/rebuildsubscriberindex` once after upgrading, when no 2.8.0 instance is left sharing the database**, and
+  again if you downgrade and come back. Until you do, wildcard pushes still work but stay slow and log an
+  error each time, and `/stats` refuses to answer. New installations need nothing. See
+  [docs/upgrading.md](docs/upgrading.md#run-rebuildsubscriberindex-once).
 - Change: A `*` in a service name is refused. It was never supported by `/push` or `/subscribe`; only `/nrdp`
   let one through. Wildcards in subscriber names are unaffected.
 - New feature: `/checkdb` reports `unreferenced_delivery_point`, a device record left behind by an interrupted
