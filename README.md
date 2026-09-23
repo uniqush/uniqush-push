@@ -57,9 +57,9 @@ server side, you can send push notifications to any supported mobile platform.
 > - **UnifiedPush / Web Push — new, and the one backend with no vendor
 >   dependency.** See below.
 >
-> Building requires **Go 1.25 or newer**. If you are upgrading from 2.7.0,
-> [docs/upgrading.md](docs/upgrading.md) walks through what changes for each
-> backend and what needs action.
+> Building requires **Go 1.25 or newer**. If you are upgrading,
+> [docs/upgrading.md](docs/upgrading.md) walks through what changes and what
+> needs action, release by release.
 
 ## Supported Platforms ##
 
