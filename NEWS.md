@@ -3,208 +3,104 @@ uniqush-push NEWS
 Unreleased
 ----------
 
+The longer version, for operators, is in [docs/upgrading.md](docs/upgrading.md#upgrading-from-280).
+No device needs to re-subscribe. **Action required:** run `/rebuildsubscriberindex` once (see Redis).
+
 APNs:
 
-- New feature: `/subscribe` accepts a `bundleid` for one device, overriding the provider's. HTTP/2 requires
-  an `apns-topic` on every push and uniqush took it from the provider, so a certificate valid for several
-  bundle ids -- an app and its enterprise or release-testing builds -- needed a service per bundle id with
-  each device subscribed to the right one. The workaround the issue recorded, `uniqush.http2=0`, selected
-  the binary protocol, which sent no topic at all; that has not worked since Apple shut the protocol down in
-  2021. A device that names none uses the provider's, so nothing existing changes, and an empty `bundleid`
-  clears it. A provider that names none is now usable as long as its devices do: the check moved from the
-  provider to the device, so a push refuses only the devices with no bundle id from either.
-- Bugfix: `mutable-content`, `category`, `thread-id` and `target-content-id` go inside the `aps` dictionary
-  rather than beside it, where iOS ignored them, and `interruption-level` and `relevance-score` are supported.
-  Numbers are sent as numbers, since iOS ignores `"1"` where it wants `1`. A push sending one of these keys and
-  expecting it beside `aps` as custom data will now find it inside; `uniqush.payload.apns` sends a payload
-  verbatim.
-- Bugfix: A background push sent through `uniqush.payload.apns` is accepted when `content-available` is the
-  number `1` -- the form Apple documents, and the only one uniqush used to refuse. The quoted `"1"` it did
-  accept is ignored by iOS but is still accepted, for callers who worked around that; neither form is rewritten.
-- Change: `/addpsp` records the environment a provider pushes to as `environment` (`production` or
-  `development`), instead of the retired binary protocol's `addr`. `addr` is still accepted and selects the
-  same environment as before, but is no longer stored. A provider registered before this keeps its `addr`, is
-  still routed by it, and still shows it in `/psps` until it is registered again.
-- Removal: The binary provider protocol, the APNs feedback service client, and the `github.com/uniqush/cache2`
-  dependency they needed. Apple shut the protocol down on 31 March 2021 and 2.8.0 already defaulted to HTTP/2.
-  `uniqush.http2=0` is still accepted: the push goes over HTTP/2 and the response says the parameter no longer
-  does anything. An unregistered token now arrives as 410 `Unregistered` on the push itself.
-- Removal: `pool_size` in the `[apns]` config section. It sized the binary protocol's TCP connection pool;
-  HTTP/2 multiplexes a provider's pushes over one connection. A `pool_size` left in `uniqush.conf` is ignored
-  rather than rejected.
+- New feature: `/subscribe` accepts a per-device `bundleid`, overriding the provider's, so one certificate can
+  serve an app and its other builds from one service. An empty `bundleid` clears it.
+- Bugfix: `mutable-content`, `category`, `thread-id` and `target-content-id` go inside `aps`, where iOS reads
+  them, rather than beside it. `interruption-level` and `relevance-score` are supported, and numbers are sent
+  as numbers.
+- Bugfix: `uniqush.payload.apns` accepts `content-available` as the number `1`, the form Apple documents.
+- Change: `/addpsp` records `environment` (`production` or `development`) instead of `addr`. `addr` is still
+  accepted, and providers stored with one are still routed by it.
+- Removal: The binary protocol and the feedback service client, which Apple shut down in 2021.
+  `uniqush.http2=0` is still accepted but does nothing. `pool_size` in `[apns]` is ignored.
 
 FCM:
 
-- New feature: `uniqush.priority` on `/push`, `high` or `normal`, becoming FCM's `android.priority`. A
-  normal-priority message may be held until the device next leaves Doze. Absent, FCM applies its own default;
-  any other value is refused. No other backend reads it, since APNs derives its priority from
-  `uniqush.apns_push_type`.
+- New feature: `uniqush.priority` on `/push` (`high` or `normal`) sets FCM's `android.priority`.
 
 UnifiedPush / Web Push:
 
-- Change: The RFC 8188 record size is now 4096 rather than 2048, so every message is 4096 bytes on the wire and
-  a payload may be up to 3993 bytes (was 1945). google/tink's `apps-webpush` rejects any record smaller than
-  the 4096 it expects, so 2048 was unreadable to clients built on it.
-- New feature: `record_size` in the `[webpush]` and `[unifiedpush]` config sections. `record_size=2048` halves
-  egress, and the payload ceiling.
+- Change: The RFC 8188 record size is now 4096 (was 2048), so messages are 4096 bytes on the wire and a payload
+  may be up to 3993 bytes. Clients built on google/tink's `apps-webpush` could not read 2048.
+- New feature: `record_size` in `[webpush]` and `[unifiedpush]`; `record_size=2048` halves egress.
 - Bugfix: `allow_private_addresses` and `allowed_hosts` are re-read on every reconfiguration, so deleting one
-  closes what it opened; previously a policy an earlier config had relaxed stayed relaxed. The policy is
-  published whole, so a push in flight cannot see it half-applied, and `allow_private_addresses` now accepts
-  the config file's usual boolean spellings.
+  closes what it opened.
 
 Redis:
 
-- Change: Subscribing and unsubscribing can no longer be left half done by a crash or a dropped connection.
-  uniqush also stops writing the `delivery.point.counter:` keys, which nothing needs; any left over are harmless
-  and `/checkdb` lists them so they can be deleted.
-- Change: Wildcard pushes (`subscriber=alice.*`) are fast on large databases: they look at one service's
-  subscribers instead of the whole database, and reach the same subscribers as before. **Run
-  `/rebuildsubscriberindex` once after upgrading, when no 2.8.0 instance is left sharing the database**, and
-  again if you downgrade and come back. Until you do, wildcard pushes still work but stay slow and log an
-  error each time, and `/stats` refuses to answer. New installations need nothing. See
-  [docs/upgrading.md](docs/upgrading.md#run-rebuildsubscriberindex-once).
-- Change: A `*` in a service name is refused. It was never supported by `/push` or `/subscribe`; only `/nrdp`
-  let one through. Wildcards in subscriber names are unaffected.
-- New feature: `/checkdb` reports `unreferenced_delivery_point`, a device record left behind by an interrupted
-  `/subscribe`. Re-subscribing the device fixes it; otherwise it is safe to delete.
-- New feature: `/checkdb` reports `index_not_built` until `/rebuildsubscriberindex` has run, and
-  `missing_index_entry` or `stale_index_entry` if the index has drifted. Rerunning the rebuild fixes both.
-- Bugfix: A `/push` whose `service` or `subscriber` contains a `*` no longer runs `KEYS`, which redis runs to
-  completion on the thread it serves every client from: one wildcard push stalled every other push, and every
-  other application on a shared redis, for the length of a keyspace walk. That walk and `/rebuildserviceset`
-  page through `SCAN` instead, deduplicated because `SCAN` can return a key twice and each repeat would have
-  been a second notification. Wildcards match the same subscribers as before.
-
-Logging:
-
-- Bugfix: An error about one device names that device. A push that failed for one subscriber was logged as
-  `Subscriber=Unknown DeliveryPoint=Unknown` whenever the failure came back through a channel rather than
-  from the loop over delivery points, which is every request-time error the APNs backend reports -- so a
-  rejection APNs made against one token said only that something, somewhere in the service, was wrong.
-  Errors that are about one device now carry it, and the backend reads it from the error when the result
-  does not say. Errors that are about no single device, such as rejected provider credentials, still name
-  none rather than blaming a device that happened to be in hand.
-- Bugfix: Log why a push is being retried. `RetryError` carried the reason and nothing printed it, so a push
-  that retried and then vanished left only "Retry after 1m0s". The webpush backend also quotes the push
-  server's response body, which is usually where the explanation is.
-- Bugfix: A fatal message says what went wrong when logging is switched off. `log=off` silences every level but
-  fatals still print, and that line was mangled: "cannot start: bind failed on port 8080" came out as
-  "cannot start: [bind failed 8080] on port %!d(MISSING)".
+- Change: Wildcard pushes (`subscriber=alice.*`) look at one service's subscribers instead of the whole
+  database. **Run `/rebuildsubscriberindex` once after upgrading, when no 2.8.0 instance is left sharing the
+  database**, and again if you downgrade and come back. Until then wildcard pushes still work but are slow and
+  log an error, and `/stats` refuses to answer. New installations need nothing.
+- Change: Subscribing and unsubscribing are atomic, so a crash or dropped connection cannot leave them half
+  done. The `delivery.point.counter:` keys are no longer written; leftovers are harmless.
+- Change: A `*` in a service name is refused. Only `/nrdp` ever let one through.
+- Bugfix: Wildcard pushes and `/rebuildserviceset` page through `SCAN` instead of running `KEYS`, which blocked
+  redis for every other client while it walked the keyspace.
+- New feature: `/checkdb` reports `unreferenced_delivery_point` (left by an interrupted `/subscribe`),
+  `index_not_built`, `missing_index_entry` and `stale_index_entry`.
 
 REST API:
 
-- New feature: `/stats` reports how many subscribers and devices each service has, per push service type.
-  Add `since=<unix time>` to also count subscribers who have re-subscribed since then (apps usually do on
-  launch), and `service=` to ask about one service. It answers `UNIQUSH_ERROR_INDEX_NOT_BUILT` until `/rebuildsubscriberindex` has run,
-  rather than giving numbers that would be too low.
-- New feature: `/rebuildsubscriberindex`, the one-off step after upgrading described above. Safe to run on a
-  live server and to run more than once.
-- New feature: `/health` reports whether this instance can serve, as an HTTP status code -- `200` when redis
-  answers and `503` when it does not -- with the reason in a JSON body. It is the first endpoint here whose
-  status code carries the answer, because that is what a load balancer reads. Redis is the only thing
-  checked: an endpoint that probed Apple or Google would report their outage as this instance being
-  unhealthy, and a load balancer would then remove capacity in response to a failure that removing capacity
-  cannot fix. Use it for a readiness probe rather than a liveness one, which should not depend on another
-  service. `/checkdb` is unchanged and is still a consistency check rather than a probe.
-- New feature: `/unsubscribe` accepts `alldevices=1`, which removes every device a subscriber has in a
-  service and needs only `service` and `subscriber` -- no `pushservicetype`, no token. It is for an account
-  being deleted, where the application knows the subscriber is finished and not what they had; the
-  alternative was `/subscriptions` followed by an `/unsubscribe` per device, which races anything that
-  subscribes in between. Removing nothing is a success, and the response reports `devicesRemoved`. Neither
-  name may contain a wildcard.
-- Bugfix: `/subscribe` and `/unsubscribe` reject a subscriber of `,` or `,,,` instead of crashing the
-  request. Such a value is a serviceable subscriber name to the code that builds the device, and splits into
-  nothing afterwards, so the handler indexed an empty list. An empty `subscriber=` was already refused.
-- Security: `/subscriptions` withholds a Web Push subscription's `auth` secret unless
-  `include_subscription_secrets=1` is passed. A `devtoken` or a `regid` is useless without the provider
-  credentials uniqush holds, but `endpoint`, `p256dh` and `auth` together are everything needed to push to
-  that browser, with nothing of uniqush's involved, so anyone who reached the API once could keep pushing
-  afterwards. The secret is omitted rather than blanked; every other field is unchanged.
-- Security: `/psps` no longer reports credentials. It answered with every field of every provider, so an
-  unauthenticated GET returned each Web Push provider's VAPID private key, each ADM provider's `clientsecret`,
-  and the access token ADM had issued it. It now answers from an allowlist of configuration fields --
-  credential file paths included -- and reports everything else as `[redacted]`. This does not make the API
-  safe to expose: `/subscriptions` still returns any subscriber's device tokens, and `/push` still sends.
+- New feature: `/stats` counts subscribers and devices per service and push service type, optionally only
+  those who re-subscribed `since` a given time.
+- New feature: `/rebuildsubscriberindex`. Safe on a live server and to run more than once.
+- New feature: `/health` answers `200` when redis responds and `503` when it does not, for a load balancer's
+  readiness probe. It deliberately does not probe Apple or Google.
+- New feature: `/unsubscribe` accepts `alldevices=1` to remove every device a subscriber has in a service,
+  given only `service` and `subscriber`.
+- Bugfix: `/subscribe` and `/unsubscribe` reject a subscriber of only commas instead of crashing the request.
+- Security: `/psps` no longer reports credentials: VAPID private keys, ADM client secrets and access tokens
+  are `[redacted]`. The API is still not safe to expose: `/subscriptions` and `/push` remain open.
+- Security: `/subscriptions` omits a Web Push subscription's `auth` secret unless
+  `include_subscription_secrets=1` is passed. Together with `endpoint` and `p256dh` it is enough to push to
+  that browser without uniqush.
 
-Startup:
+Logging:
 
-- Change: uniqush refuses to start when the operating system's root certificate store cannot be loaded,
-  naming what to install. Every backend verifies TLS against those roots, and `crypto/x509` caches the failure
-  for the life of the process, so every push failed with an `x509.SystemRootsError` inside a handshake error on
-  a server that had started cleanly and reported itself healthy. A store that loads but is empty is accepted,
-  not being detectable portably; it presents as an unknown certificate authority instead.
-- Bugfix: uniqush exits non-zero when it cannot start. It printed "Cannot start: ..." and exited 0, so
-  systemd's `Restart=on-failure` never fired and `docker run` reported success for a container that had done
-  nothing.
+- Bugfix: An error about one device names that device, rather than `Subscriber=Unknown DeliveryPoint=Unknown`.
+- Bugfix: Log why a push is being retried, including the Web Push server's response body.
+- Bugfix: Fatal messages are no longer garbled when `log=off`.
 
-Configuration:
+Startup and configuration:
 
-- New feature: `request_timeout`, in seconds, in the `[apns]`, `[fcm]`, `[gcm]`, `[webpush]` and
-  `[unifiedpush]` sections. How long one request to a push service may take was fixed at 20 seconds for APNs
-  and 30 for the rest, which is the wrong number for anyone whose own client gives up sooner. Values outside
-  1-300 fall back to the default, as does one that will not parse, and deleting the line restores it.
-- Change: the push request timeout is enforced per request rather than by the HTTP client, which is what makes it
-  reconfigurable: a client is cached for the life of a provider and would have gone on applying whatever the
-  timeout was when it was built. The APNs retry against a previous signing token still gets a full timeout of
-  its own, and the FCM OAuth2 token fetch keeps a fixed one.
-- Bugfix: A configuration file that fails to read part way through is now an error. The parser returned success
-  with whatever it had managed to parse, so a truncated or unreadable `uniqush.conf` would start uniqush with
-  some of its options silently missing. Such a file is also closed rather than leaked.
-
-Maintenance:
-
-- The levelled logger is now `github.com/uniqush/uniqush-push/log` rather than the archived
-  `github.com/uniqush/log`, with the fatal-formatting bug above fixed. The level constants take Go's naming
-  convention: `log.LOGLEVEL_INFO` is `log.LevelInfo`, and so on. `MultiLogger` is dropped, having had no
-  callers.
-- The configuration parser is now `github.com/uniqush/uniqush-push/conf` rather than the archived
-  `github.com/uniqush/goconf/conf`, a fork of `ifwe/goconf` whose upstream was abandoned in 2012. Parsing is
-  unchanged, verified option by option against the old parser on the shipped `uniqush-push.conf`, and the
-  package keeps its BSD 3-clause licence in `conf/LICENSE`.
-- `HasOption` and `GetOptions` no longer consult the default section, so `HasOption` can no longer report an
-  option that `GetString` then says is missing. The accessors are unchanged, since inheriting the default
-  section would alter what every existing `uniqush.conf` means.
-- `WriteConfigFile` and the rest of the config writing API are dropped, having had no callers. Variable
-  substitution (`%(name)s`) is documented as unsupported, which it has been since 2012.
-- With those two, `go.mod` no longer requires anything owned by uniqush. Every remaining dependency is either
-  `golang.org/x` or actively maintained elsewhere.
-
-Changes to APIs (embedders only):
-
-- `db.PushDatabase` gains `Ping() error`, which backs `/health`. An implementation of that interface has to
-  provide it.
-- `db.PushDatabase` gains `PrepareSubscriberIndex`, `RebuildSubscriberIndex` and `SubscriberStats`; call
-  `PrepareSubscriberIndex` once before serving, as `Run` does. `GetPushServiceProviderDeliveryPointPairs` takes a
-  `requestID string` before its logger; pass `""` if there is none.
-- `db.PushDatabase` gains `RemoveAllDeliveryPointsFromService(service, subscriber string) (int, error)`,
-  which backs `/unsubscribe?alldevices=1`. An implementation of that interface has to provide it.
-- `push.DestinationOf(err)` returns the delivery point an error is about, or nil. `push.ErrorReport`,
-  `push.BadNotification` and `push.ConnectionError` gain a `Destination` field, with
-  `NewErrorForDeliveryPoint`, `NewErrorfForDeliveryPoint`, `NewBadNotificationForDeliveryPoint` and
-  `NewConnectionErrorForDeliveryPoint` to set it. The existing constructors are unchanged and leave it nil.
-- The `log.Logger` taken by `NewPushBackEnd` and by the `db.RawDB` methods now comes from
-  `github.com/uniqush/uniqush-push/log`. Change the import and the `LOGLEVEL_*` constant names; the interface
-  itself is unchanged.
-- `push.NewPushServiceConfig` takes a `*conf.ConfigFile` from `github.com/uniqush/uniqush-push/conf`. Change the
-  import; the type and its methods are unchanged.
+- Change: uniqush refuses to start when the system root certificates cannot be loaded. It used to start and
+  then fail every push.
+- Bugfix: uniqush exits non-zero when it cannot start, so `Restart=on-failure` and `docker run` see the failure.
+- Bugfix: A config file that fails to read part way through is an error, not a partial configuration.
+- New feature: `request_timeout`, in seconds, in `[apns]`, `[fcm]`, `[gcm]`, `[webpush]` and `[unifiedpush]`.
+  Defaults are unchanged: 20 for APNs, 30 for the rest.
 
 Packaging:
 
-- New feature: The `.deb` and `.rpm` install a systemd unit at
-  `/lib/systemd/system/uniqush-push.service`. It is installed rather than enabled, since uniqush needs a
-  redis and a provider before it is any use; `systemctl enable --now uniqush-push` when the config is ready.
-  It runs under a transient unprivileged user, so the package creates no account and leaves nothing owned by
-  one, and it restarts on failure -- which only became correct once uniqush started exiting non-zero when it
-  cannot start. Prompted by a 2017 contribution from @p365labs (#146).
-- Change: the shipped `uniqush-push.conf` writes to `/var/log/uniqush/uniqush-push.log` rather than to
-  `/var/log/uniqush`, which is now the directory systemd creates for the service. A `.deb` or `.rpm` upgrade
-  keeps whatever is already in `/etc/uniqush/uniqush-push.conf`, so an existing installation's logging does
-  not move.
-- Bugfix: Releases carry the licences of the code they bundle. uniqush-push links BSD- and MIT-licensed Go
-  modules statically, and the `.deb` and `.rpm` shipped no licence text at all while the archive shipped only
-  uniqush's own. All three now carry `THIRD-PARTY-LICENSES`, the packages install it and `LICENSE` to
-  `/usr/share/doc/uniqush-push/`, and the metadata says `Apache-2.0 AND BSD-2-Clause AND BSD-3-Clause AND MIT`
-  rather than `Apache-2.0`.
+- New feature: The `.deb` and `.rpm` install a systemd unit, not enabled. It runs as a transient unprivileged
+  user and restarts on failure. (Prompted by @p365labs, #146)
+- Change: The shipped config logs to `/var/log/uniqush/uniqush-push.log` (was `/var/log/uniqush`). An upgrade
+  keeps your existing config; fix `logfile` there before enabling the unit.
+- Bugfix: Releases carry the licenses of the modules they bundle, in `THIRD-PARTY-LICENSES`.
+
+Maintenance:
+
+- The logger and config parser now live in this repository (`log/`, `conf/`) instead of the archived
+  `github.com/uniqush/log` and `github.com/uniqush/goconf`; `go.mod` requires nothing else owned by uniqush.
+  Parsing is unchanged.
+- Update `golang.org/x/crypto` to v0.55.0.
+
+Changes to APIs (embedders only):
+
+- `db.PushDatabase` gains `Ping`, `PrepareSubscriberIndex` (call once before serving, as `Run` does),
+  `RebuildSubscriberIndex`, `SubscriberStats` and `RemoveAllDeliveryPointsFromService`.
+  `GetPushServiceProviderDeliveryPointPairs` takes a `requestID` before its logger.
+- `push.DestinationOf(err)` returns the delivery point an error is about. `ErrorReport`, `BadNotification` and
+  `ConnectionError` gain a `Destination` field, set by new `...ForDeliveryPoint` constructors.
+- Import `github.com/uniqush/uniqush-push/log` and `.../conf` in place of the old packages. Log level constants
+  are renamed (`LOGLEVEL_INFO` is `LevelInfo`), and `MultiLogger`, `WriteConfigFile` and the rest of the config
+  writing API are dropped. `HasOption` and `GetOptions` no longer consult the default section.
 
 03 Sep 2026, uniqush-push 2.8.0
 -------------------------------
