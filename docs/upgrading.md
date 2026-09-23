@@ -1,13 +1,201 @@
-# Upgrading from 2.7.0
+# Upgrading uniqush-push
 
-2.8.0 repairs the two backends whose upstream APIs were shut down while the
-project was dormant, adds a third, and changes how a delivery point finds its
-provider. [NEWS.md](../NEWS.md) lists every change in one line each; this
-document is the longer version for operators, and points at the documents
-that go deeper still. [api.md](api.md) is the reference for the API as it is
-now.
+[NEWS.md](../NEWS.md) lists every change in one line each; this document is the
+longer version for operators, and points at the documents that go deeper still.
+[api.md](api.md) is the reference for the API as it is now.
 
-## Before you start
+- From **2.8.0**, read [Upgrading from 2.8.0](#upgrading-from-280).
+- From **2.7.0**, read [Upgrading from 2.7.0 to 2.8.0](#upgrading-from-270-to-280)
+  first and then the 2.8.0 section. You can go straight to 2.9.0; the two
+  sections do not assume you stopped at 2.8.0 in between.
+
+## Upgrading from 2.8.0
+
+### In short
+
+- **Run `/rebuildsubscriberindex` once, after every instance is on 2.9.0.**
+  It is the one step this release needs. Nothing breaks until you do, but
+  wildcard pushes are slow and log an error on every use. See
+  [below](#run-rebuildsubscriberindex-once).
+- **If you installed the `.deb` or `.rpm`, fix `logfile` before enabling the
+  new systemd unit.** See [The systemd unit and the log file](#the-systemd-unit-and-the-log-file).
+- A handful of responses change shape; if you call `/psps` or `/subscriptions`,
+  or send the APNs keys `mutable-content`, `category`, `thread-id` or
+  `target-content-id` on `/push`, read [What callers see](#what-callers-see).
+- No device has to re-subscribe, no configuration change is required, and Go
+  1.25 still builds it.
+
+### Run `/rebuildsubscriberindex` once
+
+Every subscribe now also records the subscriber in `srv-2-sub:<service>`, a
+sorted set scored by the time of that subscribe, and the device in
+`srv.type-2-dp:<service>:<pushservicetype>`. Between them these make a wildcard
+`/push` cost the size of the service rather than the size of the database, and
+make [`/stats`](api.md#stats) a handful of counting commands.
+
+They start filling up the moment you install this release, but only with what
+is written from then on, so an existing database needs one call:
+
+    curl http://localhost:9898/rebuildsubscriberindex
+
+It walks the subscriber sets, which are the source of truth, and builds both
+indexes from them. Idempotent, and safe against a live server: each service's
+index is built under a name of its own and renamed over the live one, so a
+concurrent push sees the old index or the new one. Run `/checkdb` afterwards --
+a subscription made during the walk can, rarely, be missed, and `/checkdb`
+names it. A database created by this release is marked as indexed the first
+time uniqush opens it, and needs nothing.
+
+**Run it only once no 2.8.0 instance is left writing to the database.** 2.8.0
+does not maintain the index, and a completed rebuild is recorded in
+`subscriber.index:built`, after which wildcard pushes trust the index
+completely. A subscription that a 2.8.0 instance makes after that point is
+missing from it, and a wildcard push silently skips that subscriber. The same
+holds for a new, empty database that 2.8.0 instances share during a rolling
+upgrade: 2.9.0 marks it indexed on first sight, so rebuild once the upgrade is
+complete. `/checkdb` reports any subscription the index is missing as
+`missing_index_entry`, and rebuilding again fixes it.
+
+**Nothing breaks if you skip it.** Until it runs:
+
+- A wildcard `/push` reaches exactly the same subscribers, over the keyspace
+  scan it used before. That is slow on a large database, and it logs an error
+  naming the service, the request and this endpoint on every use. The noise is
+  deliberate: the fallback works, so nothing else would tell you.
+- `/stats` answers `UNIQUSH_ERROR_INDEX_NOT_BUILT` rather than counting. The
+  index holds only the subscribers who have re-subscribed since the upgrade,
+  and a count from it would be too low with nothing in the answer to say so.
+- `/checkdb` reports `index_not_built`, plus `missing_index_entry` and
+  `stale_index_entry` for anything the two disagree about.
+
+One thing did stop working: a `*` in a **service** name is refused rather than
+matched. Every endpoint that could reach it already rejected `*` in a service,
+except `/nrdp`, which did not validate its parameters; there was never a
+per-service index that could answer such a request, and it meant a full
+keyspace walk. Wildcards in **subscriber** names are unaffected.
+
+### Subscribing and unsubscribing are atomic
+
+Both used to be several redis commands with uniqush deciding in between:
+`SADD` and then `INCR` if the device was new; `SREM`, `DECR`, and two `DEL`s
+if the count reached zero. Each is one redis script now, which runs to
+completion on the server or not at all.
+
+The per-device reference count is no longer written. It could only ever be 0
+or 1 -- a delivery point's name hashes its service and subscriber along with
+the device token, so the record belongs to exactly one subscription -- and the
+count is what the second and third commands of each path existed to maintain.
+
+Nothing to do before or after upgrading. Existing `delivery.point.counter:`
+keys are read by nothing and are harmless; `/checkdb` now lists every one of
+them as `leaked_counter`, so they can be found and deleted in one pass if you
+want the space back. A database that has only ever been written by this
+release has none.
+
+`/checkdb` also learns `unreferenced_delivery_point`: a device record that its
+own subscriber's set does not name. A `/subscribe` writes the record first, so
+an interruption between the two writes leaves one behind, and nothing else
+would ever meet it again -- every read starts from the subscriber's set.
+Re-subscribing that device adopts the record; otherwise it is safe to delete.
+
+### The APNs binary protocol is gone
+
+In 2.8.0, `uniqush.http2=0` still selected the binary protocol and logged a
+deprecation warning. Apple shut that protocol down on 31 March 2021, so such a
+push could not be delivered. The parameter is still accepted, but the push is
+sent over HTTP/2 and the response reports that the option no longer does
+anything. Nothing to change before upgrading -- a caller still sending
+`uniqush.http2=0` goes from undeliverable pushes to delivered ones -- but the
+parameter can be dropped from your requests.
+
+`pool_size` in the `[apns]` section went with it. It sized the binary
+protocol's pool of TCP connections; HTTP/2 multiplexes a provider's pushes over
+one connection. A `pool_size` left in `uniqush.conf` is ignored, not rejected.
+
+An APNs provider stored with an `addr` is still routed by that `addr`. A new
+`/addpsp` records an `environment` instead, taken from `sandbox` -- or from an
+`addr`, if your registration still sends one. Unlike `endpoint` and `cacert`,
+`environment` is never cleared: it is rewritten on every registration and
+defaults to production, so a script that stops passing `sandbox=true` moves
+that service back to production rather than leaving it where it was.
+
+### The systemd unit and the log file
+
+The `.deb` and `.rpm` now install `/lib/systemd/system/uniqush-push.service`,
+not enabled. It declares `LogsDirectory=uniqush`, so systemd creates
+`/var/log/uniqush` as a directory for the service, and the shipped
+`uniqush-push.conf` now logs to `/var/log/uniqush/uniqush-push.log` inside it.
+
+A package upgrade keeps your existing `/etc/uniqush/uniqush-push.conf`, and the
+2.8.0 one said `logfile=/var/log/uniqush`: a file at the path the unit now
+wants for a directory. Before `systemctl enable --now uniqush-push`, move the
+old log aside and point the config at a file inside the directory:
+
+    mv /var/log/uniqush /var/log/uniqush.old
+    sed -i 's|^logfile=/var/log/uniqush$|logfile=/var/log/uniqush/uniqush-push.log|' \
+      /etc/uniqush/uniqush-push.conf
+
+If you keep running uniqush the way you did before, without the unit, nothing
+needs changing.
+
+### What callers see
+
+- **APNs keys move into `aps`.** `mutable-content`, `category`, `thread-id`
+  and `target-content-id` on `/push` are placed inside the `aps` dictionary,
+  where iOS reads them, rather than beside it, where it ignored them;
+  `mutable-content` and `content-available` are sent as numbers. An app that
+  read one of these keys as custom data will now find it inside `aps`.
+  `uniqush.payload.apns` still sends a payload verbatim.
+- **`/psps` no longer reports credentials.** Fields outside an allowlist of
+  configuration fields are reported as `[redacted]`. Anything that read a
+  VAPID private key, an ADM `clientsecret` or an access token back from `/psps`
+  has to get it from where it was configured instead.
+- **`/subscriptions` omits a Web Push subscription's `auth`** unless
+  `include_subscription_secrets=1` is passed.
+- **Web Push messages are 4096 bytes on the wire**, up from 2048, and a
+  payload may now be up to 3993 bytes. Set `record_size=2048` in `[webpush]`
+  or `[unifiedpush]` to keep the old egress, at the cost of clients built on
+  google/tink's `apps-webpush`, which cannot read it.
+
+### Startup is stricter
+
+- uniqush refuses to start when the operating system's root certificate store
+  cannot be loaded, naming what to install. It used to start, report itself
+  healthy, and then fail every push. A minimal container image without
+  `ca-certificates` is the usual cause.
+- A `uniqush.conf` that fails to read part way through is an error, rather than
+  starting uniqush with whatever was parsed before the failure.
+- uniqush exits non-zero when it cannot start, where it used to exit 0.
+  Anything that relied on the old exit status to ignore a failed start will
+  now see it.
+
+### Downgrading to 2.8.0
+
+Works without repairing anything. 2.8.0 will find the reference counts
+missing, read that as one subscriber, and treat every unsubscribe as the last
+reference -- which is the correct outcome, since it always was. It ignores the
+index keys.
+
+**If you then upgrade again, run `/rebuildsubscriberindex` again.** 2.8.0 does
+not maintain the index but leaves `subscriber.index:built` in place, so on the
+way back up the index is trusted while missing everyone who subscribed in
+between, and wildcard pushes skip them without a word. Alternatively,
+`DEL subscriber.index:built` when you downgrade, and 2.9.0 will fall back to
+the keyspace scan, and say so, until you rebuild.
+
+### Embedding uniqush
+
+`db.PushDatabase` gains methods, `push`'s error types gain a `Destination`, and
+the logger and config parser moved into this repository. NEWS.md's
+"Changes to APIs (embedders only)" lists each one and what to change.
+
+## Upgrading from 2.7.0 to 2.8.0
+
+2.8.0 repaired the two backends whose upstream APIs were shut down while the
+project was dormant, added a third, and changed how a delivery point finds its
+provider.
+
+### Before you start
 
 - **Go 1.25 or newer is required to build** (2.7.0 built with 1.14). The
   APNs HTTP/2 client is backed by `golang.org/x/net`, which was updated from a
@@ -21,7 +209,7 @@ now.
   [Database](#database) below.
 - No device has to re-subscribe for any change in this release.
 
-## APNs
+### APNs
 
 Between them these changes are the difference between iOS notifications
 arriving and silently not arriving; anyone running uniqush for APNs should treat
@@ -35,24 +223,15 @@ membership. [apns-verification-plan.md](apns-verification-plan.md) describes
 what is covered and what is not; reports from anyone who can run the rest are
 very welcome.
 
-### HTTP/2 is the default transport
+#### HTTP/2 is the default transport
 
 2.7.0 used Apple's binary protocol unless a push passed `uniqush.http2=1`.
 Apple shut the binary protocol down on 31 March 2021, so the default path could
-not deliver anything. HTTP/2 is now the default.
+not deliver anything. HTTP/2 is now the default; `uniqush.http2=0` still selects
+the binary protocol and logs a deprecation warning, and that fallback will be
+removed in a future release.
 
-In 2.8.0, `uniqush.http2=0` still selected the binary protocol and logged a
-deprecation warning. **After 2.8.0 the binary protocol is gone**: the parameter
-is still accepted, but the push is sent over HTTP/2 and the response reports
-that the option no longer does anything. Nothing to change before upgrading --
-a caller still sending `uniqush.http2=0` goes from undeliverable pushes to
-delivered ones -- but the parameter can be dropped from your requests.
-
-`pool_size` in the `[apns]` section went with it. It sized the binary
-protocol's pool of TCP connections; HTTP/2 multiplexes a provider's pushes over
-one connection. A `pool_size` left in `uniqush.conf` is ignored, not rejected.
-
-### Headers that Apple now requires
+#### Headers that Apple now requires
 
 - `apns-push-type` is sent on every request. Apple has required it on watchOS
   since watchOS 6 and recommends it everywhere. Its absence is worst for
@@ -73,7 +252,7 @@ values are `alert` (the default), `background`, `complication`, `controls`,
 APNs to answer with an opaque 400. The older `uniqush.apns_voip=1` continues to
 work and implies `voip`.
 
-### Failures are classified
+#### Failures are classified
 
 2.7.0 handled `BadDeviceToken` and a bare 410, and turned every other
 non-permanent reason into a `BadNotification` -- so a 503 from Apple, or a
@@ -100,7 +279,7 @@ if the device re-registered the same token after that point. Acting on it
 needs a reliable per-delivery-point registration time, which uniqush does not
 yet track consistently, so the token is currently dropped unconditionally.
 
-### Token (`.p8`) authentication
+#### Token (`.p8`) authentication
 
 `/addpsp` accepts `authkey` (the path to the `.p8` from the developer portal),
 `keyid` and `teamid` as an alternative to `cert` and `key`. A `.p8` does not
@@ -132,21 +311,15 @@ to the `/addpsp` call.** Do **not** use `/rmpsp` followed by `/addpsp`: in
 2.7.0 that silently unsubscribed every device in the service. See
 [Database](#database).
 
-### Endpoint and certificate verification
+#### Endpoint and certificate verification
 
 `/addpsp` for `apns` accepts `endpoint` (the base URL HTTP/2 pushes go to) and
 `cacert` (a PEM bundle to verify it against), which together make it possible
 to point uniqush at a simulator or a relay without disabling certificate
-verification. `endpoint` and `cacert` are each cleared when omitted from a
-later `/addpsp`, the same way `bundleid` has always behaved.
-
-A provider that sets neither keeps sending exactly where it did before. One
-stored with an `addr` is still routed by that `addr`; a new `/addpsp` records
-an `environment` instead, taken from `sandbox` — or from an `addr`, if your
-registration still sends one. Unlike `endpoint` and `cacert`, `environment` is
-never cleared: it is rewritten on every registration and defaults to
-production, so a script that stops passing `sandbox=true` moves that service
-back to production rather than leaving it where it was.
+verification. A provider that sets neither keeps sending exactly where it did
+before: the environment is still inferred from the binary protocol's `addr`.
+Both are cleared when omitted from a later `/addpsp`, the same way `bundleid`
+has always behaved.
 
 Two things are refused that were not before:
 
@@ -167,9 +340,9 @@ Two things are refused that were not before:
 
 The [README](../README.md#apns) has the worked examples.
 
-## FCM
+### FCM
 
-### The legacy API is gone
+#### The legacy API is gone
 
 2.7.0 posted to `https://fcm.googleapis.com/fcm/send` with an
 `Authorization: key=` server key. Google decommissioned that endpoint on
@@ -204,7 +377,7 @@ migration is one call, for either name:
 [examples/fcm-demo](../examples/fcm-demo) walks through setting up a Firebase
 project and verifying the result end to end.
 
-### `gcm` is an alias for `fcm`
+#### `gcm` is an alias for `fcm`
 
 The two backends have been identical since 2018, when uniqush repointed gcm at
 the FCM endpoint. The name is kept because a delivery point's database key is
@@ -214,7 +387,7 @@ provider keeps `projectid` in its fixed data and an fcm provider does not,
 exactly as before, which is what lets existing providers of either kind be
 updated in place.
 
-### Dead registrations
+#### Dead registrations
 
 Only `UNREGISTERED` and `SENDER_ID_MISMATCH` remove a subscription. v1
 collapses much of what the legacy API reported separately into
@@ -225,14 +398,14 @@ retried, honouring `Retry-After`. `THIRD_PARTY_AUTH_ERROR` is reported against
 the provider, since it means the APNs certificate or web push key uploaded to
 the Firebase project is wrong rather than anything about the device.
 
-### Why not the Firebase SDK
+#### Why not the Firebase SDK
 
 The implementation is hand-rolled against `net/http` and `golang.org/x/oauth2`,
 adding one direct dependency. Google's firebase-admin-go SDK would have pulled
 in roughly 55 indirect ones -- grpc, OpenTelemetry, Firestore, Cloud Storage,
 monitoring -- for a daemon that makes a single API call.
 
-## UnifiedPush / Web Push
+### UnifiedPush / Web Push
 
 A new backend, registered as both `webpush` and `unifiedpush`. It is the only
 one with no vendor account, certificate or API key, and it reaches de-Googled
@@ -242,7 +415,7 @@ Android devices, Linux desktops and browsers. The
 private addresses are refused by default and how `allow_private_addresses` and
 `allowed_hosts` relax that.
 
-## Retries
+### Retries
 
 A push service's own requested delay now seeds the retry schedule. In 2.7.0
 the first retry was always 5 seconds and the push was abandoned once the
@@ -260,7 +433,7 @@ uniqush's memory by answering with a very large value. The cap sits above the
 longest delay any backend legitimately asks for; a request beyond it is logged
 and clamped.
 
-## Database
+### Database
 
 A delivery point is no longer bound to its provider's credentials. In 2.7.0 a
 provider's name was a hash of its fixed data, every delivery point was stored
@@ -293,74 +466,7 @@ so this release can be rolled back without repairing anything.
 [delivery-point-rebinding.md](delivery-point-rebinding.md) explains what
 `/checkdb` reports and why each change is shaped the way it is.
 
-### Subscribing and unsubscribing are atomic
-
-Both used to be several redis commands with uniqush deciding in between:
-`SADD` and then `INCR` if the device was new; `SREM`, `DECR`, and two `DEL`s
-if the count reached zero. Each is one redis script now, which runs to
-completion on the server or not at all.
-
-The per-device reference count is no longer written. It could only ever be 0
-or 1 -- a delivery point's name hashes its service and subscriber along with
-the device token, so the record belongs to exactly one subscription -- and the
-count is what the second and third commands of each path existed to maintain.
-
-Nothing to do before or after upgrading. Existing `delivery.point.counter:`
-keys are read by nothing and are harmless; `/checkdb` now lists every one of
-them as `leaked_counter`, so they can be found and deleted in one pass if you
-want the space back. A database that has only ever been written by this
-release has none.
-
-`/checkdb` also learns `unreferenced_delivery_point`: a device record that its
-own subscriber's set does not name. A `/subscribe` writes the record first, so
-an interruption between the two writes leaves one behind, and nothing else
-would ever meet it again -- every read starts from the subscriber's set.
-Re-subscribing that device adopts the record; otherwise it is safe to delete.
-
-**Downgrading** to 2.8.0 works without repairing anything. It will find the
-counters missing, read that as one subscriber, and treat every unsubscribe as
-the last reference -- which is the correct outcome, since it always was.
-
-### Run `/rebuildsubscriberindex` once
-
-Every subscribe now also records the subscriber in `srv-2-sub:<service>`, a
-sorted set scored by the time of that subscribe, and the device in
-`srv.type-2-dp:<service>:<pushservicetype>`. Between them these make a wildcard
-`/push` cost the size of the service rather than the size of the database, and
-make [`/stats`](api.md#stats) a handful of counting commands.
-
-They start filling up the moment you install this release, but only with what
-is written from then on, so an existing database needs one call:
-
-    curl http://localhost:9898/rebuildsubscriberindex
-
-It walks the subscriber sets, which are the source of truth, and builds both
-indexes from them. Idempotent, and safe against a live server: each service's
-index is built under a name of its own and renamed over the live one, so a
-concurrent push sees the old index or the new one. Run `/checkdb` afterwards --
-a subscription made during the walk can, rarely, be missed, and `/checkdb`
-names it. A database created by this release is marked as indexed the first
-time uniqush opens it, and needs nothing.
-
-**Nothing breaks if you skip it.** Until it runs:
-
-- A wildcard `/push` reaches exactly the same subscribers, over the keyspace
-  scan it used before. That is slow on a large database, and it logs an error
-  naming the service, the request and this endpoint on every use. The noise is
-  deliberate: the fallback works, so nothing else would tell you.
-- `/stats` answers `UNIQUSH_ERROR_INDEX_NOT_BUILT` rather than counting. The
-  index holds only the subscribers who have re-subscribed since the upgrade,
-  and a count from it would be too low with nothing in the answer to say so.
-- `/checkdb` reports `index_not_built`, plus `missing_index_entry` and
-  `stale_index_entry` for anything the two disagree about.
-
-One thing did stop working: a `*` in a **service** name is refused rather than
-matched. Every endpoint that could reach it already rejected `*` in a service,
-except `/nrdp`, which did not validate its parameters; there was never a
-per-service index that could answer such a request, and it meant a full
-keyspace walk. Wildcards in **subscriber** names are unaffected.
-
-## For embedders
+### For embedders
 
 `http_api.HTTPPushRequestProcessor.GetClient` now returns
 `(HTTPClient, func(), error)`. The second value releases the borrow and must be
