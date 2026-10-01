@@ -1,5 +1,15 @@
 uniqush-push NEWS
 
+Unreleased
+----------
+
+Packaging:
+
+- New feature: A Docker image for linux/amd64 and linux/arm64 at `ghcr.io/uniqush/uniqush-push`, tagged with
+  each release (`:latest`, `:X.Y`, `:X.Y.Z`) and as `:edge` from master. It listens on port 9898 and expects
+  redis at the host `redis`; mount a config over `/etc/uniqush/uniqush-push.conf` to change either.
+- Bugfix: The Dockerfile builds again. It was based on CentOS 7 and `go get`, neither of which still works.
+
 23 Sep 2026, uniqush-push 2.9.0
 -------------------------------
 

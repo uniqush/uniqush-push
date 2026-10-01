@@ -1,0 +1,149 @@
+name: Docker image
+
+# Builds the uniqush-push image for linux/amd64 and linux/arm64 and publishes
+# it to ghcr.io/uniqush/uniqush-push:
+#
+#   push to master       -> :edge and :sha-<short sha>
+#   published release    -> :<version>, :<major>.<minor> and, unless it is a
+#                           prerelease, :latest
+#   workflow_dispatch    -> :<version> and :<major>.<minor> for an existing tag,
+#                           to (re)publish it. Never moves :latest.
+#   pull request         -> built and smoke-tested, not published
+#
+# As in release.yml, a tag's source is built with the Dockerfile from master, so
+# tags that predate this Dockerfile can still be published.
+#
+# The first publish creates the package as private. Make it public once, under
+# the package's settings on github.com/orgs/uniqush/packages.
+on:
+  push:
+    branches: [master]
+  pull_request:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Tag to build and publish, e.g. 2.9.0"
+        required: true
+
+permissions:
+  contents: read
+  packages: write
+
+concurrency:
+  group: docker-${{ github.ref }}-${{ inputs.tag || github.event.release.tag_name || '' }}
+  # A newer master push supersedes an older one, which would otherwise race it
+  # to :edge. Releases run to completion.
+  cancel-in-progress: ${{ github.event_name == 'pull_request' || github.event_name == 'push' }}
+
+env:
+  IMAGE: ghcr.io/${{ github.repository }}
+
+jobs:
+  image:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Resolve what is being built
+        id: vars
+        run: |
+          TAG="${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.event.release.tag_name }}"
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          echo "version=${TAG#v}" >> "$GITHUB_OUTPUT"
+          if [ -n "$TAG" ]; then
+            echo "dockerfile=tooling/Dockerfile" >> "$GITHUB_OUTPUT"
+          else
+            echo "dockerfile=src/Dockerfile" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Check out the source being built
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ steps.vars.outputs.tag || github.sha }}
+          path: src
+
+      - name: Check out the Dockerfile from master
+        if: steps.vars.outputs.tag != ''
+        uses: actions/checkout@v4
+        with:
+          ref: master
+          path: tooling
+
+      - uses: docker/setup-buildx-action@v4
+
+      # Built once for the runner's own platform and loaded, so it can be run
+      # before anything is published. The multi-platform build below reuses its
+      # layers from the cache.
+      - name: Build for the smoke test
+        uses: docker/build-push-action@v7
+        with:
+          context: src
+          file: ${{ steps.vars.outputs.dockerfile }}
+          load: true
+          tags: uniqush-push:smoke
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      # uniqush refuses to start without redis, so this proves the image's
+      # config, binary and redis client all work together, not just that the
+      # binary exists.
+      - name: Smoke test
+        env:
+          VERSION: ${{ steps.vars.outputs.version }}
+        run: |
+          set -eu
+          trap '[ $? -eq 0 ] || docker logs uniqush || true' EXIT
+          if [ -n "$VERSION" ]; then
+            got="$(docker run --rm uniqush-push:smoke --version)"
+            if [ "$got" != "uniqush-push $VERSION" ]; then
+              echo "::error::Tag $VERSION builds a binary reporting \"$got\". Bump uniqushPushVersion in main.go."
+              exit 1
+            fi
+          fi
+          docker network create smoke
+          docker run -d --name redis --network smoke redis:7
+          docker run -d --name uniqush --network smoke -p 9898:9898 uniqush-push:smoke
+          for _ in $(seq 30); do
+            if curl -sf localhost:9898/health | tee /dev/stderr | grep -q '"database":"ok"'; then
+              exit 0
+            fi
+            sleep 1
+          done
+          echo "::error::uniqush did not report a healthy database within 30s"
+          exit 1
+
+      - name: Log in to ghcr.io
+        if: github.event_name != 'pull_request'
+        uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Image tags and labels
+        id: meta
+        uses: docker/metadata-action@v6
+        with:
+          images: ${{ env.IMAGE }}
+          flavor: latest=false
+          tags: |
+            type=edge,branch=master,enable=${{ github.event_name == 'push' }}
+            type=sha,enable=${{ github.event_name == 'push' }}
+            type=semver,pattern={{version}},value=${{ steps.vars.outputs.tag }},enable=${{ steps.vars.outputs.tag != '' }}
+            type=semver,pattern={{major}}.{{minor}},value=${{ steps.vars.outputs.tag }},enable=${{ steps.vars.outputs.tag != '' }}
+            type=raw,value=latest,enable=${{ github.event_name == 'release' && !github.event.release.prerelease }}
+          labels: |
+            org.opencontainers.image.title=uniqush-push
+            org.opencontainers.image.description=A free and open source unified push service
+
+      - name: Build and publish
+        uses: docker/build-push-action@v7
+        with:
+          context: src
+          file: ${{ steps.vars.outputs.dockerfile }}
+          platforms: linux/amd64,linux/arm64
+          push: ${{ github.event_name != 'pull_request' }}
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
