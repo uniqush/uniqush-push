@@ -33,8 +33,8 @@ jobs:
         with:
           # Must stay >= the `go` directive in go.mod. check-latest picks up
           # stdlib security patches, several of which govulncheck flags on
-          # older 1.25.x.
-          go-version: '1.25'
+          # older patch releases.
+          go-version: '1.27'
           check-latest: true
 
       - name: Build
@@ -59,7 +59,7 @@ jobs:
 
       - uses: actions/setup-go@v5
         with:
-          go-version: '1.25'
+          go-version: '1.27'
           check-latest: true
 
       # This is how the x/net situation was found in the first place, so keep it
@@ -82,8 +82,8 @@ jobs:
         with:
           # Must stay >= the `go` directive in go.mod. check-latest picks up
           # stdlib security patches, several of which govulncheck flags on
-          # older 1.25.x.
-          go-version: '1.25'
+          # older patch releases.
+          go-version: '1.27'
           check-latest: true
 
       # Action v6 and earlier are pinned to golangci-lint v1, which cannot read
@@ -97,5 +97,5 @@ jobs:
       # see the whole backlog.
       - uses: golangci/golangci-lint-action@v9
         with:
-          version: v2.12.2
+          version: v2.14.0
           args: --new-from-merge-base=origin/${{ github.base_ref || 'master' }}

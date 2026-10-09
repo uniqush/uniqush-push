@@ -57,7 +57,7 @@ server side, you can send push notifications to any supported mobile platform.
 > - **UnifiedPush / Web Push — new, and the one backend with no vendor
 >   dependency.** See below.
 >
-> Building requires **Go 1.25 or newer**. If you are upgrading,
+> Building requires **Go 1.26 or newer**. If you are upgrading,
 > [docs/upgrading.md](docs/upgrading.md) walks through what changes and what
 > needs action, release by release.
 
@@ -70,7 +70,7 @@ server side, you can send push notifications to any supported mobile platform.
 
 ## Building and running ##
 
-`uniqush-push` is a single binary. Building it needs Go 1.25 or newer; running
+`uniqush-push` is a single binary. Building it needs Go 1.26 or newer; running
 it needs a [Redis](https://redis.io) server.
 
 ```

@@ -10,7 +10,7 @@ to check the backend still works after a change.
 
 ## Run it
 
-You need Go 1.25+, a redis server, and uniqush-push running.
+You need Go 1.26+, a redis server, and uniqush-push running.
 
 ```sh
 # from the repository root
