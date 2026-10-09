@@ -3,6 +3,12 @@ uniqush-push NEWS
 Unreleased
 ----------
 
+Security:
+
+- Bugfix: Updated golang.org/x/net to v0.60.0 for five HTTP/2 vulnerabilities (GO-2026-6603, -6610, -6611, -6612,
+  -6617), and build releases and the Docker image with Go 1.27, since Go 1.25 no longer gets security fixes.
+  Building now requires Go 1.26 or newer (was 1.25).
+
 Packaging:
 
 - New feature: A Docker image for linux/amd64 and linux/arm64 at `ghcr.io/uniqush/uniqush-push`, tagged with

@@ -56,7 +56,7 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           # Must stay >= the `go` directive in go.mod, same as ci.yml.
-          go-version: '1.25'
+          go-version: '1.27'
           check-latest: true
 
       - name: Build uniqush-push

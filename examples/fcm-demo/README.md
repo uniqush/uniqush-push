@@ -76,7 +76,7 @@ $EDITOR fcm-demo.json
 
 ## Run it
 
-You need Go 1.25+ and a redis server.
+You need Go 1.26+ and a redis server.
 
 ```sh
 # 1. redis
