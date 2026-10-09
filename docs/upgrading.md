@@ -22,8 +22,8 @@ longer version for operators, and points at the documents that go deeper still.
 - A handful of responses change shape; if you call `/psps` or `/subscriptions`,
   or send the APNs keys `mutable-content`, `category`, `thread-id` or
   `target-content-id` on `/push`, read [What callers see](#what-callers-see).
-- No device has to re-subscribe, no configuration change is required, and Go
-  1.25 still builds it.
+- No device has to re-subscribe and no configuration change is required.
+  Building 2.9.1 needs Go 1.26 or newer; 2.9.0 still builds with 1.25.
 
 ### Run `/rebuildsubscriberindex` once
 

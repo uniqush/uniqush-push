@@ -1,7 +1,7 @@
 uniqush-push NEWS
 
-Unreleased
-----------
+08 Oct 2026, uniqush-push 2.9.1
+-------------------------------
 
 Security:
 
