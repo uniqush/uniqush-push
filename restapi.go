@@ -94,6 +94,8 @@ const (
 	// read-only, repairs nothing, walks the keyspace with SCAN rather than KEYS
 	// and takes no lock, so it is safe to run against production.
 	CheckDatabaseURL = "/checkdb"
+	// MetricsURL reports counters and gauges in the Prometheus text format.
+	MetricsURL = "/metrics"
 )
 
 // maxLoggedProblems bounds the per-finding lines one /checkdb writes to the log.
@@ -903,8 +905,13 @@ func parseKV(form url.Values) (kv map[string]string, perdp map[string][]string) 
 func (api *RestAPI) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	defer r.Body.Close()
 	remoteAddr := r.RemoteAddr
+	api.backend.metrics.countRequest(r.URL.Path)
 
 	switch r.URL.Path {
+	case MetricsURL:
+		w.Header().Set("Content-Type", "text/plain; version=0.0.4; charset=utf-8")
+		api.writeMetrics(w)
+		return
 	case QuerySubscriptionsURL:
 		r.ParseForm()
 		n := api.querySubscriptions(r.Form, api.loggers[LoggerSubscriptions])
@@ -925,7 +932,7 @@ func (api *RestAPI) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	case HealthURL:
 		body, status := api.health(api.loggers[LoggerWeb])
-		// The only handler here that sets either of these. A health check is
+		// The only handler here that sets a status. A health check is
 		// read by machines: the status code is the answer, and the content type
 		// says how to read the rest.
 		w.Header().Set("Content-Type", "application/json")
@@ -1024,6 +1031,7 @@ func (api *RestAPI) Run(addr string, stopChan chan<- bool) {
 	http.Handle(RebuildSubscriberIndexURL, api)
 	http.Handle(HealthURL, api)
 	http.Handle(CheckDatabaseURL, api)
+	http.Handle(MetricsURL, api)
 
 	api.stopChan = stopChan
 	err := http.ListenAndServe(addr, nil)

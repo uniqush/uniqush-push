@@ -43,6 +43,7 @@ it behind something that authenticates.
 | [`/unsubscribe`](#unsubscribe) | Remove a device |
 | [`/subscriptions`](#subscriptions) | List a subscriber's devices |
 | [`/health`](#health) | Report whether this instance can serve, as an HTTP status code |
+| [`/metrics`](#metrics) | Counters and gauges for Prometheus |
 | [`/nrdp`](#nrdp) | Count a subscriber's devices |
 | [`/stats`](#stats) | Count each service's subscribers and devices |
 | [`/push`](#push) | Send a notification |
@@ -287,6 +288,32 @@ Point a *readiness* probe at this. A liveness probe should not be pointed at
 anything that depends on another service: during a redis outage it would
 restart every uniqush repeatedly, which neither fixes redis nor helps the
 queue drain when it comes back.
+
+### `/metrics`
+
+No parameters. Answers in the Prometheus text format, for a scraper:
+
+| Metric | Labels | |
+|---|---|---|
+| `uniqush_push_results_total` | `service`, `push_service_type`, `result` | Counter. One per result a push service reports: usually one per device per attempt, but once per push for a failure that applies to the whole provider. `success`, `retry` (including the attempt that is then abandoned), `device_removed` (the push service said the device is gone, and it was unsubscribed), `updated` (the push service changed a provider's stored credentials, as ADM does when it refreshes its access token) or `error`. |
+| `uniqush_push_retries_abandoned_total` | `service`, `push_service_type` | Counter. Notifications dropped for a device after retrying for as long as allowed. |
+| `uniqush_http_requests_total` | `path` | Counter. Requests to each endpoint. |
+| `uniqush_database_up` | | `1` if redis answered a ping during the scrape, `0` if not. |
+| `uniqush_subscribers` | `service` | The `subscribers` count from [`/stats`](#stats). |
+| `uniqush_delivery_points` | `service`, `push_service_type` | The `delivery_points` counts from [`/stats`](#stats). |
+| `uniqush_build_info` | `version` | Always `1`. |
+| `go_goroutines` | | Goroutines in the process. A count that only grows means connections are piling up. |
+
+APNs is reported as `success` once a request is sent, before Apple answers, as
+`/push` reports it. An answer that the device is gone arrives afterwards and is
+counted as `device_removed` as well.
+
+Counters start from zero when uniqush starts. The two subscriber gauges are
+read from redis on every scrape, costing what a `/stats` call does, and are
+left out while redis is unreachable or the subscriber index is not built.
+Redis gets two seconds: if it has not answered by then, `uniqush_database_up`
+is `0` and the scrape returns without the gauges, so the counters are still
+recorded while redis is struggling.
 
 ### `/nrdp`
 

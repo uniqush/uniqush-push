@@ -34,6 +34,7 @@ type PushBackEnd struct {
 	db      db.PushDatabase
 	loggers []log.Logger
 	errChan chan push.Error
+	metrics *metrics
 }
 
 // Finalize will save all subscriptions (and perform other cleanup) as part of the push service shutting down.
@@ -52,6 +53,7 @@ func NewPushBackEnd(psm *push.PushServiceManager, database db.PushDatabase, logg
 	ret.db = database
 	ret.loggers = loggers
 	ret.errChan = make(chan push.Error)
+	ret.metrics = newMetrics()
 	go ret.processError()
 	psm.SetErrorReportChan(ret.errChan)
 	return ret
@@ -98,6 +100,11 @@ func (backend *PushBackEnd) UnsubscribeAll(service, sub string) (int, error) {
 
 func (backend *PushBackEnd) processError() {
 	for err := range backend.errChan {
+		// Only errors about a device are push results; the rest are notices,
+		// such as APNs reporting that uniqush.http2=0 no longer does anything.
+		if dp := push.DestinationOf(err); dp != nil {
+			backend.metrics.countPushResult(pushTypeOf(dp.FixedData[push.Service], nil, dp), err)
+		}
 		rid := randomUniqID()
 		nullHandler := &NullAPIResponseHandler{}
 		e := backend.fixError(rid, "", err, backend.loggers[LoggerPush], 0*time.Second, nullHandler)
@@ -251,6 +258,7 @@ func (backend *PushBackEnd) fixRetryError(
 	}
 
 	if after > ceiling {
+		backend.metrics.countRetryDropped(pushTypeOf(service, err.Provider, err.Destination))
 		logger.Errorf("RequestID=%v Service=%v Subscriber=%v PushServiceProvider=%v DeliveryPoint=%v Failed after retry: %q", reqID, service, sub, providerName, destinationName, reason)
 		handler.AddDetailsToHandler(APIResponseDetails{RequestID: &reqID, From: &remoteAddr, Service: &service, Subscriber: &sub, PushServiceProvider: &providerName, DeliveryPoint: &destinationName, Code: UNIQUSH_ERROR_FAILED_RETRY})
 		return
@@ -423,6 +431,7 @@ func (backend *PushBackEnd) collectResult(
 		if res.Destination == nil {
 			res.Destination = push.DestinationOf(res.Err)
 		}
+		backend.metrics.countPushResult(pushTypeOf(service, res.Provider, res.Destination), res.Err)
 		var sub string
 		ok := false
 		if res.Destination != nil {
