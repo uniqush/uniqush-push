@@ -442,8 +442,9 @@ func (adm *admPushService) Push(psp *push.PushServiceProvider, dpQueue <-chan *p
 	data, err := adm.notifToJSON(notif)
 
 	if err != nil {
-		res.Err = err
-		resQueue <- res
+		// A new Result: res may already have been sent for the token refresh,
+		// and its reader still holds it.
+		resQueue <- &push.Result{Content: notif, Provider: res.Provider, Err: err}
 		return
 	}
 	// TODO: Use unescaped JSON, and check the 6KB limit before a push? Can't test these out without a kindle.
