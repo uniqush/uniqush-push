@@ -21,6 +21,10 @@ on:
       - "docs/upgrading.md"
       - "NEWS.md"
 
+# The dispatch authenticates with WWW_DISPATCH_TOKEN, so GITHUB_TOKEN needs
+# nothing.
+permissions: {}
+
 jobs:
   notify:
     runs-on: ubuntu-latest
