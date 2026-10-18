@@ -500,14 +500,14 @@ func buildRedisSlaveClient(c *DatabaseConfig) (*redis.Client, error) {
 		return nil, errors.New("Missing redis slave host or port")
 	}
 
-	db, err := strconv.ParseInt(name, 10, 64)
+	db, err := strconv.Atoi(name)
 	if err != nil {
 		db = 0
 	}
 	ret := redis.NewClient(&redis.Options{
 		Addr:     fmt.Sprintf("%s:%d", host, port),
 		Password: c.Password,
-		DB:       int(db),
+		DB:       db,
 		Protocol: 2, // see buildRedisClient
 	})
 	return ret, nil
@@ -532,14 +532,14 @@ func buildRedisClient(c *DatabaseConfig) (redisClient, error) {
 		c.Name = "0"
 	}
 
-	db, err := strconv.ParseInt(c.Name, 10, 64)
+	db, err := strconv.Atoi(c.Name)
 	if err != nil {
 		db = 0
 	}
 	client := redis.NewClient(&redis.Options{
 		Addr:     fmt.Sprintf("%s:%d", c.Host, c.Port),
 		Password: c.Password,
-		DB:       int(db),
+		DB:       db,
 		// go-redis v9 negotiates RESP3 by default. None of the commands used
 		// here decode differently under RESP3, but pinning RESP2 keeps this
 		// upgrade to one variable: if something breaks, it is the context
