@@ -378,19 +378,9 @@ force.
 
 ## Contributing ##
 
-You're encouraged to contribute to the `uniqush-push` project. There are two ways you can contribute.
-
-### Issues ###
-
-If you encounter an issue while using `uniqush-push`, please report it at the project's [issues tracker](https://github.com/uniqush/uniqush-push/issues). Feature suggestions are also welcome.
-
-### Pull request ###
-
-Code contributions to `uniqush-push` can be made using pull requests. To submit a pull request:
-
-1. Fork this project.
-2. Make and commit your changes.
-3. Submit your changes as a pull request.
+Issues and pull requests are welcome; [CONTRIBUTING.md](CONTRIBUTING.md) says
+how to build, test and submit a change. Report security problems privately, as
+[SECURITY.md](SECURITY.md) describes.
 
 ## Related Links ##
 - [This story](http://uniqush.org/documentation/intro.html) may help you to understand
