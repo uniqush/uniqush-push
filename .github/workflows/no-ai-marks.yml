@@ -1,0 +1,23 @@
+name: no-ai-marks
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+    # "edited" re-checks the title and description after they change.
+    types: [opened, edited, reopened, synchronize]
+
+permissions:
+  contents: read
+
+jobs:
+  no-ai-marks:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # The commit range needs history.
+          fetch-depth: 0
+          persist-credentials: false
+
+      - uses: mishan/no-ai-marks@v0

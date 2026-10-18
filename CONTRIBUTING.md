@@ -43,6 +43,24 @@ Open them against `master`, one change per pull request.
 AI contributions are welcome. As with any contribution, they should be well
 tested and every change justified.
 
+Pull requests are also checked by
+[no-ai-marks](https://github.com/mishan/no-ai-marks), which fails on the
+attribution AI tools add by default: `Co-authored-by` trailers naming a tool
+or model, "Generated with" footers, links to AI sessions, the robot emoji,
+branch names such as `claude/fix-push`, and hidden or look-alike Unicode
+characters. It reads commit messages, the pull request title and description,
+the branch name, and the lines your change adds.
+
+It doesn't judge how a change was written, only what it carries, so an
+AI-assisted change passes once those lines are left out. `Co-authored-by` for
+a person is fine. To check before you push:
+
+```
+pipx run no-ai-marks range origin/master
+```
+
+If the pull request description is what failed, editing it re-runs the check.
+
 ## License
 
 uniqush-push is under the [Apache 2.0 License](LICENSE), and contributions are
