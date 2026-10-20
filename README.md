@@ -365,10 +365,11 @@ force.
 
 - Q: Is it a library, then? Do I need to write Go?
 - A: No. It is a daemon with a REST API over plain HTTP, so any language with
-  an HTTP client can drive it — `curl` is enough to try it. Go is needed to
-  *build* it, since there are no prebuilt binaries for the current version; the
-  downloads on uniqush.org stop at 2.6.1, which can no longer deliver to APNs
-  or FCM at all.
+  an HTTP client can drive it — `curl` is enough to try it. You don't need Go
+  to run it either: each [release](https://github.com/uniqush/uniqush-push/releases)
+  ships a .deb, an .rpm and a tarball, and the Docker image is on ghcr.io (see
+  [Quickstart with Docker](#quickstart-with-docker)). Go is only needed to build
+  from source.
 
 - Q: Where is the API documented?
 - A: [docs/api.md](docs/api.md) is the reference: every endpoint, the
