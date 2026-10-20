@@ -52,7 +52,7 @@ func TestMetricsReportPushResultsRequestsAndSubscribers(t *testing.T) {
 	// Already past the one-minute ceiling, so this is abandoned, not retried.
 	results <- &push.Result{Provider: psp, Destination: dp, Err: push.NewRetryError(psp, dp, push.NewEmptyNotification(), 0)}
 	close(results)
-	backend.collectResult("rid", "addr", "svc", results, backend.loggers[LoggerPush], 2*time.Minute, &NullAPIResponseHandler{})
+	backend.collectResult("rid", "addr", "svc", nil, "", results, backend.loggers[LoggerPush], 2*time.Minute, &NullAPIResponseHandler{})
 
 	// Reported after the push answered, as APNs does. A notice about no device
 	// is not a push result. The last send returns once the one before it has

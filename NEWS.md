@@ -24,6 +24,9 @@ REST API:
 - Bugfix: A device whose first attempt is being retried is in the `/push` response's `failureDetails`, and counted
   in `failureCount`, with the new code `UNIQUSH_PUSH_RETRYING` and the push service's answer in `errorMsg`. It used to
   be left out, so a push whose only device was retrying answered with an empty response.
+- Bugfix: A push refused before any device is tried, for a bad `ttl`, `msggroup`, `uniqush.urgency` or an oversized
+  payload, names the request's subscribers in `failureDetails`, and the device when the push named exactly one
+  `delivery_point_id`, rather than an empty `subscriber` and `Unknown`. The log line names them too.
 
 APNs:
 

@@ -439,7 +439,9 @@ Names beginning with `uniqush.` are reserved. A push with no content at all is
 rejected with `UNIQUSH_ERROR_EMPTY_NOTIFICATION`. A parameter with an invalid
 value fails the push to that backend's devices without sending anything, and
 the `failureDetails` say why in `errorMsg`, naming the parameter and value. APNs payloads are capped at
-4096 bytes (5120 for VoIP); FCM's own limit is 4096 bytes of data.
+4096 bytes (5120 for VoIP); FCM's own limit is 4096 bytes of data. Such a failure is one entry per backend, not
+per device: its `subscriber` is the request's `subscriber` list as given, and its `deliveryPoint` is the
+`delivery_point_id` when exactly one was given, and `Unknown` otherwise.
 
     curl http://localhost:9898/push -d service=myservice -d subscriber=alice,bob -d msg="Hello" -d badge=1
     curl http://localhost:9898/push -d service=myservice -d subscriber=alice \
