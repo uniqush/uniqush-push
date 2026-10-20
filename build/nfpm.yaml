@@ -1,7 +1,7 @@
 # nfpm (https://nfpm.goreleaser.com) config for uniqush-push's .deb and .rpm
-# packages. build-uniqush-push.sh sets VERSION, ARCH and LICENSE and cds
-# into the staging root (the package's file tree, rooted at /) before
-# running `nfpm package -f nfpm.yaml`.
+# packages. The release workflow (.github/workflows/release.yml) sets VERSION
+# and ARCH and cds into the staging root (the package's file tree, rooted at /)
+# before running `nfpm package -f nfpm.yaml`.
 #
 # ARCH is fed uname -m's output (e.g. x86_64); nfpm maps that to each
 # packager's own architecture name (amd64 for deb, x86_64 for rpm) --

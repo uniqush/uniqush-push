@@ -66,6 +66,8 @@ Packaging:
   as a secret owned by the image's user with mode 0400, and a mounted config sets `token_file` to it.
 - Bugfix: The .deb and .rpm mark `/etc/uniqush/uniqush-push.conf` as a config file, so upgrading keeps a changed
   one, `token_file` included, instead of overwriting it with the stock config.
+- Change: `build/build-uniqush-push.sh` is gone. It cloned over SSH and used `go get`, and the release workflow
+  builds the packages without it.
 
 
 20 Oct 2026, uniqush-push 2.10.0
