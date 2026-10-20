@@ -21,6 +21,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"maps"
 	"strconv"
 	"strings"
 	"sync/atomic"
@@ -120,6 +121,7 @@ type redisClient interface {
 	// XRead reads the removal log; it is always called with a negative Block,
 	// so it never waits.
 	XRead(ctx context.Context, a *redis.XReadArgs) *redis.XStreamSliceCmd
+	XRevRangeN(ctx context.Context, stream, start, stop string, count int64) *redis.XMessageSliceCmd
 }
 
 type redisMultiClient struct {
@@ -267,6 +269,10 @@ func (mc *redisMultiClient) XRead(ctx context.Context, a *redis.XReadArgs) *redi
 	return mc.slaveClient.XRead(ctx, a)
 }
 
+func (mc *redisMultiClient) XRevRangeN(ctx context.Context, stream, start, stop string, count int64) *redis.XMessageSliceCmd {
+	return mc.slaveClient.XRevRangeN(ctx, stream, start, stop, count)
+}
+
 var _ redisClient = &redis.Client{}
 var _ pushRawDatabase = &PushRedisDB{}
 
@@ -383,6 +389,58 @@ if redis.call('SCARD', KEYS[1]) == 0 then
 end
 return removed`)
 )
+
+// removeUnchangedScript removes a delivery point the way an unsubscribe does,
+// and also deletes its record and provider binding -- but only if the record
+// still holds ARGV[3]. It returns 1 if it removed it and 0 if not.
+//
+// KEYS are subscriptionIndexKeys, then the record and the binding. The check
+// and the removal are one script so that a device re-subscribing between them
+// keeps its new subscription.
+var removeUnchangedScript = redis.NewScript(`
+if redis.call('GET', KEYS[4]) ~= ARGV[3] then
+  return 0
+end
+redis.call('DEL', KEYS[4], KEYS[5])
+if redis.call('SREM', KEYS[1], ARGV[1]) == 1 then
+  redis.call('SREM', KEYS[3], ARGV[1])
+end
+if redis.call('SCARD', KEYS[1]) == 0 then
+  redis.call('ZREM', KEYS[2], ARGV[2])
+end
+return 1`)
+
+// RemoveDeliveryPointIfUnchanged removes a subscriber's delivery point if its
+// record still says what dp says, and reports whether it did.
+//
+// For a removal a push service asked for. The name hashes only the device's
+// address, so the same address re-subscribed with a new devid or new keys after
+// the push read it has the same name, and removing that would delete a live
+// subscription.
+func (r *PushRedisDB) RemoveDeliveryPointIfUnchanged(srv, sub string, dp *push.DeliveryPoint) (bool, error) {
+	name := dp.Name()
+	raw, err := r.client.Get(r.ctx, DeliveryPointPrefix+name).Result()
+	if errors.Is(err, redis.Nil) {
+		return false, nil
+	}
+	if err != nil {
+		return false, fmt.Errorf("reading delivery point %q failed: %w", name, err)
+	}
+	current, err := r.keyValueToDeliveryPoint([]byte(raw))
+	if err != nil {
+		return false, fmt.Errorf("delivery point %q is unreadable: %w", name, err)
+	}
+	if !maps.Equal(current.FixedData, dp.FixedData) || !maps.Equal(current.VolatileData, dp.VolatileData) {
+		return false, nil
+	}
+	keys := append(subscriptionIndexKeys(srv, sub, name),
+		DeliveryPointPrefix+name, ServiceDeliveryPointToPushServiceProviderPrefix+srv+":"+name)
+	removed, err := removeUnchangedScript.Run(r.ctx, r.client, keys, name, sub, raw).Int()
+	if err != nil {
+		return false, fmt.Errorf("removing delivery point %q failed: %w", name, err)
+	}
+	return removed == 1, nil
+}
 
 // subscriptionIndexKeys are the keys both scripts take, for one subscription.
 //

@@ -144,6 +144,9 @@ func (d *recordingDatabase) SubscriberStats(services []string, since *int64) (ma
 	return d.stats, d.statsErr
 }
 func (d *recordingDatabase) FlushCache() error { return nil }
+func (d *recordingDatabase) RemoveDeliveryPointIfUnchanged(string, string, *push.DeliveryPoint) (bool, error) {
+	return false, nil
+}
 func (d *recordingDatabase) RecordRemovedDeliveryPoint(db.RemovedDeliveryPoint) error {
 	return nil
 }

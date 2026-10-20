@@ -5,6 +5,7 @@ import (
 	"crypto/rand"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -52,6 +53,7 @@ func setUpRemovalTest(t *testing.T) (*PushBackEnd, *RestAPI) {
 		t.Fatal(err)
 	}
 	psm.SetConfigFile(config)
+	t.Cleanup(func() { psm.SetConfigFile(nil) })
 	common.SetAllowNonAppleEndpoints(true)
 	t.Cleanup(func() { common.SetAllowNonAppleEndpoints(false) })
 
@@ -110,9 +112,12 @@ func addRemovalProvider(t *testing.T, backend *PushBackEnd, pspKV map[string]str
 	return psp
 }
 
+// subscribeForRemoval also adds the provider, unless pspKV is nil.
 func subscribeForRemoval(t *testing.T, backend *PushBackEnd, pspKV, dpKV map[string]string) *push.DeliveryPoint {
 	t.Helper()
-	addRemovalProvider(t, backend, pspKV)
+	if pspKV != nil {
+		addRemovalProvider(t, backend, pspKV)
+	}
 	dp, err := push.GetPushServiceManager().BuildDeliveryPointFromMap(dpKV)
 	if err != nil {
 		t.Fatalf("Could not build the delivery point: %v", err)
@@ -396,5 +401,133 @@ func TestPushByDeliveryPointIDStaysWithinTheNamedSubscribers(t *testing.T) {
 	defer mutex.Unlock()
 	if len(pushed) != 0 {
 		t.Errorf("Expected nothing to be pushed, the push server saw %v", pushed)
+	}
+}
+
+// Only a removal that happened is reported as one: not one whose record had
+// already gone, nor one whose device re-subscribed after the push read it.
+func TestOnlyActualRemovalsAreReported(t *testing.T) {
+	cases := []struct {
+		name string
+		// meanwhile is what happens to the subscription between the push
+		// reading it and the push service's answer.
+		meanwhile   func(t *testing.T, backend *PushBackEnd, dpKV map[string]string, dp *push.DeliveryPoint)
+		wantRemoved bool
+		wantLeft    int // devices the subscriber has afterwards
+	}{
+		{"unchanged", func(*testing.T, *PushBackEnd, map[string]string, *push.DeliveryPoint) {}, true, 0},
+		{"already removed", func(t *testing.T, backend *PushBackEnd, _ map[string]string, dp *push.DeliveryPoint) {
+			if err := backend.Unsubscribe(dp.FixedData["service"], removalSubscriber, dp); err != nil {
+				t.Fatal(err)
+			}
+		}, false, 0},
+		{"re-subscribed with a new devid", func(t *testing.T, backend *PushBackEnd, dpKV map[string]string, _ *push.DeliveryPoint) {
+			dpKV["devid"] = "device-2"
+			subscribeForRemoval(t, backend, nil, dpKV)
+		}, false, 1},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			backend, api := setUpRemovalTest(t)
+			service := "removal_" + strings.ReplaceAll(c.name, " ", "_")
+			pspKV, dpKV := webPushFixture(t, service, "https://push.example.org/sub/1")
+			psp := addRemovalProvider(t, backend, pspKV)
+			dp := subscribeForRemoval(t, backend, nil, dpKV)
+			c.meanwhile(t, backend, dpKV, dp)
+
+			handler := &countingHandler{}
+			backend.fixUnsubscribeUpdate(push.NewUnsubscribeUpdate(psp, dp), "removal-request", "127.0.0.1", silentLoggers()[0], handler)
+
+			if len(handler.details) != 1 {
+				t.Fatalf("Expected one result, got %+v", handler.details)
+			}
+			detail := handler.details[0]
+			if (detail.Removed != nil) != c.wantRemoved || (detail.ErrorMsg == nil) != c.wantRemoved {
+				t.Errorf("Expected removed=%v with an errorMsg only if not, got %+v", c.wantRemoved, detail)
+			}
+			wantLogged := 0
+			if c.wantRemoved {
+				wantLogged = 1
+			}
+			if logged := getRemoved(t, api, "service="+service); len(logged.Removed) != wantLogged {
+				t.Errorf("Expected %d entries in /removed, got %+v", wantLogged, logged)
+			}
+			if left := backend.NumberOfDeliveryPoints(service, removalSubscriber, silentLoggers()[0]); left != c.wantLeft {
+				t.Errorf("Expected %d devices left, got %d", c.wantLeft, left)
+			}
+		})
+	}
+}
+
+// failingLookupDatabase cannot read one subscriber's devices.
+type failingLookupDatabase struct {
+	db.PushDatabase
+	failFor string
+}
+
+func (d *failingLookupDatabase) GetPushServiceProviderDeliveryPointPairs(service, subscriber string, names []string,
+	requestID string, logger log.Logger) ([]db.PushServiceProviderDeliveryPointPair, error) {
+	if subscriber == d.failFor {
+		return nil, errors.New("i/o timeout")
+	}
+	return d.PushDatabase.GetPushServiceProviderDeliveryPointPairs(service, subscriber, names, requestID, logger)
+}
+
+// When one subscriber's devices cannot be read, none of the requested ids is
+// reported not subscribed: the ones not found may belong to that subscriber.
+func TestFailedLookupReportsNothingNotSubscribed(t *testing.T) {
+	backend, _ := setUpRemovalTest(t)
+	const service = "removal_failed_lookup"
+	pspKV, dpKV := webPushFixture(t, service, webPushServer(t, http.StatusCreated).URL+"/sub/1")
+	dp := subscribeForRemoval(t, backend, pspKV, dpKV)
+	backend.db = &failingLookupDatabase{PushDatabase: backend.db, failFor: "bob"}
+
+	handler := newPushResponseHandler(silentLoggers()[0])
+	backend.Push("removal-request", "127.0.0.1", service, []string{removalSubscriber, "bob"},
+		[]string{dp.Name(), "webpush:0000000000000000000000000000000000000000"},
+		&push.Notification{Data: map[string]string{"msg": "hello"}}, nil, silentLoggers()[0], handler)
+	body := handler.ToJSON()
+	var response APIPushResponse
+	if err := json.Unmarshal(body, &response); err != nil {
+		t.Fatal(err)
+	}
+	if response.SuccessCount != 1 || response.DroppedCount != 0 || response.FailureCount != 1 ||
+		response.FailureDetails[0].Code != UNIQUSH_ERROR_DATABASE {
+		t.Errorf("Expected alice pushed, bob's lookup failed and nothing reported not subscribed, got %s", body)
+	}
+}
+
+func TestRemovedPagesWithLimit(t *testing.T) {
+	backend, api := setUpRemovalTest(t)
+	const service = "removal_paging"
+	for _, sub := range []string{"a", "b", "c"} {
+		if err := backend.db.RecordRemovedDeliveryPoint(db.RemovedDeliveryPoint{Service: service, Subscriber: sub}); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	var subscribers []string
+	page := getRemoved(t, api, "service="+service+"&limit=2")
+	for _, entry := range page.Removed {
+		subscribers = append(subscribers, entry.Subscriber)
+	}
+	if len(page.Removed) != 2 || page.Next != page.Removed[1].ID {
+		t.Fatalf("Expected a first page of two ending at next, got %+v", page)
+	}
+	page = getRemoved(t, api, "service="+service+"&limit=2&since="+page.Next)
+	for _, entry := range page.Removed {
+		subscribers = append(subscribers, entry.Subscriber)
+	}
+	if strings.Join(subscribers, ",") != "a,b,c" {
+		t.Errorf("Expected the pages to hold a, b and c in order, got %v", subscribers)
+	}
+
+	for _, limit := range []string{"0", "-1", "ten", "1.5"} {
+		recorder := httptest.NewRecorder()
+		api.ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, QueryRemovedURL+"?service="+service+"&limit="+limit, nil))
+		var response removedResponse
+		if err := json.Unmarshal(recorder.Body.Bytes(), &response); err != nil || response.Code != UNIQUSH_ERROR_GENERIC {
+			t.Errorf("Expected limit=%s to be refused with UNIQUSH_ERROR_GENERIC, got %s", limit, recorder.Body.String())
+		}
 	}
 }

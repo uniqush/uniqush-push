@@ -145,6 +145,11 @@ type PushDatabase interface {
 	// that covers only part of the database.
 	SubscriberStats(services []string, since *int64) (map[string]*ServiceStats, error)
 
+	// RemoveDeliveryPointIfUnchanged removes a delivery point a push service
+	// reported gone, only if its stored record still matches dp, and reports
+	// whether it removed it.
+	RemoveDeliveryPointIfUnchanged(service, subscriber string, dp *push.DeliveryPoint) (bool, error)
+
 	// RecordRemovedDeliveryPoint appends to the service's log of delivery
 	// points removed because their push service said the device was gone.
 	RecordRemovedDeliveryPoint(removed RemovedDeliveryPoint) error
@@ -502,6 +507,11 @@ func (f *pushDatabaseOpts) collectDeliveryPointPairs(service string, subscriber 
 				return nil, nil, fmt.Errorf("failed to get delivery point info for %s: %v", dpName, e0)
 			}
 			if dp == nil {
+				// An empty record. Reported for a requested one, which would
+				// otherwise read to /push as not subscribed.
+				if dpNamesSubset[dpName] {
+					return nil, nil, fmt.Errorf("delivery point %s has an empty record", dpName)
+				}
 				continue
 			}
 
@@ -872,6 +882,12 @@ func (f *pushDatabaseOpts) SubscriberStats(services []string, since *int64) (map
 	f.dblock.RLock()
 	defer f.dblock.RUnlock()
 	return f.db.SubscriberStats(services, since)
+}
+
+func (f *pushDatabaseOpts) RemoveDeliveryPointIfUnchanged(service, subscriber string, dp *push.DeliveryPoint) (bool, error) {
+	f.dblock.Lock()
+	defer f.dblock.Unlock()
+	return f.db.RemoveDeliveryPointIfUnchanged(service, subscriber, dp)
 }
 
 // The removal log takes no lock: it shares no keys with the subscriptions

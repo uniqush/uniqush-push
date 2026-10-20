@@ -38,7 +38,8 @@ import (
 // never included.
 type RemovedDeliveryPoint struct {
 	// ID is the /removed cursor of this entry, and Time the unix time it was
-	// recorded. Both are empty in a /push response, which records nothing.
+	// recorded. Both are left out of a /push response, which is built before
+	// the entry is recorded.
 	ID              string `json:"id,omitempty"`
 	Time            int64  `json:"time,omitempty"`
 	Service         string `json:"service"`
@@ -121,6 +122,23 @@ func (r *PushRedisDB) RemovedDeliveryPoints(service, after string, count int64) 
 	if err != nil {
 		return nil, false, err
 	}
+	// A cursor past the newest entry would otherwise be answered with nothing,
+	// and with itself as the next cursor, for as long as it stays ahead.
+	newest, err := r.client.XRevRangeN(r.ctx, RemovedPrefix+service, "+", "-", 1).Result()
+	if err != nil {
+		return nil, false, fmt.Errorf("reading the removals of %q failed: %w", service, err)
+	}
+	newestID := [2]uint64{}
+	if len(newest) > 0 {
+		if newestID, err = parseStreamID(newest[0].ID); err != nil {
+			return nil, false, err
+		}
+	}
+	if streamIDLess(newestID, cursor) {
+		return nil, false, fmt.Errorf("%w %q: it is past the newest removal of %q, so it did not come from /removed for this service",
+			ErrInvalidCursor, after, service)
+	}
+
 	// Read before the trim marker: a trim between the two then makes the answer
 	// claim a truncation that did not cost this caller anything, rather than
 	// hide one that did.
@@ -158,7 +176,11 @@ func (r *PushRedisDB) RemovedDeliveryPoints(service, after string, count int64) 
 	if err != nil {
 		return nil, false, err
 	}
-	return removed, cursor[0] < trimmedID[0] || (cursor[0] == trimmedID[0] && cursor[1] < trimmedID[1]), nil
+	return removed, streamIDLess(cursor, trimmedID), nil
+}
+
+func streamIDLess(a, b [2]uint64) bool {
+	return a[0] < b[0] || (a[0] == b[0] && a[1] < b[1])
 }
 
 // ErrInvalidCursor is a /removed cursor that is not a redis stream ID.

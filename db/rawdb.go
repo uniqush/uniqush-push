@@ -108,6 +108,7 @@ type pushRawDatabaseWriter interface { //nolint:staticcheck
 
 	FlushCache() error
 	RecordRemovedDeliveryPoint(removed RemovedDeliveryPoint) error
+	RemoveDeliveryPointIfUnchanged(srv, sub string, dp *push.DeliveryPoint) (bool, error)
 }
 
 // These methods should be fast!

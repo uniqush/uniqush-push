@@ -40,6 +40,9 @@ something to more backends:
   `removed.dp:<service>`, trimmed to the newest 100000 entries (up to a few tens of
   megabytes per service). On an older Redis the removals still happen and are still
   in the `/push` response, but each logs an error and `/removed` fails.
+- **Redis topology is unchanged:** a single server, or a primary with replicas.
+  Like the rest of uniqush, which relies on WATCH/MULTI and multi-key scripts,
+  the log does not work through twemproxy or Redis Cluster.
 
 ## Upgrading from 2.8.0
 
