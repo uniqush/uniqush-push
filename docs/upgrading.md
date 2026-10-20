@@ -4,10 +4,31 @@
 longer version for operators, and points at the documents that go deeper still.
 [api.md](api.md) is the reference for the API as it is now.
 
+- To **2.11.0**, read [Upgrading to 2.11.0](#upgrading-to-2110).
 - From **2.8.0**, read [Upgrading from 2.8.0](#upgrading-from-280).
 - From **2.7.0**, read [Upgrading from 2.7.0 to 2.8.0](#upgrading-from-270-to-280)
   first and then the 2.8.0 section. You can go straight to 2.9.0; the two
   sections do not assume you stopped at 2.8.0 in between.
+
+## Upgrading to 2.11.0
+
+Nothing to do unless you send `msggroup` or `ttl` on `/push`, which now mean
+something to more backends:
+
+- **APNs** sends `msggroup` as `apns-collapse-id`, so notifications with the
+  same group replace each other on the device. It is still also passed in the
+  payload. A `msggroup` over 64 bytes or with a control character fails the
+  push.
+- **Web Push and UnifiedPush** send `ttl` as the `TTL` header and `msggroup` as
+  the `Topic` header, and neither is copied into the generated JSON body any
+  more. A value outside what RFC 8030 allows fails the push rather than being
+  passed along: `ttl` must be whole seconds (`3600`, not `1h`), and `msggroup`
+  at most 32 characters of `A-Z`, `a-z`, `0-9`, `-` and `_` (`chat-42`, not
+  `chat:42`). A push whose only content was `ttl` or `msggroup` now fails as an
+  empty payload. uniqush does not hash or rewrite a non-conforming `msggroup`;
+  send one that fits, such as a base64url hash of your own key.
+
+`/previewpush` rejects the same values, so it can be used to check them first.
 
 ## Upgrading from 2.8.0
 
