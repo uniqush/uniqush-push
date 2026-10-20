@@ -33,7 +33,7 @@ var uniqushPushGenerateVAPIDKeysFlag = flag.Bool("generate-vapid-keys", false,
 var uniqushPushHealthcheckFlag = flag.Bool("healthcheck", false,
 	"Exit 0 if the uniqush-push listening on the config's addr reports itself healthy at /health, 1 if not")
 
-var uniqushPushVersion = "uniqush-push 2.10.0"
+var uniqushPushVersion = "uniqush-push 2.11.0"
 
 func installPushServices() {
 	// InstallFCM registers both "fcm" and "gcm"; the latter is an alias kept so

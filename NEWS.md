@@ -1,7 +1,7 @@
 uniqush-push NEWS
 
-Unreleased
-----------
+20 Oct 2026, uniqush-push 2.11.0
+--------------------------------
 
 REST API:
 
