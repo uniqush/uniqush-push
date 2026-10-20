@@ -4,18 +4,16 @@
 longer version for operators, and points at the documents that go deeper still.
 [api.md](api.md) is the reference for the API as it is now.
 
-- To **2.11.0**, read [Upgrading to 2.11.0](#upgrading-to-2110).
-
 - From **2.10.0**, read [Upgrading from 2.10.0](#upgrading-from-2100).
 - From **2.8.0**, read [Upgrading from 2.8.0](#upgrading-from-280).
 - From **2.7.0**, read [Upgrading from 2.7.0 to 2.8.0](#upgrading-from-270-to-280)
   first and then the 2.8.0 section. You can go straight to 2.9.0; the two
   sections do not assume you stopped at 2.8.0 in between.
 
-## Upgrading to 2.11.0
+## Upgrading from 2.10.0
 
-Nothing to do unless you send `msggroup` or `ttl` on `/push`, which now mean
-something to more backends:
+If you send `msggroup` or `ttl` on `/push`, they now mean something to more
+backends:
 
 - **APNs** sends `msggroup` as `apns-collapse-id`, so notifications with the
   same group replace each other on the device. It is still also passed in the
@@ -31,8 +29,6 @@ something to more backends:
   send one that fits, such as a base64url hash of your own key.
 
 `/previewpush` rejects the same values, so it can be used to check them first.
-
-## Upgrading from 2.10.0
 
 - **The removal log needs Redis 5.0 or newer.** Every device uniqush removes
   because its push service said it was gone is recorded for
