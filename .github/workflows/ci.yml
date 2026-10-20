@@ -12,9 +12,10 @@ jobs:
   test:
     runs-on: ubuntu-latest
 
-    # Some of the tests in ./db require redis on 127.0.0.1:6379. Without it they
-    # call t.Skip and the package reports "ok" having asserted nothing, so this
-    # service container is what makes that coverage real rather than decorative.
+    # Some of the tests in ./db and the main package require redis on
+    # 127.0.0.1:6379 (or UNIQUSH_TEST_REDIS_ADDR). Without it they call t.Skip
+    # and the package reports "ok" having asserted nothing, so this service
+    # container is what makes that coverage real rather than decorative.
     services:
       redis:
         image: redis:7
