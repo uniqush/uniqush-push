@@ -8,6 +8,12 @@ services:
     depends_on:
       redis:
         condition: service_healthy
+    # The image's HEALTHCHECK supplies the test.
+    healthcheck:
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
     restart: unless-stopped
 
   redis:

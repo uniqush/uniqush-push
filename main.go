@@ -30,6 +30,9 @@ var uniqushPushShowVersionFlag = flag.Bool("version", false, "Version info")
 var uniqushPushGenerateVAPIDKeysFlag = flag.Bool("generate-vapid-keys", false,
 	"Print a new VAPID key pair for a webpush/unifiedpush push service provider, then exit")
 
+var uniqushPushHealthcheckFlag = flag.Bool("healthcheck", false,
+	"Exit 0 if the uniqush-push listening on the config's addr reports itself healthy at /health, 1 if not")
+
 var uniqushPushVersion = "uniqush-push 2.10.0"
 
 func installPushServices() {
@@ -67,6 +70,13 @@ func main() {
 	if *uniqushPushGenerateVAPIDKeysFlag {
 		if err := generateVAPIDKeys(); err != nil {
 			fmt.Fprintf(os.Stderr, "Could not generate VAPID keys: %v\n", err)
+			os.Exit(1)
+		}
+		return
+	}
+	if *uniqushPushHealthcheckFlag {
+		if err := healthcheck(*uniqushPushConfFlags); err != nil {
+			fmt.Fprintf(os.Stderr, "Unhealthy: %v\n", err)
 			os.Exit(1)
 		}
 		return
