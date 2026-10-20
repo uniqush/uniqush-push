@@ -68,6 +68,39 @@ server side, you can send push notifications to any supported mobile platform.
 - [ADM](https://developer.amazon.com/sdk/adm.html) from Amazon for Kindle tablets
 - [UnifiedPush](https://unifiedpush.org/) / [Web Push](https://datatracker.ietf.org/wg/webpush/documents/), for de-Googled Android, Linux desktops and browsers
 
+## Quickstart with Docker ##
+
+[compose.yaml](compose.yaml) runs the published image with a Redis that keeps
+its data in a volume. From a checkout:
+
+```
+docker compose up -d
+curl http://localhost:9898/health
+```
+
+`/health` answers `{"status":"ok","database":"ok",...}` once Redis is
+reachable. The API is published on localhost only, for the reason given under
+`[WebFrontend] addr` below.
+
+To send a real push, run the [UnifiedPush demo](examples/unifiedpush-demo)
+(needs Go 1.26+). It registers a provider with `/addpsp`, subscribes an
+endpoint on ntfy.sh with `/subscribe`, calls `/push`, then fetches the message
+back from ntfy.sh and decrypts it:
+
+```
+go run ./examples/unifiedpush-demo
+curl http://localhost:9898/psps
+```
+
+To register a service of your own, mint VAPID keys with the image and follow
+[UnifiedPush / Web Push](#unifiedpush--web-push) from step 2:
+
+```
+docker compose run --rm --no-deps uniqush-push -generate-vapid-keys
+```
+
+`docker compose down` stops it; add `-v` to delete the Redis volume too.
+
 ## Building and running ##
 
 `uniqush-push` is a single binary. Building it needs Go 1.26 or newer; running
@@ -332,10 +365,11 @@ force.
 
 - Q: Is it a library, then? Do I need to write Go?
 - A: No. It is a daemon with a REST API over plain HTTP, so any language with
-  an HTTP client can drive it — `curl` is enough to try it. Go is needed to
-  *build* it, since there are no prebuilt binaries for the current version; the
-  downloads on uniqush.org stop at 2.6.1, which can no longer deliver to APNs
-  or FCM at all.
+  an HTTP client can drive it — `curl` is enough to try it. You don't need Go
+  to run it either: each [release](https://github.com/uniqush/uniqush-push/releases)
+  ships a .deb, an .rpm and a tarball, and the Docker image is on ghcr.io (see
+  [Quickstart with Docker](#quickstart-with-docker)). Go is only needed to build
+  from source.
 
 - Q: Where is the API documented?
 - A: [docs/api.md](docs/api.md) is the reference: every endpoint, the

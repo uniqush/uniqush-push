@@ -8,6 +8,11 @@ REST API:
 - New feature: `/metrics` reports push results by service, push service type and outcome, abandoned retries,
   requests per endpoint, redis reachability and the `/stats` counts in the Prometheus text format. (#299)
 
+Packaging:
+
+- New feature: `compose.yaml` runs the Docker image with a persistent redis, for trying uniqush with
+  `docker compose up`. The README's new quickstart walks through it.
+
 08 Oct 2026, uniqush-push 2.9.1
 -------------------------------
 
