@@ -68,6 +68,39 @@ server side, you can send push notifications to any supported mobile platform.
 - [ADM](https://developer.amazon.com/sdk/adm.html) from Amazon for Kindle tablets
 - [UnifiedPush](https://unifiedpush.org/) / [Web Push](https://datatracker.ietf.org/wg/webpush/documents/), for de-Googled Android, Linux desktops and browsers
 
+## Quickstart with Docker ##
+
+[compose.yaml](compose.yaml) runs the published image with a Redis that keeps
+its data in a volume. From a checkout:
+
+```
+docker compose up -d
+curl http://localhost:9898/health
+```
+
+`/health` answers `{"status":"ok","database":"ok",...}` once Redis is
+reachable. The API is published on localhost only, for the reason given under
+`[WebFrontend] addr` below.
+
+To send a real push, run the [UnifiedPush demo](examples/unifiedpush-demo)
+(needs Go 1.26+). It registers a provider with `/addpsp`, subscribes an
+endpoint on ntfy.sh with `/subscribe`, calls `/push`, then fetches the message
+back from ntfy.sh and decrypts it:
+
+```
+go run ./examples/unifiedpush-demo
+curl http://localhost:9898/psps
+```
+
+To register a service of your own, mint VAPID keys with the image and follow
+[UnifiedPush / Web Push](#unifiedpush--web-push) from step 2:
+
+```
+docker compose run --rm --no-deps uniqush-push -generate-vapid-keys
+```
+
+`docker compose down` stops it; add `-v` to delete the Redis volume too.
+
 ## Building and running ##
 
 `uniqush-push` is a single binary. Building it needs Go 1.26 or newer; running

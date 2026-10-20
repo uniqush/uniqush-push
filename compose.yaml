@@ -1,0 +1,27 @@
+services:
+  uniqush-push:
+    image: ghcr.io/uniqush/uniqush-push:latest
+    # The API has no authentication, so it is only published on loopback.
+    ports:
+      - "127.0.0.1:9898:9898"
+    depends_on:
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+
+  redis:
+    image: redis:7
+    # Every subscription lives in redis, and by default it only snapshots
+    # periodically.
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 2s
+      timeout: 2s
+      retries: 15
+    restart: unless-stopped
+
+volumes:
+  redis-data:
