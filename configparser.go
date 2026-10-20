@@ -25,6 +25,7 @@ import (
 	"runtime"
 	"strconv"
 	"strings"
+	"unicode"
 
 	"github.com/uniqush/uniqush-push/conf"
 	"github.com/uniqush/uniqush-push/db"
@@ -251,14 +252,27 @@ func LoadAPIToken(c *conf.ConfigFile, logger log.Logger) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("could not read [WebFrontend] token_file: %w", err)
 	}
-	token := strings.TrimRight(string(data), "\r\n")
+	token := strings.TrimSpace(string(data))
 	if token == "" {
 		return "", fmt.Errorf("[WebFrontend] token_file %s is empty", path)
+	}
+	// An HTTP client cannot send these intact in a header: Go, for one, trims
+	// the surrounding space, so such a token would reject every request.
+	if strings.IndexFunc(token, func(r rune) bool { return unicode.IsSpace(r) || unicode.IsControl(r) }) >= 0 {
+		return "", fmt.Errorf("[WebFrontend] token_file %s contains whitespace or a control character", path)
 	}
 	if fi, err := os.Stat(path); err == nil && runtime.GOOS != "windows" && fi.Mode().Perm()&0o007 != 0 {
 		logger.Warnf("%s, the API token file, is accessible to every user on this host; chmod o-rwx it", path)
 	}
 	return token, nil
+}
+
+// warnIfUnauthenticated warns when addr is reachable from other hosts with no
+// token required.
+func warnIfUnauthenticated(logger log.Logger, addr, token string) {
+	if token == "" && !strings.HasPrefix(addr, "unix:") && !isLoopback(addr) {
+		logger.Warnf("Listening on %s with no [WebFrontend] token_file: anyone who can reach it can use the API", addr)
+	}
 }
 
 // isLoopback reports whether a host:port addr is reachable from this host only.
@@ -301,9 +315,7 @@ func Run(conf, version string) error {
 	if err != nil {
 		return err
 	}
-	if token == "" && !strings.HasPrefix(addr, "unix:") && !isLoopback(addr) {
-		loggers[LoggerWeb].Warnf("Listening on %s with no [WebFrontend] token_file: anyone who can reach it can use the API", addr)
-	}
+	warnIfUnauthenticated(loggers[LoggerWeb], addr, token)
 	psm := push.GetPushServiceManager()
 	psm.SetConfigFile(c)
 
@@ -328,8 +340,8 @@ func Run(conf, version string) error {
 		return err
 	}
 	stopChan := make(chan bool)
+	rest.Run(ln, stopChan)
 	go rest.signalSetup()
-	go rest.Run(ln, stopChan)
 	<-stopChan
 	return nil
 }

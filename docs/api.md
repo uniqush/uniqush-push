@@ -30,21 +30,23 @@ alias for `fcm`, kept for existing subscriptions), `adm`, `webpush` or
 `unifiedpush` (two names for one backend). The type is part of every
 subscription's identity, so pick one name per service and keep it.
 
-### Authentication
+## Authentication
 
 Off by default. Whoever can reach an API without it can register providers,
 decide where a service's pushes go and read back subscriptions, so either keep
 it on localhost or turn on one or both of these in `[WebFrontend]`:
 
 - `token_file=/etc/uniqush/api-token` requires every request to carry
-  `Authorization: Bearer <token>`, where the token is the file's contents less
-  a trailing newline. Generate one with `openssl rand -hex 32`. It is read
-  from a file, once at startup, so that it never appears on a command line; a
-  missing or empty file stops uniqush from starting, and one readable by every
-  user on the host gets a warning in the log. `/health` is the one exception,
-  so that a Docker healthcheck or load balancer can poll it without the token.
-  `/metrics` needs it: give Prometheus the same token with
-  `authorization: {credentials_file: ...}` in the scrape config.
+  `Authorization: Bearer <token>`, where the token is the file's contents with
+  leading and trailing whitespace removed. Generate one with
+  `openssl rand -hex 32`. It is read from a file, once at startup, so that it
+  never appears on a command line. uniqush refuses to start if the file is
+  missing or empty or the token contains whitespace or a control character,
+  and warns if the file is accessible to every user on the host. `/health` is
+  the one exception, so that a Docker healthcheck or load balancer can poll it
+  without the token; it then reports only whether redis answers (see
+  [`/health`](#health)). `/metrics` needs it: give Prometheus the same token
+  with `authorization: {credentials_file: ...}` in the scrape config.
 
       curl -H "Authorization: Bearer $(cat /etc/uniqush/api-token)" http://localhost:9898/psps
 
@@ -59,11 +61,14 @@ it on localhost or turn on one or both of these in `[WebFrontend]`:
   of TCP, so that file permissions decide who can connect. `socket_mode`
   (octal, default `0660`) sets the socket's mode, so run the application
   server in uniqush's group or create the socket in a setgid directory of a
-  group both share. A socket file left behind by an unclean exit is replaced on startup,
-  but uniqush refuses to start if something is still listening on it or the
-  path is not a socket. It is removed on `/stop` or `SIGTERM`. Not supported
-  on Windows. `curl --unix-socket /run/uniqush/uniqush-push.sock
-  http://localhost/version` reaches it.
+  group both share. Put the socket in a directory no one else can write to,
+  such as one systemd creates with `RuntimeDirectory=`: anyone who can write
+  there can replace the socket with their own. A socket file left behind by
+  an unclean exit is replaced on startup, but uniqush refuses to start if
+  something is still listening on it or the path is not a socket. It is
+  removed on `/stop` or `SIGTERM`. Not supported on Windows.
+  `curl --unix-socket /run/uniqush/uniqush-push.sock http://localhost/version`
+  reaches it.
 
 uniqush warns at startup when it listens on a non-loopback TCP address with no
 `token_file`.
@@ -310,7 +315,9 @@ and a JSON body:
     {"status":"ok","database":"ok","version":"uniqush-push 2.10.0","code":"UNIQUSH_SUCCESS"}
 
 `200` when redis answers, `503` when it does not, with the reason in
-`database`. It is the only endpoint here whose status code carries the answer,
+`database`. When a [token](#authentication) is required, `/health` still
+answers without one, but leaves out `version` and reports a failure as
+`"database":"unavailable"`, logging the reason instead. It is the only endpoint here whose status code carries the answer,
 because that is what a load balancer reads.
 
 Redis is the only thing checked. uniqush can do nothing without it — every push

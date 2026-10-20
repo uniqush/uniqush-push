@@ -44,8 +44,8 @@ func installPushServices() {
 // generateVAPIDKeys prints a new VAPID key pair in the form /addpsp expects.
 //
 // Doing this in the binary rather than over the REST API is deliberate: the
-// REST API may have no authentication, and a private key should not be minted by, or
-// travel over, an unauthenticated endpoint.
+// REST API may have no authentication, and a private key should not be minted
+// by, or travel over, an unauthenticated endpoint.
 func generateVAPIDKeys() error {
 	privateKey, publicKey, err := srv.GenerateVAPIDKeys()
 	if err != nil {

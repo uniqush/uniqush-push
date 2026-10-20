@@ -65,7 +65,9 @@ func listenUnix(path string, mode os.FileMode) (net.Listener, error) {
 		}
 	}
 	// Create the socket accessible to its owner only, so that it is never
-	// reachable with wider permissions than mode, even briefly.
+	// reachable with wider permissions than mode, even briefly. The umask is
+	// process-wide, so this must run at startup, before anything that could
+	// create a file concurrently, such as serving requests, has started.
 	oldMask := syscall.Umask(0o177)
 	ln, err := net.Listen("unix", path)
 	syscall.Umask(oldMask)

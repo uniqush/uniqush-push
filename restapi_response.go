@@ -40,6 +40,8 @@ const (
 	// nothing in the answer to say so.
 	UNIQUSH_ERROR_INDEX_NOT_BUILT = "UNIQUSH_ERROR_INDEX_NOT_BUILT"
 
+	// UNIQUSH_ERROR_UNAUTHORIZED is a request without the bearer token in
+	// [WebFrontend] token_file, answered with HTTP status 401.
 	UNIQUSH_ERROR_UNAUTHORIZED = "UNIQUSH_ERROR_UNAUTHORIZED"
 )
 
@@ -76,8 +78,10 @@ type HealthResponse struct {
 	Status string `json:"status"`
 	// Database is "ok", or what went wrong reaching it.
 	Database string `json:"database"`
-	Version  string `json:"version"`
-	Code     string `json:"code"`
+	// Version is left out when a token is required, since /health is the
+	// one endpoint that answers without it.
+	Version string `json:"version,omitempty"`
+	Code    string `json:"code"`
 }
 
 // PreviewAPIResponseDetails represents the response of /preview. It contains a representation of the payload that would be sent to external push services

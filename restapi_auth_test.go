@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -34,6 +35,7 @@ func TestBearerToken(t *testing.T) {
 		{"wrong scheme", token, VersionInfoURL, "Basic " + token, http.StatusUnauthorized},
 		{"right token", token, VersionInfoURL, "Bearer " + token, http.StatusOK},
 		{"scheme is case-insensitive", token, VersionInfoURL, "bearer " + token, http.StatusOK},
+		{"several spaces after the scheme", token, VersionInfoURL, "Bearer   " + token, http.StatusOK},
 		{"subscriptions need it", token, QuerySubscriptionsURL, "", http.StatusUnauthorized},
 		{"stop needs it", token, StopProgramURL, "", http.StatusUnauthorized},
 		{"metrics need it", token, MetricsURL, "", http.StatusUnauthorized},
@@ -83,36 +85,102 @@ func TestBearerToken(t *testing.T) {
 	}
 }
 
+// TestHealthWithATokenSaysOnlyWhetherRedisAnswers covers what /health tells a
+// caller that has no token.
+func TestHealthWithATokenSaysOnlyWhetherRedisAnswers(t *testing.T) {
+	testCases := []struct {
+		pingErr      error
+		wantStatus   int
+		wantDatabase string
+	}{
+		{nil, http.StatusOK, "ok"},
+		{errors.New("dial tcp 10.0.0.5:6379: connect: connection refused"), http.StatusServiceUnavailable, "unavailable"},
+	}
+	for _, testCase := range testCases {
+		psm := push.GetPushServiceManager()
+		api := NewRestAPI(psm, silentLoggers(), "uniqush-push test", NewPushBackEnd(psm, &healthDatabase{pingErr: testCase.pingErr}, silentLoggers()))
+		api.requireToken("t")
+		recorder := httptest.NewRecorder()
+		api.ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, HealthURL, nil))
+
+		var response HealthResponse
+		if err := json.Unmarshal(recorder.Body.Bytes(), &response); err != nil {
+			t.Fatalf("Could not decode %q: %v", recorder.Body, err)
+		}
+		if recorder.Code != testCase.wantStatus || response.Database != testCase.wantDatabase || response.Version != "" {
+			t.Errorf("Expected %d with database %q and no version, got %d: %s", testCase.wantStatus, testCase.wantDatabase, recorder.Code, recorder.Body)
+		}
+	}
+}
+
 func TestLoadAPIToken(t *testing.T) {
 	dir := t.TempDir()
-	write := func(name, contents string) string {
+	write := func(name, contents string, mode os.FileMode) string {
 		path := filepath.Join(dir, name)
-		if err := os.WriteFile(path, []byte(contents), 0o600); err != nil {
+		if err := os.WriteFile(path, []byte(contents), mode); err != nil {
+			t.Fatal(err)
+		}
+		// WriteFile's mode is subject to the umask.
+		if err := os.Chmod(path, mode); err != nil {
 			t.Fatal(err)
 		}
 		return path
 	}
 	testCases := []struct {
-		name      string
-		tokenFile string
-		want      string
-		wantErr   bool
+		name        string
+		tokenFile   string
+		want        string
+		wantErr     bool
+		wantWarning bool
 	}{
-		{"not configured", "", "", false},
-		{"trailing newline trimmed", write("newline", "abc\n"), "abc", false},
-		{"trailing CRLF trimmed", write("crlf", "abc\r\n"), "abc", false},
-		{"empty file refused", write("empty", "\n"), "", true},
-		{"missing file refused", filepath.Join(dir, "missing"), "", true},
+		{"not configured", "", "", false, false},
+		{"trailing newline trimmed", write("newline", "abc\n", 0o600), "abc", false, false},
+		{"trailing CRLF trimmed", write("crlf", "abc\r\n", 0o600), "abc", false, false},
+		{"surrounding space trimmed", write("space", " abc \n", 0o600), "abc", false, false},
+		{"group-readable is fine", write("group", "abc", 0o640), "abc", false, false},
+		{"world-readable warns", write("world", "abc", 0o644), "abc", false, true},
+		{"inner space refused", write("inner", "a bc", 0o600), "", true, false},
+		{"control character refused", write("control", "a\x01bc", 0o600), "", true, false},
+		{"empty file refused", write("empty", "\n", 0o600), "", true, false},
+		{"missing file refused", filepath.Join(dir, "missing"), "", true, false},
 	}
 	for _, testCase := range testCases {
 		t.Run(testCase.name, func(t *testing.T) {
 			c := conf.NewConfigFile()
 			c.AddOption("WebFrontend", "token_file", testCase.tokenFile)
-			got, err := LoadAPIToken(c, silentLoggers()[LoggerWeb])
+			var logged bytes.Buffer
+			got, err := LoadAPIToken(c, log.NewLogger(&logged, "[test]", log.LevelWarn))
 			if (err != nil) != testCase.wantErr || got != testCase.want {
 				t.Errorf("Expected %q (error: %v), got %q, %v", testCase.want, testCase.wantErr, got, err)
 			}
+			if warned := logged.Len() > 0; warned != testCase.wantWarning {
+				t.Errorf("Expected a warning: %v, got %q", testCase.wantWarning, logged.String())
+			}
 		})
+	}
+}
+
+func TestWarnIfUnauthenticated(t *testing.T) {
+	testCases := []struct {
+		addr     string
+		token    string
+		wantWarn bool
+	}{
+		{"localhost:9898", "", false},
+		{"127.0.0.1:9898", "", false},
+		{"[::1]:9898", "", false},
+		{"unix:/run/uniqush/uniqush-push.sock", "", false},
+		{"0.0.0.0:9898", "", true},
+		{":9898", "", true},
+		{"192.0.2.1:9898", "", true},
+		{"0.0.0.0:9898", "t", false},
+	}
+	for _, testCase := range testCases {
+		var logged bytes.Buffer
+		warnIfUnauthenticated(log.NewLogger(&logged, "[test]", log.LevelWarn), testCase.addr, testCase.token)
+		if warned := logged.Len() > 0; warned != testCase.wantWarn {
+			t.Errorf("%s with token %q: expected a warning: %v, got %q", testCase.addr, testCase.token, testCase.wantWarn, logged.String())
+		}
 	}
 }
 
@@ -128,12 +196,14 @@ func TestLoadSocketMode(t *testing.T) {
 		{"1777", 0, true},
 	}
 	for _, testCase := range testCases {
-		c := conf.NewConfigFile()
-		c.AddOption("WebFrontend", "socket_mode", testCase.value)
-		got, err := LoadSocketMode(c)
-		if (err != nil) != testCase.wantErr || got != testCase.want {
-			t.Errorf("socket_mode=%q: expected %o (error: %v), got %o, %v", testCase.value, testCase.want, testCase.wantErr, got, err)
-		}
+		t.Run(testCase.value, func(t *testing.T) {
+			c := conf.NewConfigFile()
+			c.AddOption("WebFrontend", "socket_mode", testCase.value)
+			got, err := LoadSocketMode(c)
+			if (err != nil) != testCase.wantErr || got != testCase.want {
+				t.Errorf("Expected %o (error: %v), got %o, %v", testCase.want, testCase.wantErr, got, err)
+			}
+		})
 	}
 }
 
@@ -161,7 +231,7 @@ func TestUnixSocketServesAndIsRemovedOnStop(t *testing.T) {
 	api := NewRestAPI(psm, silentLoggers(), "uniqush-push test", NewPushBackEnd(psm, &healthDatabase{}, silentLoggers()))
 	api.requireToken("t")
 	stopChan := make(chan bool)
-	go api.Run(ln, stopChan)
+	api.Run(ln, stopChan)
 
 	request, _ := http.NewRequest(http.MethodGet, "http://uniqush"+VersionInfoURL, nil)
 	request.Header.Set("Authorization", "Bearer t")
