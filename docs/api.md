@@ -426,7 +426,7 @@ payload. These have meaning to uniqush or a backend:
 | `relevance-score` | apns | `aps.relevance-score`, a number from 0 to 1, ranking the notification within its summary. |
 | `msggroup` | apns, fcm, adm, webpush, unifiedpush | The collapse key: a newer notification with the same group replaces an undelivered older one. It becomes APNs' `apns-collapse-id`, which may be at most 64 bytes with no control characters, and Web Push's `Topic` header, which may be at most 32 characters of `A-Z`, `a-z`, `0-9`, `-` and `_`. Any other value is rejected. |
 | `uniqush.priority` | fcm | `high` or `normal`, becoming FCM's `android.priority`. A normal-priority message may be held until the device next leaves Doze; a high-priority one wakes it. Omitted by default, so FCM applies its own rule (high for a notification message, normal for a data-only one). Any other value is rejected. Not read by the other backends: APNs derives its priority from `uniqush.apns_push_type`, and Web Push reads `uniqush.urgency`. |
-| `uniqush.urgency` | webpush, unifiedpush | The RFC 8030 `Urgency` header: `very-low`, `low`, `normal` (default) or `high`. A push service may hold a less urgent message until the device is charging or on Wi-Fi. Any other value is rejected. Not read by the other backends. |
+| `uniqush.urgency` | webpush, unifiedpush | The RFC 8030 `Urgency` header: `very-low`, `low`, `normal` (default) or `high`. A push service may hold a less urgent message until the device is charging or on Wi-Fi. Any other value is rejected. Applies to webpush and unifiedpush only: APNs takes its `apns-priority` from `uniqush.apns_push_type` as before, so `low` still sends an alert at priority 10. |
 | `uniqush.apns_push_type` | apns | The `apns-push-type`: `alert` (default), `background`, `complication`, `controls`, `fileprovider`, `liveactivity`, `location`, `mdm`, `pushtotalk`, `voip` or `widgets`. Also sets the priority Apple requires for that type. |
 | `uniqush.apns_voip` | apns | `1` is shorthand for `uniqush.apns_push_type=voip`, and allows the 5120-byte VoIP payload limit instead of 4096. |
 | `uniqush.http2` | apns | Obsolete, and ignored. `0` used to select Apple's binary protocol, which Apple shut down in 2021 and uniqush no longer implements; the push goes over HTTP/2 and the response reports that the parameter does nothing. |
@@ -498,10 +498,14 @@ with the code `UNIQUSH_PUSH_RETRYING` and the push service's answer in
 The retry's outcome is not reported to the caller, except that a device it finds gone is listed in
 [`/removed`](#removed).
 
-Not every removal can be in the response. A retry runs after it, and APNs
-reports a push as sent once Apple has the request and reads Apple's answer
-afterwards, so an APNs device is never in `droppedDetails`. `/removed` has
-every removal, including the ones that are also in a response.
+Not every removal can be in the response. A retry runs after it, and so does
+Apple's answer: for APNs, `UNIQUSH_SUCCESS` means the request was accepted for
+sending, not that Apple took it. A device Apple rejects as gone (`Unregistered`,
+`BadDeviceToken`, `DeviceTokenNotForTopic` or `ExpiredToken`) is still
+`UNIQUSH_SUCCESS` in the response and never in `droppedDetails`; its removal
+appears only in `/removed`. Apple's other late errors are retried or logged, and
+counted in [`/metrics`](#metrics), but not reported to the caller. `/removed`
+has every removal, including the ones that are also in a response.
 
 ### `/removed`
 
@@ -554,6 +558,9 @@ removals after `since` have already been discarded: the entries returned are
 still correct, but some before them are missing, so reconcile against
 `/subscriptions` before carrying on from `next`. A first call without `since`
 is `truncated` whenever anything has ever been discarded.
+
+For APNs this is the only place a removal is reported: Apple's answer arrives
+after `/push` has responded, which reported the device as `UNIQUSH_SUCCESS`.
 
 Each removal is listed once. A device is removed only if its stored record is
 still the one the push read, so a device that re-subscribed in the meantime is

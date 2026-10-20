@@ -27,6 +27,8 @@ REST API:
 - Bugfix: A push refused before any device is tried, for a bad `ttl`, `msggroup`, `uniqush.urgency` or an oversized
   payload, names the request's subscribers in `failureDetails`, and the device when the push named exactly one
   `delivery_point_id`, rather than an empty `subscriber` and `Unknown`. The log line names them too.
+- Bugfix: A `/push` by `delivery_point_id` no longer sends the ids to the device. Every backend copied them into
+  the payload it built, for example as a top-level `delivery_point_id` key beside `aps` for APNs.
 
 APNs:
 
