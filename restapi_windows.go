@@ -20,7 +20,6 @@ package main
 import (
 	"os"
 	"os/signal"
-	"syscall"
 )
 
 func (self *RestAPI) signalSetup() {
