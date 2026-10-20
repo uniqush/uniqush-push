@@ -448,6 +448,9 @@ func decodeAnyBase64(value string) ([]byte, error) {
 // randomised per message and keyed to a specific subscriber, so the bytes on
 // the wire are both non-reproducible and useless for debugging.
 func (ps *pushService) Preview(notif *push.Notification) ([]byte, push.Error) {
+	if err := applyNotificationOptions(&webpush.Options{}, notif.Data); err != nil {
+		return nil, err
+	}
 	payload, err := toWebPushPayload(notif)
 	if err != nil {
 		return nil, err
@@ -573,7 +576,7 @@ func (ps *pushService) optionsForPSP(psp *push.PushServiceProvider) (*webpush.Op
 // leave the mistake looking like it worked.
 func applyNotificationOptions(options *webpush.Options, data map[string]string) push.Error {
 	if raw := data[ttlKey]; raw != "" {
-		ttl, err := strconv.ParseUint(raw, 10, 64)
+		ttl, err := strconv.ParseUint(strings.TrimSpace(raw), 10, 64)
 		if err != nil || ttl > maxTTL {
 			return push.NewBadNotificationWithDetails(
 				fmt.Sprintf("invalid %s %q, expected seconds from 0 to %d", ttlKey, raw, maxTTL))

@@ -375,7 +375,8 @@ func TestConformanceCollapseID(t *testing.T) {
 	}{
 		{name: "absent", msggroup: ""},
 		{name: "64 bytes", msggroup: strings.Repeat("é", 32), wantSent: strings.Repeat("é", 32)},
-		{name: "65 bytes", msggroup: strings.Repeat("a", 65), wantErrMsg: "expected at most 64 bytes"},
+		{name: "65 bytes", msggroup: strings.Repeat("é", 32) + "a", wantErrMsg: "expected at most 64 bytes"},
+		{name: "control character", msggroup: "a\nb", wantErrMsg: `invalid msggroup "a\nb"`},
 	}
 	for _, testCase := range testCases {
 		t.Run(testCase.name, func(t *testing.T) {
@@ -395,6 +396,9 @@ func TestConformanceCollapseID(t *testing.T) {
 				}
 				if requests := server.Requests(); len(requests) != 0 {
 					t.Errorf("Expected nothing sent to APNs, got %d requests", len(requests))
+				}
+				if _, err := service.Preview(notif); err == nil {
+					t.Error("Expected /previewpush to reject it too")
 				}
 				return
 			}

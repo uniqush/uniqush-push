@@ -39,6 +39,8 @@ import (
 	"sync/atomic"
 	"time"
 
+	"golang.org/x/net/http/httpguts"
+
 	"github.com/uniqush/uniqush-push/push"
 	"github.com/uniqush/uniqush-push/srv/apns/common"
 	"github.com/uniqush/uniqush-push/srv/apns/http_api"
@@ -57,13 +59,26 @@ const (
 	// recognised, but only so that a caller sending it can be told it no
 	// longer does anything.
 	apnsHTTP2Key = "uniqush.http2"
-	// collapseIDKey is the parameter FCM and ADM read as their collapse key.
+	// collapseIDKey is sent as apns-collapse-id. It is msggroup, so one
+	// collapse key works for every backend.
 	collapseIDKey = "msggroup"
 )
 
-// maxCollapseIDBytes is Apple's limit on apns-collapse-id. Checked here
-// because APNs would otherwise reject each device's request separately.
+// maxCollapseIDBytes is Apple's limit on apns-collapse-id.
 const maxCollapseIDBytes = 64
+
+// collapseIDForNotification returns the apns-collapse-id to send, or an error
+// for one APNs or net/http would refuse. Checked before sending because either
+// refusal would otherwise fail every device separately, and net/http's is a
+// connection error, which is not retried.
+func collapseIDForNotification(notif *push.Notification) (string, push.Error) {
+	collapseID := notif.Data[collapseIDKey]
+	if len(collapseID) > maxCollapseIDBytes || !httpguts.ValidHeaderFieldValue(collapseID) {
+		return "", push.NewBadNotificationWithDetails(
+			fmt.Sprintf("invalid %s %q, expected at most %d bytes and no control characters", collapseIDKey, collapseID, maxCollapseIDBytes))
+	}
+	return collapseID, nil
+}
 
 // binaryProtocolRemovedNotice is reported when a caller still asks for the
 // binary protocol. The push is sent over HTTP/2 rather than refused: HTTP/2 is
@@ -504,6 +519,9 @@ func (ps *pushService) waitResults(psp *push.PushServiceProvider, dpList []*push
 
 // Returns a JSON APNs payload, for a dummy device token
 func (ps *pushService) Preview(notif *push.Notification) ([]byte, push.Error) {
+	if _, err := collapseIDForNotification(notif); err != nil {
+		return nil, err
+	}
 	return toAPNSPayload(notif)
 }
 
@@ -525,11 +543,11 @@ func (ps *pushService) Push(psp *push.PushServiceProvider, dpQueue <-chan *push.
 	}
 	req.PushType = pushType
 
-	req.CollapseID = notif.Data[collapseIDKey]
-	if err == nil && len(req.CollapseID) > maxCollapseIDBytes {
-		err = push.NewBadNotificationWithDetails(
-			fmt.Sprintf("invalid %s %q, expected at most %d bytes", collapseIDKey, req.CollapseID, maxCollapseIDBytes))
+	collapseID, collapseIDErr := collapseIDForNotification(notif)
+	if err == nil && collapseIDErr != nil {
+		err = collapseIDErr
 	}
+	req.CollapseID = collapseID
 
 	// HTTP/2 is the only transport. A caller still passing uniqush.http2=0 is
 	// told so, and the push goes out over HTTP/2 regardless.

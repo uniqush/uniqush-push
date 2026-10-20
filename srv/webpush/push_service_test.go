@@ -585,6 +585,9 @@ func TestPushNotificationHeaders(t *testing.T) {
 			wantUrgency: "high",
 		},
 		{name: "raw payload with a bad parameter", data: map[string]string{payloadKey: "x", "uniqush.urgency": "soon"}, wantErr: `invalid uniqush.urgency "soon"`},
+		{name: "ttl with surrounding whitespace", data: map[string]string{"ttl": " 60 "}, wantTTL: "60", wantUrgency: "normal"},
+		{name: "msggroup not ASCII", data: map[string]string{"msggroup": "é"}, wantErr: `invalid msggroup "é"`},
+		{name: "msggroup with a space", data: map[string]string{"msggroup": "a b"}, wantErr: `invalid msggroup "a b"`},
 		{name: "ttl too large", data: map[string]string{"ttl": "2147483648"}, wantErr: `invalid ttl "2147483648", expected seconds from 0 to 2147483647`},
 		{name: "negative ttl", data: map[string]string{"ttl": "-1"}, wantErr: `invalid ttl "-1"`},
 		{name: "ttl not a number", data: map[string]string{"ttl": "1h"}, wantErr: `invalid ttl "1h"`},
@@ -624,6 +627,9 @@ func TestPushNotificationHeaders(t *testing.T) {
 				}
 				if captured != nil {
 					t.Error("A push with a bad parameter was sent anyway")
+				}
+				if _, err := service.Preview(&push.Notification{Data: data}); err == nil {
+					t.Error("Expected /previewpush to reject it too")
 				}
 				return
 			}
