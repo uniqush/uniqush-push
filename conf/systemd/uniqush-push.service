@@ -15,6 +15,20 @@
 # upgrade replaces:
 #
 #     systemctl edit uniqush-push
+#
+# DynamicUser below means the service user cannot read a token file that is
+# not world-readable, and ProtectSystem=strict leaves nowhere to create a unix
+# socket. To use token_file or a unix: addr, add
+#
+#     [Service]
+#     LoadCredential=api-token:/etc/uniqush/api-token
+#     RuntimeDirectory=uniqush
+#
+# and set token_file=/run/credentials/uniqush-push.service/api-token and
+# addr=unix:/run/uniqush/uniqush-push.sock. The socket's group is then the
+# dynamic one, which no other service is in: either replace DynamicUser with a
+# User= and Group= your application server shares, or pair socket_mode=0666
+# with the token.
 
 [Unit]
 Description=uniqush-push, a unified push notification server

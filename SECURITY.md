@@ -17,10 +17,12 @@ longer deliver to APNs or FCM at all, so upgrade from those regardless.
 
 ## Scope
 
-The REST API has no authentication, by design: it is meant to be reached only
-by your own application servers, and must sit behind something that
-authenticates (see [docs/api.md](docs/api.md)). That an unauthenticated caller
-can use the API is therefore not a vulnerability. Getting around a protection
+The REST API is unauthenticated unless `[WebFrontend] token_file` is set: it
+is meant to be reached only by your own application servers, over localhost,
+a unix socket, or with a bearer token (see
+[docs/api.md](docs/api.md#authentication)). That an unauthenticated caller can
+use an API configured without a token is therefore not a vulnerability; one
+getting past the token is. Getting around a protection
 uniqush does have is: reaching a private address through a Web Push endpoint,
 say, or reading credentials back out of `/psps` or `/subscriptions`.
 

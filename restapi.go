@@ -19,13 +19,17 @@ package main
 
 import (
 	"crypto/rand"
+	"crypto/sha256"
+	"crypto/subtle"
 	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"net/url"
+	"os"
 	"regexp"
 	"strconv"
 	"strings"
@@ -45,6 +49,11 @@ type RestAPI struct {
 	version   string
 	waitGroup *sync.WaitGroup
 	stopChan  chan<- bool
+	listener  net.Listener
+	// tokenHash is the SHA-256 of the bearer token every request must carry,
+	// or nil when none is configured. Comparing digests keeps the comparison
+	// constant-time without leaking the token's length.
+	tokenHash []byte
 }
 
 func randomUniqID() string {
@@ -451,6 +460,10 @@ func apiBytesToObject(data []byte) interface{} {
 func (api *RestAPI) stop(w io.Writer, remoteAddr string) {
 	api.waitGroup.Wait()
 	api.backend.Finalize()
+	if api.listener != nil {
+		// Closing a unix listener removes its socket file.
+		api.listener.Close()
+	}
 	api.loggers[LoggerWeb].Infof("stopped by %v", remoteAddr)
 	if w != nil {
 		fmt.Fprintf(w, "Stopped\r\n")
@@ -696,13 +709,21 @@ func (api *RestAPI) queryPSPs(logger log.Logger) []byte {
 // with the pushes an operator is actually reading. A failure is logged, because
 // during an outage that line is the record of when it started.
 func (api *RestAPI) health(logger log.Logger) ([]byte, int) {
-	response := HealthResponse{Status: "ok", Database: "ok", Version: api.version, Code: UNIQUSH_SUCCESS}
+	response := HealthResponse{Status: "ok", Database: "ok", Code: UNIQUSH_SUCCESS}
+	if api.tokenHash == nil {
+		response.Version = api.version
+	}
 	status := http.StatusOK
 
 	if err := api.backend.PingDatabase(); err != nil {
 		logger.Errorf("Health check failed: %v", err)
 		response.Status = "unhealthy"
 		response.Database = err.Error()
+		if api.tokenHash != nil {
+			// Redis's error names its address, which a caller without the
+			// token has no business learning. The log has it.
+			response.Database = "unavailable"
+		}
 		response.Code = UNIQUSH_ERROR_DATABASE
 		// 503 rather than 500: this instance cannot serve now, and may be able
 		// to later. That is the distinction a load balancer acts on.
@@ -902,8 +923,43 @@ func parseKV(form url.Values) (kv map[string]string, perdp map[string][]string) 
 	return kv, perdp
 }
 
+// requireToken makes every endpoint but /health require
+// "Authorization: Bearer <token>".
+func (api *RestAPI) requireToken(token string) {
+	sum := sha256.Sum256([]byte(token))
+	api.tokenHash = sum[:]
+}
+
+// authorize reports whether r may proceed, answering 401 if not.
+//
+// /health is exempt because the Docker healthcheck and load balancer probes
+// polling it carry no token. With a token configured, health answers it with
+// no more than whether redis is reachable.
+func (api *RestAPI) authorize(w http.ResponseWriter, r *http.Request) bool {
+	if api.tokenHash == nil || r.URL.Path == HealthURL {
+		return true
+	}
+	scheme, token, _ := strings.Cut(r.Header.Get("Authorization"), " ")
+	// RFC 6750 allows more than one space after the scheme.
+	sum := sha256.Sum256([]byte(strings.TrimLeft(token, " ")))
+	if strings.EqualFold(scheme, "Bearer") && subtle.ConstantTimeCompare(sum[:], api.tokenHash) == 1 {
+		return true
+	}
+	api.loggers[LoggerWeb].Warnf("Rejected a request to %s from %q without a valid bearer token", r.URL.Path, r.RemoteAddr)
+	msg := "This endpoint requires an Authorization: Bearer header with the token in [WebFrontend] token_file"
+	body, _ := json.Marshal(APIResponseDetails{Code: UNIQUSH_ERROR_UNAUTHORIZED, ErrorMsg: &msg})
+	w.Header().Set("WWW-Authenticate", "Bearer")
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusUnauthorized)
+	fmt.Fprintf(w, "%s\r\n", body)
+	return false
+}
+
 func (api *RestAPI) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	defer r.Body.Close()
+	if !api.authorize(w, r) {
+		return
+	}
 	remoteAddr := r.RemoteAddr
 	api.backend.metrics.countRequest(r.URL.Path)
 
@@ -1010,9 +1066,29 @@ func (api *RestAPI) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// Run will start the API service, listening for requests on the address addr
-func (api *RestAPI) Run(addr string, stopChan chan<- bool) {
-	api.loggers[LoggerWeb].Infof("[Start] %s", addr)
+// listen opens addr, which is host:port or unix:/path/to.sock. A socket file is
+// given socketMode.
+func listen(addr string, socketMode os.FileMode) (net.Listener, error) {
+	if path, ok := strings.CutPrefix(addr, "unix:"); ok {
+		return listenUnix(path, socketMode)
+	}
+	return net.Listen("tcp", addr)
+}
+
+// Run will start the API service in the background, serving requests from ln
+// and signalling stopChan once stopped.
+//
+// Both are set before it returns because stop reads them from whichever
+// goroutine is stopping uniqush, which may be signalSetup's.
+func (api *RestAPI) Run(ln net.Listener, stopChan chan<- bool) {
+	api.stopChan = stopChan
+	api.listener = ln
+	go api.serve()
+}
+
+func (api *RestAPI) serve() {
+	ln := api.listener
+	api.loggers[LoggerWeb].Infof("[Start] %s", ln.Addr())
 	api.loggers[LoggerWeb].Debugf("[Version] %s", api.version)
 
 	http.Handle(StopProgramURL, api)
@@ -1033,9 +1109,8 @@ func (api *RestAPI) Run(addr string, stopChan chan<- bool) {
 	http.Handle(CheckDatabaseURL, api)
 	http.Handle(MetricsURL, api)
 
-	api.stopChan = stopChan
-	err := http.ListenAndServe(addr, nil)
-	if err != nil {
+	err := http.Serve(ln, nil)
+	if err != nil && !errors.Is(err, net.ErrClosed) {
 		api.loggers[LoggerWeb].Fatalf("HTTPServerError \"%v\"", err)
 	}
 }

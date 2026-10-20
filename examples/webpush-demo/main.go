@@ -39,6 +39,7 @@ import (
 var (
 	listenAddr = flag.String("listen", "localhost:8080", "Address for this demo app")
 	uniqushURL = flag.String("uniqush", "http://localhost:9898", "Base URL of the uniqush-push REST API")
+	tokenFile  = flag.String("token-file", "", "File holding uniqush's API token, if it requires one")
 	service    = flag.String("service", "webpushdemo", "uniqush service name")
 	pushType   = flag.String("pushservicetype", "unifiedpush", "uniqush pushservicetype: unifiedpush or webpush")
 	subscriber = flag.String("subscriber", "demo-user", "uniqush subscriber name")
@@ -304,10 +305,11 @@ func main() {
 		log.Fatalf("VAPID keys: %v", err)
 	}
 
-	d := &demo{
-		keys:   keys,
-		client: &http.Client{Timeout: 30 * time.Second},
+	client, err := uniqushHTTPClient(30*time.Second, *tokenFile)
+	if err != nil {
+		log.Fatalf("API token: %v", err)
 	}
+	d := &demo{keys: keys, client: client}
 
 	if err := d.registerPushServiceProvider(); err != nil {
 		log.Fatalf("Could not register with uniqush: %v\n\n"+

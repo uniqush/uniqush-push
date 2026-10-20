@@ -1,7 +1,8 @@
 services:
   uniqush-push:
     image: ghcr.io/uniqush/uniqush-push:latest
-    # The API has no authentication, so it is only published on loopback.
+    # The API has no authentication unless the config sets token_file, so it
+    # is only published on loopback.
     ports:
       - "127.0.0.1:9898:9898"
     depends_on:
