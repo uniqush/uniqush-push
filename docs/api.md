@@ -512,14 +512,20 @@ every removal, including the ones that are also in a response.
 | `limit` | Optional. At most this many entries; default and maximum 1000. Anything but a positive integer is refused with `UNIQUSH_ERROR_GENERIC`. |
 
 Lists, oldest first, the devices uniqush unsubscribed from a service because
-their push service said they were gone, after the cursor `since`.
+their push service said they were gone, after the cursor `since`. The first
+call has no `since`:
 
-    curl 'http://localhost:9898/removed?service=myservice&since=1756900000000-0'
+    curl 'http://localhost:9898/removed?service=myservice'
     {"code":"UNIQUSH_SUCCESS",
      "removed":[{"id":"1756900012345-0","time":1756900012,"service":"myservice","subscriber":"bob",
                  "pushServiceType":"webpush","deliveryPoint":"webpush:5f2b...","devid":"bob-laptop",
                  "endpoint":"https://push.example.org/wpush/v2/gAAA...","reason":"UNIQUSH_UPDATE_UNSUBSCRIBE"}],
      "next":"1756900012345-0","truncated":false}
+
+and each later one passes the `next` it got back:
+
+    curl 'http://localhost:9898/removed?service=myservice&since=1756900012345-0'
+    {"code":"UNIQUSH_SUCCESS","removed":[],"next":"1756900012345-0","truncated":false}
 
 Each entry has:
 
