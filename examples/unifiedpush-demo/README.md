@@ -63,7 +63,7 @@ configured separately; the shared config in
 Useful flags: `-message`, `-raw` (send a verbatim body instead of letting
 uniqush build JSON), `-pushservicetype webpush` to use the backend's other name,
 `-service`, `-subscriber`, `-keep` to leave the subscription in place,
-`-timeout`.
+`-timeout`, and `-token-file` for a uniqush that requires an API token.
 
 ### If ntfy.sh answers 507
 

@@ -58,6 +58,7 @@ import (
 // combinations matter more than any single value.
 type options struct {
 	uniqushURL      string
+	tokenFile       string
 	distributorURL  string
 	service         string
 	subscriber      string
@@ -84,6 +85,7 @@ func (o *options) deviceMode() bool {
 func main() {
 	var opts options
 	flag.StringVar(&opts.uniqushURL, "uniqush", "http://localhost:9898", "Base URL of the uniqush-push REST API.")
+	flag.StringVar(&opts.tokenFile, "token-file", "", "File holding uniqush's API token, if it requires one.")
 	flag.StringVar(&opts.distributorURL, "distributor", "https://ntfy.sh",
 		"Base URL of a UnifiedPush distributor's push server, or \"local\" to use the demo's own. Ignored in device mode.")
 	flag.StringVar(&opts.service, "service", "updemo", "uniqush service name.")
@@ -213,7 +215,11 @@ func run(opts *options) error {
 	ctx, cancel := context.WithTimeout(context.Background(), opts.timeout)
 	defer cancel()
 
-	uniqush := &uniqushClient{baseURL: strings.TrimRight(opts.uniqushURL, "/"), client: &http.Client{Timeout: 15 * time.Second}}
+	client, err := uniqushHTTPClient(15*time.Second, opts.tokenFile)
+	if err != nil {
+		return err
+	}
+	uniqush := &uniqushClient{baseURL: strings.TrimRight(opts.uniqushURL, "/"), client: client}
 	if err := uniqush.version(ctx); err != nil {
 		return fmt.Errorf("uniqush-push is not answering at %s: %w", opts.uniqushURL, err)
 	}
@@ -412,13 +418,17 @@ func reportDevice(opts *options, sent string) {
 	fmt.Println("  \"Could not decrypt content.\"    it arrived, but RFC 8291 decryption failed")
 	fmt.Println("  nothing at all                  it never arrived; check the distributor app")
 	fmt.Printf("%s\n", strings.Repeat("-", 72))
+	curl := "curl"
+	if opts.tokenFile != "" {
+		curl = fmt.Sprintf(`curl -H "Authorization: Bearer $(cat %s)"`, opts.tokenFile)
+	}
 	fmt.Printf("\nThe subscription is still registered, so you can send again without re-running:\n\n")
-	fmt.Printf("  curl %s/push -d service=%s -d subscriber=%s \\\n       --data-urlencode 'msg=another one'\n",
-		strings.TrimRight(opts.uniqushURL, "/"), opts.service, opts.subscriber)
+	fmt.Printf("  %s %s/push -d service=%s -d subscriber=%s \\\n       --data-urlencode 'msg=another one'\n",
+		curl, strings.TrimRight(opts.uniqushURL, "/"), opts.service, opts.subscriber)
 	fmt.Printf("\nUP-Example renders 'title=...&message=...' as a titled notification, so:\n\n")
-	fmt.Printf("  curl %s/push -d service=%s -d subscriber=%s \\\n"+
+	fmt.Printf("  %s %s/push -d service=%s -d subscriber=%s \\\n"+
 		"       --data-urlencode 'uniqush.payload.webpush=title=uniqush&message=hello from the server'\n",
-		strings.TrimRight(opts.uniqushURL, "/"), opts.service, opts.subscriber)
+		curl, strings.TrimRight(opts.uniqushURL, "/"), opts.service, opts.subscriber)
 }
 
 // report prints what was on the wire, which is the part worth keeping from a

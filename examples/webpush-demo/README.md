@@ -10,7 +10,7 @@ The app sits between the browser and uniqush and does three things: registers a
 push service provider at startup, turns a push registration into a uniqush
 subscription, and sends a test notification. It proxies rather than letting the
 page call uniqush directly, because uniqush sends no CORS headers and its REST
-API has **no authentication** — it should never be reachable from a browser.
+API has **no authentication** by default — it should never be reachable from a browser.
 
 > This is a testing tool. Don't deploy it.
 
@@ -30,6 +30,9 @@ go build -o uniqush-push .
 cd examples/webpush-demo
 go run .
 ```
+
+If uniqush requires an API token (`[WebFrontend] token_file`), pass the same
+file with `go run . -token-file /etc/uniqush/api-token`.
 
 Then open <http://localhost:8080>, click **Enable notifications in this
 browser**, and click **Send test push**.
