@@ -52,7 +52,7 @@ func (handler *APIPushResponseHandler) AddDetailsToHandler(v APIResponseDetails)
 	if v.Code == UNIQUSH_SUCCESS {
 		handler.response.SuccessDetails = append(handler.response.SuccessDetails, v)
 		handler.response.SuccessCount++
-	} else if v.Code == UNIQUSH_UPDATE_UNSUBSCRIBE || v.Code == UNIQUSH_REMOVE_INVALID_REG {
+	} else if v.Code == UNIQUSH_UPDATE_UNSUBSCRIBE || v.Code == UNIQUSH_REMOVE_INVALID_REG || v.Code == UNIQUSH_NOT_SUBSCRIBED {
 		handler.response.DroppedDetails = append(handler.response.DroppedDetails, v)
 		handler.response.DroppedCount++
 	} else {
@@ -64,6 +64,9 @@ func (handler *APIPushResponseHandler) AddDetailsToHandler(v APIResponseDetails)
 
 // ToJSON serializes this push response as JSON to send to the client of uniqush-push.
 func (handler *APIPushResponseHandler) ToJSON() []byte {
+	// A retry can still be adding details after the response is written.
+	handler.mutex.Lock()
+	defer handler.mutex.Unlock()
 	json, err := json.Marshal(handler.response)
 	if err != nil {
 		handler.logger.Errorf("Failed to marshal json [%v] as string: %v", handler.response, err)

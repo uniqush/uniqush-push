@@ -341,30 +341,7 @@ func (backend *PushBackEnd) fixInvalidRegistrationUpdate(
 	logger log.Logger,
 	handler APIResponseHandler,
 ) {
-	if err.Provider == nil || err.Destination == nil {
-		return
-	}
-
-	var service string
-	var sub string
-	var ok bool
-
-	if service, ok = err.Provider.FixedData["service"]; !ok {
-		return
-	}
-	if sub, ok = err.Destination.FixedData["subscriber"]; !ok {
-		return
-	}
-	dp := err.Destination
-	e := backend.Unsubscribe(service, sub, dp)
-	dpName := dp.Name()
-	if e != nil {
-		logger.Errorf("Service=%v Subscriber=%v DeliveryPoint=%v Removing invalid reg failed: %v", service, sub, dpName, e)
-		handler.AddDetailsToHandler(APIResponseDetails{RequestID: &reqID, From: &remoteAddr, Service: &service, Subscriber: &sub, DeliveryPoint: &dpName, Code: UNIQUSH_REMOVE_INVALID_REG, ErrorMsg: strPtrOfErr(e)})
-	} else {
-		logger.Infof("Service=%v Subscriber=%v DeliveryPoint=%v Invalid registration removed", service, sub, dpName)
-		handler.AddDetailsToHandler(APIResponseDetails{RequestID: &reqID, From: &remoteAddr, Service: &service, Subscriber: &sub, DeliveryPoint: &dpName, Code: UNIQUSH_REMOVE_INVALID_REG})
-	}
+	backend.removeGoneDeliveryPoint(err.Provider, err.Destination, UNIQUSH_REMOVE_INVALID_REG, reqID, remoteAddr, logger, handler)
 }
 
 func (backend *PushBackEnd) fixUnsubscribeUpdate(
@@ -374,29 +351,64 @@ func (backend *PushBackEnd) fixUnsubscribeUpdate(
 	logger log.Logger,
 	handler APIResponseHandler,
 ) {
-	if err.Provider == nil || err.Destination == nil {
-		return
-	}
-	var service string
-	var sub string
-	var ok bool
+	backend.removeGoneDeliveryPoint(err.Provider, err.Destination, UNIQUSH_UPDATE_UNSUBSCRIBE, reqID, remoteAddr, logger, handler)
+}
 
-	if service, ok = err.Provider.FixedData["service"]; !ok {
+// errNotRemoved is reported for a device a push service said was gone but
+// uniqush did not remove, because its record had already gone or changed.
+var errNotRemoved = errors.New("not removed: it was already removed, or re-subscribed after the push read it")
+
+// removeGoneDeliveryPoint removes a delivery point its push service said is
+// gone, and reports the removal in the response and in /removed.
+//
+// The /push response cannot be the only report: a removal made by a retry, or
+// by an APNs response read after the push answered, happens when there is no
+// response left to put it in.
+func (backend *PushBackEnd) removeGoneDeliveryPoint(
+	provider *push.PushServiceProvider,
+	dp *push.DeliveryPoint,
+	code string,
+	reqID string,
+	remoteAddr string,
+	logger log.Logger,
+	handler APIResponseHandler,
+) {
+	if provider == nil || dp == nil {
 		return
 	}
-	if sub, ok = err.Destination.FixedData["subscriber"]; !ok {
+	service, ok := provider.FixedData["service"]
+	if !ok {
 		return
 	}
-	dp := err.Destination
-	e := backend.Unsubscribe(service, sub, dp)
+	sub, ok := dp.FixedData["subscriber"]
+	if !ok {
+		return
+	}
 	dpName := dp.Name()
-	if e != nil {
-		logger.Errorf("Service=%v Subscriber=%v DeliveryPoint=%v Unsubscribe failed: %v", service, sub, dpName, e)
-		handler.AddDetailsToHandler(APIResponseDetails{RequestID: &reqID, From: &remoteAddr, Service: &service, Subscriber: &sub, DeliveryPoint: &dpName, Code: UNIQUSH_UPDATE_UNSUBSCRIBE, ErrorMsg: strPtrOfErr(e)})
-	} else {
-		logger.Infof("Service=%v Subscriber=%v DeliveryPoint=%v Unsubscribe success", service, sub, dpName)
-		handler.AddDetailsToHandler(APIResponseDetails{RequestID: &reqID, From: &remoteAddr, Service: &service, Subscriber: &sub, DeliveryPoint: &dpName, Code: UNIQUSH_UPDATE_UNSUBSCRIBE})
+	details := APIResponseDetails{RequestID: &reqID, From: &remoteAddr, Service: &service, Subscriber: &sub, DeliveryPoint: &dpName, Code: code}
+	removed, err := backend.db.RemoveDeliveryPointIfUnchanged(service, sub, dp)
+	if err == nil && !removed {
+		err = errNotRemoved
 	}
+	if err != nil {
+		logger.Errorf("Service=%v Subscriber=%v DeliveryPoint=%v Removing a device its push service reported gone: %v", service, sub, dpName, err)
+		details.ErrorMsg = strPtrOfErr(err)
+		handler.AddDetailsToHandler(details)
+		return
+	}
+	logger.Infof("Service=%v Subscriber=%v DeliveryPoint=%v Removed a device its push service reported gone", service, sub, dpName)
+	entry := db.NewRemovedDeliveryPoint(dp, code)
+	entry.Service = service
+	if err = backend.db.RecordRemovedDeliveryPoint(entry); err != nil {
+		logger.Errorf("Service=%v Subscriber=%v DeliveryPoint=%v Could not record the removal: %v", service, sub, dpName, err)
+	}
+	details.Removed = &entry
+	handler.AddDetailsToHandler(details)
+}
+
+// RemovedDeliveryPoints reads a service's removal log, for /removed.
+func (backend *PushBackEnd) RemovedDeliveryPoints(service, after string, count int64) ([]db.RemovedDeliveryPoint, bool, error) {
+	return backend.db.RemovedDeliveryPoints(service, after, count)
 }
 
 func getDeliveryPointNameOrUnknown(dp *push.DeliveryPoint) string {
@@ -569,6 +581,10 @@ func (backend *PushBackEnd) pushImpl(
 	dpChanMap := make(map[string]chan *push.DeliveryPoint)
 	// wg is used to wait for all pushes and push responses to complete before returning.
 	wg := new(sync.WaitGroup)
+	// found is the requested delivery points some subscriber still has, and
+	// lookupFailed whether that is known for every subscriber.
+	found := make(map[string]bool, len(dpNamesRequested))
+	lookupFailed := false
 
 	// Loop over all subscriptions, fetching the list of corresponding delivery points to send to from the db, starting to push and send pushes.
 	for _, sub := range subs {
@@ -585,6 +601,7 @@ func (backend *PushBackEnd) pushImpl(
 			var err error
 			pspDpList, err = backend.db.GetPushServiceProviderDeliveryPointPairs(service, sub, dpNamesRequested, reqID, logger)
 			if err != nil {
+				lookupFailed = true
 				logger.Errorf("RequestID=%v Service=%v Subscriber=%v Failed: Database Error: %v", reqID, service, sub, err)
 				handler.AddDetailsToHandler(APIResponseDetails{RequestID: &reqID, From: &remoteAddr, Service: &service, Subscriber: &sub, Code: UNIQUSH_ERROR_DATABASE, ErrorMsg: strPtrOfErr(err)})
 				continue
@@ -600,9 +617,13 @@ func (backend *PushBackEnd) pushImpl(
 		for _, pair := range pspDpList {
 			psp := pair.PushServiceProvider
 			dp := pair.DeliveryPoint
+			if dp != nil {
+				found[dp.Name()] = true
+			}
 			if psp == nil {
-				logger.Errorf("RequestID=%v Service=%v Subscriber=%v Failed once: nil Push Service Provider", reqID, service, sub)
-				handler.AddDetailsToHandler(APIResponseDetails{RequestID: &reqID, From: &remoteAddr, Service: &service, Subscriber: &sub, Code: UNIQUSH_ERROR_NO_PUSH_SERVICE_PROVIDER})
+				dpName := getDeliveryPointNameOrUnknown(dp)
+				logger.Errorf("RequestID=%v Service=%v Subscriber=%v DeliveryPoint=%v Failed once: nil Push Service Provider", reqID, service, sub, dpName)
+				handler.AddDetailsToHandler(APIResponseDetails{RequestID: &reqID, From: &remoteAddr, Service: &service, Subscriber: &sub, DeliveryPoint: &dpName, Code: UNIQUSH_ERROR_NO_PUSH_SERVICE_PROVIDER})
 				continue
 			}
 			if dp == nil {
@@ -643,6 +664,19 @@ func (backend *PushBackEnd) pushImpl(
 			// Add this delivery point to the group for that psp.Name()
 			dpQueue <- dp
 		}
+	}
+	// Reported rather than skipped: a caller pushing by delivery_point_id keeps
+	// its own list of them, and this is how it learns one was removed while it
+	// was not listening.
+	// Not after a failed lookup, though: the subscriber whose devices could not
+	// be read may well have them, and a caller deletes what this reports.
+	for _, dpName := range dpNamesRequested {
+		if lookupFailed || found[dpName] {
+			continue
+		}
+		found[dpName] = true // so that an id asked for twice is reported once
+		logger.Infof("RequestID=%v Service=%v DeliveryPoint=%v Not subscribed", reqID, service, dpName)
+		handler.AddDetailsToHandler(APIResponseDetails{RequestID: &reqID, From: &remoteAddr, Service: &service, DeliveryPoint: &dpName, Code: UNIQUSH_NOT_SUBSCRIBED})
 	}
 	// Signal that there are no more delivery points so that goroutines can stop reading the next delivery point.
 	for _, dpch := range dpChanMap {

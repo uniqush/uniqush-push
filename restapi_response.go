@@ -1,5 +1,7 @@
 package main
 
+import "github.com/uniqush/uniqush-push/db"
+
 // These are constants with codes for a uniqush response type.
 //
 //nolint:revive
@@ -9,6 +11,9 @@ const (
 	UNIQUSH_SUCCESS            = "UNIQUSH_SUCCESS"
 	UNIQUSH_REMOVE_INVALID_REG = "UNIQUSH_REMOVE_INVALID_REG"
 	UNIQUSH_UPDATE_UNSUBSCRIBE = "UNIQUSH_UPDATE_UNSUBSCRIBE"
+	// UNIQUSH_NOT_SUBSCRIBED is a delivery_point_id /push was asked for that
+	// none of the subscribers has.
+	UNIQUSH_NOT_SUBSCRIBED = "UNIQUSH_NOT_SUBSCRIBED"
 
 	/* Errors */
 
@@ -63,6 +68,9 @@ type APIResponseDetails struct {
 	// checking for, and an absent field would leave them unable to tell it from
 	// a uniqush too old to know the parameter.
 	DevicesRemoved *int `json:"devicesRemoved,omitempty"`
+	// Removed describes a delivery point a push deleted because its push
+	// service said the device was gone, in the shape /removed reports it.
+	Removed *db.RemovedDeliveryPoint `json:"removed,omitempty"`
 }
 
 // HealthResponse is what /health answers with.

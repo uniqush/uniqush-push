@@ -105,7 +105,14 @@ const (
 	CheckDatabaseURL = "/checkdb"
 	// MetricsURL reports counters and gauges in the Prometheus text format.
 	MetricsURL = "/metrics"
+	// QueryRemovedURL lists the delivery points uniqush removed because their
+	// push service said the device was gone.
+	QueryRemovedURL = "/removed"
 )
+
+// maxRemovedPerQuery bounds one /removed answer. A caller that is behind pages
+// through with the cursor it is given.
+const maxRemovedPerQuery = 1000
 
 // maxLoggedProblems bounds the per-finding lines one /checkdb writes to the log.
 //
@@ -790,6 +797,51 @@ func (api *RestAPI) queryStats(kv map[string][]string, logger log.Logger) []byte
 	return marshalOrError(responseType{Services: stats, Code: UNIQUSH_SUCCESS})
 }
 
+// queryRemoved reads one service's removal log after a cursor.
+func (api *RestAPI) queryRemoved(kv url.Values, logger log.Logger) []byte {
+	type responseType struct {
+		Code      string                    `json:"code"`
+		ErrorMsg  *string                   `json:"errorMsg,omitempty"`
+		Removed   []db.RemovedDeliveryPoint `json:"removed"`
+		Next      string                    `json:"next,omitempty"`
+		Truncated bool                      `json:"truncated"`
+	}
+	fail := func(code string, err error) []byte {
+		logger.Errorf("Query=Removed %v", err)
+		return marshalOrError(responseType{Code: code, ErrorMsg: strPtrOfErr(err)})
+	}
+
+	service := kv.Get("service")
+	if err := validateService(service); err != nil {
+		return fail(UNIQUSH_ERROR_CANNOT_GET_SERVICE, fmt.Errorf("invalid service %q", service))
+	}
+	since := kv.Get("since")
+	if since == "" {
+		since = "0"
+	}
+	limit := int64(maxRemovedPerQuery)
+	if v := kv.Get("limit"); v != "" {
+		parsed, err := strconv.ParseInt(v, 10, 64)
+		if err != nil || parsed <= 0 {
+			return fail(UNIQUSH_ERROR_GENERIC, fmt.Errorf("invalid limit %q", v))
+		}
+		limit = min(parsed, limit)
+	}
+
+	removed, truncated, err := api.backend.RemovedDeliveryPoints(service, since, limit)
+	if errors.Is(err, db.ErrInvalidCursor) {
+		return fail(UNIQUSH_ERROR_GENERIC, err)
+	}
+	if err != nil {
+		return fail(UNIQUSH_ERROR_DATABASE, err)
+	}
+	next := since
+	if len(removed) > 0 {
+		next = removed[len(removed)-1].ID
+	}
+	return marshalOrError(responseType{Code: UNIQUSH_SUCCESS, Removed: removed, Next: next, Truncated: truncated})
+}
+
 // marshalOrError encodes a response, falling back to a fixed message.
 //
 // The fallback is unreachable for the types here -- they are maps of counts and
@@ -977,6 +1029,11 @@ func (api *RestAPI) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		n := api.queryPSPs(api.loggers[LoggerPSPs])
 		fmt.Fprintf(w, "%s\r\n", n)
 		return
+	case QueryRemovedURL:
+		r.ParseForm()
+		n := api.queryRemoved(r.Form, api.loggers[LoggerServices])
+		fmt.Fprintf(w, "%s\r\n", n)
+		return
 	case QueryStatsURL:
 		r.ParseForm()
 		n := api.queryStats(r.Form, api.loggers[LoggerServices])
@@ -1108,6 +1165,7 @@ func (api *RestAPI) serve() {
 	http.Handle(HealthURL, api)
 	http.Handle(CheckDatabaseURL, api)
 	http.Handle(MetricsURL, api)
+	http.Handle(QueryRemovedURL, api)
 
 	err := http.Serve(ln, nil)
 	if err != nil && !errors.Is(err, net.ErrClosed) {

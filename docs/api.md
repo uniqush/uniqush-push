@@ -88,6 +88,7 @@ uniqush warns at startup when it listens on a non-loopback TCP address with no
 | [`/nrdp`](#nrdp) | Count a subscriber's devices |
 | [`/stats`](#stats) | Count each service's subscribers and devices |
 | [`/push`](#push) | Send a notification |
+| [`/removed`](#removed) | List the devices uniqush removed because their push service said they were gone |
 | [`/previewpush`](#previewpush) | Show the payload `/push` would send, without sending it |
 | [`/checkdb`](#checkdb) | Report database inconsistencies (read-only) |
 | [`/rebuildserviceset`](#rebuildserviceset) | One-time migration for databases created before 2.2.0 |
@@ -404,7 +405,7 @@ Addressing:
 |---|---|
 | `service` | Required. |
 | `subscriber` (or `subscribers`) | Required. One or more subscribers, comma-separated. `*` is a wildcard: `alice.*` matches every subscriber with that prefix, and `*` alone every subscriber in the service. A wildcard is matched against the service's subscriber index, so it costs the size of the service rather than the size of the database — unless [`/rebuildsubscriberindex`](#rebuildsubscriberindex) has yet to be run, in which case it falls back to a keyspace scan and logs an error saying so. |
-| `delivery_point_id` | Optional. Comma-separated `delivery_point_id`s from `/subscriptions`, to push to some of a subscriber's devices and not others. |
+| `delivery_point_id` | Optional. Comma-separated `delivery_point_id`s, to push to some of a subscriber's devices and not others. A device's id is the `deliveryPoint` in its `/subscribe` response, and `/subscriptions` lists them with `include_delivery_point_ids=1`. Ids are matched only within the named subscribers: another subscriber's device is never pushed to, and an id that none of the named subscribers has is reported in `droppedDetails` as `UNIQUSH_NOT_SUBSCRIBED`. |
 
 Content — every parameter other than the addressing ones becomes part of the
 payload. These have meaning to uniqush or a backend:
@@ -449,16 +450,96 @@ The response counts and lists the outcome per device:
     {"type":"Push","date":1756900000,"successCount":1,"failureCount":0,"droppedCount":1,
      "successDetails":[{"requestId":"...","service":"myservice","subscriber":"alice","pushServiceProvider":"apns:...","deliveryPoint":"apns:...","messageId":"...","code":"UNIQUSH_SUCCESS"}],
      "failureDetails":[],
-     "droppedDetails":[{"...":"...","code":"UNIQUSH_REMOVE_INVALID_REG"}]}
+     "droppedDetails":[{"requestId":"...","service":"myservice","from":"127.0.0.1:52210","subscriber":"bob",
+       "deliveryPoint":"webpush:5f2b...","code":"UNIQUSH_UPDATE_UNSUBSCRIBE",
+       "removed":{"service":"myservice","subscriber":"bob","pushServiceType":"webpush",
+                  "deliveryPoint":"webpush:5f2b...","devid":"bob-laptop",
+                  "endpoint":"https://push.example.org/wpush/v2/gAAA...","reason":"UNIQUSH_UPDATE_UNSUBSCRIBE"}}]}
 
-`droppedDetails` are devices uniqush unsubscribed because the push service
-reported the token dead (`UNIQUSH_REMOVE_INVALID_REG`) or replaced with a new
-one (`UNIQUSH_UPDATE_UNSUBSCRIBE`); `modifiedDp: true` on a success means the
-stored device was updated in passing (an FCM canonical-token change).
+`droppedDetails` are devices the push service reported gone, and requested
+ids that are not subscribed. An entry with `removed` is a device uniqush
+deleted; `removed` is the same object [`/removed`](#removed) lists, without
+its `id` and `time`. An entry without `removed` carries an `errorMsg` and means
+uniqush deleted nothing: the removal failed and the device is still subscribed,
+or the device had already been removed, or it was re-subscribed after the push
+read it. Only `removed` is a reason to delete a record.
+
+A requested `delivery_point_id` that none of the named subscribers has is listed
+once, as `{"requestId":"...","service":"myservice","from":"...",
+"deliveryPoint":"webpush:5f2b...","code":"UNIQUSH_NOT_SUBSCRIBED"}` — typically
+a device removed while the caller was not listening. It means "not among the
+subscribers this push named", so drop the record only if you named the right
+subscriber. A device whose provider has been removed is still subscribed and
+fails with `UNIQUSH_ERROR_NO_PUSH_SERVICE_PROVIDER` instead. If any named
+subscriber's devices could not be read (`UNIQUSH_ERROR_DATABASE` in
+`failureDetails`), no id is reported `UNIQUSH_NOT_SUBSCRIBED`, since the missing
+ones may be that subscriber's. A subscriber with none of the requested ids also
+gets `UNIQUSH_ERROR_NO_DEVICE` in `failureDetails`, as before.
+
+`modifiedDp: true` on a success means the stored device was updated in passing
+(an FCM canonical-token change).
 `failureDetails` entries carry an `errorMsg`. A transient failure is retried
 in the background with a backoff, honouring the delay the push service asked
 for up to 30 minutes; the response reports the first attempt only, and a
 retry that is finally abandoned is logged with `UNIQUSH_ERROR_FAILED_RETRY`.
+
+Not every removal can be in the response. A retry runs after it, and APNs
+reports a push as sent once Apple has the request and reads Apple's answer
+afterwards, so an APNs device is never in `droppedDetails`. `/removed` has
+every removal, including the ones that are also in a response.
+
+### `/removed`
+
+| Parameter | |
+|---|---|
+| `service` | Required. |
+| `since` | Optional. The `next` of a previous call. Without it, the list starts at the oldest removal kept. A malformed cursor, or one past the newest removal of the service (which this service's `/removed` cannot have returned), is refused with `UNIQUSH_ERROR_GENERIC`. |
+| `limit` | Optional. At most this many entries; default and maximum 1000. Anything but a positive integer is refused with `UNIQUSH_ERROR_GENERIC`. |
+
+Lists, oldest first, the devices uniqush unsubscribed from a service because
+their push service said they were gone, after the cursor `since`.
+
+    curl 'http://localhost:9898/removed?service=myservice&since=1756900000000-0'
+    {"code":"UNIQUSH_SUCCESS",
+     "removed":[{"id":"1756900012345-0","time":1756900012,"service":"myservice","subscriber":"bob",
+                 "pushServiceType":"webpush","deliveryPoint":"webpush:5f2b...","devid":"bob-laptop",
+                 "endpoint":"https://push.example.org/wpush/v2/gAAA...","reason":"UNIQUSH_UPDATE_UNSUBSCRIBE"}],
+     "next":"1756900012345-0","truncated":false}
+
+Each entry has:
+
+| Field | |
+|---|---|
+| `id` | This entry's cursor. Opaque; compare for equality only. |
+| `time` | Unix time the device was removed. |
+| `service`, `subscriber` | Whose device it was. |
+| `pushServiceType` | `apns`, `fcm`, `gcm`, `adm`, `webpush` or `unifiedpush`. |
+| `deliveryPoint` | The device's `delivery_point_id` in [`/subscriptions`](#subscriptions). |
+| `devid` | The `devid` given at `/subscribe`. Omitted if none was. |
+| `endpoint` | webpush and unifiedpush: the endpoint the push service rejected. |
+| `devtoken` | apns: the device token. |
+| `regid` | fcm, gcm and adm: the registration token. |
+| `reason` | The `droppedDetails` code: `UNIQUSH_UPDATE_UNSUBSCRIBE` or `UNIQUSH_REMOVE_INVALID_REG`. |
+
+`endpoint`, `devtoken` and `regid` are the address as it was given to
+`/subscribe`, so a caller that keys devices by `devid` can tell the removed
+registration from a newer one the same device has made since. The Web Push
+`auth` secret and `p256dh` key are never included.
+
+Pass `next` as `since` on the following call; when there is nothing new, `next`
+is the `since` you sent. Each service keeps its newest 100000 removals, so poll
+often enough that fewer than that happen in between. `truncated: true` means
+removals after `since` have already been discarded: the entries returned are
+still correct, but some before them are missing, so reconcile against
+`/subscriptions` before carrying on from `next`. A first call without `since`
+is `truncated` whenever anything has ever been discarded.
+
+Each removal is listed once. A device is removed only if its stored record is
+still the one the push read, so a device that re-subscribed in the meantime is
+neither removed nor listed.
+
+Needs Redis 5.0 or newer, as a single server or a primary with replicas; like
+the rest of uniqush, not twemproxy or Redis Cluster.
 
 ### `/previewpush`
 
@@ -542,7 +623,8 @@ Every response `code` is one of:
 |---|---|
 | `UNIQUSH_SUCCESS` | Done. |
 | `UNIQUSH_REMOVE_INVALID_REG` | (push, dropped) The push service said the device is gone; it has been unsubscribed. |
-| `UNIQUSH_UPDATE_UNSUBSCRIBE` | (push, dropped) The device was replaced by another registration and unsubscribed. |
+| `UNIQUSH_NOT_SUBSCRIBED` | (push, dropped) A `delivery_point_id` that none of the subscribers has. |
+| `UNIQUSH_UPDATE_UNSUBSCRIBE` | (push, dropped) The push service said the device is gone (unregistered, or its token or endpoint expired); it has been unsubscribed. |
 | `UNIQUSH_ERROR_GENERIC` | Something failed; see `errorMsg`. Provider credential or configuration errors reported by the push service land here with a message naming what to check. |
 | `UNIQUSH_ERROR_EMPTY_NOTIFICATION` | `/push` with no content. |
 | `UNIQUSH_ERROR_DATABASE` | Redis error. |
