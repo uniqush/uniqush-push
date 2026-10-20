@@ -107,6 +107,7 @@ type pushRawDatabaseWriter interface { //nolint:staticcheck
 	RebuildSubscriberIndex() error
 
 	FlushCache() error
+	RecordRemovedDeliveryPoint(removed RemovedDeliveryPoint) error
 }
 
 // These methods should be fast!
@@ -145,6 +146,7 @@ type pushRawDatabaseReader interface { //nolint:staticcheck
 	// up. Read-only, and implemented alongside the key layout rather than in
 	// pushdb.go because every check is a statement about how the keys relate.
 	CheckConsistency() (*ConsistencyReport, error)
+	RemovedDeliveryPoints(service, after string, count int64) ([]RemovedDeliveryPoint, bool, error)
 }
 
 type pushRawDatabase interface {

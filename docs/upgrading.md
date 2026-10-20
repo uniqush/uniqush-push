@@ -5,6 +5,8 @@ longer version for operators, and points at the documents that go deeper still.
 [api.md](api.md) is the reference for the API as it is now.
 
 - To **2.11.0**, read [Upgrading to 2.11.0](#upgrading-to-2110).
+
+- From **2.10.0**, read [Upgrading from 2.10.0](#upgrading-from-2100).
 - From **2.8.0**, read [Upgrading from 2.8.0](#upgrading-from-280).
 - From **2.7.0**, read [Upgrading from 2.7.0 to 2.8.0](#upgrading-from-270-to-280)
   first and then the 2.8.0 section. You can go straight to 2.9.0; the two
@@ -29,6 +31,15 @@ something to more backends:
   send one that fits, such as a base64url hash of your own key.
 
 `/previewpush` rejects the same values, so it can be used to check them first.
+
+## Upgrading from 2.10.0
+
+- **The removal log needs Redis 5.0 or newer.** Every device uniqush removes
+  because its push service said it was gone is recorded for
+  [`/removed`](api.md#removed), in a redis stream per service,
+  `removed.dp:<service>`, trimmed to the newest 100000 entries (up to a few tens of
+  megabytes per service). On an older Redis the removals still happen and are still
+  in the `/push` response, but each logs an error and `/removed` fails.
 
 ## Upgrading from 2.8.0
 

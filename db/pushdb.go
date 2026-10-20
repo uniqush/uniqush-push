@@ -142,6 +142,15 @@ type PushDatabase interface {
 	// that covers only part of the database.
 	SubscriberStats(services []string, since *int64) (map[string]*ServiceStats, error)
 
+	// RecordRemovedDeliveryPoint appends to the service's log of delivery
+	// points removed because their push service said the device was gone.
+	RecordRemovedDeliveryPoint(removed RemovedDeliveryPoint) error
+
+	// RemovedDeliveryPoints returns up to count entries of a service's removal
+	// log recorded after the cursor after ("0" for the oldest kept), and
+	// whether entries after that cursor have already been trimmed from the log.
+	RemovedDeliveryPoints(service, after string, count int64) ([]RemovedDeliveryPoint, bool, error)
+
 	FlushCache() error
 }
 
@@ -855,6 +864,16 @@ func (f *pushDatabaseOpts) SubscriberStats(services []string, since *int64) (map
 	f.dblock.RLock()
 	defer f.dblock.RUnlock()
 	return f.db.SubscriberStats(services, since)
+}
+
+// The removal log takes no lock: it shares no keys with the subscriptions
+// dblock protects.
+func (f *pushDatabaseOpts) RecordRemovedDeliveryPoint(removed RemovedDeliveryPoint) error {
+	return f.db.RecordRemovedDeliveryPoint(removed)
+}
+
+func (f *pushDatabaseOpts) RemovedDeliveryPoints(service, after string, count int64) ([]RemovedDeliveryPoint, bool, error) {
+	return f.db.RemovedDeliveryPoints(service, after, count)
 }
 
 func (f *pushDatabaseOpts) RebuildServiceSet() error {

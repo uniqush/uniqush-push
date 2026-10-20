@@ -1,5 +1,7 @@
 package main
 
+import "github.com/uniqush/uniqush-push/db"
+
 // These are constants with codes for a uniqush response type.
 //
 //nolint:revive
@@ -63,6 +65,9 @@ type APIResponseDetails struct {
 	// checking for, and an absent field would leave them unable to tell it from
 	// a uniqush too old to know the parameter.
 	DevicesRemoved *int `json:"devicesRemoved,omitempty"`
+	// Removed describes a delivery point a push deleted because its push
+	// service said the device was gone, in the shape /removed reports it.
+	Removed *db.RemovedDeliveryPoint `json:"removed,omitempty"`
 }
 
 // HealthResponse is what /health answers with.

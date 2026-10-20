@@ -56,6 +56,10 @@ type PushRedisDB struct {
 	// cached, so that /rebuildsubscriberindex takes effect without a restart --
 	// including a rebuild run against a different uniqush instance.
 	indexBuilt atomic.Bool
+
+	// removedLogLength is RemovedLogLength, held here so that a test can reach
+	// the trimming without recording a hundred thousand removals.
+	removedLogLength int64
 }
 
 // redisClient is the subset of go-redis this package uses. Method signatures
@@ -113,6 +117,9 @@ type redisClient interface {
 	// through the *redis.Tx, which is a single dedicated connection to the
 	// master.
 	Watch(ctx context.Context, fn func(*redis.Tx) error, keys ...string) error
+	// XRead reads the removal log; it is always called with a negative Block,
+	// so it never waits.
+	XRead(ctx context.Context, a *redis.XReadArgs) *redis.XStreamSliceCmd
 }
 
 type redisMultiClient struct {
@@ -254,6 +261,10 @@ func (mc *redisMultiClient) ZScan(ctx context.Context, key string, cursor uint64
 
 func (mc *redisMultiClient) ZScore(ctx context.Context, key, member string) *redis.FloatCmd {
 	return mc.slaveClient.ZScore(ctx, key, member)
+}
+
+func (mc *redisMultiClient) XRead(ctx context.Context, a *redis.XReadArgs) *redis.XStreamSliceCmd {
+	return mc.slaveClient.XRead(ctx, a)
 }
 
 var _ redisClient = &redis.Client{}
@@ -564,6 +575,7 @@ func buildPushRedisDB(client redisClient, psm *push.PushServiceManager) *PushRed
 	ret.client = client
 	ret.ctx = context.Background()
 	ret.psm = psm
+	ret.removedLogLength = RemovedLogLength
 	if ret.psm == nil {
 		ret.psm = push.GetPushServiceManager()
 	}

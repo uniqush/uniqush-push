@@ -64,6 +64,9 @@ func (handler *APIPushResponseHandler) AddDetailsToHandler(v APIResponseDetails)
 
 // ToJSON serializes this push response as JSON to send to the client of uniqush-push.
 func (handler *APIPushResponseHandler) ToJSON() []byte {
+	// A retry can still be adding details after the response is written.
+	handler.mutex.Lock()
+	defer handler.mutex.Unlock()
 	json, err := json.Marshal(handler.response)
 	if err != nil {
 		handler.logger.Errorf("Failed to marshal json [%v] as string: %v", handler.response, err)

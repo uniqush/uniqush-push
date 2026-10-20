@@ -363,7 +363,8 @@ func (backend *PushBackEnd) fixInvalidRegistrationUpdate(
 		handler.AddDetailsToHandler(APIResponseDetails{RequestID: &reqID, From: &remoteAddr, Service: &service, Subscriber: &sub, DeliveryPoint: &dpName, Code: UNIQUSH_REMOVE_INVALID_REG, ErrorMsg: strPtrOfErr(e)})
 	} else {
 		logger.Infof("Service=%v Subscriber=%v DeliveryPoint=%v Invalid registration removed", service, sub, dpName)
-		handler.AddDetailsToHandler(APIResponseDetails{RequestID: &reqID, From: &remoteAddr, Service: &service, Subscriber: &sub, DeliveryPoint: &dpName, Code: UNIQUSH_REMOVE_INVALID_REG})
+		removed := backend.recordRemoval(service, dp, UNIQUSH_REMOVE_INVALID_REG, logger)
+		handler.AddDetailsToHandler(APIResponseDetails{RequestID: &reqID, From: &remoteAddr, Service: &service, Subscriber: &sub, DeliveryPoint: &dpName, Code: UNIQUSH_REMOVE_INVALID_REG, Removed: removed})
 	}
 }
 
@@ -395,8 +396,29 @@ func (backend *PushBackEnd) fixUnsubscribeUpdate(
 		handler.AddDetailsToHandler(APIResponseDetails{RequestID: &reqID, From: &remoteAddr, Service: &service, Subscriber: &sub, DeliveryPoint: &dpName, Code: UNIQUSH_UPDATE_UNSUBSCRIBE, ErrorMsg: strPtrOfErr(e)})
 	} else {
 		logger.Infof("Service=%v Subscriber=%v DeliveryPoint=%v Unsubscribe success", service, sub, dpName)
-		handler.AddDetailsToHandler(APIResponseDetails{RequestID: &reqID, From: &remoteAddr, Service: &service, Subscriber: &sub, DeliveryPoint: &dpName, Code: UNIQUSH_UPDATE_UNSUBSCRIBE})
+		removed := backend.recordRemoval(service, dp, UNIQUSH_UPDATE_UNSUBSCRIBE, logger)
+		handler.AddDetailsToHandler(APIResponseDetails{RequestID: &reqID, From: &remoteAddr, Service: &service, Subscriber: &sub, DeliveryPoint: &dpName, Code: UNIQUSH_UPDATE_UNSUBSCRIBE, Removed: removed})
 	}
+}
+
+// recordRemoval logs a delivery point removed because its push service said
+// the device is gone, for /removed.
+//
+// The /push response cannot be the only report: a removal made by a retry, or
+// by an APNs response read after the push answered, happens when there is no
+// response left to put it in.
+func (backend *PushBackEnd) recordRemoval(service string, dp *push.DeliveryPoint, reason string, logger log.Logger) *db.RemovedDeliveryPoint {
+	removed := db.NewRemovedDeliveryPoint(dp, reason)
+	removed.Service = service
+	if err := backend.db.RecordRemovedDeliveryPoint(removed); err != nil {
+		logger.Errorf("Service=%v Subscriber=%v DeliveryPoint=%v Could not record the removal: %v", service, removed.Subscriber, removed.DeliveryPoint, err)
+	}
+	return &removed
+}
+
+// RemovedDeliveryPoints reads a service's removal log, for /removed.
+func (backend *PushBackEnd) RemovedDeliveryPoints(service, after string, count int64) ([]db.RemovedDeliveryPoint, bool, error) {
+	return backend.db.RemovedDeliveryPoints(service, after, count)
 }
 
 func getDeliveryPointNameOrUnknown(dp *push.DeliveryPoint) string {
