@@ -31,8 +31,8 @@ APNs:
 FCM:
 
 - Change: `projectid` is optional for `fcm` providers, and defaults to the `project_id` in `credentialsfile`,
-  including for a provider already stored without one, such as by the Klippa fork. Those used to fail every push
-  with `NoProjectID`.
+  including for a provider already stored without one, such as by the Klippa fork. Those would have failed every
+  push with `NoProjectID`.
 
 UnifiedPush / Web Push:
 
