@@ -142,6 +142,11 @@ type pushService struct {
 	clients     map[string]HTTPClient
 	clientsLock sync.RWMutex
 
+	// projectIDs caches, by path, the project_id of the credentials file of
+	// each provider stored without a projectid, so it is not re-read on every
+	// push. Like clients, it is not refreshed if the file at a path changes.
+	projectIDs sync.Map
+
 	// clientFactory is overridden by tests to avoid needing real credentials.
 	clientFactory func(psp *push.PushServiceProvider) (HTTPClient, error)
 
@@ -329,16 +334,19 @@ func (ps *pushService) BuildPushServiceProviderFromMap(kv map[string]string, psp
 	}
 	psp.FixedData["service"] = service
 
-	projectID, ok := kv["projectid"]
-	if !ok || projectID == "" {
-		return errors.New("NoProjectID")
-	}
-	if ps.name == legacyGCMName {
+	projectID := kv["projectid"]
+	switch {
+	case ps.name == legacyGCMName:
 		// Matches the old gcm layout, so an existing gcm provider updates in place.
+		// Being part of the name, it is not taken from the credentials as fcm's is.
+		if projectID == "" {
+			return errors.New("NoProjectID: gcm providers need projectid")
+		}
 		psp.FixedData["projectid"] = projectID
-	} else {
+	case projectID != "":
 		// The old fcm provider had only "service" fixed, so projectid has to go
-		// in VolatileData to keep that hash stable.
+		// in VolatileData to keep that hash stable. Without it, pushes go to the
+		// credentials file's project; see Push.
 		psp.VolatileData["projectid"] = projectID
 	}
 
@@ -358,10 +366,13 @@ func (ps *pushService) BuildPushServiceProviderFromMap(kv map[string]string, psp
 	// catches a path pointing at the wrong JSON entirely -- an API key, an OAuth
 	// client, a downloaded google-services.json -- which is an easy mistake and
 	// an opaque one to debug at push time.
-	if _, err := loadCredentials(credentialsFile); err != nil {
+	credentials, err := loadCredentials(credentialsFile)
+	if err != nil {
 		return err
 	}
-
+	if projectID == "" && credentials.ProjectID == "" {
+		return errNoProjectID
+	}
 	return nil
 }
 
@@ -371,6 +382,25 @@ func projectIDOf(psp *push.PushServiceProvider) string {
 		return id
 	}
 	return psp.VolatileData["projectid"]
+}
+
+var errNoProjectID = errors.New("NoProjectID: pass projectid, as the credentialsfile has no project_id")
+
+// credentialsProjectID is the project_id in a provider's credentials file.
+func (ps *pushService) credentialsProjectID(psp *push.PushServiceProvider) (string, error) {
+	path := psp.VolatileData["credentialsfile"]
+	if id, ok := ps.projectIDs.Load(path); ok {
+		return id.(string), nil
+	}
+	credentials, err := loadCredentials(path)
+	if err != nil {
+		return "", err
+	}
+	if credentials.ProjectID == "" {
+		return "", errNoProjectID
+	}
+	ps.projectIDs.Store(path, credentials.ProjectID)
+	return credentials.ProjectID, nil
 }
 
 // BuildDeliveryPointFromMap reads one device registration. Unchanged from the
@@ -561,11 +591,17 @@ func (ps *pushService) Push(psp *push.PushServiceProvider, dpQueue <-chan *push.
 	defer close(resQueue)
 
 	projectID := projectIDOf(psp)
+	var err error
 	if projectID == "" {
+		// Resolved here rather than at /addpsp so that providers already stored
+		// without a projectid, as the Klippa fork stored them, need no /addpsp.
+		projectID, err = ps.credentialsProjectID(psp)
+	}
+	if err != nil {
 		drain(dpQueue)
 		resQueue <- &push.Result{
 			Provider: psp, Content: notif,
-			Err: push.NewBadPushServiceProviderWithDetails(psp, "NoProjectID"),
+			Err: push.NewBadPushServiceProviderWithDetails(psp, err.Error()),
 		}
 		return
 	}
