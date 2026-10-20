@@ -344,3 +344,57 @@ func TestPushByDeliveryPointIDReportsTheOnesNotSubscribed(t *testing.T) {
 		t.Errorf("Expected %s to fail for want of a provider and only %s to be not subscribed, got %s", id, gone, body)
 	}
 }
+
+// A delivery_point_id is matched only within the named subscribers, so naming
+// another subscriber's device neither reaches it nor reports it as theirs.
+func TestPushByDeliveryPointIDStaysWithinTheNamedSubscribers(t *testing.T) {
+	backend, _ := setUpRemovalTest(t)
+	const service = "removal_other_subscriber"
+	var mutex sync.Mutex
+	pushed := map[string]int{}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		io.Copy(io.Discard, r.Body)
+		mutex.Lock()
+		pushed[r.URL.Path]++
+		mutex.Unlock()
+		w.WriteHeader(http.StatusCreated)
+	}))
+	t.Cleanup(server.Close)
+
+	pspKV, aliceKV := webPushFixture(t, service, server.URL+"/alice")
+	addRemovalProvider(t, backend, pspKV)
+	_, bobKV := webPushFixture(t, service, server.URL+"/bob")
+	bobKV["subscriber"] = "bob"
+	var dps []*push.DeliveryPoint
+	for _, kv := range []map[string]string{aliceKV, bobKV} {
+		dp, err := push.GetPushServiceManager().BuildDeliveryPointFromMap(kv)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err = backend.Subscribe(service, kv["subscriber"], dp); err != nil {
+			t.Fatal(err)
+		}
+		dps = append(dps, dp)
+	}
+	bobDP := dps[1]
+
+	handler := newPushResponseHandler(log.NewLogger(io.Discard, "[test]", log.LevelSilent))
+	backend.Push("removal-request", "127.0.0.1", service, []string{removalSubscriber}, []string{bobDP.Name()},
+		&push.Notification{Data: map[string]string{"msg": "hello"}}, nil,
+		log.NewLogger(io.Discard, "[test]", log.LevelSilent), handler)
+	body := handler.ToJSON()
+	var response APIPushResponse
+	if err := json.Unmarshal(body, &response); err != nil {
+		t.Fatal(err)
+	}
+
+	if response.SuccessCount != 0 || response.DroppedCount != 1 ||
+		response.DroppedDetails[0].Code != UNIQUSH_NOT_SUBSCRIBED || *response.DroppedDetails[0].DeliveryPoint != bobDP.Name() {
+		t.Errorf("Expected bob's id to be reported not subscribed, got %s", body)
+	}
+	mutex.Lock()
+	defer mutex.Unlock()
+	if len(pushed) != 0 {
+		t.Errorf("Expected nothing to be pushed, the push server saw %v", pushed)
+	}
+}

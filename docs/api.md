@@ -405,7 +405,7 @@ Addressing:
 |---|---|
 | `service` | Required. |
 | `subscriber` (or `subscribers`) | Required. One or more subscribers, comma-separated. `*` is a wildcard: `alice.*` matches every subscriber with that prefix, and `*` alone every subscriber in the service. A wildcard is matched against the service's subscriber index, so it costs the size of the service rather than the size of the database — unless [`/rebuildsubscriberindex`](#rebuildsubscriberindex) has yet to be run, in which case it falls back to a keyspace scan and logs an error saying so. |
-| `delivery_point_id` | Optional. Comma-separated `delivery_point_id`s, to push to some of a subscriber's devices and not others. A device's id is the `deliveryPoint` in its `/subscribe` response, and `/subscriptions` lists them with `include_delivery_point_ids=1`. An id that none of the subscribers has is reported in `droppedDetails` as `UNIQUSH_NOT_SUBSCRIBED`. |
+| `delivery_point_id` | Optional. Comma-separated `delivery_point_id`s, to push to some of a subscriber's devices and not others. A device's id is the `deliveryPoint` in its `/subscribe` response, and `/subscriptions` lists them with `include_delivery_point_ids=1`. Ids are matched only within the named subscribers: another subscriber's device is never pushed to, and an id that none of the named subscribers has is reported in `droppedDetails` as `UNIQUSH_NOT_SUBSCRIBED`. |
 
 Content — every parameter other than the addressing ones becomes part of the
 payload. These have meaning to uniqush or a backend:
