@@ -368,10 +368,8 @@ func (api *RestAPI) buildNotificationFromKV(reqID string, kv map[string]string, 
 			continue
 		}
 		switch k {
-		case "subscriber":
-		case "subscribers":
-		case "service":
-			// three keys need to be ignored
+		case "subscriber", "subscribers", "service", "delivery_point_id":
+			// They pick the devices, and are not part of the notification.
 		case "badge":
 			if v != "" {
 				var e error

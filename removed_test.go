@@ -1,8 +1,13 @@
 package main
 
 import (
+	"bytes"
+	"crypto/aes"
+	"crypto/cipher"
 	"crypto/ecdh"
+	"crypto/hkdf"
 	"crypto/rand"
+	"crypto/sha256"
 	"encoding/base64"
 	"encoding/json"
 	"errors"
@@ -469,6 +474,126 @@ func TestPushByDeliveryPointIDStaysWithinTheNamedSubscribers(t *testing.T) {
 	if len(pushed) != 0 {
 		t.Errorf("Expected nothing to be pushed, the push server saw %v", pushed)
 	}
+}
+
+// delivery_point_id picks the devices, and must not reach them in the payload.
+func TestPushByDeliveryPointIDLeavesItOutOfThePayload(t *testing.T) {
+	cases := []struct {
+		name string
+		// setUp subscribes a device and returns a function waiting for the
+		// payload its push service is sent.
+		setUp func(t *testing.T, backend *PushBackEnd, service string) (*push.DeliveryPoint, func() []byte)
+	}{
+		{"apns", func(t *testing.T, backend *PushBackEnd, service string) (*push.DeliveryPoint, func() []byte) {
+			server := apnstest.NewServer()
+			t.Cleanup(server.Close)
+			caCert, err := server.WriteCACert(t.TempDir())
+			if err != nil {
+				t.Fatal(err)
+			}
+			dp := subscribeForRemoval(t, backend, map[string]string{
+				"service": service, "pushservicetype": "apns", "bundleid": acceptanceBundleID,
+				"cert": "srv/apns/apns-test/localhost.cert", "key": "srv/apns/apns-test/localhost.key",
+				common.EndpointKey: server.URL(), common.CACertKey: caCert,
+			}, map[string]string{
+				"service": service, "subscriber": removalSubscriber, "pushservicetype": "apns",
+				"devtoken": apnstest.DeviceToken(1),
+			})
+			return dp, func() []byte {
+				deadline := time.Now().Add(5 * time.Second)
+				for len(server.Requests()) == 0 && time.Now().Before(deadline) {
+					time.Sleep(20 * time.Millisecond)
+				}
+				if len(server.Requests()) != 1 {
+					t.Fatalf("Expected one request to the simulator, got %d", len(server.Requests()))
+				}
+				return server.Requests()[0].Payload
+			}
+		}},
+		{"webpush", func(t *testing.T, backend *PushBackEnd, service string) (*push.DeliveryPoint, func() []byte) {
+			bodies := make(chan []byte, 1)
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				body, _ := io.ReadAll(r.Body)
+				bodies <- body
+				w.WriteHeader(http.StatusCreated)
+			}))
+			t.Cleanup(server.Close)
+			key, err := ecdh.P256().GenerateKey(rand.Reader)
+			if err != nil {
+				t.Fatal(err)
+			}
+			pspKV, dpKV := webPushFixture(t, service, server.URL+"/sub/1")
+			dpKV["p256dh"] = base64.RawURLEncoding.EncodeToString(key.PublicKey().Bytes())
+			auth, _ := base64.RawURLEncoding.DecodeString(dpKV["auth"])
+			return subscribeForRemoval(t, backend, pspKV, dpKV), func() []byte {
+				return decryptWebPush(t, key, auth, <-bodies)
+			}
+		}},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			backend, api := setUpRemovalTest(t)
+			service := "payload_by_id_" + c.name
+			dp, payload := c.setUp(t, backend, service)
+
+			form := url.Values{"service": {service}, "subscriber": {removalSubscriber},
+				"msg": {"hello"}, "delivery_point_id": {dp.Name()}}
+			request := httptest.NewRequest(http.MethodPost, PushNotificationURL, strings.NewReader(form.Encode()))
+			request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+			recorder := httptest.NewRecorder()
+			api.ServeHTTP(recorder, request)
+			var response APIPushResponse
+			if err := json.Unmarshal(recorder.Body.Bytes(), &response); err != nil || response.SuccessCount != 1 {
+				t.Fatalf("Expected the push to succeed, got %s", recorder.Body.String())
+			}
+
+			got := string(payload())
+			if !strings.Contains(got, "hello") || strings.Contains(got, "delivery_point_id") || strings.Contains(got, dp.Name()) {
+				t.Errorf("Expected the message without its delivery_point_id, got %s", got)
+			}
+		})
+	}
+}
+
+// decryptWebPush reads a single-record aes128gcm body, per RFC 8291.
+func decryptWebPush(t *testing.T, key *ecdh.PrivateKey, auth, body []byte) []byte {
+	t.Helper()
+	expand := func(secret, salt []byte, info string, length int) []byte {
+		prk, err := hkdf.Extract(sha256.New, secret, salt)
+		if err != nil {
+			t.Fatal(err)
+		}
+		out, err := hkdf.Expand(sha256.New, prk, info, length)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return out
+	}
+	salt, idLen := body[:16], int(body[20])
+	keyID, record := body[21:21+idLen], body[21+idLen:]
+	serverKey, err := ecdh.P256().NewPublicKey(keyID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	shared, err := key.ECDH(serverKey)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ikm := expand(shared, auth, "WebPush: info\x00"+string(key.PublicKey().Bytes())+string(keyID), 32)
+	block, err := aes.NewCipher(expand(ikm, salt, "Content-Encoding: aes128gcm\x00", 16))
+	if err != nil {
+		t.Fatal(err)
+	}
+	aead, err := cipher.NewGCM(block)
+	if err != nil {
+		t.Fatal(err)
+	}
+	padded, err := aead.Open(nil, expand(ikm, salt, "Content-Encoding: nonce\x00", 12), record, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// The last record ends with a 2 delimiter and zero padding.
+	return padded[:bytes.LastIndexByte(padded, 2)]
 }
 
 // Only a removal that happened is reported as one: not one whose record had
