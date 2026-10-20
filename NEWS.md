@@ -49,6 +49,10 @@ UnifiedPush / Web Push:
 - Change: `ttl` and `msggroup` are no longer copied into the generated JSON body, as with FCM and ADM, so a
   push carrying nothing else now fails as an empty payload.
 - Change: `/previewpush` rejects the same parameters `/push` does, for APNs and Web Push.
+- Change: `/addpsp` checks the `subscriber` (VAPID contact) of a `webpush` or `unifiedpush` provider, and accepts
+  an email address, a `mailto:` URI or an `https:` URL. Anything else, such as an `http:` URL or a name without an
+  `@`, is refused rather than signed as an invalid `mailto:` contact. Stored providers are unchanged; one stored
+  with a contact that is now refused keeps pushing, and `/addpsp` with `replace=true` and a valid contact fixes it.
 
 Packaging:
 

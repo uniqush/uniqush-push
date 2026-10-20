@@ -200,7 +200,7 @@ vapidprivatekey=NOHiudJNUw6IEf0SN0jYTascVt68R0sQJxMWSbVRWM4
 ```
 
 **2. Create the push service provider.** `subscriber` is the VAPID contact — a
-bare email address or an `https://` URL, not a `mailto:` URI.
+bare email address, a `mailto:` URI or an `https:` URL.
 
 ```
 curl http://localhost:9898/addpsp \

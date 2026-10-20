@@ -120,4 +120,4 @@ curl 'http://localhost:9898/subscriptions?subscriber=demo-user&services=webpushd
 | `-pushservicetype` | `unifiedpush` | or `webpush`; they behave identically |
 | `-subscriber` | `demo-user` | uniqush subscriber name |
 | `-keys` | `vapid-keys.json` | where the VAPID pair is cached |
-| `-contact` | `demo@example.org` | VAPID contact: bare email or `https://` URL, **not** a `mailto:` URI |
+| `-contact` | `demo@example.org` | VAPID contact: an email address, a `mailto:` URI or an `https:` URL |
