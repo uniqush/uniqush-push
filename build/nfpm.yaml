@@ -25,9 +25,10 @@ contents:
   - src: ./usr
     dst: /usr
     type: tree
-  - src: ./lib
-    dst: /lib
-    type: tree
+  # Not a tree: the rpm would then own /lib/systemd and /lib/systemd/system,
+  # with whatever mode the build's umask gave them.
+  - src: ./lib/systemd/system/uniqush-push.service
+    dst: /lib/systemd/system/uniqush-push.service
   - dst: /etc/uniqush
     type: dir
   # Not replaced on upgrade, so a token_file or any other setting survives it.
