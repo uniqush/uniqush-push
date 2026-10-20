@@ -80,7 +80,12 @@ curl http://localhost:9898/health
 
 `/health` answers `{"status":"ok","database":"ok",...}` once Redis is
 reachable. The API is published on localhost only, for the reason given under
-`[WebFrontend] addr` below.
+`[WebFrontend] addr` below. To require a bearer token as well, follow the
+commented example in compose.yaml (needs Compose 2.23.1 or newer): it passes
+the token from `.env` as a secret the image's user can read, and mounts a
+config with `token_file` over the image's own, since the config is the only
+place to set it. Requests then need `-H "Authorization: Bearer $UNIQUSH_API_TOKEN"`
+after `. ./.env`, except `/health`.
 
 To send a real push, run the [UnifiedPush demo](examples/unifiedpush-demo)
 (needs Go 1.26+). It registers a provider with `/addpsp`, subscribes an

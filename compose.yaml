@@ -15,6 +15,22 @@ services:
       retries: 3
       start_period: 30s
     restart: unless-stopped
+    # To require a bearer token, put one in .env, which compose reads:
+    #   (umask 077; echo "UNIQUSH_API_TOKEN=$(openssl rand -hex 32)" > .env)
+    # and uncomment these and the secrets and configs at the end. The image runs
+    # as 65534, which cannot read a token file only you can, and a file-based
+    # secret is bind-mounted with the host file's owner and mode: compose
+    # ignores uid, gid and mode for those outside swarm. A secret taken from
+    # the environment is copied in instead, so it is owned by 65534, mode 0400.
+    # secrets:
+    #   - source: api_token
+    #     target: api_token
+    #     uid: "65534"
+    #     gid: "65534"
+    #     mode: 0400
+    # configs:
+    #   - source: uniqush_conf
+    #     target: /etc/uniqush/uniqush-push.conf
 
   redis:
     image: redis:7
@@ -32,3 +48,19 @@ services:
 
 volumes:
   redis-data:
+
+# token_file can only be set in the config, so this replaces the image's
+# built-in one, which is the same without token_file. Anything not set here
+# takes its default.
+# secrets:
+#   api_token:
+#     environment: UNIQUSH_API_TOKEN
+# configs:
+#   uniqush_conf:
+#     content: |
+#       logfile=
+#       [WebFrontend]
+#       addr=0.0.0.0:9898
+#       token_file=/run/secrets/api_token
+#       [Database]
+#       host=redis

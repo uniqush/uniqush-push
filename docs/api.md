@@ -46,7 +46,10 @@ it on localhost or turn on one or both of these in `[WebFrontend]`:
   the one exception, so that a Docker healthcheck or load balancer can poll it
   without the token; it then reports only whether redis answers (see
   [`/health`](#health)). `/metrics` needs it: give Prometheus the same token
-  with `authorization: {credentials_file: ...}` in the scrape config.
+  with `authorization: {credentials_file: ...}` in the scrape config. The
+  Docker image runs as uid 65534, so a token file bind-mounted from the host
+  must be readable by that user; compose.yaml has a commented example that
+  gives it the token as a secret owned by 65534 with mode 0400.
 
       curl -H "Authorization: Bearer $(cat /etc/uniqush/api-token)" http://localhost:9898/psps
 
