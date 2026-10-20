@@ -7,7 +7,9 @@ problems do not: see [SECURITY.md](SECURITY.md).
 ## Building and testing
 
 You need Go 1.26 or newer. The tests that use redis expect it on
-`localhost:6379` and skip when it isn't there; CI runs them.
+`localhost:6379` and skip when it isn't there; CI runs them. They flush
+databases 0 and 1, so if that redis holds data you want, point them at another
+with `UNIQUSH_TEST_REDIS_ADDR=host:port`.
 
 These are the checks CI runs on a pull request:
 

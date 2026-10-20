@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"io"
+	"net"
 	"strconv"
 	"sync"
 	"testing"
@@ -14,6 +15,7 @@ import (
 	"github.com/uniqush/uniqush-push/srv"
 	"github.com/uniqush/uniqush-push/srv/apns/apnstest"
 	"github.com/uniqush/uniqush-push/srv/apns/common"
+	"github.com/uniqush/uniqush-push/testutil"
 )
 
 // The acceptance test for unbinding delivery points from a provider's
@@ -53,10 +55,12 @@ const acceptanceRedisDB = 1
 func connectAcceptanceDatabase(t *testing.T, psm *push.PushServiceManager) db.PushDatabase {
 	t.Helper()
 
-	client := redis.NewClient(&redis.Options{Addr: "localhost:6379", DB: acceptanceRedisDB, Protocol: 2})
+	host, port := testutil.RedisAddr()
+	addr := net.JoinHostPort(host, strconv.Itoa(port))
+	client := redis.NewClient(&redis.Options{Addr: addr, DB: acceptanceRedisDB, Protocol: 2})
 	if err := client.Ping(context.Background()).Err(); err != nil {
 		client.Close()
-		t.Skipf("No redis on localhost:6379: %v", err)
+		t.Skipf("No redis on %v: %v", addr, err)
 	}
 	// FLUSHDB, not FLUSHALL: it empties the database this client selected and
 	// leaves the others, which is the whole point of being on a separate one.
@@ -68,8 +72,8 @@ func connectAcceptanceDatabase(t *testing.T, psm *push.PushServiceManager) db.Pu
 
 	database, err := db.NewPushDatabaseWithoutCache(&db.DatabaseConfig{
 		Engine:             "redis",
-		Host:               "localhost",
-		Port:               6379,
+		Host:               host,
+		Port:               port,
 		Name:               strconv.Itoa(acceptanceRedisDB),
 		PushServiceManager: psm,
 	})
