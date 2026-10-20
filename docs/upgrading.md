@@ -9,6 +9,8 @@ longer version for operators, and points at the documents that go deeper still.
 - From **2.7.0**, read [Upgrading from 2.7.0 to 2.8.0](#upgrading-from-270-to-280)
   first and then the 2.8.0 section. You can go straight to 2.9.0; the two
   sections do not assume you stopped at 2.8.0 in between.
+- From the **Klippa fork**, read
+  [Migrating from the Klippa fork](#migrating-from-the-klippa-fork).
 
 ## Upgrading from 2.10.0
 
@@ -39,21 +41,6 @@ backends:
 - **Redis topology is unchanged:** a single server, or a primary with replicas.
   Like the rest of uniqush, which relies on WATCH/MULTI and multi-key scripts,
   the log does not work through twemproxy or Redis Cluster.
-
-### Migrating from the Klippa fork
-
-The [Klippa fork](https://github.com/klippa-app/uniqush-push) stores FCM
-providers in the same shape, so its database can be used as is:
-
-- Its providers have no `projectid`; uniqush now takes it from the `project_id`
-  in the service-account JSON, so there is no `/addpsp` step.
-- Run [`/rebuildsubscriberindex`](#run-rebuildsubscriberindex-once) once.
-- `uniqush.notification.fcm` is passed through to FCM as is, where the fork kept
-  only `title`, `body` and `image`.
-- The version string goes from the fork's `3.0.1` back to 2.x, which matters if
-  anything compares versions.
-- The Docker image runs as UID 65534, so the mounted service-account JSON must
-  be readable by that user.
 
 ## Upgrading from 2.8.0
 
@@ -526,3 +513,20 @@ to a composite key, so it had been returning nil for every caller.
 `Finalize` no longer deadlocks: it took the client cache's write lock and
 returned still holding it, so anything touching the cache afterwards blocked
 forever.
+
+## Migrating from the Klippa fork
+
+The [Klippa fork](https://github.com/klippa-app/uniqush-push) stores FCM
+providers in the same shape, so its database can be used as is. It is based on
+2.7.0, so read [Upgrading from 2.7.0 to 2.8.0](#upgrading-from-270-to-280), then
+the 2.8.0 and 2.10.0 sections, as well as this one:
+
+- Its providers have no `projectid`; uniqush now takes it from the `project_id`
+  in the service-account JSON, so there is no `/addpsp` step.
+- Run [`/rebuildsubscriberindex`](#run-rebuildsubscriberindex-once) once.
+- `uniqush.notification.fcm` is passed through to FCM as is, where the fork kept
+  only `title`, `body` and `image`.
+- The version string goes from the fork's `3.0.1` back to 2.x, which matters if
+  anything compares versions.
+- The Docker image runs as UID 65534, so the mounted service-account JSON must
+  be readable by that user.
