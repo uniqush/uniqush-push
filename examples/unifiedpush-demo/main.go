@@ -221,7 +221,7 @@ func run(opts *options) error {
 	}
 	uniqush := &uniqushClient{baseURL: strings.TrimRight(opts.uniqushURL, "/"), client: client}
 	if err := uniqush.version(ctx); err != nil {
-		return fmt.Errorf("uniqush-push is not answering at %s: %w", opts.uniqushURL, err)
+		return fmt.Errorf("uniqush-push at %s: %w", opts.uniqushURL, err)
 	}
 
 	// The subscription is either a real device's, passed in, or one the demo
@@ -575,6 +575,9 @@ func (c *uniqushClient) version(ctx context.Context) error {
 		return err
 	}
 	defer response.Body.Close()
+	if response.StatusCode == http.StatusUnauthorized {
+		return errors.New("/version returned HTTP 401: it requires an API token; pass the file holding it with -token-file, or check the one passed")
+	}
 	if response.StatusCode != http.StatusOK {
 		return fmt.Errorf("/version returned HTTP %d", response.StatusCode)
 	}

@@ -1,10 +1,12 @@
 package main
 
 import (
+	"context"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 )
@@ -33,5 +35,16 @@ func TestUniqushHTTPClientSendsTheTokenOnlyWhenGivenOne(t *testing.T) {
 		if got != want {
 			t.Errorf("token file %q: expected Authorization %q, got %q", tokenFile, want, got)
 		}
+	}
+}
+
+func TestVersionSaysToPassATokenWhenRefused(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusUnauthorized)
+	}))
+	defer server.Close()
+	err := (&uniqushClient{baseURL: server.URL, client: server.Client()}).version(context.Background())
+	if err == nil || !strings.Contains(err.Error(), "-token-file") {
+		t.Errorf("Expected an error suggesting -token-file, got %v", err)
 	}
 }

@@ -509,7 +509,7 @@ every removal, including the ones that are also in a response.
 |---|---|
 | `service` | Required. |
 | `since` | Optional. The `next` of a previous call. Without it, the list starts at the oldest removal kept. A malformed cursor, or one past the newest removal of the service (which this service's `/removed` cannot have returned), is refused with `UNIQUSH_ERROR_GENERIC`. |
-| `limit` | Optional. At most this many entries; default and maximum 1000. Anything but a positive integer is refused with `UNIQUSH_ERROR_GENERIC`. |
+| `limit` | Optional. At most this many entries; default 1000, and larger values are capped at 1000. Anything but a positive integer is refused with `UNIQUSH_ERROR_GENERIC`. |
 
 Lists, oldest first, the devices uniqush unsubscribed from a service because
 their push service said they were gone, after the cursor `since`. The first
