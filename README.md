@@ -333,7 +333,9 @@ neither fixes redis nor helps the backlog drain when it returns.
 The Docker image has no curl, so its `HEALTHCHECK` runs `uniqush-push
 -healthcheck`, which asks `/health` on the `addr` in the config and exits `0`
 on a `200` and `1` otherwise. Docker only marks the container unhealthy; it does
-not restart it.
+not restart it. It works with an `addr=unix:` socket too. If you run with a
+custom `-config`, mount it over `/etc/uniqush/uniqush-push.conf` instead, since
+that default path is the one the `HEALTHCHECK` reads.
 
 Redis is the only dependency checked, because it is the only one uniqush cannot
 work without at all. It deliberately does not probe Apple or Google — an

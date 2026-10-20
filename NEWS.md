@@ -45,6 +45,7 @@ Packaging:
 
 - New feature: `uniqush-push -healthcheck` exits 0 if the server on the config's `addr` answers `/health` with a
   200, and the Docker image and `compose.yaml` use it as their healthcheck, since the image has no curl.
+  `compose.yaml` pulls `:latest`, so its healthcheck needs 2.11.0 or newer.
 
 20 Oct 2026, uniqush-push 2.10.0
 --------------------------------
