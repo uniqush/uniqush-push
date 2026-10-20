@@ -52,7 +52,7 @@ func (handler *APIPushResponseHandler) AddDetailsToHandler(v APIResponseDetails)
 	if v.Code == UNIQUSH_SUCCESS {
 		handler.response.SuccessDetails = append(handler.response.SuccessDetails, v)
 		handler.response.SuccessCount++
-	} else if v.Code == UNIQUSH_UPDATE_UNSUBSCRIBE || v.Code == UNIQUSH_REMOVE_INVALID_REG {
+	} else if v.Code == UNIQUSH_UPDATE_UNSUBSCRIBE || v.Code == UNIQUSH_REMOVE_INVALID_REG || v.Code == UNIQUSH_NOT_SUBSCRIBED {
 		handler.response.DroppedDetails = append(handler.response.DroppedDetails, v)
 		handler.response.DroppedCount++
 	} else {

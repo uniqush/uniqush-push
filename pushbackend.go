@@ -591,6 +591,8 @@ func (backend *PushBackEnd) pushImpl(
 	dpChanMap := make(map[string]chan *push.DeliveryPoint)
 	// wg is used to wait for all pushes and push responses to complete before returning.
 	wg := new(sync.WaitGroup)
+	// found is the requested delivery points some subscriber still has.
+	found := make(map[string]bool, len(dpNamesRequested))
 
 	// Loop over all subscriptions, fetching the list of corresponding delivery points to send to from the db, starting to push and send pushes.
 	for _, sub := range subs {
@@ -622,9 +624,13 @@ func (backend *PushBackEnd) pushImpl(
 		for _, pair := range pspDpList {
 			psp := pair.PushServiceProvider
 			dp := pair.DeliveryPoint
+			if dp != nil {
+				found[dp.Name()] = true
+			}
 			if psp == nil {
-				logger.Errorf("RequestID=%v Service=%v Subscriber=%v Failed once: nil Push Service Provider", reqID, service, sub)
-				handler.AddDetailsToHandler(APIResponseDetails{RequestID: &reqID, From: &remoteAddr, Service: &service, Subscriber: &sub, Code: UNIQUSH_ERROR_NO_PUSH_SERVICE_PROVIDER})
+				dpName := getDeliveryPointNameOrUnknown(dp)
+				logger.Errorf("RequestID=%v Service=%v Subscriber=%v DeliveryPoint=%v Failed once: nil Push Service Provider", reqID, service, sub, dpName)
+				handler.AddDetailsToHandler(APIResponseDetails{RequestID: &reqID, From: &remoteAddr, Service: &service, Subscriber: &sub, DeliveryPoint: &dpName, Code: UNIQUSH_ERROR_NO_PUSH_SERVICE_PROVIDER})
 				continue
 			}
 			if dp == nil {
@@ -664,6 +670,15 @@ func (backend *PushBackEnd) pushImpl(
 
 			// Add this delivery point to the group for that psp.Name()
 			dpQueue <- dp
+		}
+	}
+	// Reported rather than skipped: a caller pushing by delivery_point_id keeps
+	// its own list of them, and this is how it learns one was removed while it
+	// was not listening.
+	for _, dpName := range dpNamesRequested {
+		if !found[dpName] {
+			logger.Infof("RequestID=%v Service=%v DeliveryPoint=%v Not subscribed", reqID, service, dpName)
+			handler.AddDetailsToHandler(APIResponseDetails{RequestID: &reqID, From: &remoteAddr, Service: &service, DeliveryPoint: &dpName, Code: UNIQUSH_NOT_SUBSCRIBED})
 		}
 	}
 	// Signal that there are no more delivery points so that goroutines can stop reading the next delivery point.

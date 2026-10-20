@@ -35,6 +35,8 @@ UnifiedPush / Web Push:
   id that was rejected. `/removed?service=...&since=<cursor>` lists every such removal, including the ones made by a
   retry or by an APNs answer read after `/push` responded, so a caller can keep its own device records in step. Each
   service keeps its newest 100000; the log needs Redis 5.0 or newer.
+- New feature: A `/push` by `delivery_point_id` reports each id none of the subscribers has as `UNIQUSH_NOT_SUBSCRIBED`
+  in `droppedDetails`, rather than skipping it.
 - Bugfix: A retry finishing while the `/push` response was being written no longer races with writing it.
 
 20 Oct 2026, uniqush-push 2.10.0

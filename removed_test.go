@@ -8,6 +8,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -97,17 +98,22 @@ func webPushFixture(t *testing.T, service, endpoint string) (pspKV, dpKV map[str
 	return pspKV, dpKV
 }
 
-func subscribeForRemoval(t *testing.T, backend *PushBackEnd, pspKV, dpKV map[string]string) *push.DeliveryPoint {
+func addRemovalProvider(t *testing.T, backend *PushBackEnd, pspKV map[string]string) *push.PushServiceProvider {
 	t.Helper()
-	psm := push.GetPushServiceManager()
-	psp, err := psm.BuildPushServiceProviderFromMap(pspKV)
+	psp, err := push.GetPushServiceManager().BuildPushServiceProviderFromMap(pspKV)
 	if err != nil {
 		t.Fatalf("Could not build the provider: %v", err)
 	}
 	if err = backend.AddPushServiceProvider(pspKV["service"], psp, false); err != nil {
 		t.Fatalf("Could not add the provider: %v", err)
 	}
-	dp, err := psm.BuildDeliveryPointFromMap(dpKV)
+	return psp
+}
+
+func subscribeForRemoval(t *testing.T, backend *PushBackEnd, pspKV, dpKV map[string]string) *push.DeliveryPoint {
+	t.Helper()
+	addRemovalProvider(t, backend, pspKV)
+	dp, err := push.GetPushServiceManager().BuildDeliveryPointFromMap(dpKV)
 	if err != nil {
 		t.Fatalf("Could not build the delivery point: %v", err)
 	}
@@ -277,5 +283,64 @@ func waitForRemoved(t *testing.T, api *RestAPI, service string, timeout time.Dur
 			t.Fatalf("Expected one entry in /removed, got %+v", removed)
 		}
 		time.Sleep(50 * time.Millisecond)
+	}
+}
+
+// A caller pushing by delivery_point_id passes the ids /subscribe gave it, and
+// one it holds for a device uniqush has since removed is reported, not skipped.
+func TestPushByDeliveryPointIDReportsTheOnesNotSubscribed(t *testing.T) {
+	backend, api := setUpRemovalTest(t)
+	const service = "removal_by_id"
+	pspKV, dpKV := webPushFixture(t, service, webPushServer(t, http.StatusCreated).URL+"/sub/1")
+	psp := addRemovalProvider(t, backend, pspKV)
+
+	post := func(path string, form url.Values) []byte {
+		t.Helper()
+		request := httptest.NewRequest(http.MethodPost, path, strings.NewReader(form.Encode()))
+		request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+		recorder := httptest.NewRecorder()
+		api.ServeHTTP(recorder, request)
+		return recorder.Body.Bytes()
+	}
+	subscribeForm := url.Values{}
+	for k, v := range dpKV {
+		subscribeForm.Set(k, v)
+	}
+	var subscribed APISimpleResponse
+	if err := json.Unmarshal(post(AddDeliveryPointToServiceURL, subscribeForm), &subscribed); err != nil || subscribed.Details.DeliveryPoint == nil {
+		t.Fatalf("Could not subscribe: %+v, %v", subscribed, err)
+	}
+	id := *subscribed.Details.DeliveryPoint
+	const gone = "webpush:0000000000000000000000000000000000000000"
+
+	pushByID := func() (APIPushResponse, []byte) {
+		t.Helper()
+		body := post(PushNotificationURL, url.Values{"service": {service}, "subscriber": {removalSubscriber},
+			"msg": {"hello"}, "delivery_point_id": {id + "," + gone}})
+		var response APIPushResponse
+		if err := json.Unmarshal(body, &response); err != nil {
+			t.Fatalf("Could not read the push response %s: %v", body, err)
+		}
+		return response, body
+	}
+
+	response, body := pushByID()
+	if response.SuccessCount != 1 || *response.SuccessDetails[0].DeliveryPoint != id {
+		t.Errorf("Expected the push to reach %s, got %s", id, body)
+	}
+	if response.FailureCount != 0 || response.DroppedCount != 1 ||
+		response.DroppedDetails[0].Code != UNIQUSH_NOT_SUBSCRIBED || *response.DroppedDetails[0].DeliveryPoint != gone {
+		t.Errorf("Expected %s to be reported not subscribed, got %s", gone, body)
+	}
+
+	// A device whose provider is gone is still subscribed, and comes back when
+	// the provider does, so it must not be reported as not subscribed.
+	if err := backend.RemovePushServiceProvider(service, psp); err != nil {
+		t.Fatal(err)
+	}
+	response, body = pushByID()
+	if response.FailureCount != 1 || response.FailureDetails[0].Code != UNIQUSH_ERROR_NO_PUSH_SERVICE_PROVIDER ||
+		*response.FailureDetails[0].DeliveryPoint != id || response.DroppedCount != 1 {
+		t.Errorf("Expected %s to fail for want of a provider and only %s to be not subscribed, got %s", id, gone, body)
 	}
 }

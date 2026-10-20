@@ -405,7 +405,7 @@ Addressing:
 |---|---|
 | `service` | Required. |
 | `subscriber` (or `subscribers`) | Required. One or more subscribers, comma-separated. `*` is a wildcard: `alice.*` matches every subscriber with that prefix, and `*` alone every subscriber in the service. A wildcard is matched against the service's subscriber index, so it costs the size of the service rather than the size of the database — unless [`/rebuildsubscriberindex`](#rebuildsubscriberindex) has yet to be run, in which case it falls back to a keyspace scan and logs an error saying so. |
-| `delivery_point_id` | Optional. Comma-separated `delivery_point_id`s from `/subscriptions`, to push to some of a subscriber's devices and not others. |
+| `delivery_point_id` | Optional. Comma-separated `delivery_point_id`s, to push to some of a subscriber's devices and not others. A device's id is the `deliveryPoint` in its `/subscribe` response, and `/subscriptions` lists them with `include_delivery_point_ids=1`. An id that none of the subscribers has is reported in `droppedDetails` as `UNIQUSH_NOT_SUBSCRIBED`. |
 
 Content — every parameter other than the addressing ones becomes part of the
 payload. These have meaning to uniqush or a backend:
@@ -460,7 +460,13 @@ The response counts and lists the outcome per device:
 reported them gone. Each one that was removed carries `removed`, the same
 object [`/removed`](#removed) lists, without its `id` and `time`; an entry with
 an `errorMsg` and no `removed` is a removal that failed, and the device is still
-subscribed. `modifiedDp: true` on a success means the stored device was updated
+subscribed. A requested `delivery_point_id` that none of the subscribers
+has is listed as `{"requestId":"...","service":"myservice","from":"...",
+"deliveryPoint":"webpush:5f2b...","code":"UNIQUSH_NOT_SUBSCRIBED"}` — typically
+a device removed while the caller was not listening, whose record it can drop.
+One whose provider has been removed is still subscribed, and fails with
+`UNIQUSH_ERROR_NO_PUSH_SERVICE_PROVIDER` instead. A subscriber with none of the
+requested ids also gets `UNIQUSH_ERROR_NO_DEVICE` in `failureDetails`, as before. `modifiedDp: true` on a success means the stored device was updated
 in passing (an FCM canonical-token change).
 `failureDetails` entries carry an `errorMsg`. A transient failure is retried
 in the background with a backoff, honouring the delay the push service asked
@@ -604,6 +610,7 @@ Every response `code` is one of:
 |---|---|
 | `UNIQUSH_SUCCESS` | Done. |
 | `UNIQUSH_REMOVE_INVALID_REG` | (push, dropped) The push service said the device is gone; it has been unsubscribed. |
+| `UNIQUSH_NOT_SUBSCRIBED` | (push, dropped) A `delivery_point_id` that none of the subscribers has. |
 | `UNIQUSH_UPDATE_UNSUBSCRIBE` | (push, dropped) The push service said the device is gone (unregistered, or its token or endpoint expired); it has been unsubscribed. |
 | `UNIQUSH_ERROR_GENERIC` | Something failed; see `errorMsg`. Provider credential or configuration errors reported by the push service land here with a message naming what to check. |
 | `UNIQUSH_ERROR_EMPTY_NOTIFICATION` | `/push` with no content. |

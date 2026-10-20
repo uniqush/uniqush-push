@@ -109,6 +109,9 @@ type PushDatabase interface {
 	//
 	// requestID goes with it so that what is logged can be tied to the request
 	// that caused it. It may be empty where there is no request to name.
+	//
+	// A delivery point named in dpNamesRequested whose provider is missing is
+	// returned with a nil PushServiceProvider; any other is left out.
 	GetPushServiceProviderDeliveryPointPairs(service string, subscriber string, dpNamesRequested []string,
 		requestID string, logger log.Logger) ([]PushServiceProviderDeliveryPointPair, error)
 
@@ -509,6 +512,11 @@ func (f *pushDatabaseOpts) collectDeliveryPointPairs(service string, subscriber 
 			if psp == nil {
 				// Already logged by resolveProvider. The delivery point stays
 				// where it is, so restoring the provider restores the device.
+				// One asked for by name is returned without a provider, so
+				// that /push can tell it apart from one that is not subscribed.
+				if dpNamesSubset[dpName] {
+					pairs = append(pairs, PushServiceProviderDeliveryPointPair{nil, dp})
+				}
 				continue
 			}
 
