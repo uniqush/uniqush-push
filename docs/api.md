@@ -271,7 +271,7 @@ and a JSON body:
 
     curl -i http://localhost:9898/health
     HTTP/1.1 200 OK
-    {"status":"ok","database":"ok","version":"uniqush-push 2.9.1","code":"UNIQUSH_SUCCESS"}
+    {"status":"ok","database":"ok","version":"uniqush-push 2.10.0","code":"UNIQUSH_SUCCESS"}
 
 `200` when redis answers, `503` when it does not, with the reason in
 `database`. It is the only endpoint here whose status code carries the answer,
