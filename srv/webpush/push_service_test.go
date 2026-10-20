@@ -185,9 +185,9 @@ func TestBuildPushServiceProviderFromMap(t *testing.T) {
 	})
 }
 
-// TestVAPIDContact checks each form of the RFC 8292 contact against what is
-// stored, which /psps shows and the provider's name hashes, and the JWT sub a
-// push signs with.
+// TestVAPIDContact checks each form of the RFC 8292 contact /addpsp is given
+// against what is stored, which /psps shows and the provider's name hashes, and
+// the JWT sub a push signs with.
 func TestVAPIDContact(t *testing.T) {
 	testCases := []struct {
 		contact, stored, sub string // stored == "" means refused
@@ -220,6 +220,9 @@ func TestVAPIDContact(t *testing.T) {
 				"service": "testservice", "pushservicetype": "webpush",
 				"vapidpublickey": publicKey, "vapidprivatekey": privateKey, "subscriber": testCase.contact,
 			}, psp)
+			if err == nil {
+				err = CheckVAPIDContact(testCase.contact)
+			}
 			if testCase.stored == "" {
 				if err == nil {
 					t.Fatalf("Expected %q to be refused, stored %q", testCase.contact, psp.FixedData["subscriber"])

@@ -307,6 +307,41 @@ func TestRetryOutcomeStaysOutOfTheResponse(t *testing.T) {
 	}
 }
 
+// A provider stored before /addpsp checked the VAPID contact can still be
+// removed, though /addpsp would now refuse it.
+func TestRemovePSPWithAContactAddPSPRefuses(t *testing.T) {
+	backend, api := setUpRemovalTest(t)
+	pspKV, _ := webPushFixture(t, "old_contact", "https://push.example.org/sub/1")
+	pspKV["subscriber"] = "admin"
+	addRemovalProvider(t, backend, pspKV)
+
+	post := func(path string) APISimpleResponse {
+		form := url.Values{}
+		for k, v := range pspKV {
+			form.Set(k, v)
+		}
+		request := httptest.NewRequest(http.MethodPost, path, strings.NewReader(form.Encode()))
+		request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+		recorder := httptest.NewRecorder()
+		api.ServeHTTP(recorder, request)
+		var response APISimpleResponse
+		if err := json.Unmarshal(recorder.Body.Bytes(), &response); err != nil {
+			t.Fatalf("Could not read the %s response %q: %v", path, recorder.Body.String(), err)
+		}
+		return response
+	}
+	if response := post(AddPushServiceProviderToServiceURL); response.Details.Code != UNIQUSH_ERROR_BUILD_PUSH_SERVICE_PROVIDER {
+		t.Errorf("Expected /addpsp to refuse the contact, got %+v", response)
+	}
+	if response := post(RemovePushServiceProviderFromServiceURL); response.Details.Code != UNIQUSH_SUCCESS {
+		t.Fatalf("Expected /rmpsp to remove the provider, got %+v", response)
+	}
+	psps, err := backend.GetPushServiceProviderConfigs()
+	if err != nil || len(psps) != 0 {
+		t.Errorf("Expected no providers left, got %v, %v", psps, err)
+	}
+}
+
 // waitForRemoved polls /removed until the service has one entry.
 func waitForRemoved(t *testing.T, api *RestAPI, service string, timeout time.Duration) removedResponse {
 	t.Helper()

@@ -179,7 +179,7 @@ see [upgrading.md](upgrading.md#fcm).
 |---|---|
 | `vapidpublickey` | The VAPID public key, base64url. Fixed. |
 | `vapidprivatekey` | The matching private key, base64url. Not fixed. |
-| `subscriber` | The VAPID contact (RFC 8292): an email address (`admin@example.org`), a `mailto:` URI (`mailto:admin@example.org`) or an `https:` URL (`https://example.org/contact`). Anything else is refused. An address, either way it is given, is stored and shown by `/psps` bare and signed as `mailto:admin@example.org`, so the two forms are the same provider; a URL is stored, shown and signed as given. Fixed. |
+| `subscriber` | The VAPID contact (RFC 8292): an email address (`admin@example.org`), a `mailto:` URI (`mailto:admin@example.org`) or an `https:` URL (`https://example.org/contact`). `/addpsp` refuses anything else; `/rmpsp` does not, so a provider added before uniqush checked stays removable. An address, either way it is given, is stored and shown by `/psps` bare and signed as `mailto:admin@example.org`, so the two forms are the same provider; a URL is stored, shown and signed as given. Fixed. |
 
 `uniqush-push -generate-vapid-keys` prints a pair in exactly this form. The
 README walks through the whole setup.
