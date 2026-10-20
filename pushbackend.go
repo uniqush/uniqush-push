@@ -264,6 +264,7 @@ func (backend *PushBackEnd) fixRetryError(
 		return
 	}
 	logger.Infof("RequestID=%v Service=%v Subscriber=%v PushServiceProvider=%v DeliveryPoint=%v Retry after %v: %q", reqID, service, sub, providerName, destinationName, after, reason)
+	handler.AddDetailsToHandler(APIResponseDetails{RequestID: &reqID, From: &remoteAddr, Service: &service, Subscriber: &sub, PushServiceProvider: &providerName, DeliveryPoint: &destinationName, Code: UNIQUSH_PUSH_RETRYING, ErrorMsg: &reason})
 	go func() {
 		<-time.After(after)
 		subs := make([]string, 1)

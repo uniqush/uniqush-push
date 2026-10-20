@@ -258,16 +258,22 @@ func TestPushReportsRemovedDeliveryPoints(t *testing.T) {
 }
 
 // A removal made by a retry happens after /push has answered, so /removed is
-// the only place it can be reported.
+// the only place it can be reported; the response says the device is retrying.
 func TestRemovalDuringRetryIsRecorded(t *testing.T) {
 	backend, api := setUpRemovalTest(t)
 	const service = "removal_retry"
-	endpoint := webPushServer(t, http.StatusTooManyRequests, http.StatusGone).URL + "/sub/1"
+	endpoint := webPushServer(t, http.StatusServiceUnavailable, http.StatusGone).URL + "/sub/1"
 	pspKV, dpKV := webPushFixture(t, service, endpoint)
 	dp := subscribeForRemoval(t, backend, pspKV, dpKV)
 
-	if response, body := pushForRemoval(t, backend, service); response.DroppedCount != 0 {
-		t.Fatalf("Expected the first attempt to be retried rather than removed, got %s", body)
+	response, body := pushForRemoval(t, backend, service)
+	if response.DroppedCount != 0 || response.FailureCount != 1 || len(response.FailureDetails) != 1 {
+		t.Fatalf("Expected the first attempt to be reported retrying, got %s", body)
+	}
+	got := response.FailureDetails[0]
+	if got.Code != UNIQUSH_PUSH_RETRYING || stringOrEmpty(got.Subscriber) != removalSubscriber ||
+		stringOrEmpty(got.DeliveryPoint) != dp.Name() || !strings.Contains(stringOrEmpty(got.ErrorMsg), "HTTP 503") {
+		t.Errorf("Expected a retrying entry naming the device and why, got %s", body)
 	}
 
 	// The first retry is 5 seconds out.

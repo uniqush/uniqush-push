@@ -482,6 +482,16 @@ gets `UNIQUSH_ERROR_NO_DEVICE` in `failureDetails`, as before.
 in the background with a backoff, honouring the delay the push service asked
 for up to 30 minutes; the response reports the first attempt only, and a
 retry that is finally abandoned is logged with `UNIQUSH_ERROR_FAILED_RETRY`.
+A device being retried is in `failureDetails`, and counted in `failureCount`,
+with the code `UNIQUSH_PUSH_RETRYING` and the push service's answer in
+`errorMsg`:
+
+    {"requestId":"...","service":"myservice","from":"127.0.0.1:52210","subscriber":"bob",
+     "pushServiceProvider":"webpush:...","deliveryPoint":"webpush:5f2b...",
+     "code":"UNIQUSH_PUSH_RETRYING","errorMsg":"push server returned HTTP 503"}
+
+The retry's outcome is not reported to the caller, except that a device it finds gone is listed in
+[`/removed`](#removed).
 
 Not every removal can be in the response. A retry runs after it, and APNs
 reports a push as sent once Apple has the request and reads Apple's answer
@@ -624,6 +634,7 @@ Every response `code` is one of:
 | `UNIQUSH_SUCCESS` | Done. |
 | `UNIQUSH_REMOVE_INVALID_REG` | (push, dropped) The push service said the device is gone; it has been unsubscribed. |
 | `UNIQUSH_NOT_SUBSCRIBED` | (push, dropped) A `delivery_point_id` that none of the subscribers has. |
+| `UNIQUSH_PUSH_RETRYING` | (push, failure) The first attempt failed and is being retried in the background; `errorMsg` says why. |
 | `UNIQUSH_UPDATE_UNSUBSCRIBE` | (push, dropped) The push service said the device is gone (unregistered, or its token or endpoint expired); it has been unsubscribed. |
 | `UNIQUSH_ERROR_GENERIC` | Something failed; see `errorMsg`. Provider credential or configuration errors reported by the push service land here with a message naming what to check. |
 | `UNIQUSH_ERROR_EMPTY_NOTIFICATION` | `/push` with no content. |

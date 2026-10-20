@@ -21,6 +21,9 @@ REST API:
   in `droppedDetails`, rather than skipping it.
 - Bugfix: The `/push` response is serialized under the lock retries add to it under, so a retry finishing at the
   same time no longer races with it.
+- Bugfix: A device whose first attempt is being retried is in the `/push` response's `failureDetails`, and counted
+  in `failureCount`, with the new code `UNIQUSH_PUSH_RETRYING` and the push service's answer in `errorMsg`. It used to
+  be left out, so a push whose only device was retrying answered with an empty response.
 
 APNs:
 
