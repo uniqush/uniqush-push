@@ -281,6 +281,32 @@ func TestRemovalDuringRetryIsRecorded(t *testing.T) {
 	expectRemoved(t, removed.Removed[0], dp, endpoint)
 }
 
+// A retry that finishes while the response still waits on a slower device
+// stays out of it, so each device is reported once.
+func TestRetryOutcomeStaysOutOfTheResponse(t *testing.T) {
+	backend, _ := setUpRemovalTest(t)
+	const service = "retry_outcome"
+	retried := webPushServer(t, http.StatusServiceUnavailable, http.StatusCreated)
+	// Slower than the first retry, which is 5 seconds out.
+	slow := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		io.Copy(io.Discard, r.Body)
+		time.Sleep(7 * time.Second)
+		w.WriteHeader(http.StatusCreated)
+	}))
+	t.Cleanup(slow.Close)
+	pspKV, dpKV := webPushFixture(t, service, retried.URL+"/sub/1")
+	subscribeForRemoval(t, backend, pspKV, dpKV)
+	_, dpKV = webPushFixture(t, service, slow.URL+"/sub/2")
+	dpKV["devid"] = "device-2"
+	subscribeForRemoval(t, backend, nil, dpKV)
+
+	response, body := pushForRemoval(t, backend, service)
+	if response.SuccessCount != 1 || response.FailureCount != 1 ||
+		response.FailureDetails[0].Code != UNIQUSH_PUSH_RETRYING {
+		t.Errorf("Expected one success and one device retrying, got %s", body)
+	}
+}
+
 // waitForRemoved polls /removed until the service has one entry.
 func waitForRemoved(t *testing.T, api *RestAPI, service string, timeout time.Duration) removedResponse {
 	t.Helper()

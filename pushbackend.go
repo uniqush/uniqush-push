@@ -266,12 +266,15 @@ func (backend *PushBackEnd) fixRetryError(
 	}
 	logger.Infof("RequestID=%v Service=%v Subscriber=%v PushServiceProvider=%v DeliveryPoint=%v Retry after %v: %q", reqID, service, sub, providerName, destinationName, after, reason)
 	handler.AddDetailsToHandler(APIResponseDetails{RequestID: &reqID, From: &remoteAddr, Service: &service, Subscriber: &sub, PushServiceProvider: &providerName, DeliveryPoint: &destinationName, Code: UNIQUSH_PUSH_RETRYING, ErrorMsg: &reason})
+	// Not handler: the response can still be waiting on a slower device when
+	// the retry finishes, and would then report this one twice. A removal the
+	// retry makes still reaches /removed.
 	go func() {
 		<-time.After(after)
 		subs := make([]string, 1)
 		subs[0] = sub
 		after = 2 * after
-		backend.pushImpl(reqID, remoteAddr, service, subs, nil, err.Content, nil, backend.loggers[LoggerPush], err.Provider, err.Destination, after, handler)
+		backend.pushImpl(reqID, remoteAddr, service, subs, nil, err.Content, nil, backend.loggers[LoggerPush], err.Provider, err.Destination, after, &NullAPIResponseHandler{})
 	}()
 }
 
