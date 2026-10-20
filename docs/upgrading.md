@@ -40,6 +40,21 @@ backends:
   Like the rest of uniqush, which relies on WATCH/MULTI and multi-key scripts,
   the log does not work through twemproxy or Redis Cluster.
 
+### Migrating from the Klippa fork
+
+The [Klippa fork](https://github.com/klippa-app/uniqush-push) stores FCM
+providers in the same shape, so its database can be used as is:
+
+- Its providers have no `projectid`; uniqush now takes it from the `project_id`
+  in the service-account JSON, so there is no `/addpsp` step.
+- Run [`/rebuildsubscriberindex`](#run-rebuildsubscriberindex-once) once.
+- `uniqush.notification.fcm` is passed through to FCM as is, where the fork kept
+  only `title`, `body` and `image`.
+- The version string goes from the fork's `3.0.1` back to 2.x, which matters if
+  anything compares versions.
+- The Docker image runs as UID 65534, so the mounted service-account JSON must
+  be readable by that user.
+
 ## Upgrading from 2.8.0
 
 ### In short
