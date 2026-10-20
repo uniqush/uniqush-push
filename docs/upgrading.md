@@ -9,6 +9,8 @@ longer version for operators, and points at the documents that go deeper still.
 - From **2.7.0**, read [Upgrading from 2.7.0 to 2.8.0](#upgrading-from-270-to-280)
   first and then the 2.8.0 section. You can go straight to 2.9.0; the two
   sections do not assume you stopped at 2.8.0 in between.
+- From the **Klippa fork**, read
+  [Migrating from the Klippa fork](#migrating-from-the-klippa-fork).
 
 ## Upgrading from 2.10.0
 
@@ -511,3 +513,45 @@ to a composite key, so it had been returning nil for every caller.
 `Finalize` no longer deadlocks: it took the client cache's write lock and
 returned still holding it, so anything touching the cache afterwards blocked
 forever.
+
+## Migrating from the Klippa fork
+
+The [Klippa fork](https://github.com/klippa-app/uniqush-push) is based on
+2.7.0, so read [Upgrading from 2.7.0 to 2.8.0](#upgrading-from-270-to-280), then
+the 2.8.0 and 2.10.0 sections, as well as this one:
+
+- Its providers have no `projectid`; uniqush now takes it from the `project_id`
+  in the service-account JSON. Providers made by the fork's 3.0.4 or later are
+  stored the way uniqush stores them and need no `/addpsp` step. Those made by
+  3.0.0 to 3.0.3 kept `credentialsfile` in their fixed data, so uniqush names
+  them differently and fails every push to them with `NoCredentialsFile`; see
+  [below](#providers-from-the-forks-300-to-303).
+- Run [`/rebuildsubscriberindex`](#run-rebuildsubscriberindex-once) once.
+- Run [`/rebuildsubscriberindex`](#run-rebuildsubscriberindex-once) once.
+- `uniqush.notification.fcm` is passed through to FCM as is, where the fork kept
+  only `title`, `body` and `image`.
+- The version string goes from the fork's `3.0.1` back to 2.x, which matters if
+  anything compares versions.
+- The Docker image runs as UID 65534, so the mounted service-account JSON must
+  be readable by that user.
+
+### Providers from the fork's 3.0.0 to 3.0.3
+
+Every fork release reports version `3.0.1`, and `/psps` shows both kinds of
+provider the same way. To tell which you have, send the provider's own
+`/addpsp` again, with the same `credentialsfile` path it already has and
+without `replace`:
+
+    curl http://localhost:9898/addpsp -d service=myservice -d pushservicetype=fcm \
+      -d credentialsfile=/etc/uniqush/service-account.json
+
+A 3.0.4 provider is updated in place and this succeeds. An older one is
+refused with "already exists with different fixed data". Replace that one,
+which keeps its subscriptions:
+
+    curl http://localhost:9898/addpsp -d service=myservice -d pushservicetype=fcm \
+      -d credentialsfile=/etc/uniqush/service-account.json -d replace=true
+
+Devices are matched to a provider by service and push service type, so every
+subscription moves to the new provider. `/checkdb` then lists each of them as a
+`stale_binding` to the old provider's name, which is harmless.

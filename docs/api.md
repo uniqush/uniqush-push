@@ -154,8 +154,8 @@ Token example, replacing the certificate provider above without losing its subsc
 
 | Parameter | |
 |---|---|
-| `projectid` | The Firebase project ID. Fixed for `gcm` providers, not for `fcm` — this is what lets a provider of either name created by an older uniqush be updated in place. |
-| `credentialsfile` | Path to a Firebase service-account JSON file. Read and parsed at `/addpsp`, and again at push time, so it can be rotated in place. |
+| `projectid` | The Firebase project ID. Required and fixed for `gcm`. Optional for `fcm`, where it defaults to the `project_id` in `credentialsfile`, and not fixed — this is what lets a provider of either name created by an older uniqush be updated in place. |
+| `credentialsfile` | Path to a Firebase service-account JSON file. Read and parsed at `/addpsp`. The client and project ID made from it are cached by path, so a change to the file at the same path, `project_id` included, takes effect only after a restart; to rotate it without one, `/addpsp` with `credentialsfile` set to a new path, which takes effect immediately. |
 
     curl http://localhost:9898/addpsp -d service=myservice -d pushservicetype=fcm \
       -d projectid=my-firebase-project -d credentialsfile=/etc/uniqush/service-account.json

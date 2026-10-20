@@ -28,6 +28,13 @@ APNs:
   as one, as FCM and ADM already did with it. A `msggroup` over Apple's 64 bytes, or with a control character,
   now fails the push.
 
+FCM:
+
+- Change: `projectid` is optional for `fcm` providers, and defaults to the `project_id` in `credentialsfile`,
+  including for a provider already stored without one, such as by the Klippa fork's 3.0.4. Those would have
+  failed every push with `NoProjectID`. Providers from the fork's earlier releases need one `/addpsp` with
+  `replace=true`; see docs/upgrading.md.
+
 UnifiedPush / Web Push:
 
 - New feature: `ttl`, `msggroup` and the new `uniqush.urgency` on `/push` set the RFC 8030 `TTL`, `Topic` and

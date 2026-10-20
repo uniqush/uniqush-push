@@ -84,6 +84,34 @@ func credentialsFile(t *testing.T) string {
 	return path
 }
 
+// credentialsFileForProject is credentialsFile with project_id replaced, or
+// removed if projectID is empty.
+func credentialsFileForProject(t *testing.T, projectID string) string {
+	t.Helper()
+	path := filepath.Join(t.TempDir(), "service-account.json")
+	writeCredentialsForProject(t, path, projectID)
+	return path
+}
+
+func writeCredentialsForProject(t *testing.T, path, projectID string) {
+	t.Helper()
+	var account map[string]string
+	if err := json.Unmarshal(serviceAccountJSON(t), &account); err != nil {
+		t.Fatal(err)
+	}
+	account["project_id"] = projectID
+	if projectID == "" {
+		delete(account, "project_id")
+	}
+	body, err := json.Marshal(account)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, body, 0600); err != nil {
+		t.Fatalf("Could not write the test credentials file: %v", err)
+	}
+}
+
 func newTestService(t *testing.T, name string, handler roundTripFunc) *pushService {
 	t.Helper()
 	service := NewPushService(name).(*pushService)
@@ -209,7 +237,7 @@ func TestBuildPushServiceProviderRejectsMissingFields(t *testing.T) {
 		"projectid":       "my-project",
 		"credentialsfile": credentialsFile(t),
 	}
-	for _, missing := range []string{"service", "projectid", "credentialsfile"} {
+	for _, missing := range []string{"service", "credentialsfile"} {
 		t.Run("no "+missing, func(t *testing.T) {
 			kv := map[string]string{}
 			for k, v := range base {
@@ -295,6 +323,107 @@ func TestBuildPushServiceProviderRejectsMissingFields(t *testing.T) {
 			}
 		})
 	})
+
+	for _, tc := range []struct {
+		name, serviceType, credentialsFile string
+	}{
+		{"no projectid, here or in the credentials", "fcm", credentialsFileForProject(t, "")},
+		{"no projectid for gcm, which keeps it in its name", "gcm", credentialsFile(t)},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			kv := map[string]string{"service": "testservice", "credentialsfile": tc.credentialsFile}
+			err := NewPushService(tc.serviceType).BuildPushServiceProviderFromMap(kv, push.NewEmptyPushServiceProvider())
+			if err == nil || !strings.Contains(err.Error(), "projectid") {
+				t.Errorf("Expected an error asking for projectid, got: %v", err)
+			}
+		})
+	}
+}
+
+// TestProviderWithoutProjectIDUsesTheCredentials covers fcm providers stored
+// with only a credentialsfile, as the Klippa fork stored them: they must push to
+// the service account's project without being re-added, and be the same
+// provider as one given a projectid, so a later /addpsp updates it.
+func TestProviderWithoutProjectIDUsesTheCredentials(t *testing.T) {
+	var captured *http.Request
+	service := newTestService(t, "fcm", func(r *http.Request) (*http.Response, error) {
+		captured = r
+		return newResponse(200, `{"name":"n"}`, nil), nil
+	})
+	defer service.Finalize()
+	registerForTest("fcm")
+	build := func(kv map[string]string) *push.PushServiceProvider {
+		t.Helper()
+		kv["service"] = "testservice"
+		kv["pushservicetype"] = "fcm"
+		kv["credentialsfile"] = credentialsFileForProject(t, "project-from-credentials")
+		psp, err := push.GetPushServiceManager().BuildPushServiceProviderFromMap(kv)
+		if err != nil {
+			t.Fatalf("Could not build push service provider: %v", err)
+		}
+		return psp
+	}
+
+	psp := build(map[string]string{})
+	result := pushOnce(t, service, psp, newTestDP(t, service, "token-1"),
+		&push.Notification{Data: map[string]string{"msg": "hi"}})
+	if result.Err != nil {
+		t.Fatalf("Expected success, got: %v", result.Err)
+	}
+	want := "https://fcm.googleapis.com/v1/projects/project-from-credentials/messages:send"
+	if got := captured.URL.String(); got != want {
+		t.Errorf("Expected %s, got %s", want, got)
+	}
+
+	if withID := build(map[string]string{"projectid": "project-from-credentials"}); withID.Name() != psp.Name() {
+		t.Errorf("Adding a projectid changed the provider's name from %s to %s", psp.Name(), withID.Name())
+	}
+}
+
+// TestPushRereadsCredentialsWithoutProjectID checks that a push failing for want
+// of a project_id is not cached, so fixing the file fixes the next push.
+func TestPushRereadsCredentialsWithoutProjectID(t *testing.T) {
+	var captured *http.Request
+	service := newTestService(t, "fcm", func(r *http.Request) (*http.Response, error) {
+		captured = r
+		return newResponse(200, `{"name":"n"}`, nil), nil
+	})
+	defer service.Finalize()
+	registerForTest("fcm")
+	path := credentialsFileForProject(t, "my-project")
+	psp, err := push.GetPushServiceManager().BuildPushServiceProviderFromMap(map[string]string{
+		"service": "testservice", "pushservicetype": "fcm", "credentialsfile": path,
+	})
+	if err != nil {
+		t.Fatalf("Could not build push service provider: %v", err)
+	}
+
+	for _, step := range []struct {
+		credentialsProjectID, wantURL string
+	}{
+		{"", ""},
+		{"fixed-project", "https://fcm.googleapis.com/v1/projects/fixed-project/messages:send"},
+	} {
+		writeCredentialsForProject(t, path, step.credentialsProjectID)
+		captured = nil
+		result := pushOnce(t, service, psp, newTestDP(t, service, "token-1"),
+			&push.Notification{Data: map[string]string{"msg": "hi"}})
+		if step.wantURL == "" {
+			if result.Err == nil || !strings.Contains(result.Err.Error(), "pass projectid") {
+				t.Errorf("Expected an error asking for projectid, got: %v", result.Err)
+			}
+			if captured != nil {
+				t.Errorf("Expected no request, got one to %s", captured.URL)
+			}
+			continue
+		}
+		if result.Err != nil {
+			t.Fatalf("Expected success, got: %v", result.Err)
+		}
+		if got := captured.URL.String(); got != step.wantURL {
+			t.Errorf("Expected %s, got %s", step.wantURL, got)
+		}
+	}
 }
 
 func TestBuildDeliveryPointFromMap(t *testing.T) {
