@@ -1,17 +1,23 @@
 uniqush-push NEWS
 
-Unreleased
-----------
+20 Oct 2026, uniqush-push 2.10.0
+--------------------------------
 
 REST API:
 
 - New feature: `/metrics` reports push results by service, push service type and outcome, abandoned retries,
   requests per endpoint, redis reachability and the `/stats` counts in the Prometheus text format. (#299)
 
+ADM:
+
+- Bugfix: A push whose message couldn't be built right after an access-token refresh no longer reuses the
+  refresh's result, which raced with its reader and could report the refresh as the push's error. (#337)
+
 Packaging:
 
 - New feature: `compose.yaml` runs the Docker image with a persistent redis, for trying uniqush with
   `docker compose up`. The README's new quickstart walks through it.
+
 
 08 Oct 2026, uniqush-push 2.9.1
 -------------------------------
