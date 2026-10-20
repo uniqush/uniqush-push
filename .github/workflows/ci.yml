@@ -27,9 +27,9 @@ jobs:
           --health-retries 5
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@v7
         with:
           # Must stay >= the `go` directive in go.mod. check-latest picks up
           # stdlib security patches, several of which govulncheck flags on
@@ -47,7 +47,7 @@ jobs:
         run: go test ./... -race -coverprofile=coverage.txt -covermode=atomic
 
       - name: Upload coverage
-        uses: codecov/codecov-action@v5
+        uses: codecov/codecov-action@v7
         with:
           files: ./coverage.txt
         continue-on-error: true
@@ -55,9 +55,9 @@ jobs:
   govulncheck:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@v7
         with:
           go-version: '1.27'
           check-latest: true
@@ -73,12 +73,12 @@ jobs:
   lint:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           # new-from-merge-base needs history to diff against.
           fetch-depth: 0
 
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@v7
         with:
           # Must stay >= the `go` directive in go.mod. check-latest picks up
           # stdlib security patches, several of which govulncheck flags on

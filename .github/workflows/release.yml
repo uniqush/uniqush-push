@@ -42,18 +42,18 @@ jobs:
           echo "arch=$(uname -m)" >> "$GITHUB_OUTPUT"
 
       - name: Check out the tagged source being released
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           ref: ${{ steps.vars.outputs.tag }}
           path: src
 
       - name: Check out packaging tooling from master
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           ref: master
           path: tooling
 
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@v7
         with:
           # Must stay >= the `go` directive in go.mod, same as ci.yml.
           go-version: '1.27'

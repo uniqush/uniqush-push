@@ -57,14 +57,14 @@ jobs:
           fi
 
       - name: Check out the source being built
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           ref: ${{ steps.vars.outputs.tag || github.sha }}
           path: src
 
       - name: Check out the Dockerfile from master
         if: steps.vars.outputs.tag != ''
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           ref: master
           path: tooling
