@@ -57,7 +57,13 @@ const (
 	// recognised, but only so that a caller sending it can be told it no
 	// longer does anything.
 	apnsHTTP2Key = "uniqush.http2"
+	// collapseIDKey is the parameter FCM and ADM read as their collapse key.
+	collapseIDKey = "msggroup"
 )
+
+// maxCollapseIDBytes is Apple's limit on apns-collapse-id. Checked here
+// because APNs would otherwise reject each device's request separately.
+const maxCollapseIDBytes = 64
 
 // binaryProtocolRemovedNotice is reported when a caller still asks for the
 // binary protocol. The push is sent over HTTP/2 rather than refused: HTTP/2 is
@@ -518,6 +524,12 @@ func (ps *pushService) Push(psp *push.PushServiceProvider, dpQueue <-chan *push.
 		err = pushTypeErr
 	}
 	req.PushType = pushType
+
+	req.CollapseID = notif.Data[collapseIDKey]
+	if err == nil && len(req.CollapseID) > maxCollapseIDBytes {
+		err = push.NewBadNotificationWithDetails(
+			fmt.Sprintf("invalid %s %q, expected at most %d bytes", collapseIDKey, req.CollapseID, maxCollapseIDBytes))
+	}
 
 	// HTTP/2 is the only transport. A caller still passing uniqush.http2=0 is
 	// told so, and the push goes out over HTTP/2 regardless.

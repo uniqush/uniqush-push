@@ -364,6 +364,52 @@ func TestConformanceVoIPPush(t *testing.T) {
 	}
 }
 
+// TestConformanceCollapseID covers msggroup becoming apns-collapse-id, and that
+// one over Apple's 64-byte limit fails the push before anything is sent.
+func TestConformanceCollapseID(t *testing.T) {
+	testCases := []struct {
+		name       string
+		msggroup   string
+		wantSent   string
+		wantErrMsg string
+	}{
+		{name: "absent", msggroup: ""},
+		{name: "64 bytes", msggroup: strings.Repeat("é", 32), wantSent: strings.Repeat("é", 32)},
+		{name: "65 bytes", msggroup: strings.Repeat("a", 65), wantErrMsg: "expected at most 64 bytes"},
+	}
+	for _, testCase := range testCases {
+		t.Run(testCase.name, func(t *testing.T) {
+			server := startSimulator(t)
+			service, _ := newSimulatorService(t)
+			psp := newSimulatorPSP(t, server, nil)
+
+			notif := createNotification("Hello World")
+			if testCase.msggroup != "" {
+				notif.Data["msggroup"] = testCase.msggroup
+			}
+			results := pushToSimulator(t, service, psp, notif, apnstest.DeviceToken(0x55))
+
+			if testCase.wantErrMsg != "" {
+				if len(results) != 1 || results[0].Err == nil || !strings.Contains(results[0].Err.Error(), testCase.wantErrMsg) {
+					t.Fatalf("Expected one error containing %q, got: %s", testCase.wantErrMsg, describeResults(results))
+				}
+				if requests := server.Requests(); len(requests) != 0 {
+					t.Errorf("Expected nothing sent to APNs, got %d requests", len(requests))
+				}
+				return
+			}
+			if len(results) != 1 || results[0].Err != nil {
+				t.Fatalf("Expected the push to be accepted, got: %s", describeResults(results))
+			}
+			request := requireOneRequest(t, server)
+			if request.CollapseID != testCase.wantSent {
+				t.Errorf("Expected apns-collapse-id %q, got %q", testCase.wantSent, request.CollapseID)
+			}
+			assertNoViolations(t, server)
+		})
+	}
+}
+
 // TestConformanceEachTokenGetsItsOwnAPNSID guards the header clone in
 // sendRequests.
 //

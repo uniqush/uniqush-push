@@ -553,6 +553,92 @@ func TestPushSendsEncryptedBody(t *testing.T) {
 	}
 }
 
+// TestPushNotificationHeaders covers the RFC 8030 headers a caller sets per
+// push, and that a bad value fails the push instead of being sent or dropped.
+func TestPushNotificationHeaders(t *testing.T) {
+	testCases := []struct {
+		name        string
+		data        map[string]string
+		wantTTL     string
+		wantTopic   string
+		wantUrgency string
+		wantErr     string
+	}{
+		{name: "defaults", wantTTL: "43200", wantUrgency: "normal"},
+		{name: "ttl 0 is passed through", data: map[string]string{"ttl": "0"}, wantTTL: "0", wantUrgency: "normal"},
+		{name: "four weeks", data: map[string]string{"ttl": "2419200"}, wantTTL: "2419200", wantUrgency: "normal"},
+		{name: "largest ttl", data: map[string]string{"ttl": "2147483647"}, wantTTL: "2147483647", wantUrgency: "normal"},
+		{
+			name:        "msggroup becomes the topic",
+			data:        map[string]string{"msggroup": "abcdefghijklmnopqrstuvwxyz01-_AZ"},
+			wantTTL:     "43200",
+			wantTopic:   "abcdefghijklmnopqrstuvwxyz01-_AZ",
+			wantUrgency: "normal",
+		},
+		{name: "urgency", data: map[string]string{"uniqush.urgency": "very-low"}, wantTTL: "43200", wantUrgency: "very-low"},
+		{name: "urgency ignores case", data: map[string]string{"uniqush.urgency": "High"}, wantTTL: "43200", wantUrgency: "high"},
+		{
+			name:        "raw payload",
+			data:        map[string]string{payloadKey: `{"opaque":true}`, "ttl": "60", "msggroup": "abc", "uniqush.urgency": "high"},
+			wantTTL:     "60",
+			wantTopic:   "abc",
+			wantUrgency: "high",
+		},
+		{name: "raw payload with a bad parameter", data: map[string]string{payloadKey: "x", "uniqush.urgency": "soon"}, wantErr: `invalid uniqush.urgency "soon"`},
+		{name: "ttl too large", data: map[string]string{"ttl": "2147483648"}, wantErr: `invalid ttl "2147483648", expected seconds from 0 to 2147483647`},
+		{name: "negative ttl", data: map[string]string{"ttl": "-1"}, wantErr: `invalid ttl "-1"`},
+		{name: "ttl not a number", data: map[string]string{"ttl": "1h"}, wantErr: `invalid ttl "1h"`},
+		{
+			name:    "msggroup too long",
+			data:    map[string]string{"msggroup": strings.Repeat("a", 33)},
+			wantErr: "expected at most 32 characters of A-Z, a-z, 0-9, - and _",
+		},
+		{name: "msggroup padded", data: map[string]string{"msggroup": "YQ=="}, wantErr: `invalid msggroup "YQ=="`},
+		{name: "msggroup with a slash", data: map[string]string{"msggroup": "a/b"}, wantErr: `invalid msggroup "a/b"`},
+		{
+			name:    "unknown urgency",
+			data:    map[string]string{"uniqush.urgency": "urgent"},
+			wantErr: `invalid uniqush.urgency "urgent", expected one of: very-low, low, normal, high`,
+		},
+	}
+
+	for _, testCase := range testCases {
+		t.Run(testCase.name, func(t *testing.T) {
+			var captured *http.Request
+			service := newTestService(t, func(r *http.Request) (*http.Response, error) {
+				captured = r
+				return newResponse(201, nil), nil
+			})
+			defer service.Finalize()
+
+			data := map[string]string{"msg": "hello"}
+			for key, value := range testCase.data {
+				data[key] = value
+			}
+			result := pushOnce(t, service, newTestPSP(t, service), newTestDP(t, service), &push.Notification{Data: data})
+
+			if testCase.wantErr != "" {
+				expectBadNotification(t, result)
+				if result.Err == nil || !strings.Contains(result.Err.Error(), testCase.wantErr) {
+					t.Errorf("Expected an error containing %q, got %v", testCase.wantErr, result.Err)
+				}
+				if captured != nil {
+					t.Error("A push with a bad parameter was sent anyway")
+				}
+				return
+			}
+			if result.Err != nil {
+				t.Fatalf("Unexpected error: %v", result.Err)
+			}
+			for header, want := range map[string]string{"TTL": testCase.wantTTL, "Topic": testCase.wantTopic, "Urgency": testCase.wantUrgency} {
+				if got := captured.Header.Get(header); got != want {
+					t.Errorf("Expected %s %q, got %q", header, want, got)
+				}
+			}
+		})
+	}
+}
+
 // TestPushRejectsPrivateEndpointAtSendTime is the DNS-rebinding guard: an
 // endpoint that passed validation at /subscribe must be re-checked per push.
 func TestPushRejectsPrivateEndpointAtSendTime(t *testing.T) {
@@ -729,6 +815,8 @@ func TestToWebPushPayload(t *testing.T) {
 			"msg":              "hello",
 			"uniqush.selfonly": "1",
 			"uniqush.ttl":      "60",
+			ttlKey:             "60",
+			topicKey:           "group",
 		}})
 		if err != nil {
 			t.Fatalf("Unexpected error: %v", err)
@@ -741,7 +829,7 @@ func TestToWebPushPayload(t *testing.T) {
 			t.Errorf("Expected msg to survive, got %v", decoded)
 		}
 		for key := range decoded {
-			if strings.HasPrefix(key, "uniqush.") {
+			if strings.HasPrefix(key, "uniqush.") || key == ttlKey || key == topicKey {
 				t.Errorf("uniqush control parameter %q leaked into the payload", key)
 			}
 		}

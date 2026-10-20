@@ -52,6 +52,9 @@ type PushRequest struct {
 	// "background". An empty value is treated as DefaultPushType.
 	PushType string
 
+	// CollapseID is the apns-collapse-id header, omitted when empty.
+	CollapseID string
+
 	// DPList is a list of delivery points of the same length as Devtokens. DPList[i].FixedData["dev_token"] == string(Devtokens[i])
 	DPList []*push.DeliveryPoint
 
