@@ -18,6 +18,8 @@
 package main
 
 import (
+	"errors"
+	"net"
 	"os"
 	"os/signal"
 )
@@ -27,4 +29,8 @@ func (self *RestAPI) signalSetup() {
 	signal.Notify(ch, os.Kill)
 	<-ch
 	self.stop(nil, "SIGTERM")
+}
+
+func listenUnix(_ string, _ os.FileMode) (net.Listener, error) {
+	return nil, errors.New("unix: addresses are not supported on Windows")
 }

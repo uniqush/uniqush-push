@@ -1,5 +1,16 @@
 uniqush-push NEWS
 
+Unreleased
+----------
+
+REST API:
+
+- New feature: `[WebFrontend] token_file` names a file holding a bearer token that every endpoint but `/health`
+  then requires, `/metrics` included. A request without it is answered 401. Without `token_file` the API is
+  unauthenticated as before, and uniqush warns when that is on a non-loopback address.
+- New feature: `[WebFrontend] addr=unix:/path/to.sock` listens on a unix socket, with the mode in `socket_mode`
+  (default `0660`). A socket file left by an unclean exit is replaced; one still in use is not.
+
 20 Oct 2026, uniqush-push 2.10.0
 --------------------------------
 

@@ -39,6 +39,8 @@ const (
 	// /rebuildsubscriberindex once; the counts would otherwise be too low, with
 	// nothing in the answer to say so.
 	UNIQUSH_ERROR_INDEX_NOT_BUILT = "UNIQUSH_ERROR_INDEX_NOT_BUILT"
+
+	UNIQUSH_ERROR_UNAUTHORIZED = "UNIQUSH_ERROR_UNAUTHORIZED"
 )
 
 // APIResponseDetails is used to represent responses of various APIs. Different APIs use different subsets of fields.

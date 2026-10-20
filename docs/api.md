@@ -1,7 +1,8 @@
 # uniqush-push REST API
 
 Everything `uniqush-push` does is driven over plain HTTP on the address in
-`[WebFrontend] addr` (default `localhost:9898`). This document is the
+`[WebFrontend] addr` (default `localhost:9898`, or a unix socket; see
+[Authentication](#authentication)). This document is the
 reference for that API as of the current version; the README has worked
 examples per backend and [upgrading.md](upgrading.md) covers what changed
 from 2.7.0.
@@ -16,7 +17,8 @@ Values must be URL-encoded; `curl -d` does not do that for you, so use
 **Responses** are JSON followed by `\r\n`, except `/version` (a plain string)
 and `/nrdp` (a plain integer). Every JSON response carries a `code`, either
 `UNIQUSH_SUCCESS` or one of the error codes listed at the end. HTTP status is
-always 200; look at `code`.
+200 apart from [`/health`](#health) and a [401](#authentication); look at
+`code`.
 
 **Names.** A `service` groups providers and subscriptions; a `subscriber` is
 your identifier for a user within a service. Both accept `a-z`, `A-Z`, `0-9`,
@@ -28,9 +30,43 @@ alias for `fcm`, kept for existing subscriptions), `adm`, `webpush` or
 `unifiedpush` (two names for one backend). The type is part of every
 subscription's identity, so pick one name per service and keep it.
 
-**Authentication.** There is none. Whoever can reach this API can register
-providers and decide where a service's pushes go. Bind it to localhost or put
-it behind something that authenticates.
+### Authentication
+
+Off by default. Whoever can reach an API without it can register providers,
+decide where a service's pushes go and read back subscriptions, so either keep
+it on localhost or turn on one or both of these in `[WebFrontend]`:
+
+- `token_file=/etc/uniqush/api-token` requires every request to carry
+  `Authorization: Bearer <token>`, where the token is the file's contents less
+  a trailing newline. Generate one with `openssl rand -hex 32`. It is read
+  from a file, once at startup, so that it never appears on a command line; a
+  missing or empty file stops uniqush from starting, and one readable by every
+  user on the host gets a warning in the log. `/health` is the one exception,
+  so that a Docker healthcheck or load balancer can poll it without the token.
+  `/metrics` needs it: give Prometheus the same token with
+  `authorization: {credentials_file: ...}` in the scrape config.
+
+      curl -H "Authorization: Bearer $(cat /etc/uniqush/api-token)" http://localhost:9898/psps
+
+  A request without the right token is answered `401 Unauthorized` with
+  `WWW-Authenticate: Bearer` and
+
+      {"code":"UNIQUSH_ERROR_UNAUTHORIZED","errorMsg":"This endpoint requires an Authorization: Bearer header with the token in [WebFrontend] token_file"}
+
+  and logged at `warn` with the path and remote address, never the token.
+
+- `addr=unix:/run/uniqush/uniqush-push.sock` listens on a unix socket instead
+  of TCP, so that file permissions decide who can connect. `socket_mode`
+  (octal, default `0660`) sets the socket's mode, so run the application
+  server in uniqush's group or create the socket in a setgid directory of a
+  group both share. A socket file left behind by an unclean exit is replaced on startup,
+  but uniqush refuses to start if something is still listening on it or the
+  path is not a socket. It is removed on `/stop` or `SIGTERM`. Not supported
+  on Windows. `curl --unix-socket /run/uniqush/uniqush-push.sock
+  http://localhost/version` reaches it.
+
+uniqush warns at startup when it listens on a non-loopback TCP address with no
+`token_file`.
 
 ## Endpoints
 
@@ -167,8 +203,8 @@ this endpoint may report. A redacted field is still present in the response, so
 you can see that a provider carries one. Databases created before uniqush 2.2.0 need
 [`/rebuildserviceset`](#rebuildserviceset) once before this returns anything.
 
-This is still an API with no authentication in front of it. Redaction removes
-the worst of what a reader gains, not the reason to keep the port closed:
+Redaction removes the worst of what a reader gains, not the reason to keep the
+port closed or [require a token](#authentication):
 `/subscriptions` returns the device tokens, registration IDs and Web Push
 subscriptions of any subscriber whose name is guessed, and `/push` will send
 notifications to them.
@@ -509,6 +545,7 @@ Every response `code` is one of:
 | `UNIQUSH_ERROR_NO_SUBSCRIBER`, `UNIQUSH_ERROR_NO_DEVICE`, `UNIQUSH_ERROR_NO_DELIVERY_POINT`, `UNIQUSH_ERROR_NO_PUSH_SERVICE_PROVIDER` | Nothing to push to: the subscriber, device or provider does not exist. |
 | `UNIQUSH_ERROR_NO_PUSH_SERVICE_TYPE` | `/previewpush` without a `pushservicetype`. |
 | `UNIQUSH_ERROR_INDEX_NOT_BUILT` | `/stats` on a database whose subscriber index has not been built. Run [`/rebuildsubscriberindex`](#rebuildsubscriberindex). |
+| `UNIQUSH_ERROR_UNAUTHORIZED` | A missing or wrong bearer token, with HTTP status 401. See [Authentication](#authentication). |
 
 Simple responses (`/addpsp`, `/rmpsp`, `/subscribe`, `/unsubscribe`) wrap the
 details with a numeric `status`, `0` for success and `1` for failure:

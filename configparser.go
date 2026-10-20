@@ -20,7 +20,10 @@ package main
 import (
 	"fmt"
 	"io"
+	"net"
 	"os"
+	"runtime"
+	"strconv"
 	"strings"
 
 	"github.com/uniqush/uniqush-push/conf"
@@ -213,6 +216,64 @@ func LoadRestAddr(c *conf.ConfigFile) (string, error) {
 	return addr, err
 }
 
+// defaultSocketMode lets the socket's owner and group connect: run the
+// application server in uniqush's group, or create the socket in a setgid
+// directory of a group both share.
+const defaultSocketMode = 0o660
+
+// LoadSocketMode returns the [WebFrontend] socket_mode for a unix: addr, an
+// octal permission such as 0660.
+func LoadSocketMode(c *conf.ConfigFile) (os.FileMode, error) {
+	s, err := c.GetString("WebFrontend", "socket_mode")
+	if err != nil || s == "" {
+		return defaultSocketMode, nil
+	}
+	mode, err := strconv.ParseUint(s, 8, 32)
+	if err != nil || mode > 0o777 {
+		return 0, fmt.Errorf("[WebFrontend] socket_mode %q is not an octal permission such as 0660", s)
+	}
+	return os.FileMode(mode), nil
+}
+
+// LoadAPIToken returns the bearer token in the file named by [WebFrontend]
+// token_file, or "" if there is none.
+//
+// The token is read from a file rather than taken as a flag, where it would
+// show in ps. A file anyone on the host can read gets a warning rather than a
+// refusal to start: Docker and Kubernetes secrets are commonly mounted that
+// way inside a container, where nobody else is there to read them.
+func LoadAPIToken(c *conf.ConfigFile, logger log.Logger) (string, error) {
+	path, err := c.GetString("WebFrontend", "token_file")
+	if err != nil || path == "" {
+		return "", nil
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return "", fmt.Errorf("could not read [WebFrontend] token_file: %w", err)
+	}
+	token := strings.TrimRight(string(data), "\r\n")
+	if token == "" {
+		return "", fmt.Errorf("[WebFrontend] token_file %s is empty", path)
+	}
+	if fi, err := os.Stat(path); err == nil && runtime.GOOS != "windows" && fi.Mode().Perm()&0o007 != 0 {
+		logger.Warnf("%s, the API token file, is accessible to every user on this host; chmod o-rwx it", path)
+	}
+	return token, nil
+}
+
+// isLoopback reports whether a host:port addr is reachable from this host only.
+func isLoopback(addr string) bool {
+	host, _, err := net.SplitHostPort(addr)
+	if err != nil {
+		return false
+	}
+	if host == "localhost" {
+		return true
+	}
+	ip := net.ParseIP(host)
+	return ip != nil && ip.IsLoopback()
+}
+
 // Run will load the configuration and start the uniqush-push server and REST API based on that config.
 func Run(conf, version string) error {
 	// Before anything else, and before the config file: a uniqush that cannot
@@ -232,6 +293,17 @@ func Run(conf, version string) error {
 	if err != nil {
 		return err
 	}
+	socketMode, err := LoadSocketMode(c)
+	if err != nil {
+		return err
+	}
+	token, err := LoadAPIToken(c, loggers[LoggerWeb])
+	if err != nil {
+		return err
+	}
+	if token == "" && !strings.HasPrefix(addr, "unix:") && !isLoopback(addr) {
+		loggers[LoggerWeb].Warnf("Listening on %s with no [WebFrontend] token_file: anyone who can reach it can use the API", addr)
+	}
 	psm := push.GetPushServiceManager()
 	psm.SetConfigFile(c)
 
@@ -248,9 +320,16 @@ func Run(conf, version string) error {
 
 	backend := NewPushBackEnd(psm, db, loggers)
 	rest := NewRestAPI(psm, loggers, version, backend)
+	if token != "" {
+		rest.requireToken(token)
+	}
+	ln, err := listen(addr, socketMode)
+	if err != nil {
+		return err
+	}
 	stopChan := make(chan bool)
 	go rest.signalSetup()
-	go rest.Run(addr, stopChan)
+	go rest.Run(ln, stopChan)
 	<-stopChan
 	return nil
 }
