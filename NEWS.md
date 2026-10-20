@@ -64,6 +64,8 @@ Packaging:
   `compose.yaml` pulls `:latest`, so its healthcheck needs 2.11.0 or newer.
 - New feature: `compose.yaml` has a commented example of requiring a bearer token: the token is passed from `.env`
   as a secret owned by the image's user with mode 0400, and a mounted config sets `token_file` to it.
+- Bugfix: The .deb and .rpm mark `/etc/uniqush/uniqush-push.conf` as a config file, so upgrading keeps a changed
+  one, `token_file` included, instead of overwriting it with the stock config.
 
 
 20 Oct 2026, uniqush-push 2.10.0
