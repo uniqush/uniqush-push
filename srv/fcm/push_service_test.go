@@ -88,6 +88,13 @@ func credentialsFile(t *testing.T) string {
 // removed if projectID is empty.
 func credentialsFileForProject(t *testing.T, projectID string) string {
 	t.Helper()
+	path := filepath.Join(t.TempDir(), "service-account.json")
+	writeCredentialsForProject(t, path, projectID)
+	return path
+}
+
+func writeCredentialsForProject(t *testing.T, path, projectID string) {
+	t.Helper()
 	var account map[string]string
 	if err := json.Unmarshal(serviceAccountJSON(t), &account); err != nil {
 		t.Fatal(err)
@@ -100,11 +107,9 @@ func credentialsFileForProject(t *testing.T, projectID string) string {
 	if err != nil {
 		t.Fatal(err)
 	}
-	path := filepath.Join(t.TempDir(), "service-account.json")
 	if err := os.WriteFile(path, body, 0600); err != nil {
 		t.Fatalf("Could not write the test credentials file: %v", err)
 	}
-	return path
 }
 
 func newTestService(t *testing.T, name string, handler roundTripFunc) *pushService {
@@ -372,6 +377,52 @@ func TestProviderWithoutProjectIDUsesTheCredentials(t *testing.T) {
 
 	if withID := build(map[string]string{"projectid": "project-from-credentials"}); withID.Name() != psp.Name() {
 		t.Errorf("Adding a projectid changed the provider's name from %s to %s", psp.Name(), withID.Name())
+	}
+}
+
+// TestPushRereadsCredentialsWithoutProjectID checks that a push failing for want
+// of a project_id is not cached, so fixing the file fixes the next push.
+func TestPushRereadsCredentialsWithoutProjectID(t *testing.T) {
+	var captured *http.Request
+	service := newTestService(t, "fcm", func(r *http.Request) (*http.Response, error) {
+		captured = r
+		return newResponse(200, `{"name":"n"}`, nil), nil
+	})
+	defer service.Finalize()
+	registerForTest("fcm")
+	path := credentialsFileForProject(t, "my-project")
+	psp, err := push.GetPushServiceManager().BuildPushServiceProviderFromMap(map[string]string{
+		"service": "testservice", "pushservicetype": "fcm", "credentialsfile": path,
+	})
+	if err != nil {
+		t.Fatalf("Could not build push service provider: %v", err)
+	}
+
+	for _, step := range []struct {
+		credentialsProjectID, wantURL string
+	}{
+		{"", ""},
+		{"fixed-project", "https://fcm.googleapis.com/v1/projects/fixed-project/messages:send"},
+	} {
+		writeCredentialsForProject(t, path, step.credentialsProjectID)
+		captured = nil
+		result := pushOnce(t, service, psp, newTestDP(t, service, "token-1"),
+			&push.Notification{Data: map[string]string{"msg": "hi"}})
+		if step.wantURL == "" {
+			if result.Err == nil || !strings.Contains(result.Err.Error(), "pass projectid") {
+				t.Errorf("Expected an error asking for projectid, got: %v", result.Err)
+			}
+			if captured != nil {
+				t.Errorf("Expected no request, got one to %s", captured.URL)
+			}
+			continue
+		}
+		if result.Err != nil {
+			t.Fatalf("Expected success, got: %v", result.Err)
+		}
+		if got := captured.URL.String(); got != step.wantURL {
+			t.Errorf("Expected %s, got %s", step.wantURL, got)
+		}
 	}
 }
 
