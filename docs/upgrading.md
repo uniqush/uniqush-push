@@ -539,7 +539,8 @@ the 2.8.0 and 2.10.0 sections, as well as this one:
 
 Every fork release reports version `3.0.1`, and `/psps` shows both kinds of
 provider the same way. To tell which you have, send the provider's own
-`/addpsp` again, without `replace`:
+`/addpsp` again, with the same `credentialsfile` path it already has and
+without `replace`:
 
     curl http://localhost:9898/addpsp -d service=myservice -d pushservicetype=fcm \
       -d credentialsfile=/etc/uniqush/service-account.json
