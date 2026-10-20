@@ -46,7 +46,10 @@ it on localhost or turn on one or both of these in `[WebFrontend]`:
   the one exception, so that a Docker healthcheck or load balancer can poll it
   without the token; it then reports only whether redis answers (see
   [`/health`](#health)). `/metrics` needs it: give Prometheus the same token
-  with `authorization: {credentials_file: ...}` in the scrape config.
+  with `authorization: {credentials_file: ...}` in the scrape config. The
+  Docker image runs as uid 65534, so a token file bind-mounted from the host
+  must be readable by that user; compose.yaml has a commented example that
+  gives it the token as a secret owned by 65534 with mode 0400.
 
       curl -H "Authorization: Bearer $(cat /etc/uniqush/api-token)" http://localhost:9898/psps
 
@@ -176,7 +179,7 @@ see [upgrading.md](upgrading.md#fcm).
 |---|---|
 | `vapidpublickey` | The VAPID public key, base64url. Fixed. |
 | `vapidprivatekey` | The matching private key, base64url. Not fixed. |
-| `subscriber` | The VAPID contact: a bare email address or an `https://` URL (not a `mailto:` URI). Fixed. |
+| `subscriber` | The VAPID contact (RFC 8292): an email address (`admin@example.org`), a `mailto:` URI (`mailto:admin@example.org`) or an `https:` URL (`https://example.org/contact`). `/addpsp` refuses anything else; `/rmpsp` does not, so a provider added before uniqush checked stays removable. An address, either way it is given, is stored and shown by `/psps` bare and signed as `mailto:admin@example.org`, so the two forms are the same provider; a URL is stored, shown and signed as given. Fixed. |
 
 `uniqush-push -generate-vapid-keys` prints a pair in exactly this form. The
 README walks through the whole setup.
@@ -439,7 +442,9 @@ Names beginning with `uniqush.` are reserved. A push with no content at all is
 rejected with `UNIQUSH_ERROR_EMPTY_NOTIFICATION`. A parameter with an invalid
 value fails the push to that backend's devices without sending anything, and
 the `failureDetails` say why in `errorMsg`, naming the parameter and value. APNs payloads are capped at
-4096 bytes (5120 for VoIP); FCM's own limit is 4096 bytes of data.
+4096 bytes (5120 for VoIP); FCM's own limit is 4096 bytes of data. Such a failure is one entry per backend, not
+per device: its `subscriber` is the request's `subscriber` list as given, and its `deliveryPoint` is the
+`delivery_point_id` when exactly one was given, and `Unknown` otherwise.
 
     curl http://localhost:9898/push -d service=myservice -d subscriber=alice,bob -d msg="Hello" -d badge=1
     curl http://localhost:9898/push -d service=myservice -d subscriber=alice \
@@ -482,6 +487,16 @@ gets `UNIQUSH_ERROR_NO_DEVICE` in `failureDetails`, as before.
 in the background with a backoff, honouring the delay the push service asked
 for up to 30 minutes; the response reports the first attempt only, and a
 retry that is finally abandoned is logged with `UNIQUSH_ERROR_FAILED_RETRY`.
+A device being retried is in `failureDetails`, and counted in `failureCount`,
+with the code `UNIQUSH_PUSH_RETRYING` and the push service's answer in
+`errorMsg`:
+
+    {"requestId":"...","service":"myservice","from":"127.0.0.1:52210","subscriber":"bob",
+     "pushServiceProvider":"webpush:...","deliveryPoint":"webpush:5f2b...",
+     "code":"UNIQUSH_PUSH_RETRYING","errorMsg":"push server returned HTTP 503"}
+
+The retry's outcome is not reported to the caller, except that a device it finds gone is listed in
+[`/removed`](#removed).
 
 Not every removal can be in the response. A retry runs after it, and APNs
 reports a push as sent once Apple has the request and reads Apple's answer
@@ -494,17 +509,23 @@ every removal, including the ones that are also in a response.
 |---|---|
 | `service` | Required. |
 | `since` | Optional. The `next` of a previous call. Without it, the list starts at the oldest removal kept. A malformed cursor, or one past the newest removal of the service (which this service's `/removed` cannot have returned), is refused with `UNIQUSH_ERROR_GENERIC`. |
-| `limit` | Optional. At most this many entries; default and maximum 1000. Anything but a positive integer is refused with `UNIQUSH_ERROR_GENERIC`. |
+| `limit` | Optional. At most this many entries; default 1000, and larger values are capped at 1000. Anything but a positive integer is refused with `UNIQUSH_ERROR_GENERIC`. |
 
 Lists, oldest first, the devices uniqush unsubscribed from a service because
-their push service said they were gone, after the cursor `since`.
+their push service said they were gone, after the cursor `since`. The first
+call has no `since`:
 
-    curl 'http://localhost:9898/removed?service=myservice&since=1756900000000-0'
+    curl 'http://localhost:9898/removed?service=myservice'
     {"code":"UNIQUSH_SUCCESS",
      "removed":[{"id":"1756900012345-0","time":1756900012,"service":"myservice","subscriber":"bob",
                  "pushServiceType":"webpush","deliveryPoint":"webpush:5f2b...","devid":"bob-laptop",
                  "endpoint":"https://push.example.org/wpush/v2/gAAA...","reason":"UNIQUSH_UPDATE_UNSUBSCRIBE"}],
      "next":"1756900012345-0","truncated":false}
+
+and each later one passes the `next` it got back:
+
+    curl 'http://localhost:9898/removed?service=myservice&since=1756900012345-0'
+    {"code":"UNIQUSH_SUCCESS","removed":[],"next":"1756900012345-0","truncated":false}
 
 Each entry has:
 
@@ -624,6 +645,7 @@ Every response `code` is one of:
 | `UNIQUSH_SUCCESS` | Done. |
 | `UNIQUSH_REMOVE_INVALID_REG` | (push, dropped) The push service said the device is gone; it has been unsubscribed. |
 | `UNIQUSH_NOT_SUBSCRIBED` | (push, dropped) A `delivery_point_id` that none of the subscribers has. |
+| `UNIQUSH_PUSH_RETRYING` | (push, failure) The first attempt failed and is being retried in the background; `errorMsg` says why. |
 | `UNIQUSH_UPDATE_UNSUBSCRIBE` | (push, dropped) The push service said the device is gone (unregistered, or its token or endpoint expired); it has been unsubscribed. |
 | `UNIQUSH_ERROR_GENERIC` | Something failed; see `errorMsg`. Provider credential or configuration errors reported by the push service land here with a message naming what to check. |
 | `UNIQUSH_ERROR_EMPTY_NOTIFICATION` | `/push` with no content. |

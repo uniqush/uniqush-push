@@ -39,6 +39,7 @@ import (
 	"github.com/uniqush/uniqush-push/db"
 	"github.com/uniqush/uniqush-push/log"
 	"github.com/uniqush/uniqush-push/push"
+	"github.com/uniqush/uniqush-push/srv/webpush"
 )
 
 // RestAPI implements uniqush's REST API (/push, /subscribe, /addpsp, etc).
@@ -232,6 +233,12 @@ func (api *RestAPI) changePushServiceProvider(kv map[string]string, logger log.L
 	if err != nil {
 		logger.Errorf("From=%v Cannot get service name: %v; %v", remoteAddr, service, err)
 		return APIResponseDetails{From: &remoteAddr, Service: &service, Code: UNIQUSH_ERROR_CANNOT_GET_SERVICE, ErrorMsg: strPtrOfErr(err)}
+	}
+	if add && (psp.PushServiceName() == "webpush" || psp.PushServiceName() == "unifiedpush") {
+		if err = webpush.CheckVAPIDContact(kv["subscriber"]); err != nil {
+			logger.Errorf("From=%v Cannot build push service provider: %v", remoteAddr, err)
+			return APIResponseDetails{From: &remoteAddr, Code: UNIQUSH_ERROR_BUILD_PUSH_SERVICE_PROVIDER, ErrorMsg: strPtrOfErr(err)}
+		}
 	}
 	if add {
 		err = api.backend.AddPushServiceProvider(service, psp, replace)

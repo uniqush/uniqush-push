@@ -37,12 +37,12 @@ A run ends like this:
 ```
 ------------------------------------------------------------------------
 On the wire
-  POST body            2048 bytes (UnifiedPush allows 1-4096)
+  POST body            4096 bytes (UnifiedPush allows 1-4096)
   Content-Encoding     aes128gcm
-  record size (rs)     2048
+  record size (rs)     4096
   salt                 CV4PG4IMo_PLBwQ3TqRNuQ
   server public key    BFoofV7RphBQ-ZL7X4_MGc4W1cXhHP82wVKXGk30px9YJywG...
-  ciphertext           1962 bytes, padded to fill the record
+  ciphertext           4010 bytes, padded to fill the record
 
 Decrypted
   {"msg":"Hello from uniqush-push over UnifiedPush."}
@@ -140,7 +140,7 @@ The spec adds a few constraints beyond RFC 8030 that this backend honours:
 | Requirement | Where |
 |---|---|
 | Endpoint at most 1000 bytes, `http`/`https` only | rejected at `/subscribe` |
-| Payload 1–4096 bytes on the wire | uniqush sends a fixed 2048-byte record |
+| Payload 1–4096 bytes on the wire | uniqush sends a fixed 4096-byte record (`record_size`) |
 | Treat any 2xx as accepted, not just 201 | `classifyStatus` |
 | 404 and 410 mean the endpoint is gone | the subscription is deleted |
 | 429 means back off, honouring `Retry-After` | the retry schedule is seeded from it |

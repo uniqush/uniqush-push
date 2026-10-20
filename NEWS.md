@@ -21,6 +21,12 @@ REST API:
   in `droppedDetails`, rather than skipping it.
 - Bugfix: The `/push` response is serialized under the lock retries add to it under, so a retry finishing at the
   same time no longer races with it.
+- Bugfix: A device whose first attempt is being retried is in the `/push` response's `failureDetails`, and counted
+  in `failureCount`, with the new code `UNIQUSH_PUSH_RETRYING` and the push service's answer in `errorMsg`. It used to
+  be left out, so a push whose only device was retrying answered with an empty response.
+- Bugfix: A push refused before any device is tried, for a bad `ttl`, `msggroup`, `uniqush.urgency` or an oversized
+  payload, names the request's subscribers in `failureDetails`, and the device when the push named exactly one
+  `delivery_point_id`, rather than an empty `subscriber` and `Unknown`. The log line names them too.
 
 APNs:
 
@@ -46,12 +52,25 @@ UnifiedPush / Web Push:
 - Change: `ttl` and `msggroup` are no longer copied into the generated JSON body, as with FCM and ADM, so a
   push carrying nothing else now fails as an empty payload.
 - Change: `/previewpush` rejects the same parameters `/push` does, for APNs and Web Push.
+- Change: `/addpsp` checks the `subscriber` (VAPID contact) of a `webpush` or `unifiedpush` provider, and accepts
+  an email address, a `mailto:` URI or an `https:` URL. Anything else, such as an `http:` URL or a name without an
+  `@`, is refused rather than signed as an invalid `mailto:` contact. Stored providers are unchanged; one stored
+  with a contact that is now refused keeps pushing and can still be removed with `/rmpsp`, and `/addpsp` with
+  `replace=true` and a valid contact fixes it.
 
 Packaging:
 
 - New feature: `uniqush-push -healthcheck` exits 0 if the server on the config's `addr` answers `/health` with a
   200, and the Docker image and `compose.yaml` use it as their healthcheck, since the image has no curl.
   `compose.yaml` pulls `:latest`, so its healthcheck needs 2.11.0 or newer.
+- New feature: `compose.yaml` has a commented example of requiring a bearer token: the token is passed from `.env`
+  as a secret owned by the image's user with mode 0400, and a mounted config sets `token_file` to it.
+- Bugfix: The .deb and .rpm mark `/etc/uniqush/uniqush-push.conf` as a config file, so upgrading keeps a changed
+  one, `token_file` included, instead of overwriting it with the stock config. Upgrading a .deb from 2.10.0 or
+  earlier asks about it once if it was edited, and replaces it silently if not; for an unattended upgrade, pass
+  `-o Dpkg::Options::=--force-confold` to apt-get to keep the edited one.
+- Change: `build/build-uniqush-push.sh` is gone. It cloned over SSH and used `go get`, and the release workflow
+  builds the packages without it.
 
 
 20 Oct 2026, uniqush-push 2.10.0

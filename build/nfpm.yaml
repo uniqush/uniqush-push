@@ -1,7 +1,7 @@
 # nfpm (https://nfpm.goreleaser.com) config for uniqush-push's .deb and .rpm
-# packages. build-uniqush-push.sh sets VERSION, ARCH and LICENSE and cds
-# into the staging root (the package's file tree, rooted at /) before
-# running `nfpm package -f nfpm.yaml`.
+# packages. The release workflow (.github/workflows/release.yml) sets VERSION
+# and ARCH and cds into the staging root (the package's file tree, rooted at /)
+# before running `nfpm package -f nfpm.yaml`.
 #
 # ARCH is fed uname -m's output (e.g. x86_64); nfpm maps that to each
 # packager's own architecture name (amd64 for deb, x86_64 for rpm) --
@@ -22,9 +22,27 @@ homepage: "https://uniqush.org"
 license: "Apache-2.0 AND BSD-2-Clause AND BSD-3-Clause AND MIT"
 
 contents:
-  - src: "."
-    dst: /
+  - src: ./usr
+    dst: /usr
     type: tree
+  # Not a tree: the rpm would then own /lib/systemd and /lib/systemd/system,
+  # with whatever mode the build's umask gave them.
+  - src: ./lib/systemd/system/uniqush-push.service
+    dst: /lib/systemd/system/uniqush-push.service
+  - dst: /etc/uniqush
+    type: dir
+  # Not replaced on upgrade, so a token_file or any other setting survives it.
+  - src: ./etc/uniqush/uniqush-push.conf
+    dst: /etc/uniqush/uniqush-push.conf
+    type: config|noreplace
 
 rpm:
   group: "Applications/Internet"
+
+overrides:
+  deb:
+    scripts:
+      # Relative to the staging root, which the release workflow puts next to
+      # its checkout of this directory. rpm needs no such script: it replaces
+      # an untouched config, and keeps an edited one and writes .rpmnew.
+      preinstall: ../tooling/build/deb-preinst.sh

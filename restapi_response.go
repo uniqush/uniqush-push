@@ -14,6 +14,10 @@ const (
 	// UNIQUSH_NOT_SUBSCRIBED is a delivery_point_id /push was asked for that
 	// none of the subscribers has.
 	UNIQUSH_NOT_SUBSCRIBED = "UNIQUSH_NOT_SUBSCRIBED"
+	// UNIQUSH_PUSH_RETRYING is a device whose first attempt failed and will be
+	// retried in the background. It is in failureDetails because nothing was
+	// delivered yet; the retry's outcome is only logged, or listed in /removed.
+	UNIQUSH_PUSH_RETRYING = "UNIQUSH_PUSH_RETRYING"
 
 	/* Errors */
 

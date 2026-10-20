@@ -27,9 +27,10 @@ import (
 )
 
 func getTestDatabaseConfig() *DatabaseConfig {
+	host, port := testutil.RedisAddr()
 	return &DatabaseConfig{
-		Host:   "localhost",
-		Port:   6379,
+		Host:   host,
+		Port:   port,
 		Name:   "0",
 		Engine: "redis",
 	}

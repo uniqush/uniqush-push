@@ -152,20 +152,6 @@ func TestBuildPushServiceProviderFromMap(t *testing.T) {
 		}
 	})
 
-	t.Run("strips a mailto prefix", func(t *testing.T) {
-		// webpush-go prepends "mailto:" to anything that is not an https URL,
-		// so storing a pre-formed URI would produce "mailto:mailto:...".
-		kv := cloneMap(base)
-		kv["subscriber"] = "mailto:admin@example.org"
-		psp := push.NewEmptyPushServiceProvider()
-		if err := service.BuildPushServiceProviderFromMap(kv, psp); err != nil {
-			t.Fatalf("Unexpected error: %v", err)
-		}
-		if got := psp.FixedData["subscriber"]; got != "admin@example.org" {
-			t.Errorf("Expected the mailto: prefix to be stripped, got %q", got)
-		}
-	})
-
 	t.Run("rejects missing and malformed fields", func(t *testing.T) {
 		testCases := []struct {
 			name   string
@@ -175,7 +161,6 @@ func TestBuildPushServiceProviderFromMap(t *testing.T) {
 			{"no public key", func(kv map[string]string) { delete(kv, "vapidpublickey") }},
 			{"no private key", func(kv map[string]string) { delete(kv, "vapidprivatekey") }},
 			{"no subscriber", func(kv map[string]string) { delete(kv, "subscriber") }},
-			{"bare mailto subscriber", func(kv map[string]string) { kv["subscriber"] = "mailto:" }},
 			{"public key not base64", func(kv map[string]string) { kv["vapidpublickey"] = "!!!not base64!!!" }},
 			{"public key wrong length", func(kv map[string]string) {
 				kv["vapidpublickey"] = base64.RawURLEncoding.EncodeToString([]byte("too short"))
@@ -198,6 +183,86 @@ func TestBuildPushServiceProviderFromMap(t *testing.T) {
 			})
 		}
 	})
+}
+
+// TestVAPIDContact checks each form of the RFC 8292 contact /addpsp is given
+// against what is stored, which /psps shows and the provider's name hashes, and
+// the JWT sub a push signs with.
+func TestVAPIDContact(t *testing.T) {
+	testCases := []struct {
+		contact, stored, sub string // stored == "" means refused
+	}{
+		{"admin@example.org", "admin@example.org", "mailto:admin@example.org"},
+		{"mailto:admin@example.org", "admin@example.org", "mailto:admin@example.org"},
+		{"https://example.org/contact", "https://example.org/contact", "https://example.org/contact"},
+		{"mailto:", "", ""},
+		{"admin", "", ""},
+		{"Admin <admin@example.org>", "", ""},
+		{"mailto:https://example.org/contact", "", ""},
+		{"http://example.org/contact", "", ""},
+		{"https:", "", ""},
+		{"https:///contact", "", ""},
+	}
+	for _, testCase := range testCases {
+		t.Run(testCase.contact, func(t *testing.T) {
+			var authorization string
+			service := newTestService(t, func(r *http.Request) (*http.Response, error) {
+				authorization = r.Header.Get("Authorization")
+				return newResponse(201, nil), nil
+			})
+			defer service.Finalize()
+			privateKey, publicKey, err := GenerateVAPIDKeys()
+			if err != nil {
+				t.Fatal(err)
+			}
+			psp := push.NewEmptyPushServiceProvider()
+			err = service.BuildPushServiceProviderFromMap(map[string]string{
+				"service": "testservice", "pushservicetype": "webpush",
+				"vapidpublickey": publicKey, "vapidprivatekey": privateKey, "subscriber": testCase.contact,
+			}, psp)
+			if err == nil {
+				err = CheckVAPIDContact(testCase.contact)
+			}
+			if testCase.stored == "" {
+				if err == nil {
+					t.Fatalf("Expected %q to be refused, stored %q", testCase.contact, psp.FixedData["subscriber"])
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("Unexpected error: %v", err)
+			}
+			if got := psp.FixedData["subscriber"]; got != testCase.stored {
+				t.Errorf("Expected %q to be stored, got %q", testCase.stored, got)
+			}
+
+			pushOnce(t, service, psp, newTestDP(t, service), &push.Notification{Data: map[string]string{"msg": "hi"}})
+			if got := jwtSub(t, authorization); got != testCase.sub {
+				t.Errorf("Expected the JWT sub %q, got %q", testCase.sub, got)
+			}
+		})
+	}
+}
+
+// jwtSub reads the sub claim of a "vapid t=<jwt>, k=<key>" header.
+func jwtSub(t *testing.T, authorization string) string {
+	t.Helper()
+	token, _, _ := strings.Cut(strings.TrimPrefix(authorization, "vapid t="), ",")
+	parts := strings.Split(token, ".")
+	if len(parts) != 3 {
+		t.Fatalf("Expected a JWT in %q", authorization)
+	}
+	claims, err := base64.RawURLEncoding.DecodeString(parts[1])
+	if err != nil {
+		t.Fatal(err)
+	}
+	var decoded struct {
+		Sub string `json:"sub"`
+	}
+	if err := json.Unmarshal(claims, &decoded); err != nil {
+		t.Fatal(err)
+	}
+	return decoded.Sub
 }
 
 func TestBuildDeliveryPointFromMap(t *testing.T) {

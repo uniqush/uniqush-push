@@ -20,6 +20,7 @@ package main
 import (
 	"errors"
 	"fmt"
+	"strings"
 	"sync"
 	"time"
 
@@ -264,12 +265,16 @@ func (backend *PushBackEnd) fixRetryError(
 		return
 	}
 	logger.Infof("RequestID=%v Service=%v Subscriber=%v PushServiceProvider=%v DeliveryPoint=%v Retry after %v: %q", reqID, service, sub, providerName, destinationName, after, reason)
+	handler.AddDetailsToHandler(APIResponseDetails{RequestID: &reqID, From: &remoteAddr, Service: &service, Subscriber: &sub, PushServiceProvider: &providerName, DeliveryPoint: &destinationName, Code: UNIQUSH_PUSH_RETRYING, ErrorMsg: &reason})
+	// Not handler: the response can still be waiting on a slower device when
+	// the retry finishes, and would then report this one twice. A removal the
+	// retry makes still reaches /removed.
 	go func() {
 		<-time.After(after)
 		subs := make([]string, 1)
 		subs[0] = sub
 		after = 2 * after
-		backend.pushImpl(reqID, remoteAddr, service, subs, nil, err.Content, nil, backend.loggers[LoggerPush], err.Provider, err.Destination, after, handler)
+		backend.pushImpl(reqID, remoteAddr, service, subs, nil, err.Content, nil, backend.loggers[LoggerPush], err.Provider, err.Destination, after, &NullAPIResponseHandler{})
 	}()
 }
 
@@ -429,6 +434,8 @@ func (backend *PushBackEnd) collectResult(
 	reqID string,
 	remoteAddr string,
 	service string,
+	subs []string,
+	knownDP string,
 	resChan <-chan *push.Result,
 	logger log.Logger,
 	after time.Duration,
@@ -457,6 +464,16 @@ func (backend *PushBackEnd) collectResult(
 				continue
 			}
 		}
+		// An error about the notification, such as a bad ttl, is reported once for
+		// all the provider's devices, so it names the request's subscribers, and
+		// its device only when the push can have had just the one.
+		dpName := getDeliveryPointNameOrUnknown(res.Destination)
+		if res.Destination == nil {
+			sub, ok = strings.Join(subs, ","), len(subs) > 0
+			if knownDP != "" {
+				dpName = knownDP
+			}
+		}
 		var subRepr string
 		if ok {
 			subRepr = sub
@@ -464,7 +481,6 @@ func (backend *PushBackEnd) collectResult(
 			subRepr = "Unknown"
 		}
 		if res.Err == nil {
-			dpName := getDeliveryPointNameOrUnknown(res.Destination)
 			pspName := getProviderNameOrUnknown(res.Provider)
 			msgID := res.MsgID
 			logger.Infof("RequestID=%v Service=%v Subscriber=%v PushServiceProvider=%v DeliveryPoint=%v MsgID=%v Success!", reqID, service, subRepr, pspName, dpName, msgID)
@@ -473,7 +489,6 @@ func (backend *PushBackEnd) collectResult(
 		}
 		err := backend.fixError(reqID, remoteAddr, res.Err, logger, after, handler)
 		if err != nil {
-			dpName := getDeliveryPointNameOrUnknown(res.Destination)
 			pspName := getProviderNameOrUnknown(res.Provider)
 			logger.Errorf("RequestID=%v Service=%v Subscriber=%v PushServiceProvider=%v DeliveryPoint=%v Failed: %v", reqID, service, subRepr, pspName, dpName, err)
 			handler.AddDetailsToHandler(APIResponseDetails{RequestID: &reqID, From: &remoteAddr, Service: &service, Subscriber: &sub, PushServiceProvider: &pspName, DeliveryPoint: &dpName, Code: UNIQUSH_ERROR_GENERIC, ErrorMsg: strPtrOfErr(err)})
@@ -585,6 +600,14 @@ func (backend *PushBackEnd) pushImpl(
 	// lookupFailed whether that is known for every subscriber.
 	found := make(map[string]bool, len(dpNamesRequested))
 	lookupFailed := false
+	// The one device this push can reach, when there is only one: a retry's, or
+	// the sole delivery_point_id asked for.
+	knownDP := ""
+	if dest != nil {
+		knownDP = dest.Name()
+	} else if len(dpNamesRequested) == 1 {
+		knownDP = dpNamesRequested[0]
+	}
 
 	// Loop over all subscriptions, fetching the list of corresponding delivery points to send to from the db, starting to push and send pushes.
 	for _, sub := range subs {
@@ -656,7 +679,7 @@ func (backend *PushBackEnd) pushImpl(
 				// Wait for the response from the PSP asynchronously
 				go func() {
 					// Note: if this is a retry, the duration `after` will increase, and fixError will account for that when deciding to retry
-					backend.collectResult(reqID, remoteAddr, service, resChan, logger, after, handler)
+					backend.collectResult(reqID, remoteAddr, service, subs, knownDP, resChan, logger, after, handler)
 					wg.Done()
 				}()
 			}

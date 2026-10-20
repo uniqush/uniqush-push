@@ -354,7 +354,7 @@ func admSinglePush(psp *push.PushServiceProvider, dp *push.DeliveryPoint, data [
 				}
 			}
 			retryDuration := time.Duration(retrySecond) * time.Second
-			err = push.NewRetryError(psp, dp, notif, retryDuration)
+			err = push.NewRetryErrorWithReason(psp, dp, notif, retryDuration, fmt.Errorf("ADM returned HTTP %d", resp.StatusCode))
 			return id, err
 		}
 
@@ -378,7 +378,7 @@ func admSinglePush(psp *push.PushServiceProvider, dp *push.DeliveryPoint, data [
 			err = push.NewBadDeliveryPointWithDetails(dp, "InvalidRegistrationId")
 		case "accesstokenexpired":
 			// retry would fix it.
-			err = push.NewRetryError(psp, dp, notif, 10*time.Second)
+			err = push.NewRetryErrorWithReason(psp, dp, notif, 10*time.Second, errors.New("ADM returned AccessTokenExpired"))
 		default:
 			err = push.NewErrorf("%v: %v", resp.StatusCode, fail.Reason)
 		}

@@ -34,6 +34,8 @@ import (
 	"io"
 	"math"
 	"net/http"
+	"net/mail"
+	"net/url"
 	"strconv"
 	"strings"
 	"sync"
@@ -360,6 +362,27 @@ func (ps *pushService) BuildPushServiceProviderFromMap(kv map[string]string, psp
 	}
 	psp.FixedData["subscriber"] = subscriber
 
+	return nil
+}
+
+// CheckVAPIDContact checks the RFC 8292 contact, the subscriber parameter, of a
+// provider being added.
+//
+// webpush-go signs an "https:" value as it is and prepends "mailto:" to
+// anything else, so anything that would come out as an invalid sub is refused
+// here rather than by every push service. Not checked by the builder, which
+// /rmpsp also uses: a provider stored before this check must stay removable.
+func CheckVAPIDContact(contact string) error {
+	if strings.HasPrefix(contact, "https:") {
+		if u, err := url.Parse(contact); err != nil || u.Host == "" {
+			return fmt.Errorf("subscriber %q is not a valid https: URL", contact)
+		}
+		return nil
+	}
+	address := strings.TrimPrefix(contact, "mailto:")
+	if parsed, err := mail.ParseAddress(address); err != nil || parsed.Name != "" || parsed.Address != address {
+		return fmt.Errorf("subscriber %q is not an email address, a mailto: URI or an https: URL", contact)
+	}
 	return nil
 }
 

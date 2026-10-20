@@ -258,21 +258,88 @@ func TestPushReportsRemovedDeliveryPoints(t *testing.T) {
 }
 
 // A removal made by a retry happens after /push has answered, so /removed is
-// the only place it can be reported.
+// the only place it can be reported; the response says the device is retrying.
 func TestRemovalDuringRetryIsRecorded(t *testing.T) {
 	backend, api := setUpRemovalTest(t)
 	const service = "removal_retry"
-	endpoint := webPushServer(t, http.StatusTooManyRequests, http.StatusGone).URL + "/sub/1"
+	endpoint := webPushServer(t, http.StatusServiceUnavailable, http.StatusGone).URL + "/sub/1"
 	pspKV, dpKV := webPushFixture(t, service, endpoint)
 	dp := subscribeForRemoval(t, backend, pspKV, dpKV)
 
-	if response, body := pushForRemoval(t, backend, service); response.DroppedCount != 0 {
-		t.Fatalf("Expected the first attempt to be retried rather than removed, got %s", body)
+	response, body := pushForRemoval(t, backend, service)
+	if response.DroppedCount != 0 || response.FailureCount != 1 || len(response.FailureDetails) != 1 {
+		t.Fatalf("Expected the first attempt to be reported retrying, got %s", body)
+	}
+	got := response.FailureDetails[0]
+	if got.Code != UNIQUSH_PUSH_RETRYING || stringOrEmpty(got.Subscriber) != removalSubscriber ||
+		stringOrEmpty(got.DeliveryPoint) != dp.Name() || !strings.Contains(stringOrEmpty(got.ErrorMsg), "HTTP 503") {
+		t.Errorf("Expected a retrying entry naming the device and why, got %s", body)
 	}
 
 	// The first retry is 5 seconds out.
 	removed := waitForRemoved(t, api, service, 15*time.Second)
 	expectRemoved(t, removed.Removed[0], dp, endpoint)
+}
+
+// A retry that finishes while the response still waits on a slower device
+// stays out of it, so each device is reported once.
+func TestRetryOutcomeStaysOutOfTheResponse(t *testing.T) {
+	backend, _ := setUpRemovalTest(t)
+	const service = "retry_outcome"
+	retried := webPushServer(t, http.StatusServiceUnavailable, http.StatusCreated)
+	// Slower than the first retry, which is 5 seconds out.
+	slow := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		io.Copy(io.Discard, r.Body)
+		time.Sleep(7 * time.Second)
+		w.WriteHeader(http.StatusCreated)
+	}))
+	t.Cleanup(slow.Close)
+	pspKV, dpKV := webPushFixture(t, service, retried.URL+"/sub/1")
+	subscribeForRemoval(t, backend, pspKV, dpKV)
+	_, dpKV = webPushFixture(t, service, slow.URL+"/sub/2")
+	dpKV["devid"] = "device-2"
+	subscribeForRemoval(t, backend, nil, dpKV)
+
+	response, body := pushForRemoval(t, backend, service)
+	if response.SuccessCount != 1 || response.FailureCount != 1 ||
+		response.FailureDetails[0].Code != UNIQUSH_PUSH_RETRYING {
+		t.Errorf("Expected one success and one device retrying, got %s", body)
+	}
+}
+
+// A provider stored before /addpsp checked the VAPID contact can still be
+// removed, though /addpsp would now refuse it.
+func TestRemovePSPWithAContactAddPSPRefuses(t *testing.T) {
+	backend, api := setUpRemovalTest(t)
+	pspKV, _ := webPushFixture(t, "old_contact", "https://push.example.org/sub/1")
+	pspKV["subscriber"] = "admin"
+	addRemovalProvider(t, backend, pspKV)
+
+	post := func(path string) APISimpleResponse {
+		form := url.Values{}
+		for k, v := range pspKV {
+			form.Set(k, v)
+		}
+		request := httptest.NewRequest(http.MethodPost, path, strings.NewReader(form.Encode()))
+		request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+		recorder := httptest.NewRecorder()
+		api.ServeHTTP(recorder, request)
+		var response APISimpleResponse
+		if err := json.Unmarshal(recorder.Body.Bytes(), &response); err != nil {
+			t.Fatalf("Could not read the %s response %q: %v", path, recorder.Body.String(), err)
+		}
+		return response
+	}
+	if response := post(AddPushServiceProviderToServiceURL); response.Details.Code != UNIQUSH_ERROR_BUILD_PUSH_SERVICE_PROVIDER {
+		t.Errorf("Expected /addpsp to refuse the contact, got %+v", response)
+	}
+	if response := post(RemovePushServiceProviderFromServiceURL); response.Details.Code != UNIQUSH_SUCCESS {
+		t.Fatalf("Expected /rmpsp to remove the provider, got %+v", response)
+	}
+	psps, err := backend.GetPushServiceProviderConfigs()
+	if err != nil || len(psps) != 0 {
+		t.Errorf("Expected no providers left, got %v, %v", psps, err)
+	}
 }
 
 // waitForRemoved polls /removed until the service has one entry.
