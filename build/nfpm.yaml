@@ -38,3 +38,11 @@ contents:
 
 rpm:
   group: "Applications/Internet"
+
+overrides:
+  deb:
+    scripts:
+      # Relative to the staging root, which the release workflow puts next to
+      # its checkout of this directory. rpm needs no such script: it replaces
+      # an untouched config, and keeps an edited one and writes .rpmnew.
+      preinstall: ../tooling/build/deb-preinst.sh

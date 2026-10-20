@@ -66,7 +66,9 @@ Packaging:
 - New feature: `compose.yaml` has a commented example of requiring a bearer token: the token is passed from `.env`
   as a secret owned by the image's user with mode 0400, and a mounted config sets `token_file` to it.
 - Bugfix: The .deb and .rpm mark `/etc/uniqush/uniqush-push.conf` as a config file, so upgrading keeps a changed
-  one, `token_file` included, instead of overwriting it with the stock config.
+  one, `token_file` included, instead of overwriting it with the stock config. Upgrading a .deb from 2.10.0 or
+  earlier asks about it once if it was edited, and replaces it silently if not; for an unattended upgrade, pass
+  `-o Dpkg::Options::=--force-confold` to apt-get to keep the edited one.
 - Change: `build/build-uniqush-push.sh` is gone. It cloned over SSH and used `go get`, and the release workflow
   builds the packages without it.
 
