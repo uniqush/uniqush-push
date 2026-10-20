@@ -412,7 +412,7 @@ payload. These have meaning to uniqush or a backend:
 | Parameter | Backends | |
 |---|---|---|
 | `msg` | all | The message body. For APNs this is `aps.alert.body`; elsewhere it is a key in the data payload. |
-| `ttl` | apns, fcm, adm | Seconds the push service may hold the notification for an offline device. Default one hour. `0` means deliver now or never. |
+| `ttl` | apns, fcm, adm, webpush, unifiedpush | Seconds the push service may hold the notification for an offline device. `0` means deliver now or never, except on ADM, where it means Amazon's default. When omitted: one hour for APNs and FCM, 12 hours for Web Push and UnifiedPush, and Amazon's default (one week) for ADM. Web Push and UnifiedPush accept `0` to `2147483647` and reject anything else; push services cap it themselves, commonly at four weeks, and Microsoft's WNS rejects `0`. The other backends ignore a value that is not a number. |
 | `badge` | apns | Badge count. Non-numeric values become `0`. |
 | `sound` | apns | `aps.sound`. |
 | `img` | apns | `aps.alert.launch-image`. |
@@ -420,8 +420,9 @@ payload. These have meaning to uniqush or a backend:
 | `content-available`, `mutable-content` | apns | `aps.content-available` and `aps.mutable-content`, as numbers: `1` wakes the app in the background, and `1` runs its notification service extension so it can rewrite the notification before it is shown. A value that is not a number is dropped, because iOS ignores the string `"1"` where it wants the number `1`. |
 | `category`, `thread-id`, `target-content-id`, `interruption-level` | apns | Placed in `aps` as strings: the actions the notification offers, the conversation it groups under, the window it targets, and how far it may interrupt (`passive`, `active`, `time-sensitive` or `critical`). |
 | `relevance-score` | apns | `aps.relevance-score`, a number from 0 to 1, ranking the notification within its summary. |
-| `msggroup` | fcm, adm | The collapse key: a newer notification with the same group replaces an undelivered older one. |
-| `uniqush.priority` | fcm | `high` or `normal`, becoming FCM's `android.priority`. A normal-priority message may be held until the device next leaves Doze; a high-priority one wakes it. Omitted by default, so FCM applies its own rule (high for a notification message, normal for a data-only one). Any other value is rejected. Not read by the other backends: APNs derives its priority from `uniqush.apns_push_type`. |
+| `msggroup` | apns, fcm, adm, webpush, unifiedpush | The collapse key: a newer notification with the same group replaces an undelivered older one. It becomes APNs' `apns-collapse-id`, which may be at most 64 bytes with no control characters, and Web Push's `Topic` header, which may be at most 32 characters of `A-Z`, `a-z`, `0-9`, `-` and `_`. Any other value is rejected. |
+| `uniqush.priority` | fcm | `high` or `normal`, becoming FCM's `android.priority`. A normal-priority message may be held until the device next leaves Doze; a high-priority one wakes it. Omitted by default, so FCM applies its own rule (high for a notification message, normal for a data-only one). Any other value is rejected. Not read by the other backends: APNs derives its priority from `uniqush.apns_push_type`, and Web Push reads `uniqush.urgency`. |
+| `uniqush.urgency` | webpush, unifiedpush | The RFC 8030 `Urgency` header: `very-low`, `low`, `normal` (default) or `high`. A push service may hold a less urgent message until the device is charging or on Wi-Fi. Any other value is rejected. Not read by the other backends. |
 | `uniqush.apns_push_type` | apns | The `apns-push-type`: `alert` (default), `background`, `complication`, `controls`, `fileprovider`, `liveactivity`, `location`, `mdm`, `pushtotalk`, `voip` or `widgets`. Also sets the priority Apple requires for that type. |
 | `uniqush.apns_voip` | apns | `1` is shorthand for `uniqush.apns_push_type=voip`, and allows the 5120-byte VoIP payload limit instead of 4096. |
 | `uniqush.http2` | apns | Obsolete, and ignored. `0` used to select Apple's binary protocol, which Apple shut down in 2021 and uniqush no longer implements; the push goes over HTTP/2 and the response reports that the parameter does nothing. |
@@ -434,7 +435,9 @@ payload. These have meaning to uniqush or a backend:
 | anything else | all | A user-defined key, passed through to the device: as a key/value in the FCM/ADM data payload, a top-level key beside `aps` for APNs, or a field in the JSON body for Web Push. |
 
 Names beginning with `uniqush.` are reserved. A push with no content at all is
-rejected with `UNIQUSH_ERROR_EMPTY_NOTIFICATION`. APNs payloads are capped at
+rejected with `UNIQUSH_ERROR_EMPTY_NOTIFICATION`. A parameter with an invalid
+value fails the push to that backend's devices without sending anything, and
+the `failureDetails` say why in `errorMsg`, naming the parameter and value. APNs payloads are capped at
 4096 bytes (5120 for VoIP); FCM's own limit is 4096 bytes of data.
 
     curl http://localhost:9898/push -d service=myservice -d subscriber=alice,bob -d msg="Hello" -d badge=1

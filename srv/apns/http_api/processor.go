@@ -526,6 +526,9 @@ func (prp *HTTPPushRequestProcessor) sendRequests(request *common.PushRequest) {
 		// apns-topic is set per device below, because a delivery point may name
 		// its own bundle id. The provider's is the default.
 	}
+	if request.CollapseID != "" {
+		baseHeader["apns-collapse-id"] = []string{request.CollapseID}
+	}
 
 	psp := request.PSP
 	// Re-checked here, not only at /addpsp, because a provider loaded from the

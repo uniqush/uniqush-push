@@ -32,7 +32,9 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math"
 	"net/http"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -121,6 +123,22 @@ const (
 
 // payloadKey is the /push parameter carrying a raw payload to deliver verbatim.
 const payloadKey = "uniqush.payload.webpush"
+
+// The /push parameters that become RFC 8030 headers. ttl and msggroup are the
+// names APNs, FCM and ADM already read for the same ideas.
+const (
+	ttlKey     = "ttl"
+	topicKey   = "msggroup"
+	urgencyKey = "uniqush.urgency"
+
+	// maxTTL is the largest ttl accepted. webpush-go holds the TTL in an int,
+	// which is 32 bits on some platforms. Push services cap it far lower
+	// anyway, commonly at four weeks.
+	maxTTL = math.MaxInt32
+
+	// maxTopicLength is RFC 8030's limit on the Topic header.
+	maxTopicLength = 32
+)
 
 // pushService implements push.PushServiceType for Web Push.
 type pushService struct {
@@ -430,6 +448,9 @@ func decodeAnyBase64(value string) ([]byte, error) {
 // randomised per message and keyed to a specific subscriber, so the bytes on
 // the wire are both non-reproducible and useless for debugging.
 func (ps *pushService) Preview(notif *push.Notification) ([]byte, push.Error) {
+	if err := applyNotificationOptions(&webpush.Options{}, notif.Data); err != nil {
+		return nil, err
+	}
 	payload, err := toWebPushPayload(notif)
 	if err != nil {
 		return nil, err
@@ -450,8 +471,9 @@ func toWebPushPayload(notif *push.Notification) ([]byte, push.Error) {
 
 	payload := make(map[string]string, len(notif.Data))
 	for key, value := range notif.Data {
-		// Strip uniqush's own control parameters; they are not for the device.
-		if strings.HasPrefix(key, "uniqush.") {
+		// Strip uniqush's own control parameters, and the two sent as headers;
+		// they are not for the device.
+		if strings.HasPrefix(key, "uniqush.") || key == ttlKey || key == topicKey {
 			continue
 		}
 		payload[key] = value
@@ -496,6 +518,9 @@ func (ps *pushService) Push(psp *push.PushServiceProvider, dpQueue <-chan *push.
 	}
 
 	options, optErr := ps.optionsForPSP(psp)
+	if optErr == nil {
+		optErr = applyNotificationOptions(options, notif.Data)
+	}
 	if optErr != nil {
 		go func() {
 			for range dpQueue { //nolint:revive // draining is the point
@@ -543,6 +568,47 @@ func (ps *pushService) optionsForPSP(psp *push.PushServiceProvider) (*webpush.Op
 		RecordSize:      ps.recordSize.Load(),
 		Urgency:         webpush.UrgencyNormal,
 	}, nil
+}
+
+// applyNotificationOptions sets the headers a /push caller controls. A bad
+// value is refused rather than ignored, because each one changes when or
+// whether the message is delivered, and falling back to the default would
+// leave the mistake looking like it worked.
+func applyNotificationOptions(options *webpush.Options, data map[string]string) push.Error {
+	if raw := data[ttlKey]; raw != "" {
+		ttl, err := strconv.ParseUint(strings.TrimSpace(raw), 10, 64)
+		if err != nil || ttl > maxTTL {
+			return push.NewBadNotificationWithDetails(
+				fmt.Sprintf("invalid %s %q, expected seconds from 0 to %d", ttlKey, raw, maxTTL))
+		}
+		options.TTL = int(ttl)
+	}
+	if topic := data[topicKey]; topic != "" {
+		if !isValidTopic(topic) {
+			return push.NewBadNotificationWithDetails(
+				fmt.Sprintf("invalid %s %q, expected at most %d characters of A-Z, a-z, 0-9, - and _", topicKey, topic, maxTopicLength))
+		}
+		options.Topic = topic
+	}
+	if raw := data[urgencyKey]; raw != "" {
+		// Case-insensitive, like uniqush.priority.
+		urgency := webpush.Urgency(strings.ToLower(strings.TrimSpace(raw)))
+		switch urgency {
+		case webpush.UrgencyVeryLow, webpush.UrgencyLow, webpush.UrgencyNormal, webpush.UrgencyHigh:
+			options.Urgency = urgency
+		default:
+			return push.NewBadNotificationWithDetails(
+				fmt.Sprintf("invalid %s %q, expected one of: very-low, low, normal, high", urgencyKey, raw))
+		}
+	}
+	return nil
+}
+
+// isValidTopic reports whether topic fits RFC 8030's Topic header: the URL-safe
+// base64 alphabet, unpadded.
+func isValidTopic(topic string) bool {
+	const alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_"
+	return len(topic) <= maxTopicLength && strings.Trim(topic, alphabet) == ""
 }
 
 // pushOne delivers to a single subscription.

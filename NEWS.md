@@ -12,6 +12,25 @@ REST API:
 - New feature: `[WebFrontend] addr=unix:/path/to.sock` listens on a unix socket, with the mode in `socket_mode`
   (default `0660`). A socket file left by an unclean exit is replaced; one still in use is not.
 
+APNs:
+
+- Change: `msggroup` on `/push` is sent as `apns-collapse-id`, so iOS shows notifications with the same group
+  as one, as FCM and ADM already did with it. A `msggroup` over Apple's 64 bytes, or with a control character,
+  now fails the push.
+
+UnifiedPush / Web Push:
+
+- New feature: `ttl`, `msggroup` and the new `uniqush.urgency` on `/push` set the RFC 8030 `TTL`, `Topic` and
+  `Urgency` headers, including with `uniqush.payload.webpush`. Without them a push goes out as before: a
+  12-hour TTL, no topic and normal urgency.
+- Change: A `ttl` that is not a number of seconds (`1h`), a `msggroup` that is not up to 32 characters of
+  `A-Z`, `a-z`, `0-9`, `-` and `_` (`chat:42`), or an unknown `uniqush.urgency` now fails the push. They used
+  to be passed harmlessly in the body.
+- Change: `ttl` and `msggroup` are no longer copied into the generated JSON body, as with FCM and ADM, so a
+  push carrying nothing else now fails as an empty payload.
+- Change: `/previewpush` rejects the same parameters `/push` does, for APNs and Web Push.
+
+
 20 Oct 2026, uniqush-push 2.10.0
 --------------------------------
 
