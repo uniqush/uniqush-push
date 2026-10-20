@@ -32,4 +32,7 @@ COPY --from=build /out/uniqush-push /usr/bin/uniqush-push
 USER 65534:65534
 EXPOSE 9898
 
+# There is no curl in a scratch image, so the binary checks itself.
+HEALTHCHECK CMD ["/usr/bin/uniqush-push", "-healthcheck"]
+
 ENTRYPOINT ["/usr/bin/uniqush-push"]

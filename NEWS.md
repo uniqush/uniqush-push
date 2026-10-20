@@ -41,6 +41,11 @@ UnifiedPush / Web Push:
 - Bugfix: The `/push` response is serialized under the lock retries add to it under, so a retry finishing at the
   same time no longer races with it.
 
+Packaging:
+
+- New feature: `uniqush-push -healthcheck` exits 0 if the server on the config's `addr` answers `/health` with a
+  200, and the Docker image and `compose.yaml` use it as their healthcheck, since the image has no curl.
+
 20 Oct 2026, uniqush-push 2.10.0
 --------------------------------
 

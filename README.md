@@ -330,6 +330,11 @@ Not a liveness probe. A liveness probe should not depend on another service:
 during a redis outage this would restart every uniqush over and over, which
 neither fixes redis nor helps the backlog drain when it returns.
 
+The Docker image has no curl, so its `HEALTHCHECK` runs `uniqush-push
+-healthcheck`, which asks `/health` on the `addr` in the config and exits `0`
+on a `200` and `1` otherwise. Docker only marks the container unhealthy; it does
+not restart it.
+
 Redis is the only dependency checked, because it is the only one uniqush cannot
 work without at all. It deliberately does not probe Apple or Google — an
 endpoint that did would report their outage as this instance being unhealthy,

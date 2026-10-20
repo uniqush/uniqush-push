@@ -8,6 +8,11 @@ services:
     depends_on:
       redis:
         condition: service_healthy
+    healthcheck:
+      test: ["CMD", "/usr/bin/uniqush-push", "-healthcheck"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
     restart: unless-stopped
 
   redis:
