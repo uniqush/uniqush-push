@@ -516,13 +516,17 @@ forever.
 
 ## Migrating from the Klippa fork
 
-The [Klippa fork](https://github.com/klippa-app/uniqush-push) stores FCM
-providers in the same shape, so its database can be used as is. It is based on
+The [Klippa fork](https://github.com/klippa-app/uniqush-push) is based on
 2.7.0, so read [Upgrading from 2.7.0 to 2.8.0](#upgrading-from-270-to-280), then
 the 2.8.0 and 2.10.0 sections, as well as this one:
 
 - Its providers have no `projectid`; uniqush now takes it from the `project_id`
-  in the service-account JSON, so there is no `/addpsp` step.
+  in the service-account JSON. Providers made by the fork's 3.0.4 or later are
+  stored the way uniqush stores them and need no `/addpsp` step. Those made by
+  3.0.0 to 3.0.3 kept `credentialsfile` in their fixed data, so uniqush names
+  them differently and fails every push to them with `NoCredentialsFile`; see
+  [below](#providers-from-the-forks-300-to-303).
+- Run [`/rebuildsubscriberindex`](#run-rebuildsubscriberindex-once) once.
 - Run [`/rebuildsubscriberindex`](#run-rebuildsubscriberindex-once) once.
 - `uniqush.notification.fcm` is passed through to FCM as is, where the fork kept
   only `title`, `body` and `image`.
@@ -530,3 +534,23 @@ the 2.8.0 and 2.10.0 sections, as well as this one:
   anything compares versions.
 - The Docker image runs as UID 65534, so the mounted service-account JSON must
   be readable by that user.
+
+### Providers from the fork's 3.0.0 to 3.0.3
+
+Every fork release reports version `3.0.1`, and `/psps` shows both kinds of
+provider the same way. To tell which you have, send the provider's own
+`/addpsp` again, without `replace`:
+
+    curl http://localhost:9898/addpsp -d service=myservice -d pushservicetype=fcm \
+      -d credentialsfile=/etc/uniqush/service-account.json
+
+A 3.0.4 provider is updated in place and this succeeds. An older one is
+refused with "already exists with different fixed data". Replace that one,
+which keeps its subscriptions:
+
+    curl http://localhost:9898/addpsp -d service=myservice -d pushservicetype=fcm \
+      -d credentialsfile=/etc/uniqush/service-account.json -d replace=true
+
+Devices are matched to a provider by service and push service type, so every
+subscription moves to the new provider. `/checkdb` then lists each of them as a
+`stale_binding` to the old provider's name, which is harmless.
