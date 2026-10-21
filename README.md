@@ -57,7 +57,8 @@ server side, you can send push notifications to any supported mobile platform.
 > - **UnifiedPush / Web Push — new, and the one backend with no vendor
 >   dependency.** See below.
 >
-> Building requires **Go 1.26 or newer**. If you are upgrading,
+> Building requires **Go 1.26 or newer**, and 1.26.10 or 1.27.3 or newer for the
+> eMudhra CA distrust (see NEWS). If you are upgrading,
 > [docs/upgrading.md](docs/upgrading.md) walks through what changes and what
 > needs action, release by release.
 
@@ -108,7 +109,7 @@ docker compose run --rm --no-deps uniqush-push -generate-vapid-keys
 
 ## Building and running ##
 
-`uniqush-push` is a single binary. Building it needs Go 1.26 or newer; running
+`uniqush-push` is a single binary. Building it needs Go 1.26.10 or 1.27.3 or newer; running
 it needs a [Redis](https://redis.io) server.
 
 ```

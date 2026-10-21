@@ -1,6 +1,6 @@
 # The build stage runs on the builder's own platform and cross-compiles, so a
 # multi-platform build compiles natively rather than under emulation.
-FROM --platform=$BUILDPLATFORM golang:1.27 AS build
+FROM --platform=$BUILDPLATFORM golang:1.27.3 AS build
 
 WORKDIR /src
 COPY go.mod go.sum ./
