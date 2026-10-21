@@ -402,6 +402,14 @@ Sends one notification to every device of the named subscribers in a service.
 Delivery is asynchronous per backend, but the response waits for the first
 attempt at each device, so it reports what actually happened.
 
+For Web Push and UnifiedPush, `request_timeout` in the backend's config section
+bounds one device's first attempt, including endpoint DNS validation and the
+HTTP request. It defaults to 30 seconds and accepts 1-300 seconds. Each backend
+push runs at most 16 requests concurrently, so `n` slow endpoints can take about
+`ceil(n / 16) * request_timeout`, plus processing overhead, before all first
+attempts finish. This is not an overall deadline for `/push`; callers should
+allow for the number of devices or split them across smaller requests.
+
 Addressing:
 
 | Parameter | |

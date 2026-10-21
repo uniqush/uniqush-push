@@ -1,6 +1,7 @@
 package webpush
 
 import (
+	"context"
 	"fmt"
 	"net"
 	"net/url"
@@ -36,14 +37,14 @@ type EndpointPolicy struct {
 	// uppercase in it could never match. Use SetAllowedHosts to get this right.
 	AllowedHosts map[string]bool
 
-	// resolve is swappable for tests. Defaults to net.LookupIP.
-	resolve func(host string) ([]net.IP, error)
+	// resolve is swappable for tests. Defaults to net.DefaultResolver.LookupIP.
+	resolve func(ctx context.Context, network, host string) ([]net.IP, error)
 }
 
 // NewEndpointPolicy returns a policy with the safe defaults: https/http only,
 // no private address ranges, no allow-list.
 func NewEndpointPolicy() *EndpointPolicy {
-	return &EndpointPolicy{resolve: net.LookupIP}
+	return &EndpointPolicy{resolve: net.DefaultResolver.LookupIP}
 }
 
 // SetAllowedHosts replaces the allow-list, normalising entries to lowercase and
@@ -100,6 +101,12 @@ func (p *EndpointPolicy) ValidateSyntax(endpoint string) error {
 // resolve to 169.254.169.254 later; checking only at registration is defeated
 // by DNS rebinding.
 func (p *EndpointPolicy) ValidateForSend(endpoint string) error {
+	return p.ValidateForSendContext(context.Background(), endpoint)
+}
+
+// ValidateForSendContext checks an endpoint like ValidateForSend, with DNS
+// resolution bounded by ctx so it can share a push's request_timeout.
+func (p *EndpointPolicy) ValidateForSendContext(ctx context.Context, endpoint string) error {
 	if err := p.ValidateSyntax(endpoint); err != nil {
 		return err
 	}
@@ -123,11 +130,11 @@ func (p *EndpointPolicy) ValidateForSend(endpoint string) error {
 
 	resolve := p.resolve
 	if resolve == nil {
-		resolve = net.LookupIP
+		resolve = net.DefaultResolver.LookupIP
 	}
-	addrs, err := resolve(host)
+	addrs, err := resolve(ctx, "ip", host)
 	if err != nil {
-		return fmt.Errorf("could not resolve endpoint host %q: %v", host, err)
+		return fmt.Errorf("could not resolve endpoint host %q: %w", host, err)
 	}
 	if len(addrs) == 0 {
 		return fmt.Errorf("endpoint host %q resolved to no addresses", host)
