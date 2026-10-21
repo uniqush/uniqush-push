@@ -3,6 +3,14 @@ uniqush-push NEWS
 20 Oct 2026, uniqush-push 2.11.0
 --------------------------------
 
+Security:
+
+- Bugfix: Releases and the Docker image are built with Go 1.27.3, whose crypto/x509 rejects any certificate chain
+  through the eight eMudhra intermediate CAs whose private keys were compromised (CVE-2026-111943). uniqush
+  verifies APNs, FCM, ADM and every Web Push endpoint against the system roots, so a certificate issued with one
+  of those keys could otherwise have let an attacker intercept its connections, provider tokens included. If you
+  build uniqush yourself, use Go 1.27.3 or 1.26.10 or newer.
+
 REST API:
 
 - New feature: `[WebFrontend] token_file` names a file holding a bearer token that every endpoint but `/health`
