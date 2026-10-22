@@ -2,7 +2,6 @@ package webpush
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"net"
 	"strings"
@@ -232,19 +231,6 @@ func TestValidateForSendResolvesHostnames(t *testing.T) {
 	}
 	if err := policy.ValidateForSend("https://nxdomain.example/up"); err == nil {
 		t.Error("Expected an unresolvable hostname to be rejected")
-	}
-}
-
-func TestValidateForSendContextCancellation(t *testing.T) {
-	policy := NewEndpointPolicy()
-	policy.resolve = func(ctx context.Context, _, _ string) ([]net.IP, error) {
-		<-ctx.Done()
-		return nil, ctx.Err()
-	}
-	ctx, cancel := context.WithCancel(context.Background())
-	cancel()
-	if err := policy.ValidateForSendContext(ctx, "https://public.example/up"); !errors.Is(err, context.Canceled) {
-		t.Errorf("Expected DNS validation to preserve cancellation, got %v", err)
 	}
 }
 

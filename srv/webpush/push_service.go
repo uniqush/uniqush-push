@@ -645,7 +645,7 @@ func (ps *pushService) pushOne(psp *push.PushServiceProvider, dp *push.DeliveryP
 	endpoint := dp.FixedData["endpoint"]
 
 	// DNS validation and the HTTP request share one budget, so a slow lookup
-	// cannot hold a worker indefinitely or give the send a fresh timeout.
+	// cannot outlive request_timeout or give the send a fresh timeout.
 	ctx, cancel := context.WithTimeout(context.Background(), ps.requestTimeout())
 	defer cancel()
 

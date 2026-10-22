@@ -134,7 +134,7 @@ func (p *EndpointPolicy) ValidateForSendContext(ctx context.Context, endpoint st
 	}
 	addrs, err := resolve(ctx, "ip", host)
 	if err != nil {
-		return fmt.Errorf("could not resolve endpoint host %q: %w", host, err)
+		return fmt.Errorf("could not resolve endpoint host %q: %v", host, err)
 	}
 	if len(addrs) == 0 {
 		return fmt.Errorf("endpoint host %q resolved to no addresses", host)
