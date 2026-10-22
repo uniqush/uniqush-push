@@ -1,13 +1,13 @@
 uniqush-push NEWS
 
 Unreleased
---------------------------------
+----------
 
 UnifiedPush / Web Push:
 
 - Bugfix: Endpoint DNS validation now counts against `request_timeout`; a slow lookup could previously add
-  time beyond `request_timeout`. The API and sample config document the 16 concurrent requests per backend push, so a
-  push to more devices can take multiple timeout waves.
+  time beyond `request_timeout`.
+
 
 20 Oct 2026, uniqush-push 2.11.0
 --------------------------------
