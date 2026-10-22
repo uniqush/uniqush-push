@@ -1,6 +1,7 @@
 package webpush
 
 import (
+	"context"
 	"fmt"
 	"net"
 	"strings"
@@ -199,7 +200,7 @@ func TestValidateForSendWithLiteralIP(t *testing.T) {
 
 func TestValidateForSendResolvesHostnames(t *testing.T) {
 	policy := NewEndpointPolicy()
-	policy.resolve = func(host string) ([]net.IP, error) {
+	policy.resolve = func(_ context.Context, _, host string) ([]net.IP, error) {
 		switch host {
 		case "public.example":
 			return []net.IP{net.ParseIP("93.184.216.34")}, nil

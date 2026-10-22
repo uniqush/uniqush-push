@@ -644,9 +644,14 @@ func (ps *pushService) pushOne(psp *push.PushServiceProvider, dp *push.DeliveryP
 
 	endpoint := dp.FixedData["endpoint"]
 
+	// DNS validation and the HTTP request share one budget, so a slow lookup
+	// cannot outlive request_timeout or give the send a fresh timeout.
+	ctx, cancel := context.WithTimeout(context.Background(), ps.requestTimeout())
+	defer cancel()
+
 	// Re-check immediately before connecting. Checking only at /subscribe time
 	// is defeated by DNS rebinding.
-	if err := ps.endpointPolicy().ValidateForSend(endpoint); err != nil {
+	if err := ps.endpointPolicy().ValidateForSendContext(ctx, endpoint); err != nil {
 		result.Err = push.NewBadDeliveryPointWithDetails(dp, err.Error())
 		return result
 	}
@@ -667,9 +672,6 @@ func (ps *pushService) pushOne(psp *push.PushServiceProvider, dp *push.DeliveryP
 	// mangled notifications.
 	message := make([]byte, len(payload))
 	copy(message, payload)
-
-	ctx, cancel := context.WithTimeout(context.Background(), ps.requestTimeout())
-	defer cancel()
 
 	response, err := webpush.SendNotificationWithContext(ctx, message, subscription, options)
 	if err != nil {
