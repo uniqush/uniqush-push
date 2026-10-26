@@ -3,6 +3,12 @@ uniqush-push NEWS
 Unreleased
 ----------
 
+APNs:
+
+- New feature: `uniqush.urgency` sets `apns-priority`: `very-low` and `low` use priority 5, while `normal` and
+  `high` use priority 10. Background pushes always require priority 5, so an explicit `normal` or `high` urgency
+  is rejected. Without `uniqush.urgency`, APNs keeps deriving priority from `uniqush.apns_push_type`.
+
 UnifiedPush / Web Push:
 
 - Bugfix: Endpoint DNS validation now counts against `request_timeout`; a slow lookup could previously add

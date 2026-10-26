@@ -110,6 +110,46 @@ func TestPriorityForPushType(t *testing.T) {
 	}
 }
 
+func TestPriorityForNotification(t *testing.T) {
+	testCases := []struct {
+		name      string
+		pushType  string
+		urgency   string
+		want      string
+		wantError string
+	}{
+		{name: "omitted urgency uses push type default", pushType: common.PushTypeAlert, want: common.PriorityImmediate},
+		{name: "omitted urgency keeps background priority", pushType: common.PushTypeBackground, want: common.PriorityPowerAware},
+		{name: "very-low uses priority 5", pushType: common.PushTypeAlert, urgency: "very-low", want: common.PriorityPowerAware},
+		{name: "low uses priority 5", pushType: common.PushTypeVoIP, urgency: "low", want: common.PriorityPowerAware},
+		{name: "normal uses priority 10", pushType: common.PushTypeAlert, urgency: "normal", want: common.PriorityImmediate},
+		{name: "high uses priority 10", pushType: common.PushTypeLiveActivity, urgency: "high", want: common.PriorityImmediate},
+		{name: "urgency ignores case and surrounding whitespace", pushType: common.PushTypeAlert, urgency: " Low ", want: common.PriorityPowerAware},
+		{name: "background rejects normal urgency", pushType: common.PushTypeBackground, urgency: "normal", wantError: `Bad Notification: invalid uniqush.urgency "normal" for background pushes; APNs requires priority 5`},
+		{name: "background rejects high urgency", pushType: common.PushTypeBackground, urgency: "high", wantError: `Bad Notification: invalid uniqush.urgency "high" for background pushes; APNs requires priority 5`},
+		{name: "unknown urgency is rejected", pushType: common.PushTypeAlert, urgency: "urgent", wantError: `Bad Notification: invalid uniqush.urgency "urgent", expected one of: very-low, low, normal, high`},
+	}
+
+	for _, testCase := range testCases {
+		t.Run(testCase.name, func(t *testing.T) {
+			notif := &push.Notification{Data: map[string]string{urgencyKey: testCase.urgency}}
+			got, err := priorityForNotification(testCase.pushType, notif)
+			if testCase.wantError != "" {
+				if err == nil || err.Error() != testCase.wantError {
+					t.Fatalf("Expected error %q, got %v", testCase.wantError, err)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("Unexpected error: %v", err)
+			}
+			if got != testCase.want {
+				t.Errorf("Expected priority %q, got %q", testCase.want, got)
+			}
+		})
+	}
+}
+
 // newPushServiceWithRecordingProcessor builds a pushService whose transport
 // records what it was asked to send, so a test can assert on the request rather
 // than on a network.
@@ -219,5 +259,34 @@ func TestPushTypeReachesTheRequest(t *testing.T) {
 	}
 	if requests[0].PushType != common.PushTypeBackground {
 		t.Errorf("Expected PushType %q on the request, got %q", common.PushTypeBackground, requests[0].PushType)
+	}
+}
+
+func TestUrgencyPriorityReachesTheRequest(t *testing.T) {
+	service, http2, _ := newPushServiceWithRecordingProcessor()
+	defer service.Finalize()
+
+	notif := createNotification("Hello World")
+	notif.Data[urgencyKey] = "low"
+	pushOnceForTransportTest(t, service, notif)
+
+	requests := http2.recorded()
+	if len(requests) != 1 {
+		t.Fatalf("Expected 1 request, got %d", len(requests))
+	}
+	if requests[0].Priority != common.PriorityPowerAware {
+		t.Errorf("Expected priority %q on the request, got %q", common.PriorityPowerAware, requests[0].Priority)
+	}
+}
+
+func TestPreviewRejectsUrgencyIncompatibleWithBackgroundPush(t *testing.T) {
+	service := NewPushService().(*pushService)
+	defer service.Finalize()
+
+	notif := createNotification("Hello World")
+	notif.Data[apnsPushTypeKey] = common.PushTypeBackground
+	notif.Data[urgencyKey] = "high"
+	if _, err := service.Preview(notif); err == nil {
+		t.Fatal("Expected preview to reject high urgency for a background push")
 	}
 }
