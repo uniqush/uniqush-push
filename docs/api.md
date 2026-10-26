@@ -494,6 +494,9 @@ gets `UNIQUSH_ERROR_NO_DEVICE` in `failureDetails`, as before.
 in the background with a backoff, honouring the delay the push service asked
 for up to 30 minutes; the response reports the first attempt only, and a
 retry that is finally abandoned is logged with `UNIQUSH_ERROR_FAILED_RETRY`.
+Transient connection failures such as timeouts and connection resets use the
+same retry path. DNS not-found errors, endpoint-policy rejections, and TLS
+certificate verification failures remain permanent failures.
 A device being retried is in `failureDetails`, and counted in `failureCount`,
 with the code `UNIQUSH_PUSH_RETRYING` and the push service's answer in
 `errorMsg`:
