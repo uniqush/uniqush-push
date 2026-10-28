@@ -137,6 +137,7 @@ func TestIsGloballyRoutable(t *testing.T) {
 		"127.0.0.1",       // loopback
 		"127.1.2.3",       // loopback, whole /8
 		"0.0.0.0",         // unspecified
+		"0.0.0.1",         // "this network"
 		"10.0.0.1",        // RFC 1918
 		"172.16.0.1",      // RFC 1918
 		"172.31.255.254",  // RFC 1918 upper bound
@@ -158,6 +159,17 @@ func TestIsGloballyRoutable(t *testing.T) {
 		"fe80::1",         // IPv6 link-local
 		"ff02::1",         // IPv6 multicast
 		"2001:db8::1",     // RFC 3849 documentation
+		"fec0::1",         // deprecated site-local
+		"3fff:fff::1",     // RFC 9637 documentation
+		"100::1",          // RFC 6666 discard-only
+		"2001:2::1",       // RFC 5180 benchmarking
+		"5f00::1",         // RFC 9602 SRv6
+
+		// IPv6 forms that carry a private IPv4 address
+		"64:ff9b::a9fe:a9fe", // NAT64 of 169.254.169.254
+		"64:ff9b:1::a00:5",   // local-use NAT64
+		"2002:c0a8:105::1",   // 6to4 of 192.168.1.5
+		"::c0a8:105",         // IPv4-compatible 192.168.1.5
 	}
 	for _, address := range blocked {
 		if isGloballyRoutable(net.ParseIP(address)) {
@@ -176,6 +188,14 @@ func TestIsGloballyRoutable(t *testing.T) {
 		"198.20.0.1",  // just above RFC 2544
 		"2606:4700::1111",
 		"2001:db9::1", // adjacent to the documentation range, but valid
+
+		"3fff:1000::1", // just above RFC 9637
+		"100:0:0:1::1", // just above RFC 6666
+		"2001:2:1::1",  // just above RFC 5180
+
+		"64:ff9b::101:101", // NAT64 of 1.1.1.1
+		"2002:808:404::1",  // 6to4 of 8.8.4.4
+		"::808:404",        // IPv4-compatible 8.8.4.4
 	}
 	for _, address := range allowed {
 		if !isGloballyRoutable(net.ParseIP(address)) {

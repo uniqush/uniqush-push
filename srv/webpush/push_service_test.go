@@ -1,17 +1,21 @@
 package webpush
 
 import (
+	"context"
 	"crypto/ecdh"
 	"crypto/rand"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 
 	"github.com/uniqush/uniqush-push/conf"
@@ -1176,4 +1180,49 @@ func TestPolicyIsSafeToReplaceDuringPushes(t *testing.T) {
 	pushes.Wait()
 	close(done)
 	reconfigures.Wait()
+}
+
+// A DNS server that answers the policy's lookup with a public address and the
+// transport's lookup with a private one must not get a push delivered there.
+// The policy is told a public address here, and localhost stands in for the
+// private answer the transport gets.
+func TestPushChecksTheAddressItConnectsTo(t *testing.T) {
+	for _, tc := range []struct {
+		name                  string
+		allowPrivateAddresses bool
+		wantDelivered         bool
+	}{
+		{"private addresses refused", false, false},
+		{"private addresses allowed", true, true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			var delivered atomic.Bool
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				delivered.Store(true)
+				w.WriteHeader(http.StatusCreated)
+			}))
+			defer server.Close()
+
+			service := NewPushService("webpush").(*pushService)
+			policy := NewEndpointPolicy()
+			policy.AllowPrivateAddresses = tc.allowPrivateAddresses
+			policy.resolve = func(context.Context, string, string) ([]net.IP, error) {
+				return []net.IP{net.ParseIP("93.184.216.34")}, nil
+			}
+			service.policy.Store(policy)
+			dp := newTestDP(t, service)
+			dp.FixedData["endpoint"] = strings.Replace(server.URL, "127.0.0.1", "localhost", 1) + "/up"
+
+			result := pushOnce(t, service, newTestPSP(t, service), dp, &push.Notification{Data: map[string]string{"msg": "hi"}})
+			if delivered.Load() != tc.wantDelivered {
+				t.Errorf("Expected delivered=%v, got %v", tc.wantDelivered, delivered.Load())
+			}
+			switch {
+			case tc.wantDelivered && result.Err != nil:
+				t.Errorf("Expected the push to succeed, got %v", result.Err)
+			case !tc.wantDelivered && !strings.Contains(fmt.Sprint(result.Err), "refusing to connect"):
+				t.Errorf("Expected the connection to be refused, got %v", result.Err)
+			}
+		})
+	}
 }
