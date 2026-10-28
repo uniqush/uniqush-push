@@ -52,6 +52,11 @@ type PushRequest struct {
 	// "background". An empty value is treated as DefaultPushType.
 	PushType string
 
+	// Priority is the apns-priority header value, resolved from PushType and
+	// uniqush.urgency before the request is sent. An empty value falls back to
+	// the priority required by PushType for callers that build requests directly.
+	Priority string
+
 	// CollapseID is the apns-collapse-id header, omitted when empty.
 	CollapseID string
 
