@@ -19,9 +19,10 @@ package main
 
 import (
 	"context"
-	"crypto/tls"
 	"errors"
+	"io"
 	"net"
+	"syscall"
 
 	"github.com/uniqush/uniqush-push/push"
 )
@@ -46,16 +47,11 @@ func retryTransientConnectionError(result *push.Result) {
 	)
 }
 
-// transientConnectionFailure retries network-operation failures, but not
-// failures that another attempt cannot fix. Endpoint-policy rejections never
-// arrive as ConnectionError; DNS and certificate errors need explicit checks
-// because net/http also wraps them in net.OpError.
+// transientConnectionFailure retries only failures with a known transient
+// signal. net/http wraps request errors in url.Error and net.OpError, but those
+// wrapper types alone do not say whether another attempt can succeed.
 func transientConnectionFailure(err error) bool {
 	if err == nil || errors.Is(err, context.Canceled) {
-		return false
-	}
-	var verificationErr *tls.CertificateVerificationError
-	if errors.As(err, &verificationErr) {
 		return false
 	}
 	var dnsErr *net.DNSError
@@ -65,9 +61,10 @@ func transientConnectionFailure(err error) bool {
 		}
 		return dnsErr.IsTimeout || dnsErr.IsTemporary
 	}
-	if errors.Is(err, context.DeadlineExceeded) {
+	if errors.Is(err, syscall.ECONNRESET) || errors.Is(err, syscall.ECONNREFUSED) ||
+		errors.Is(err, io.EOF) || errors.Is(err, io.ErrUnexpectedEOF) {
 		return true
 	}
-	var networkErr *net.OpError
-	return errors.As(err, &networkErr)
+	var timeoutErr interface{ Timeout() bool }
+	return errors.As(err, &timeoutErr) && timeoutErr.Timeout()
 }
