@@ -25,6 +25,7 @@ type erroringRequestProcessor struct {
 func (p *erroringRequestProcessor) AddRequest(request *common.PushRequest) {
 	go func() {
 		defer close(request.ErrChan)
+		defer close(request.ResChan)
 		for i := range request.Devtokens {
 			var dp *push.DeliveryPoint
 			if i < len(request.DPList) {

@@ -40,8 +40,7 @@ func newSimulatorService(t *testing.T) (*pushService, chan push.Error) {
 	t.Helper()
 
 	service := NewPushService().(*pushService)
-	// Buffered generously: waitResults reports asynchronously and a test that
-	// does not read every message must not wedge the goroutine producing them.
+	// Buffered for service-level warnings; device outcomes belong in Push's results.
 	errChan := make(chan push.Error, 100)
 	service.SetErrorReportChan(errChan)
 	t.Cleanup(service.Finalize)
@@ -165,23 +164,6 @@ func pushToSimulator(t *testing.T, service *pushService, psp *push.PushServicePr
 		results = append(results, res)
 	}
 	return results
-}
-
-// awaitAsyncError waits for one message on the service's error channel.
-//
-// APNs outcomes that arrive after uniqush has already answered its caller --
-// an unsubscribe, most importantly -- are reported here rather than in the push
-// results. Polling with a timeout rather than blocking forever, so a regression
-// that stops reporting them fails the test instead of hanging it.
-func awaitAsyncError(t *testing.T, errChan <-chan push.Error) push.Error {
-	t.Helper()
-	select {
-	case err := <-errChan:
-		return err
-	case <-time.After(10 * time.Second):
-		t.Fatal("Timed out waiting for an asynchronous result from APNs")
-		return nil
-	}
 }
 
 // describeResults renders push results for a failure message.
@@ -482,11 +464,16 @@ func TestConformanceUnregisteredUnsubscribes(t *testing.T) {
 			token := apnstest.DeviceToken(0x66)
 			server.SetResponse(token, response)
 
-			pushToSimulator(t, service, psp, createNotification("Hello World"), token)
-
-			err := awaitAsyncError(t, errChan)
+			results := pushToSimulator(t, service, psp, createNotification("Hello World"), token)
+			if len(results) != 1 {
+				t.Fatalf("Expected one result, got: %s", describeResults(results))
+			}
+			err := results[0].Err
 			if _, ok := err.(*push.UnsubscribeUpdate); !ok {
 				t.Errorf("Expected an UnsubscribeUpdate for a dead token, got %T: %v", err, err)
+			}
+			if len(errChan) != 0 {
+				t.Errorf("The synchronous unsubscribe was reported again asynchronously: %d errors", len(errChan))
 			}
 			assertNoViolations(t, server)
 		})

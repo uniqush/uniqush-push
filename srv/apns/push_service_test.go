@@ -50,6 +50,7 @@ func (mockPRP *MockPushRequestProcessor) AddRequest(request *common.PushRequest)
 
 	close(request.ErrChan) // Would have contents only for an invalid request. Send nothing.
 	go func() {
+		defer close(request.ResChan)
 		for i := range request.DPList {
 			request.ResChan <- &common.APNSResult{
 				MsgID:  request.GetID(i),
@@ -237,15 +238,14 @@ func TestPushUnsubscribe(t *testing.T) {
 	go asyncCreateDPQueue(wg, dpQueue, expectedToken, expectedSubscriber)
 	go asyncPush(wg, service, psp, dpQueue, resQueue, notif)
 	resCount := 0
+	var outcome push.Error
 	for res := range resQueue {
 		resCount++
 		// Might not be worth testing
 		if res == nil {
 			t.Fatal("Unexpected result - closed")
 		}
-		if res.Err != nil {
-			t.Fatalf("Encountered error %v\n", res.Err)
-		}
+		outcome = res.Err
 		if notif != res.Content {
 			t.Errorf("Expected %#v, got %#v\n", notif, res.Content)
 		}
@@ -256,14 +256,11 @@ func TestPushUnsubscribe(t *testing.T) {
 	wg.Wait()
 	service.Finalize()
 
-	// No simple way to shut down waitResult sending errors that I can think of right now
-	err := <-errChan
-	close(errChan)
 	if len(errChan) != 0 {
-		t.Errorf("Unexpectedly have %d more errors", len(errChan))
+		t.Errorf("The synchronous unsubscribe was reported again asynchronously: %d errors", len(errChan))
 	}
 
-	if unsubscribeErr, ok := err.(*push.UnsubscribeUpdate); ok {
+	if unsubscribeErr, ok := outcome.(*push.UnsubscribeUpdate); ok {
 		if service, ok := unsubscribeErr.Provider.FixedData["service"]; !ok || service != "mockservice" {
 			t.Errorf("Wanted unsubscribe service %v, got %v", "mockservice", service)
 		}

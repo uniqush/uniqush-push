@@ -217,8 +217,7 @@ func newServiceFinalizedOnce(t *testing.T) (*pushService, func()) {
 	t.Helper()
 
 	service := NewPushService().(*pushService)
-	// Buffered generously: waitResults reports asynchronously and a test that
-	// does not read every message must not wedge the goroutine producing them.
+	// Buffered for service-level warnings; device outcomes belong in Push's results.
 	service.SetErrorReportChan(make(chan push.Error, 100))
 
 	var once sync.Once

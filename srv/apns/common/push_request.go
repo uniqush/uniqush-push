@@ -24,7 +24,8 @@ import (
 // PushRequestProcessor abstracts the different network protocols Apple has for sending push notifications.
 type PushRequestProcessor interface {
 	// AddRequest adds a push request, and asynchronously processes it.
-	// The APNSRequestProcessor will first add errors it encountered sending to add responses and errors to the respective channels and close channels.
+	// The processor sends each device's outcome to ErrChan or ResChan and
+	// closes both channels after every request finishes.
 	AddRequest(request *PushRequest)
 
 	// GetMaxPayloadSize returns the maximum JSON payload for this protocol.
@@ -77,7 +78,7 @@ type PushRequest struct {
 //
 // The ids come from one contiguous block reserved per push, so a result can be
 // matched back to the delivery point it belongs to by its offset within the
-// block. See waitResults in srv/apns.
+// block. See Push in srv/apns.
 func (request *PushRequest) GetID(idx int) uint32 {
 	if idx < 0 || idx >= len(request.Devtokens) {
 		return 0

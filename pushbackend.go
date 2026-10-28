@@ -114,10 +114,8 @@ func (backend *PushBackEnd) processError() {
 			case *push.InfoReport:
 				backend.loggers[LoggerPush].Infof("%v", e0)
 			default: // Includes *ErrorReport
-				// These arrive with no push around them: APNs reports a response
-				// it read after the push had already answered its caller. So
-				// there is no result to take a subscriber from, and naming the
-				// device is the only way the line can be acted on.
+				// Asynchronous reports have no result to take a subscriber from,
+				// so name the device carried by the error itself.
 				backend.loggers[LoggerPush].Errorf("%vError: %v", describeDestination(push.DestinationOf(e0)), e0)
 			}
 		}
@@ -366,9 +364,8 @@ var errNotRemoved = errors.New("not removed: it was already removed, or re-subsc
 // removeGoneDeliveryPoint removes a delivery point its push service said is
 // gone, and reports the removal in the response and in /removed.
 //
-// The /push response cannot be the only report: a removal made by a retry, or
-// by an APNs response read after the push answered, happens when there is no
-// response left to put it in.
+// The /push response cannot be the only report: a removal made by a retry
+// happens when there is no response left to put it in.
 func (backend *PushBackEnd) removeGoneDeliveryPoint(
 	provider *push.PushServiceProvider,
 	dp *push.DeliveryPoint,
