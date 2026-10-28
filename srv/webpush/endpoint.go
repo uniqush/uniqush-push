@@ -1,11 +1,13 @@
 package webpush
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"net"
 	"net/url"
 	"strings"
+	"syscall"
 )
 
 // maxEndpointLength is the ceiling the UnifiedPush server spec puts on a push
@@ -149,12 +151,34 @@ func (p *EndpointPolicy) ValidateForSendContext(ctx context.Context, endpoint st
 	return nil
 }
 
+// checkDialAddress is a net.Dialer Control function, so it sees the address
+// the transport is about to connect to. ValidateForSend checks the addresses
+// its own lookup returned, but the transport looks the host up again to dial,
+// and a DNS server can answer the second lookup with a private address.
+func (p *EndpointPolicy) checkDialAddress(_, address string, _ syscall.RawConn) error {
+	if p.AllowPrivateAddresses {
+		return nil
+	}
+	host, _, err := net.SplitHostPort(address)
+	if err != nil {
+		return err
+	}
+	if !isGloballyRoutable(net.ParseIP(host)) {
+		return fmt.Errorf("refusing to connect to %s, which is not globally routable", host)
+	}
+	return nil
+}
+
 // isGloballyRoutable reports whether an address is one uniqush should be willing
 // to connect to on behalf of an untrusted subscriber.
 //
 // Go has no stdlib equivalent of Rust's IpAddr::is_global, so this enumerates
 // the ranges. The UnifiedPush spec calls RFC 1918 and RFC 4193 the minimum bar
 // and recommends excluding other non-global ranges; this does the latter.
+//
+// A NAT64 network that uses its own prefix rather than 64:ff9b::/96 makes
+// private IPv4 addresses look like ordinary public IPv6 ones, which nothing
+// here can tell apart. Such a network needs an egress firewall rule as well.
 func isGloballyRoutable(ip net.IP) bool {
 	if ip == nil || ip.IsUnspecified() {
 		return false
@@ -165,6 +189,9 @@ func isGloballyRoutable(ip net.IP) bool {
 	}
 	if ip4 := ip.To4(); ip4 != nil {
 		switch {
+		// 0.0.0.0/8 "this network" (RFC 1122)
+		case ip4[0] == 0:
+			return false
 		// 100.64.0.0/10 carrier-grade NAT (RFC 6598)
 		case ip4[0] == 100 && ip4[1]&0xc0 == 64:
 			return false
@@ -191,10 +218,40 @@ func isGloballyRoutable(ip net.IP) bool {
 	// here: To4() above returns non-nil for them, so they are judged as IPv4.
 	// IsPrivate already covers fc00::/7 (RFC 4193), and IsUnspecified,
 	// IsLoopback and the link-local checks ran earlier.
-	//
+	switch {
 	// 2001:db8::/32 documentation (RFC 3849)
-	if ip[0] == 0x20 && ip[1] == 0x01 && ip[2] == 0x0d && ip[3] == 0xb8 {
+	case ip[0] == 0x20 && ip[1] == 0x01 && ip[2] == 0x0d && ip[3] == 0xb8:
 		return false
+	// 3fff::/20 documentation (RFC 9637)
+	case ip[0] == 0x3f && ip[1] == 0xff && ip[2]&0xf0 == 0:
+		return false
+	// 100::/64 discard-only (RFC 6666)
+	case bytes.Equal(ip[:8], []byte{0x01, 0, 0, 0, 0, 0, 0, 0}):
+		return false
+	// 2001:2::/48 benchmarking (RFC 5180)
+	case bytes.Equal(ip[:6], []byte{0x20, 0x01, 0x00, 0x02, 0x00, 0x00}):
+		return false
+	// 5f00::/16 SRv6 segment identifiers (RFC 9602)
+	case ip[0] == 0x5f && ip[1] == 0x00:
+		return false
+	// fec0::/10 deprecated site-local (RFC 3879), still routed privately
+	case ip[0] == 0xfe && ip[1]&0xc0 == 0xc0:
+		return false
+	// 64:ff9b:1::/48 local-use NAT64 (RFC 8215). Where the IPv4 address sits
+	// in it depends on the prefix length a network chose, so refuse it all.
+	case bytes.Equal(ip[:6], []byte{0x00, 0x64, 0xff, 0x9b, 0x00, 0x01}):
+		return false
+	// The forms below carry an IPv4 address, and a host with the matching
+	// gateway or tunnel reaches that address, so judge it instead.
+	// 64:ff9b::/96 NAT64 (RFC 6052)
+	case bytes.Equal(ip[:12], []byte{0x00, 0x64, 0xff, 0x9b, 0, 0, 0, 0, 0, 0, 0, 0}):
+		return isGloballyRoutable(ip[12:16])
+	// 2002::/16 6to4 (RFC 3056)
+	case ip[0] == 0x20 && ip[1] == 0x02:
+		return isGloballyRoutable(ip[2:6])
+	// ::/96 IPv4-compatible (RFC 4291, deprecated)
+	case bytes.Equal(ip[:12], make([]byte, 12)):
+		return isGloballyRoutable(ip[12:16])
 	}
 	return true
 }

@@ -510,6 +510,10 @@ func (prp *HTTPPushRequestProcessor) sendRequests(request *common.PushRequest) {
 	if pushType == "" {
 		pushType = common.DefaultPushType
 	}
+	priority := request.Priority
+	if priority == "" {
+		priority = common.PriorityForPushType(pushType)
+	}
 
 	// Header names are written lowercase deliberately. HTTP/2 requires
 	// lowercase field names on the wire, and using http.Header.Set here would
@@ -517,9 +521,9 @@ func (prp *HTTPPushRequestProcessor) sendRequests(request *common.PushRequest) {
 	// alongside the lowercase one.
 	baseHeader := http.Header{
 		"apns-expiration": []string{fmt.Sprint(request.Expiry)},
-		// Priority is not a free choice: a background push must use 5, and
-		// APNs rejects 10 with 400 BadPriority.
-		"apns-priority": []string{common.PriorityForPushType(pushType)},
+		// Priority is resolved before sending so urgency can lower or raise
+		// it while background pushes remain at Apple's required value of 5.
+		"apns-priority": []string{priority},
 		// Required on watchOS 6+, and strongly recommended everywhere. Omitting
 		// it on a background push to iOS 13+ makes APNs return 200 and then
 		// silently drop the notification.

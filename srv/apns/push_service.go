@@ -53,6 +53,8 @@ const (
 	// apnsVoIPKey predates apnsPushTypeKey. It is still honoured, and implies
 	// a push type of "voip".
 	apnsVoIPKey = "uniqush.apns_voip"
+	// urgencyKey sets APNs priority, unless the push type requires priority 5.
+	urgencyKey = "uniqush.urgency"
 	// apnsHTTP2Key used to select the transport: first to opt in to HTTP/2,
 	// later -- once HTTP/2 was the default -- to opt back out to the binary
 	// protocol. HTTP/2 is now the only transport, so the key is still
@@ -104,6 +106,31 @@ func pushTypeForNotification(notif *push.Notification) (string, push.Error) {
 		return common.PushTypeVoIP, nil
 	}
 	return common.DefaultPushType, nil
+}
+
+// priorityForNotification resolves the APNs priority from the push type and
+// optional RFC 8030 urgency. Background pushes must stay at priority 5 because
+// APNs rejects priority 10 for that push type.
+func priorityForNotification(pushType string, notif *push.Notification) (string, push.Error) {
+	raw := notif.Data[urgencyKey]
+	if raw == "" {
+		return common.PriorityForPushType(pushType), nil
+	}
+
+	urgency := strings.ToLower(strings.TrimSpace(raw))
+	switch urgency {
+	case "very-low", "low":
+		return common.PriorityPowerAware, nil
+	case "normal", "high":
+		if pushType == common.PushTypeBackground {
+			return "", push.NewBadNotificationWithDetails(
+				fmt.Sprintf("invalid %s %q for %s pushes; APNs requires priority 5", urgencyKey, raw, common.PushTypeBackground))
+		}
+		return common.PriorityImmediate, nil
+	default:
+		return "", push.NewBadNotificationWithDetails(
+			fmt.Sprintf("invalid %s %q, expected one of: very-low, low, normal, high", urgencyKey, raw))
+	}
 }
 
 // pushService is the APNs push service. It implements the two network protocols for sending requests to APNs and getting the corresponding response.
@@ -492,6 +519,13 @@ func apnsresToError(apnsres *common.APNSResult, psp *push.PushServiceProvider, d
 
 // Returns a JSON APNs payload, for a dummy device token
 func (ps *pushService) Preview(notif *push.Notification) ([]byte, push.Error) {
+	pushType, err := pushTypeForNotification(notif)
+	if err != nil {
+		return nil, err
+	}
+	if _, err := priorityForNotification(pushType, notif); err != nil {
+		return nil, err
+	}
 	if _, err := collapseIDForNotification(notif); err != nil {
 		return nil, err
 	}
@@ -515,6 +549,11 @@ func (ps *pushService) Push(psp *push.PushServiceProvider, dpQueue <-chan *push.
 		err = pushTypeErr
 	}
 	req.PushType = pushType
+	priority, priorityErr := priorityForNotification(pushType, notif)
+	if err == nil && priorityErr != nil {
+		err = priorityErr
+	}
+	req.Priority = priority
 
 	collapseID, collapseIDErr := collapseIDForNotification(notif)
 	if err == nil && collapseIDErr != nil {

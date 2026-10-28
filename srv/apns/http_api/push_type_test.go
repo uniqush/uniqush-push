@@ -31,6 +31,7 @@ func TestPushTypeHeaderIsSent(t *testing.T) {
 	testCases := []struct {
 		name             string
 		pushType         string
+		priority         string
 		expectedType     string
 		expectedPriority string
 	}{
@@ -59,12 +60,20 @@ func TestPushTypeHeaderIsSent(t *testing.T) {
 			expectedType:     common.PushTypeVoIP,
 			expectedPriority: "10",
 		},
+		{
+			name:             "resolved urgency priority is sent",
+			pushType:         common.PushTypeAlert,
+			priority:         common.PriorityPowerAware,
+			expectedType:     common.PushTypeAlert,
+			expectedPriority: common.PriorityPowerAware,
+		},
 	}
 
 	for _, testCase := range testCases {
 		t.Run(testCase.name, func(t *testing.T) {
 			requestProcessor := newHTTPRequestProcessor()
 			request, errChan, resChan := newPushRequestWithType(testCase.pushType)
+			request.Priority = testCase.priority
 
 			mockAPNSRequest(requestProcessor, func(r *http.Request) (*http.Response, *mockResponse, error) {
 				expectHeaderToHaveValue(t, r, "apns-push-type", testCase.expectedType)
