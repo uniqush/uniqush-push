@@ -199,6 +199,22 @@ func TestTLSClientCertificateRejectionIsPermanent(t *testing.T) {
 	}
 }
 
+func TestTLSCertificateVerificationFailureIsPermanent(t *testing.T) {
+	server := httptest.NewTLSServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {}))
+	defer server.Close()
+	transport := &http.Transport{Proxy: nil}
+	defer transport.CloseIdleConnections()
+	client := &http.Client{Transport: transport, Timeout: 2 * time.Second}
+	err := postError(t, client, server.URL)
+	var verificationErr *tls.CertificateVerificationError
+	if !errors.As(err, &verificationErr) {
+		t.Fatalf("POST error = %T %v, want a TLS certificate verification failure", err, err)
+	}
+	if transientConnectionFailure(err) {
+		t.Fatalf("certificate verification failure %T %v was classified as transient", err, err)
+	}
+}
+
 func TestPrivateAddressDialRejectionIsNotRetried(t *testing.T) {
 	dialer := &net.Dialer{Control: func(_, address string, _ syscall.RawConn) error {
 		host, _, err := net.SplitHostPort(address)
