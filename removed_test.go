@@ -30,6 +30,7 @@ import (
 	"github.com/uniqush/uniqush-push/srv"
 	"github.com/uniqush/uniqush-push/srv/apns/apnstest"
 	"github.com/uniqush/uniqush-push/srv/apns/common"
+	"github.com/uniqush/uniqush-push/srv/fcm"
 	"github.com/uniqush/uniqush-push/srv/webpush"
 )
 
@@ -40,6 +41,58 @@ import (
 const removalSubscriber = "removal_subscriber"
 
 var installWebPushOnce sync.Once
+
+// FCM's existing client hook keeps the real send and response handling paths,
+// without minting a token or sending a device registration to Google.
+type removalFCMClient struct{}
+
+func (removalFCMClient) Do(request *http.Request) (*http.Response, error) {
+	request.Body.Close()
+	return &http.Response{
+		StatusCode: http.StatusForbidden,
+		Body:       io.NopCloser(strings.NewReader(`{"error":{"status":"PERMISSION_DENIED","message":"Sender does not match","details":[{"@type":"type.googleapis.com/google.firebase.fcm.v1.FcmError","errorCode":"SENDER_ID_MISMATCH"}]}}`)),
+	}, nil
+}
+
+func setUpFCMRemovalTest(t *testing.T) (*PushBackEnd, *RestAPI) {
+	t.Helper()
+	psm := new(push.PushServiceManager)
+	psm.ClearAllPushServiceTypesForUnitTest()
+	service := fcm.NewPushService("fcm")
+	service.(interface {
+		OverrideClientFactory(func(*push.PushServiceProvider) (fcm.HTTPClient, error))
+	}).OverrideClientFactory(func(*push.PushServiceProvider) (fcm.HTTPClient, error) {
+		return removalFCMClient{}, nil
+	})
+	if err := psm.RegisterPushServiceType(service); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(service.Finalize)
+	backend := NewPushBackEnd(psm, connectAcceptanceDatabase(t, psm), silentLoggers())
+	return backend, NewRestAPI(psm, silentLoggers(), "test", backend)
+}
+
+func fcmRemovalCredentials(t *testing.T) string {
+	t.Helper()
+	// Reuse the repository's public test key; parsing credentials is offline.
+	key, err := os.ReadFile("srv/apns/apns-test/localhost.key")
+	if err != nil {
+		t.Fatal(err)
+	}
+	body, err := json.Marshal(map[string]string{
+		"type": "service_account", "project_id": "removal-project",
+		"private_key": string(key), "client_email": "test@removal-project.iam.gserviceaccount.com",
+		"token_uri": "https://oauth2.googleapis.com/token",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(t.TempDir(), "service-account.json")
+	if err := os.WriteFile(path, body, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	return path
+}
 
 // setUpRemovalTest returns a backend and REST API over a freshly cleared redis.
 func setUpRemovalTest(t *testing.T) (*PushBackEnd, *RestAPI) {
@@ -107,7 +160,7 @@ func webPushFixture(t *testing.T, service, endpoint string) (pspKV, dpKV map[str
 
 func addRemovalProvider(t *testing.T, backend *PushBackEnd, pspKV map[string]string) *push.PushServiceProvider {
 	t.Helper()
-	psp, err := push.GetPushServiceManager().BuildPushServiceProviderFromMap(pspKV)
+	psp, err := backend.psm.BuildPushServiceProviderFromMap(pspKV)
 	if err != nil {
 		t.Fatalf("Could not build the provider: %v", err)
 	}
@@ -123,7 +176,7 @@ func subscribeForRemoval(t *testing.T, backend *PushBackEnd, pspKV, dpKV map[str
 	if pspKV != nil {
 		addRemovalProvider(t, backend, pspKV)
 	}
-	dp, err := push.GetPushServiceManager().BuildDeliveryPointFromMap(dpKV)
+	dp, err := backend.psm.BuildDeliveryPointFromMap(dpKV)
 	if err != nil {
 		t.Fatalf("Could not build the delivery point: %v", err)
 	}
@@ -189,17 +242,18 @@ func expectRemoved(t *testing.T, got db.RemovedDeliveryPoint, dp *push.DeliveryP
 
 func TestPushReportsRemovedDeliveryPoints(t *testing.T) {
 	cases := []struct {
-		name string
+		name       string
+		newBackend func(*testing.T) (*PushBackEnd, *RestAPI)
 		// setUp subscribes a device its push service will report gone, and
 		// returns it with the address the push service was given for it.
 		setUp func(t *testing.T, backend *PushBackEnd, service string) (*push.DeliveryPoint, string)
 	}{
-		{"webpush 410", func(t *testing.T, backend *PushBackEnd, service string) (*push.DeliveryPoint, string) {
+		{"webpush 410", nil, func(t *testing.T, backend *PushBackEnd, service string) (*push.DeliveryPoint, string) {
 			endpoint := webPushServer(t, http.StatusGone).URL + "/sub/1"
 			pspKV, dpKV := webPushFixture(t, service, endpoint)
 			return subscribeForRemoval(t, backend, pspKV, dpKV), endpoint
 		}},
-		{"apns Unregistered", func(t *testing.T, backend *PushBackEnd, service string) (*push.DeliveryPoint, string) {
+		{"apns Unregistered", nil, func(t *testing.T, backend *PushBackEnd, service string) (*push.DeliveryPoint, string) {
 			server := apnstest.NewServer()
 			t.Cleanup(server.Close)
 			caCert, err := server.WriteCACert(t.TempDir())
@@ -217,10 +271,24 @@ func TestPushReportsRemovedDeliveryPoints(t *testing.T) {
 				"devtoken": token, "devid": "device-1",
 			}), token
 		}},
+		{"fcm SENDER_ID_MISMATCH", setUpFCMRemovalTest, func(t *testing.T, backend *PushBackEnd, service string) (*push.DeliveryPoint, string) {
+			const token = "registration-token"
+			return subscribeForRemoval(t, backend, map[string]string{
+				"service": service, "pushservicetype": "fcm", "projectid": "removal-project",
+				"credentialsfile": fcmRemovalCredentials(t),
+			}, map[string]string{
+				"service": service, "subscriber": removalSubscriber, "pushservicetype": "fcm",
+				"regid": token, "devid": "device-1",
+			}), token
+		}},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
-			backend, api := setUpRemovalTest(t)
+			newBackend := c.newBackend
+			if newBackend == nil {
+				newBackend = setUpRemovalTest
+			}
+			backend, api := newBackend(t)
 			service := "removal_" + strings.ReplaceAll(c.name, " ", "_")
 			dp, address := c.setUp(t, backend, service)
 
