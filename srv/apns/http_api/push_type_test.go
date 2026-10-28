@@ -148,29 +148,17 @@ func TestAPNSIDHeaderIsSentAndUnique(t *testing.T) {
 // awaitOutcome waits for a push to finish and reports whichever channel carried
 // the real signal.
 //
-// Selecting over both channels directly is a coin flip, and it flips on loaded
-// CI machines rather than on a quiet laptop. sendRequests does
-// `defer close(request.ErrChan)`, so for a successful push there is a moment
-// where a result is sitting in the buffered resChan *and* errChan has been
-// closed. Go picks uniformly among ready cases, and a receive from a closed
-// channel yields a nil push.Error -- which reads as "an error occurred, and it
-// was nil".
-//
-// So a closed or nil errChan is not an outcome; it just means there was no
-// error. Disable that case and keep waiting for the result.
+// Both channels close when the processor finishes. A closed channel is not an
+// outcome: the other channel may still contain the device's result.
 func awaitOutcome(t *testing.T, resChan <-chan *common.APNSResult, errChan <-chan push.Error) (*common.APNSResult, push.Error) {
 	t.Helper()
 	deadline := time.After(10 * time.Second)
-	for {
+	for resChan != nil || errChan != nil {
 		select {
 		case res, open := <-resChan:
-			// Neither of these should happen: the processor sends exactly one
-			// result per device token and never closes resChan. Saying so here
-			// costs two lines and turns a nil dereference in whichever caller
-			// touched res.Status into a message naming the actual problem.
 			if !open {
-				t.Fatal("resChan was closed before a result arrived")
-				return nil, nil
+				resChan = nil
+				continue
 			}
 			if res == nil {
 				t.Fatal("Received a nil result")
@@ -180,10 +168,6 @@ func awaitOutcome(t *testing.T, resChan <-chan *common.APNSResult, errChan <-cha
 
 		case err, open := <-errChan:
 			if !open {
-				// The expected end of a successful push: sendRequests closes
-				// ErrChan when it returns. Not an outcome, so drop this case --
-				// a nil channel blocks forever in a select -- and wait for the
-				// result.
 				errChan = nil
 				continue
 			}
@@ -202,6 +186,8 @@ func awaitOutcome(t *testing.T, resChan <-chan *common.APNSResult, errChan <-cha
 			return nil, nil
 		}
 	}
+	t.Fatal("Both channels closed without a result or an error")
+	return nil, nil
 }
 
 // TestPermanentTokenFailuresUnsubscribe covers the reasons that mean a device

@@ -190,20 +190,16 @@ func expectRemoved(t *testing.T, got db.RemovedDeliveryPoint, dp *push.DeliveryP
 func TestPushReportsRemovedDeliveryPoints(t *testing.T) {
 	cases := []struct {
 		name string
-		// inResponse is whether the removal makes it into the /push response.
-		// APNs reports success when it has sent the request and reads Apple's
-		// answer afterwards, so its removals only ever reach /removed.
-		inResponse bool
 		// setUp subscribes a device its push service will report gone, and
 		// returns it with the address the push service was given for it.
 		setUp func(t *testing.T, backend *PushBackEnd, service string) (*push.DeliveryPoint, string)
 	}{
-		{"webpush 410", true, func(t *testing.T, backend *PushBackEnd, service string) (*push.DeliveryPoint, string) {
+		{"webpush 410", func(t *testing.T, backend *PushBackEnd, service string) (*push.DeliveryPoint, string) {
 			endpoint := webPushServer(t, http.StatusGone).URL + "/sub/1"
 			pspKV, dpKV := webPushFixture(t, service, endpoint)
 			return subscribeForRemoval(t, backend, pspKV, dpKV), endpoint
 		}},
-		{"apns Unregistered", false, func(t *testing.T, backend *PushBackEnd, service string) (*push.DeliveryPoint, string) {
+		{"apns Unregistered", func(t *testing.T, backend *PushBackEnd, service string) (*push.DeliveryPoint, string) {
 			server := apnstest.NewServer()
 			t.Cleanup(server.Close)
 			caCert, err := server.WriteCACert(t.TempDir())
@@ -229,18 +225,21 @@ func TestPushReportsRemovedDeliveryPoints(t *testing.T) {
 			dp, address := c.setUp(t, backend, service)
 
 			response, body := pushForRemoval(t, backend, service)
-			if !c.inResponse {
-				if response.DroppedCount != 0 {
-					t.Fatalf("Expected no removal in the push response, got %s", body)
-				}
-			} else {
-				if len(response.DroppedDetails) != 1 || response.DroppedDetails[0].Removed == nil {
-					t.Fatalf("Expected one removal in the push response, got %s", body)
-				}
-				expectRemoved(t, *response.DroppedDetails[0].Removed, dp, address)
-				if strings.Contains(body, dp.FixedData["auth"]) || strings.Contains(body, dp.FixedData["p256dh"]) {
+			if response.DroppedCount != 1 || response.SuccessCount != 0 || response.FailureCount != 0 ||
+				len(response.DroppedDetails) != 1 || response.DroppedDetails[0].Removed == nil {
+				t.Fatalf("Expected one removal and no success or failure in the push response, got %s", body)
+			}
+			expectRemoved(t, *response.DroppedDetails[0].Removed, dp, address)
+			for _, key := range []string{"auth", "p256dh"} {
+				if secret := dp.FixedData[key]; secret != "" && strings.Contains(body, secret) {
 					t.Errorf("The push response carries the subscription's keys: %s", body)
 				}
+			}
+			metrics := getMetrics(t, api)
+			labels := `service="` + service + `",push_service_type="` + dp.PushServiceName() + `",result="`
+			if !strings.Contains(metrics, `uniqush_push_results_total{`+labels+`device_removed"} 1`+"\n") ||
+				strings.Contains(metrics, `uniqush_push_results_total{`+labels+`success"}`) {
+				t.Errorf("Expected the device to count only as removed, got:\n%s", metrics)
 			}
 
 			removed := waitForRemoved(t, api, service, 5*time.Second)

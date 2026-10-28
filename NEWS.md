@@ -3,6 +3,11 @@ uniqush-push NEWS
 Unreleased
 ----------
 
+APNs:
+
+- Bugfix: `/push` reports Apple's result for each device, including removals, instead of reporting
+  success before interpreting the response. One failed device no longer hides successful devices in the same push.
+
 UnifiedPush / Web Push:
 
 - Bugfix: Endpoint DNS validation now counts against `request_timeout`; a slow lookup could previously add

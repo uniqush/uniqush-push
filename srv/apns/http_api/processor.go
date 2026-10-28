@@ -501,6 +501,7 @@ func deliveryPointAt(request *common.PushRequest, i int) *push.DeliveryPoint {
 // sendRequests will send a push to one or more device tokens. It will send the response over ResChan or ErrChan.
 func (prp *HTTPPushRequestProcessor) sendRequests(request *common.PushRequest) {
 	defer close(request.ErrChan)
+	defer close(request.ResChan)
 
 	wg := new(sync.WaitGroup)
 	wg.Add(len(request.Devtokens))

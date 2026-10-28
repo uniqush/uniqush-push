@@ -123,7 +123,7 @@ func NewPushService() push.PushServiceType {
 	}
 }
 
-// getMessageIds reserves n consecutive message ids. waitResults maps a result
+// getMessageIds reserves n consecutive message ids. Push maps a result
 // back to the delivery point it belongs to by its offset from the last id
 // reserved, so the ids have to be handed out in one contiguous block per push.
 func (ps *pushService) getMessageIds(n int) uint32 {
@@ -490,33 +490,6 @@ func apnsresToError(apnsres *common.APNSResult, psp *push.PushServiceProvider, d
 	return err
 }
 
-// waitResults collects all the results from APNs for a push that has already been sent (and uniqush has already replied to clients)
-// and sends any UnsubscribeUpdates to the pushbackend so pushbackend can update the DB.
-func (ps *pushService) waitResults(psp *push.PushServiceProvider, dpList []*push.DeliveryPoint, lastID uint32, resChan <-chan *common.APNSResult) {
-	k := 0
-	// Wait for exactly len(dpList) results (one for each deliveryPoint, because of multiPush)
-	n := len(dpList)
-	if n == 0 {
-		return
-	}
-	for res := range resChan {
-		idx := res.MsgID - lastID + uint32(n)
-		if idx >= uint32(len(dpList)) {
-			continue
-		}
-		dp := dpList[idx]
-		err := apnsresToError(res, psp, dp)
-		if err != nil {
-			// Send all errors over the channel so they can be logged.
-			ps.errChan <- err
-		}
-		k++
-		if k >= n {
-			return
-		}
-	}
-}
-
 // Returns a JSON APNs payload, for a dummy device token
 func (ps *pushService) Preview(notif *push.Notification) ([]byte, push.Error) {
 	if _, err := collapseIDForNotification(notif); err != nil {
@@ -643,8 +616,9 @@ func (ps *pushService) Push(psp *push.PushServiceProvider, dpQueue <-chan *push.
 
 	requestProcessor.AddRequest(req)
 
-	// errChan closed means the message(s) is/are sent successfully to the APNs.
-	// However, we may have not yet received responses from APNs - those are sent on resChan
+	// The processor closes both channels after every request finishes. resChan
+	// holds at most one response per device and is buffered for the whole batch,
+	// so draining errors first cannot block the processor on a response send.
 	for err = range errChan {
 		res := new(push.Result)
 		res.Provider = psp
@@ -665,31 +639,23 @@ func (ps *pushService) Push(psp *push.PushServiceProvider, dpQueue <-chan *push.
 		}
 		resQueue <- res
 	}
-	// Profiling
-	// ps.updateCheckPoint("sending the message takes")
-	if err != nil {
-		// TODO: in another pr, send responses where some requests succeed, but other requests fail. (E.g. mix of unsubscribe responses on resChan and connection errors)
-		return
-	}
-
-	for i, dp := range dpList {
-		if dp != nil {
-			r := new(push.Result)
-			r.Provider = psp
-			r.Content = notif
-			r.Destination = dp
-			mid := req.GetID(i)
-			r.MsgID = fmt.Sprintf("apns:%v-%v", psp.Name(), mid)
-			r.Err = nil
-			resQueue <- r
+	for response := range resChan {
+		idx := response.MsgID - lastID + uint32(n)
+		if idx >= uint32(n) {
+			continue
 		}
+		dp := dpList[idx]
+		result := &push.Result{
+			Provider:    psp,
+			Content:     notif,
+			Destination: dp,
+			Err:         apnsresToError(response, psp, dp),
+		}
+		if result.Err == nil {
+			result.MsgID = fmt.Sprintf("apns:%v-%v", psp.Name(), response.MsgID)
+		}
+		resQueue <- result
 	}
-
-	// Wait for the unserialized responses from APNs asynchronously - these will not affect what we send our clients for this request, but will affect subsequent requests.
-	// TODO: This can be refactored to become synchronous, and the map[string]T removed.
-	// The binary protocol's asynchronous error reporting was the reason it could not be,
-	// and that is gone; what remains is unfinished work rather than a constraint.
-	go ps.waitResults(psp, dpList, lastID, resChan)
 }
 
 // existingCredential names the credential a provider already carries, or "".

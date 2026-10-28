@@ -351,9 +351,8 @@ No parameters. Answers in the Prometheus text format, for a scraper:
 | `uniqush_build_info` | `version` | Always `1`. |
 | `go_goroutines` | | Goroutines in the process. A count that only grows means connections are piling up. |
 
-APNs is reported as `success` once a request is sent, before Apple answers, as
-`/push` reports it. An answer that the device is gone arrives afterwards and is
-counted as `device_removed` as well.
+APNs is reported as `success` only when Apple accepts the notification. A device
+Apple rejects as gone is counted as `device_removed`, not also as `success`.
 
 Counters start from zero when uniqush starts. The two subscriber gauges are
 read from redis on every scrape, costing what a `/stats` call does, and are
@@ -506,13 +505,14 @@ with the code `UNIQUSH_PUSH_RETRYING` and the push service's answer in
 The retry's outcome is not reported to the caller, except that a device it finds gone is listed in
 [`/removed`](#removed).
 
-Not every removal can be in the response. A retry runs after it, and so does
-Apple's answer: for APNs, `UNIQUSH_SUCCESS` means the request was accepted for
-sending, not that Apple took it. A device Apple rejects as gone (`Unregistered`,
-`BadDeviceToken`, `DeviceTokenNotForTopic` or `ExpiredToken`) is still
-`UNIQUSH_SUCCESS` in the response and never in `droppedDetails`; its removal
-appears only in `/removed`. Apple's other late errors are retried or logged, and
-counted in [`/metrics`](#metrics), but not reported to the caller. `/removed`
+For APNs, `/push` waits for Apple's answers, with each network attempt bounded by
+the configured `request_timeout`. `UNIQUSH_SUCCESS` means Apple accepted the
+notification, not that it reached the device. A device Apple rejects as gone
+(`Unregistered`, `BadDeviceToken`, `DeviceTokenNotForTopic` or `ExpiredToken`)
+is reported in `droppedDetails`, with `removed` when its subscription was deleted.
+A failed or retrying device does not hide the results of other devices in the same push.
+
+Not every removal can be in the response: a retry runs after it. `/removed`
 has every removal, including the ones that are also in a response.
 
 ### `/removed`
@@ -567,8 +567,8 @@ still correct, but some before them are missing, so reconcile against
 `/subscriptions` before carrying on from `next`. A first call without `since`
 is `truncated` whenever anything has ever been discarded.
 
-For APNs this is the only place a removal is reported: Apple's answer arrives
-after `/push` has responded, which reported the device as `UNIQUSH_SUCCESS`.
+APNs removals are also reported in `/push` when they occur on the first attempt.
+Those found by a later retry appear only here.
 
 Each removal is listed once. A device is removed only if its stored record is
 still the one the push read, so a device that re-subscribed in the meantime is

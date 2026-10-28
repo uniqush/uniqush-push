@@ -54,7 +54,7 @@ func TestMetricsReportPushResultsRequestsAndSubscribers(t *testing.T) {
 	close(results)
 	backend.collectResult("rid", "addr", "svc", nil, "", results, backend.loggers[LoggerPush], 2*time.Minute, &NullAPIResponseHandler{})
 
-	// Reported after the push answered, as APNs does. A notice about no device
+	// Reported asynchronously. A notice about no device
 	// is not a push result. The last send returns once the one before it has
 	// been handled.
 	backend.errChan <- push.NewError("uniqush.http2=0 is ignored")
