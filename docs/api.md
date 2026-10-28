@@ -316,7 +316,7 @@ and a JSON body:
 
     curl -i http://localhost:9898/health
     HTTP/1.1 200 OK
-    {"status":"ok","database":"ok","version":"uniqush-push 2.11.0","code":"UNIQUSH_SUCCESS"}
+    {"status":"ok","database":"ok","version":"uniqush-push 2.11.1","code":"UNIQUSH_SUCCESS"}
 
 `200` when redis answers, `503` when it does not, with the reason in
 `database`. When a [token](#authentication) is required, `/health` still
