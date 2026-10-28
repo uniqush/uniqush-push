@@ -16,6 +16,7 @@ Push delivery:
 - Bugfix: Transient connection failures to APNs, FCM and Web Push now retry with the existing backoff. DNS not-found,
   endpoint-policy and TLS certificate verification failures remain permanent.
 
+
 28 Oct 2026, uniqush-push 2.11.1
 --------------------------------
 
@@ -29,6 +30,7 @@ Security:
   with DNS64, an endpoint resolving to one reached the private IPv4 address, and DNS64 makes one from an ordinary
   A record. uniqush now judges the IPv4 address inside. It also refuses `0.0.0.0/8`, `fec0::/10`, `64:ff9b:1::/48`
   and the IPv6 documentation, discard-only, benchmarking and SRv6 ranges.
+
 UnifiedPush / Web Push:
 
 - Bugfix: Endpoint DNS validation now counts against `request_timeout`; a slow lookup could previously add

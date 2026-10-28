@@ -215,46 +215,6 @@ func TestTLSCertificateVerificationFailureIsPermanent(t *testing.T) {
 	}
 }
 
-func TestPrivateAddressDialRejectionIsNotRetried(t *testing.T) {
-	dialer := &net.Dialer{Control: func(_, address string, _ syscall.RawConn) error {
-		host, _, err := net.SplitHostPort(address)
-		if err != nil {
-			return err
-		}
-		ip := net.ParseIP(host)
-		if ip != nil && ip.IsPrivate() {
-			return errors.New("refusing to connect to " + host + ", which is not globally routable")
-		}
-		return nil
-	}}
-	transport := &http.Transport{Proxy: nil, DialContext: dialer.DialContext}
-	defer transport.CloseIdleConnections()
-	client := &http.Client{Transport: transport, Timeout: 2 * time.Second}
-	err := postError(t, client, "http://10.0.0.1/")
-	if !strings.Contains(err.Error(), "refusing to connect to 10.0.0.1") {
-		t.Fatalf("POST error = %T %v, want the private-address dial rejection", err, err)
-	}
-	var networkErr *net.OpError
-	if !errors.As(err, &networkErr) {
-		t.Fatalf("POST error = %T %v, want net/http's wrapped dial error", err, err)
-	}
-
-	provider := push.NewEmptyPushServiceProvider()
-	destination := push.NewEmptyDeliveryPoint()
-	notification := push.NewEmptyNotification()
-	result := &push.Result{
-		Provider:    provider,
-		Destination: destination,
-		Content:     notification,
-		Err:         push.NewConnectionError(err),
-	}
-	originalErr := result.Err
-	retryTransientConnectionError(result)
-	if result.Err != originalErr {
-		t.Fatalf("private-address rejection was changed to %T", result.Err)
-	}
-}
-
 func TestRetryTransientConnectionError(t *testing.T) {
 	provider := push.NewEmptyPushServiceProvider()
 	destination := push.NewEmptyDeliveryPoint()

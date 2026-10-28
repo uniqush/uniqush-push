@@ -497,6 +497,8 @@ retry that is finally abandoned is logged with `UNIQUSH_ERROR_FAILED_RETRY`.
 Transient connection failures such as timeouts and connection resets use the
 same retry path. DNS not-found errors, endpoint-policy rejections, and TLS
 certificate verification failures remain permanent failures.
+A retry after a timeout or dropped connection can deliver a notification
+twice if the push service accepted the first attempt.
 A device being retried is in `failureDetails`, and counted in `failureCount`,
 with the code `UNIQUSH_PUSH_RETRYING` and the push service's answer in
 `errorMsg`:
