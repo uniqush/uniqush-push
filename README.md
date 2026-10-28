@@ -244,8 +244,10 @@ For every other backend the destination host is a constant compiled into
 uniqush. Here it comes from whoever called `/subscribe`, so uniqush refuses by
 default to POST to addresses that are not globally routable — loopback, RFC 1918,
 link-local (including the `169.254.169.254` cloud metadata endpoint), and the
-IPv6 equivalents. Redirects are never followed, and the check runs before every
-push rather than only at subscribe time, so DNS rebinding does not defeat it.
+IPv6 equivalents. Redirects are never followed, and the check runs on every
+connection uniqush opens, so DNS rebinding does not defeat it.
+A NAT64 network that uses its own prefix instead of `64:ff9b::/96` makes private
+IPv4 addresses look public, so it needs an egress firewall rule as well.
 
 Self-hosted push servers on a private network are a supported UnifiedPush
 setup, so this can be relaxed per service in `uniqush-push.conf` with

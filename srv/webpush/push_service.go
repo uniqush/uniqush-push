@@ -33,6 +33,7 @@ import (
 	"fmt"
 	"io"
 	"math"
+	"net"
 	"net/http"
 	"net/mail"
 	"net/url"
@@ -40,6 +41,7 @@ import (
 	"strings"
 	"sync"
 	"sync/atomic"
+	"syscall"
 	"time"
 	"unicode"
 
@@ -197,12 +199,12 @@ var _ push.PushServiceType = &pushService{}
 
 // NewPushService creates a Web Push push service registered under the given name.
 func NewPushService(name string) push.PushServiceType {
-	service := &pushService{
-		name:   name,
-		client: newHTTPClient(),
-	}
+	service := &pushService{name: name}
 	service.recordSize.Store(defaultRecordSize)
 	service.policy.Store(NewEndpointPolicy())
+	service.client = newHTTPClient(func(network, address string, c syscall.RawConn) error {
+		return service.endpointPolicy().checkDialAddress(network, address, c)
+	})
 	return service
 }
 
@@ -211,7 +213,7 @@ func NewPushService(name string) push.PushServiceType {
 // webpush-go allocates a fresh zero-value http.Client per call when none is
 // supplied, which means no timeout and a new connection pool for every single
 // push. Supplying one is not optional for a long-lived server.
-func newHTTPClient() *http.Client {
+func newHTTPClient(control func(network, address string, c syscall.RawConn) error) *http.Client {
 	return &http.Client{
 		// No client-level Timeout: every push carries a context with the
 		// configured deadline, and a second timeout fixed at construction
@@ -224,6 +226,7 @@ func newHTTPClient() *http.Client {
 			return http.ErrUseLastResponse
 		},
 		Transport: &http.Transport{
+			DialContext:           (&net.Dialer{Control: control}).DialContext,
 			MaxIdleConns:          100,
 			MaxIdleConnsPerHost:   4, // many distinct hosts, few requests each
 			IdleConnTimeout:       90 * time.Second,
