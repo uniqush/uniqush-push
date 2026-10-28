@@ -447,6 +447,7 @@ func (backend *PushBackEnd) collectResult(
 		if res.Destination == nil {
 			res.Destination = push.DestinationOf(res.Err)
 		}
+		retryTransientConnectionError(res)
 		backend.metrics.countPushResult(pushTypeOf(service, res.Provider, res.Destination), res.Err)
 		var sub string
 		ok := false

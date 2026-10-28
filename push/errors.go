@@ -365,7 +365,9 @@ func NewInvalidRegistrationUpdate(psp *PushServiceProvider, dp *DeliveryPoint) *
 
 /*********************/
 
-// ConnectionError indicates that we failed to establish a network connection (or send the request) to the external push service. Currently used only for APNS HTTP/2, and handled by reporting the error and giving up.
+// ConnectionError indicates that a request to an external push service failed
+// at the connection layer. The push backend decides whether the underlying
+// failure is transient enough to retry.
 type ConnectionError struct {
 	implementsPushError
 	Err error

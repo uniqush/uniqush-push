@@ -11,6 +11,11 @@ APNs:
 - Bugfix: `/push` reports Apple's result for each device, including removals, instead of reporting
   success before interpreting the response. One failed device no longer hides successful devices in the same push.
 
+Push delivery:
+
+- Bugfix: Transient connection failures to APNs, FCM and Web Push now retry with the existing backoff. DNS not-found,
+  endpoint-policy and TLS certificate verification failures remain permanent.
+
 
 28 Oct 2026, uniqush-push 2.11.1
 --------------------------------
