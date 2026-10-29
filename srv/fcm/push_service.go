@@ -639,9 +639,6 @@ func (ps *pushService) Push(psp *push.PushServiceProvider, dpQueue <-chan *push.
 				}
 				continue
 			}
-			// Mirrored into VolatileData so it can be updated in flight, as the
-			// legacy backend did.
-			dp.VolatileData["regid"] = regID
 		}
 
 		wg.Add(1)

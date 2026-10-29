@@ -3,6 +3,10 @@ uniqush-push NEWS
 Unreleased
 ----------
 
+FCM:
+
+- Bugfix: A device FCM reported gone was not removed, and not listed in `/removed`, since 2.11.0.
+
 APNs:
 
 - New feature: `uniqush.urgency` sets `apns-priority`: `very-low` and `low` use priority 5, while `normal` and
