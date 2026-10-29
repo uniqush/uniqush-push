@@ -223,14 +223,14 @@ func getRemoved(t *testing.T, api *RestAPI, query string) removedResponse {
 }
 
 // expectRemoved checks that got describes dp, with its devid and address.
-func expectRemoved(t *testing.T, got db.RemovedDeliveryPoint, dp *push.DeliveryPoint, address string) {
+func expectRemoved(t *testing.T, got db.RemovedDeliveryPoint, dp *push.DeliveryPoint, address, vendorReason string) {
 	t.Helper()
 	want := db.RemovedDeliveryPoint{
 		ID: got.ID, Time: got.Time,
 		Service: dp.FixedData["service"], Subscriber: removalSubscriber,
 		PushServiceType: dp.PushServiceName(), DeliveryPoint: dp.Name(), DevID: "device-1",
 		Endpoint: dp.FixedData["endpoint"], DevToken: dp.FixedData["devtoken"], RegID: dp.FixedData["regid"],
-		Reason: UNIQUSH_UPDATE_UNSUBSCRIBE,
+		Reason: UNIQUSH_UPDATE_UNSUBSCRIBE, VendorReason: vendorReason,
 	}
 	if got != want {
 		t.Errorf("Expected the removal\n%+v\ngot\n%+v", want, got)
@@ -242,18 +242,19 @@ func expectRemoved(t *testing.T, got db.RemovedDeliveryPoint, dp *push.DeliveryP
 
 func TestPushReportsRemovedDeliveryPoints(t *testing.T) {
 	cases := []struct {
-		name       string
-		newBackend func(*testing.T) (*PushBackEnd, *RestAPI)
+		name         string
+		vendorReason string
+		newBackend   func(*testing.T) (*PushBackEnd, *RestAPI)
 		// setUp subscribes a device its push service will report gone, and
 		// returns it with the address the push service was given for it.
 		setUp func(t *testing.T, backend *PushBackEnd, service string) (*push.DeliveryPoint, string)
 	}{
-		{"webpush 410", nil, func(t *testing.T, backend *PushBackEnd, service string) (*push.DeliveryPoint, string) {
+		{"webpush 410", "", nil, func(t *testing.T, backend *PushBackEnd, service string) (*push.DeliveryPoint, string) {
 			endpoint := webPushServer(t, http.StatusGone).URL + "/sub/1"
 			pspKV, dpKV := webPushFixture(t, service, endpoint)
 			return subscribeForRemoval(t, backend, pspKV, dpKV), endpoint
 		}},
-		{"apns Unregistered", nil, func(t *testing.T, backend *PushBackEnd, service string) (*push.DeliveryPoint, string) {
+		{"apns Unregistered", "Unregistered", nil, func(t *testing.T, backend *PushBackEnd, service string) (*push.DeliveryPoint, string) {
 			server := apnstest.NewServer()
 			t.Cleanup(server.Close)
 			caCert, err := server.WriteCACert(t.TempDir())
@@ -271,7 +272,7 @@ func TestPushReportsRemovedDeliveryPoints(t *testing.T) {
 				"devtoken": token, "devid": "device-1",
 			}), token
 		}},
-		{"fcm SENDER_ID_MISMATCH", setUpFCMRemovalTest, func(t *testing.T, backend *PushBackEnd, service string) (*push.DeliveryPoint, string) {
+		{"fcm SENDER_ID_MISMATCH", "SENDER_ID_MISMATCH", setUpFCMRemovalTest, func(t *testing.T, backend *PushBackEnd, service string) (*push.DeliveryPoint, string) {
 			const token = "registration-token"
 			return subscribeForRemoval(t, backend, map[string]string{
 				"service": service, "pushservicetype": "fcm", "projectid": "removal-project",
@@ -297,7 +298,7 @@ func TestPushReportsRemovedDeliveryPoints(t *testing.T) {
 				len(response.DroppedDetails) != 1 || response.DroppedDetails[0].Removed == nil {
 				t.Fatalf("Expected one removal and no success or failure in the push response, got %s", body)
 			}
-			expectRemoved(t, *response.DroppedDetails[0].Removed, dp, address)
+			expectRemoved(t, *response.DroppedDetails[0].Removed, dp, address, c.vendorReason)
 			for _, key := range []string{"auth", "p256dh"} {
 				if secret := dp.FixedData[key]; secret != "" && strings.Contains(body, secret) {
 					t.Errorf("The push response carries the subscription's keys: %s", body)
@@ -312,7 +313,7 @@ func TestPushReportsRemovedDeliveryPoints(t *testing.T) {
 
 			removed := waitForRemoved(t, api, service, 5*time.Second)
 			entry := removed.Removed[0]
-			expectRemoved(t, entry, dp, address)
+			expectRemoved(t, entry, dp, address, c.vendorReason)
 			if entry.ID == "" || removed.Next != entry.ID || removed.Truncated {
 				t.Errorf("Expected the cursor to be the entry's id and nothing truncated, got %+v", removed)
 			}
@@ -350,7 +351,7 @@ func TestRemovalDuringRetryIsRecorded(t *testing.T) {
 
 	// The first retry is 5 seconds out.
 	removed := waitForRemoved(t, api, service, 15*time.Second)
-	expectRemoved(t, removed.Removed[0], dp, endpoint)
+	expectRemoved(t, removed.Removed[0], dp, endpoint, "")
 }
 
 // A retry that finishes while the response still waits on a slower device

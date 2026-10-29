@@ -3,6 +3,12 @@ uniqush-push NEWS
 Unreleased
 ----------
 
+REST API:
+
+- New field: removals in `/push` and `/removed` include an optional `vendorReason`, preserving the push
+  service's own code, such as `BadDeviceToken` or `SENDER_ID_MISMATCH`. The existing removal
+  decisions and uniqush's `reason` codes are unchanged.
+
 FCM:
 
 - Bugfix: A device FCM reported gone was not removed, and not listed in `/removed`, since 2.11.0.

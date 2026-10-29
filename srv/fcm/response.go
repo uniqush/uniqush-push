@@ -120,11 +120,11 @@ func (ps *pushService) interpretResponse(response *http.Response, psp *push.Push
 	switch code {
 	case errUnregistered:
 		// The device is gone. This is the replacement for NotRegistered.
-		return push.NewUnsubscribeUpdate(psp, dp)
+		return push.NewUnsubscribeUpdateWithVendorReason(psp, dp, code)
 
 	case errSenderIDMismatch:
 		// Valid token, wrong project. It can never work here, so drop it.
-		return push.NewUnsubscribeUpdate(psp, dp)
+		return push.NewUnsubscribeUpdateWithVendorReason(psp, dp, code)
 
 	case errInvalidArgument:
 		// Deliberately not an unsubscribe. See the doc comment above.

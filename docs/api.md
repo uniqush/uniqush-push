@@ -463,10 +463,11 @@ The response counts and lists the outcome per device:
      "successDetails":[{"requestId":"...","service":"myservice","subscriber":"alice","pushServiceProvider":"apns:...","deliveryPoint":"apns:...","messageId":"...","code":"UNIQUSH_SUCCESS"}],
      "failureDetails":[],
      "droppedDetails":[{"requestId":"...","service":"myservice","from":"127.0.0.1:52210","subscriber":"bob",
-       "deliveryPoint":"webpush:5f2b...","code":"UNIQUSH_UPDATE_UNSUBSCRIBE",
-       "removed":{"service":"myservice","subscriber":"bob","pushServiceType":"webpush",
-                  "deliveryPoint":"webpush:5f2b...","devid":"bob-laptop",
-                  "endpoint":"https://push.example.org/wpush/v2/gAAA...","reason":"UNIQUSH_UPDATE_UNSUBSCRIBE"}}]}
+       "deliveryPoint":"fcm:5f2b...","code":"UNIQUSH_UPDATE_UNSUBSCRIBE",
+       "removed":{"service":"myservice","subscriber":"bob","pushServiceType":"fcm",
+                  "deliveryPoint":"fcm:5f2b...","devid":"bob-phone",
+                  "regid":"registration-token","reason":"UNIQUSH_UPDATE_UNSUBSCRIBE",
+                  "vendorReason":"SENDER_ID_MISMATCH"}}]}
 
 `droppedDetails` are devices the push service reported gone, and requested
 ids that are not subscribed. An entry with `removed` is a device uniqush
@@ -535,8 +536,9 @@ call has no `since`:
     curl 'http://localhost:9898/removed?service=myservice'
     {"code":"UNIQUSH_SUCCESS",
      "removed":[{"id":"1756900012345-0","time":1756900012,"service":"myservice","subscriber":"bob",
-                 "pushServiceType":"webpush","deliveryPoint":"webpush:5f2b...","devid":"bob-laptop",
-                 "endpoint":"https://push.example.org/wpush/v2/gAAA...","reason":"UNIQUSH_UPDATE_UNSUBSCRIBE"}],
+                 "pushServiceType":"fcm","deliveryPoint":"fcm:5f2b...","devid":"bob-phone",
+                 "regid":"registration-token","reason":"UNIQUSH_UPDATE_UNSUBSCRIBE",
+                 "vendorReason":"SENDER_ID_MISMATCH"}],
      "next":"1756900012345-0","truncated":false}
 
 and each later one passes the `next` it got back:
@@ -558,6 +560,13 @@ Each entry has:
 | `devtoken` | apns: the device token. |
 | `regid` | fcm, gcm and adm: the registration token. |
 | `reason` | The `droppedDetails` code: `UNIQUSH_UPDATE_UNSUBSCRIBE` or `UNIQUSH_REMOVE_INVALID_REG`. |
+| `vendorReason` | Optional push service code: an APNs reason such as `BadDeviceToken` or `Unregistered`, or an FCM code such as `UNREGISTERED` or `SENDER_ID_MISMATCH`. Omitted when no vendor code is known, including Web Push / UnifiedPush responses, APNs responses without a reason, and entries recorded by older versions. |
+
+`vendorReason` adds diagnostic detail; it does not change which responses remove
+a device or uniqush's `reason` code. In particular, `SENDER_ID_MISMATCH` means the
+FCM token belongs to a different sender, not that the app was uninstalled; it
+still removes the subscription as before. Free-form response messages, bodies
+and headers are not copied into `vendorReason`.
 
 `endpoint`, `devtoken` and `regid` are the address as it was given to
 `/subscribe`, so a caller that keys devices by `devid` can tell the removed

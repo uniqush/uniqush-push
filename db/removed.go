@@ -51,6 +51,9 @@ type RemovedDeliveryPoint struct {
 	DevToken        string `json:"devtoken,omitempty"`
 	RegID           string `json:"regid,omitempty"`
 	Reason          string `json:"reason"`
+	// VendorReason distinguishes the push service's reasons without changing
+	// uniqush's own Reason code. Older entries and callers may have none.
+	VendorReason string `json:"vendorReason,omitempty"`
 }
 
 // NewRemovedDeliveryPoint describes dp, which was removed for reason.

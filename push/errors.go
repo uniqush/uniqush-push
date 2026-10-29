@@ -324,6 +324,9 @@ type UnsubscribeUpdate struct {
 	implementsPushError
 	Provider    *PushServiceProvider
 	Destination *DeliveryPoint
+	// VendorReason is the push service's own code, when known.
+	// It is removal metadata, not part of the delivery point's identity.
+	VendorReason string
 }
 
 func (e *UnsubscribeUpdate) Error() string {
@@ -334,9 +337,15 @@ func (e *UnsubscribeUpdate) pushDestination() *DeliveryPoint { return e.Destinat
 
 // NewUnsubscribeUpdate returns an UnsubscribeUpdate for the given psp and dp.
 func NewUnsubscribeUpdate(psp *PushServiceProvider, dp *DeliveryPoint) *UnsubscribeUpdate {
+	return NewUnsubscribeUpdateWithVendorReason(psp, dp, "")
+}
+
+// NewUnsubscribeUpdateWithVendorReason also preserves the push service's reason.
+func NewUnsubscribeUpdateWithVendorReason(psp *PushServiceProvider, dp *DeliveryPoint, reason string) *UnsubscribeUpdate {
 	return &UnsubscribeUpdate{
-		Provider:    psp,
-		Destination: dp,
+		Provider:     psp,
+		Destination:  dp,
+		VendorReason: reason,
 	}
 }
 
