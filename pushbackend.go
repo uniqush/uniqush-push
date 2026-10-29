@@ -344,7 +344,7 @@ func (backend *PushBackEnd) fixInvalidRegistrationUpdate(
 	logger log.Logger,
 	handler APIResponseHandler,
 ) {
-	backend.removeGoneDeliveryPoint(err.Provider, err.Destination, UNIQUSH_REMOVE_INVALID_REG, reqID, remoteAddr, logger, handler)
+	backend.removeGoneDeliveryPoint(err.Provider, err.Destination, UNIQUSH_REMOVE_INVALID_REG, "", reqID, remoteAddr, logger, handler)
 }
 
 func (backend *PushBackEnd) fixUnsubscribeUpdate(
@@ -354,7 +354,7 @@ func (backend *PushBackEnd) fixUnsubscribeUpdate(
 	logger log.Logger,
 	handler APIResponseHandler,
 ) {
-	backend.removeGoneDeliveryPoint(err.Provider, err.Destination, UNIQUSH_UPDATE_UNSUBSCRIBE, reqID, remoteAddr, logger, handler)
+	backend.removeGoneDeliveryPoint(err.Provider, err.Destination, UNIQUSH_UPDATE_UNSUBSCRIBE, err.VendorReason, reqID, remoteAddr, logger, handler)
 }
 
 // errNotRemoved is reported for a device a push service said was gone but
@@ -370,6 +370,7 @@ func (backend *PushBackEnd) removeGoneDeliveryPoint(
 	provider *push.PushServiceProvider,
 	dp *push.DeliveryPoint,
 	code string,
+	vendorReason string,
 	reqID string,
 	remoteAddr string,
 	logger log.Logger,
@@ -401,6 +402,7 @@ func (backend *PushBackEnd) removeGoneDeliveryPoint(
 	logger.Infof("Service=%v Subscriber=%v DeliveryPoint=%v Removed a device its push service reported gone", service, sub, dpName)
 	entry := db.NewRemovedDeliveryPoint(dp, code)
 	entry.Service = service
+	entry.VendorReason = vendorReason
 	if err = backend.db.RecordRemovedDeliveryPoint(entry); err != nil {
 		logger.Errorf("Service=%v Subscriber=%v DeliveryPoint=%v Could not record the removal: %v", service, sub, dpName, err)
 	}

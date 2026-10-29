@@ -1129,6 +1129,7 @@ func (prp *HTTPPushRequestProcessor) handlePushResponseBody(response *http.Respo
 		resChan <- &common.APNSResult{
 			MsgID:  messageID,
 			Status: common.Status8Unsubscribe,
+			Reason: apnsError.Reason,
 		}
 		return
 	}

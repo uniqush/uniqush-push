@@ -95,6 +95,8 @@ type APNSResult struct {
 	// Status is one of the Status* codes in constants.go, which the HTTP/2
 	// processor derives from Apple's status code and reason.
 	Status uint8
+	// Reason retains Apple's reason before it is collapsed into a Status code.
+	Reason string
 	// Err will be handled by the error handler for APNs differently based on the type implementing this interface.
 	Err push.Error
 }

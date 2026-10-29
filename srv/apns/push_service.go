@@ -510,7 +510,7 @@ func apnsresToError(apnsres *common.APNSResult, psp *push.PushServiceProvider, d
 	case common.Status8Unsubscribe:
 		// err = push.NewBadDeliveryPointWithDetails(req.dp, "Invalid Token")
 		// This token is invalid, we should unsubscribe this device.
-		err = push.NewUnsubscribeUpdate(psp, dp)
+		err = push.NewUnsubscribeUpdateWithVendorReason(psp, dp, apnsres.Reason)
 	default:
 		err = push.NewErrorfForDeliveryPoint(dp, "Unknown Error: %d", apnsres.Status)
 	}

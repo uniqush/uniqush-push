@@ -469,8 +469,12 @@ func TestConformanceUnregisteredUnsubscribes(t *testing.T) {
 				t.Fatalf("Expected one result, got: %s", describeResults(results))
 			}
 			err := results[0].Err
-			if _, ok := err.(*push.UnsubscribeUpdate); !ok {
-				t.Errorf("Expected an UnsubscribeUpdate for a dead token, got %T: %v", err, err)
+			update, ok := err.(*push.UnsubscribeUpdate)
+			if !ok {
+				t.Fatalf("Expected an UnsubscribeUpdate for a dead token, got %T: %v", err, err)
+			}
+			if update.VendorReason != response.Reason {
+				t.Errorf("Expected Apple's reason %q, got %q", response.Reason, update.VendorReason)
 			}
 			if len(errChan) != 0 {
 				t.Errorf("The synchronous unsubscribe was reported again asynchronously: %d errors", len(errChan))
