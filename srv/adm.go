@@ -50,21 +50,28 @@ type pspLockRequest struct {
 
 type admPushService struct {
 	pspLock chan *pspLockRequest
+	client  *http.Client
 }
 
 var _ push.PushServiceType = &admPushService{}
 
-func newADMPushService() *admPushService {
+// NewADMPushService creates an ADM service. A nil client uses the default HTTP
+// transport; tests can supply a client connected to an ADM simulator.
+func NewADMPushService(client *http.Client) push.PushServiceType {
+	if client == nil {
+		client = &http.Client{}
+	}
 	ret := new(admPushService)
 	ret.pspLock = make(chan *pspLockRequest)
-	go admPspLocker(ret.pspLock)
+	ret.client = client
+	go admPspLocker(ret.pspLock, client)
 	return ret
 }
 
 // InstallADM registers the only instance of the ADM push service. It is called only once.
 func InstallADM() {
 	psm := push.GetPushServiceManager()
-	err := psm.RegisterPushServiceType(newADMPushService())
+	err := psm.RegisterPushServiceType(NewADMPushService(nil))
 	if err != nil {
 		panic(fmt.Sprintf("Failed to install ADM module: %v", err))
 	}
@@ -116,7 +123,7 @@ func (adm *admPushService) BuildDeliveryPointFromMap(kv map[string]string, dp *p
 	return nil
 }
 
-func admPspLocker(lockChan <-chan *pspLockRequest) {
+func admPspLocker(lockChan <-chan *pspLockRequest, client *http.Client) {
 	pspLockMap := make(map[string]*push.PushServiceProvider, 10)
 	for req := range lockChan {
 		var ok bool
@@ -134,7 +141,7 @@ func admPspLocker(lockChan <-chan *pspLockRequest) {
 			psp = req.psp
 			pspLockMap[clientid] = psp
 		}
-		resp.err = requestToken(psp)
+		resp.err = requestToken(psp, client)
 		resp.psp = psp
 		if resp.err != nil {
 			if _, ok := resp.err.(*push.PushServiceProviderUpdate); ok {
@@ -159,7 +166,7 @@ type tokenFailObj struct {
 	Description string `json:"error_description"`
 }
 
-func requestToken(psp *push.PushServiceProvider) push.Error {
+func requestToken(psp *push.PushServiceProvider, client *http.Client) push.Error {
 	var ok bool
 	var clientid string
 	var cserect string
@@ -195,7 +202,6 @@ func requestToken(psp *push.PushServiceProvider) push.Error {
 	defer req.Body.Close()
 	req.Header.Add("Content-Type", "application/x-www-form-urlencoded")
 
-	client := &http.Client{}
 	resp, err := client.Do(req)
 	if err != nil {
 		return push.NewErrorf("Do error: %v", err)
@@ -327,8 +333,7 @@ type admPushFailResponse struct {
 	Reason string `json:"reason"`
 }
 
-func admSinglePush(psp *push.PushServiceProvider, dp *push.DeliveryPoint, data []byte, notif *push.Notification) (string, push.Error) {
-	client := &http.Client{}
+func admSinglePush(client *http.Client, psp *push.PushServiceProvider, dp *push.DeliveryPoint, data []byte, notif *push.Notification) (string, push.Error) {
 	req, err := admNewRequest(psp, dp, data)
 	if err != nil {
 		return "", err
@@ -458,7 +463,7 @@ func (adm *admPushService) Push(psp *push.PushServiceProvider, dpQueue <-chan *p
 		res.Provider = psp
 		res.Destination = dp
 		go func(dp *push.DeliveryPoint) {
-			res.MsgID, res.Err = admSinglePush(psp, dp, data, notif)
+			res.MsgID, res.Err = admSinglePush(adm.client, psp, dp, data, notif)
 			resQueue <- res
 			wg.Done()
 		}(dp)
