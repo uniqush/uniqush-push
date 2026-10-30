@@ -55,9 +55,9 @@ type admPushService struct {
 
 var _ push.PushServiceType = &admPushService{}
 
-// NewADMPushService creates an ADM service. A nil client uses the default HTTP
+// newADMPushService creates an ADM service. A nil client uses the default HTTP
 // transport; tests can supply a client connected to an ADM simulator.
-func NewADMPushService(client *http.Client) push.PushServiceType {
+func newADMPushService(client *http.Client) *admPushService {
 	if client == nil {
 		client = &http.Client{}
 	}
@@ -71,7 +71,7 @@ func NewADMPushService(client *http.Client) push.PushServiceType {
 // InstallADM registers the only instance of the ADM push service. It is called only once.
 func InstallADM() {
 	psm := push.GetPushServiceManager()
-	err := psm.RegisterPushServiceType(NewADMPushService(nil))
+	err := psm.RegisterPushServiceType(newADMPushService(nil))
 	if err != nil {
 		panic(fmt.Sprintf("Failed to install ADM module: %v", err))
 	}

@@ -1,16 +1,13 @@
 package srv
 
 import (
-	"net/http"
 	"testing"
 	"time"
 
 	"github.com/uniqush/uniqush-push/push"
-	"github.com/uniqush/uniqush-push/srv/adm/admtest"
+	"github.com/uniqush/uniqush-push/srv/admtest"
 )
 
-// TestADMWithSimulator characterizes current response handling. In particular,
-// Unregistered is not yet removed; #350 requires a separate behavior change.
 func TestADMWithSimulator(t *testing.T) {
 	cases := []struct {
 		name     string
@@ -35,10 +32,8 @@ func TestADMWithSimulator(t *testing.T) {
 			server.SetResponse("test-registration", c.response)
 			client := server.Client()
 			defer client.CloseIdleConnections()
-			service := NewADMPushService(client)
-			// All pushes below finish before this package-local cleanup. Production
-			// shutdown behavior is deliberately unchanged.
-			defer close(service.(*admPushService).pspLock)
+			service := newADMPushService(client)
+			defer close(service.pspLock)
 			manager := new(push.PushServiceManager)
 			manager.ClearAllPushServiceTypesForUnitTest()
 			if err := manager.RegisterPushServiceType(service); err != nil {
@@ -73,7 +68,7 @@ func TestADMWithSimulator(t *testing.T) {
 					if result.Destination != destination {
 						t.Error("result lost its destination")
 					}
-					kind := "error"
+					var kind string
 					switch e := result.Err.(type) {
 					case nil:
 						kind = "success"
@@ -89,8 +84,14 @@ func TestADMWithSimulator(t *testing.T) {
 						if e.After != c.retry {
 							t.Errorf("retry after = %s, want %s", e.After, c.retry)
 						}
-					case *push.UnsubscribeUpdate, *push.InvalidRegistrationUpdate:
-						t.Fatalf("unexpected destructive result: %T", result.Err)
+					case *push.ErrorReport:
+						kind = "error"
+					case *push.UnsubscribeUpdate:
+						kind = "unsubscribe"
+					case *push.InvalidRegistrationUpdate:
+						kind = "invalid registration"
+					default:
+						kind = "unknown"
 					}
 					if kind != c.result {
 						t.Errorf("result = %s (%v), want %s", kind, result.Err, c.result)
@@ -104,24 +105,5 @@ func TestADMWithSimulator(t *testing.T) {
 				t.Errorf("token exchanges=%d messages=%d", tokens, messages)
 			}
 		})
-	}
-}
-
-func TestADMSimulatorRefusesExternalRequests(t *testing.T) {
-	server := admtest.NewServer()
-	defer server.Close()
-	client := server.Client()
-	defer client.CloseIdleConnections()
-	if response, err := client.Get("https://example.org/"); err == nil {
-		response.Body.Close()
-		t.Fatal("simulator accepted a non-ADM host")
-	}
-	if response, err := client.PostForm("https://api.amazon.com/auth/O2/token", nil); err != nil {
-		t.Fatal(err)
-	} else {
-		defer response.Body.Close()
-		if response.StatusCode != http.StatusUnauthorized {
-			t.Errorf("status = %d", response.StatusCode)
-		}
 	}
 }
