@@ -1,5 +1,12 @@
 uniqush-push NEWS
 
+Unreleased
+----------
+
+ADM:
+
+- Bugfix: Remove delivery points Amazon reports as `InvalidRegistrationId`, and include the removal in `/removed`, instead of retaining dead registrations.
+
 29 Oct 2026, uniqush-push 2.12.0
 --------------------------------
 

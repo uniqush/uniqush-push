@@ -16,7 +16,7 @@ func TestADMWithSimulator(t *testing.T) {
 		retry    time.Duration
 	}{
 		{"success", admtest.Response{Status: 200}, "success", 0},
-		{"invalid registration", admtest.Response{Status: 400, Reason: "InvalidRegistrationId"}, "bad destination", 0},
+		{"invalid registration", admtest.Response{Status: 400, Reason: "InvalidRegistrationId"}, "invalid registration", 0},
 		{"unregistered", admtest.Response{Status: 400, Reason: "Unregistered"}, "error", 0},
 		{"bad payload", admtest.Response{Status: 400, Reason: "InvalidData"}, "error", 0},
 		{"large payload", admtest.Response{Status: 413, Reason: "MessageTooLarge"}, "bad notification", 0},
@@ -90,6 +90,9 @@ func TestADMWithSimulator(t *testing.T) {
 						kind = "unsubscribe"
 					case *push.InvalidRegistrationUpdate:
 						kind = "invalid registration"
+						if e.Provider != provider || e.Destination != destination {
+							t.Error("removal must identify the original provider and destination")
+						}
 					default:
 						kind = "unknown"
 					}

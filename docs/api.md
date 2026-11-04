@@ -546,6 +546,9 @@ and each later one passes the `next` it got back:
     curl 'http://localhost:9898/removed?service=myservice&since=1756900012345-0'
     {"code":"UNIQUSH_SUCCESS","removed":[],"next":"1756900012345-0","truncated":false}
 
+ADM responses with `InvalidRegistrationId` remove the registration and record
+`UNIQUSH_REMOVE_INVALID_REG`. Other ADM errors do not imply that a registration is gone.
+
 Each entry has:
 
 | Field | |
