@@ -546,9 +546,6 @@ and each later one passes the `next` it got back:
     curl 'http://localhost:9898/removed?service=myservice&since=1756900012345-0'
     {"code":"UNIQUSH_SUCCESS","removed":[],"next":"1756900012345-0","truncated":false}
 
-ADM responses with `InvalidRegistrationId` remove the registration and record
-`UNIQUSH_REMOVE_INVALID_REG`. Other ADM errors do not imply that a registration is gone.
-
 Each entry has:
 
 | Field | |
@@ -563,7 +560,7 @@ Each entry has:
 | `devtoken` | apns: the device token. |
 | `regid` | fcm, gcm and adm: the registration token. |
 | `reason` | The `droppedDetails` code: `UNIQUSH_UPDATE_UNSUBSCRIBE` or `UNIQUSH_REMOVE_INVALID_REG`. |
-| `vendorReason` | Optional push service code: an APNs reason such as `BadDeviceToken` or `Unregistered`, or an FCM code such as `UNREGISTERED` or `SENDER_ID_MISMATCH`. Omitted when no vendor code is known, including Web Push / UnifiedPush responses, APNs responses without a reason, and entries recorded by older versions. |
+| `vendorReason` | Optional push service code: an APNs reason such as `BadDeviceToken` or `Unregistered`, an FCM code such as `UNREGISTERED` or `SENDER_ID_MISMATCH`, or an ADM reason such as `Unregistered`. Omitted when no vendor code is known, including Web Push / UnifiedPush responses, APNs responses without a reason, and entries recorded by older versions. |
 
 `vendorReason` adds diagnostic detail; it does not change which responses remove
 a device or uniqush's `reason` code. In particular, `SENDER_ID_MISMATCH` means the

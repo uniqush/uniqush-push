@@ -380,7 +380,9 @@ func admSinglePush(client *http.Client, psp *push.PushServiceProvider, dp *push.
 		case "messagetoolarge":
 			err = push.NewBadNotificationWithDetails("MessageTooLarge")
 		case "invalidregistrationid":
-			err = push.NewInvalidRegistrationUpdate(psp, dp)
+			err = push.NewBadDeliveryPointWithDetails(dp, "InvalidRegistrationId")
+		case "unregistered":
+			err = push.NewUnsubscribeUpdateWithVendorReason(psp, dp, fail.Reason)
 		case "accesstokenexpired":
 			// retry would fix it.
 			err = push.NewRetryErrorWithReason(psp, dp, notif, 10*time.Second, errors.New("ADM returned AccessTokenExpired"))

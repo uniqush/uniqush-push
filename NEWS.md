@@ -5,7 +5,7 @@ Unreleased
 
 ADM:
 
-- Bugfix: Remove delivery points Amazon reports as `InvalidRegistrationId`, and include the removal in `/removed`, instead of retaining dead registrations.
+- Bugfix: Remove delivery points Amazon reports as `Unregistered`, and include the removal with its vendor reason in `/removed`, instead of retaining dead registrations.
 
 29 Oct 2026, uniqush-push 2.12.0
 --------------------------------
