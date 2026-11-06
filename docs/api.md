@@ -560,7 +560,7 @@ Each entry has:
 | `devtoken` | apns: the device token. |
 | `regid` | fcm, gcm and adm: the registration token. |
 | `reason` | The `droppedDetails` code: `UNIQUSH_UPDATE_UNSUBSCRIBE` or `UNIQUSH_REMOVE_INVALID_REG`. |
-| `vendorReason` | Optional push service code: an APNs reason such as `BadDeviceToken` or `Unregistered`, or an FCM code such as `UNREGISTERED` or `SENDER_ID_MISMATCH`. Omitted when no vendor code is known, including Web Push / UnifiedPush responses, APNs responses without a reason, and entries recorded by older versions. |
+| `vendorReason` | Optional push service code: an APNs reason such as `BadDeviceToken` or `Unregistered`, an FCM code such as `UNREGISTERED` or `SENDER_ID_MISMATCH`, or an ADM reason such as `Unregistered`. Omitted when no vendor code is known, including Web Push / UnifiedPush responses, APNs responses without a reason, and entries recorded by older versions. |
 
 `vendorReason` adds diagnostic detail; it does not change which responses remove
 a device or uniqush's `reason` code. In particular, `SENDER_ID_MISMATCH` means the

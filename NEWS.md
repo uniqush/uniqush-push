@@ -1,5 +1,13 @@
 uniqush-push NEWS
 
+Unreleased
+----------
+
+ADM:
+
+- Bugfix: A device ADM reported `Unregistered` was not removed, and not listed in `/removed`. It now is,
+  with `vendorReason`.
+
 29 Oct 2026, uniqush-push 2.12.0
 --------------------------------
 
