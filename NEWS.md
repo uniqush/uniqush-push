@@ -5,7 +5,8 @@ Unreleased
 
 ADM:
 
-- Bugfix: Remove delivery points Amazon reports as `Unregistered`, and include the removal with its vendor reason in `/removed`, instead of retaining dead registrations.
+- Bugfix: A device ADM reported `Unregistered` was not removed, and not listed in `/removed`. It now is,
+  with `vendorReason`.
 
 29 Oct 2026, uniqush-push 2.12.0
 --------------------------------
